@@ -1,11 +1,20 @@
-# Porting an affectUI component to GPUI
+# Building components
 
 Every component is **one Rust file**, `src/components/<slug>.rs`, the same
 way affectUI ships one `.tsx` file per component. A file depends only on GPUI
 and the shared modules in this crate (`motion`, `interaction`, `primitives`,
-`theme`, `story`). Icons live in `assets/icons/<slug>/`.
+`luna`, `theme`, `story`), and exports `NAME`, `DESCRIPTION` and `story`.
+Icons live in `assets/icons/<slug>/`.
 
-`src/components/profile_menu.rs` is the reference port: read it first.
+There are two kinds (`components::Kind`):
+
+- **Ports** reproduce one of affectUI's free (MIT) components faithfully.
+  `src/components/profile_menu.rs` is the reference port: read it first.
+- **Originals** are our own components in luna's design language, built
+  around an idea from affectUI's Pro catalog. See [Originals](#originals).
+
+The sections below up to Originals apply to ports; the API, state, motion and
+GPUI notes apply to both.
 
 ## What to reproduce
 
@@ -137,8 +146,31 @@ script) at the website's stage size; compare it side by side with the site.
 `cargo run -- <slug>` opens the gallery on your component, with switches for
 light/dark and Clean/Classic.
 
+## Originals
+
+An original takes the *idea* of a Pro component (what it is for, how it
+behaves, how its motion feels) and builds our own component around it. It is
+not a port: never transcribe a Pro component's code, CSS values, color tokens,
+sizes, layout structure, copy, demo data or SVG paths.
+
+- Studying the Pro demo (its behavior, CSS and screenshots) to understand the
+  interaction and the motion – what animates, in which order, roughly how long
+  and with which kind of easing – is fine. Then close it and design your own.
+- Style with [`crate::luna`](src/luna.rs): `Luna::get(cx)` tokens (surfaces,
+  text, borders, fills, accent, status colors), the radius and spacing
+  ladders, `luna::SANS` (Geist) / `luna::MONO`, and the control kit
+  (`button`, `icon_button`, `chip`, `badge`, `kbd`, `card`, `overlay`).
+  Originals follow light/dark; the Clean/Classic look doesn't apply.
+- Use luna's motion presets (`motion::MENU_IN`, `GLIDE`, `HOVER_FADE`, …)
+  and `HoverFill` for hovers.
+- Write your own demo content and your own `DESCRIPTION`; draw your own
+  icons (simple 24×24 strokes, `stroke-width="1.5"`).
+- Keep the component useful on its own: a clean builder API, real callbacks,
+  keyboard support where it makes sense.
+
 ## Licensing
 
-Only port components affectUI publishes as free (MIT). Keep the attribution in
-`THIRD_PARTY_NOTICES.md` intact. Pro components are commercially licensed and
-their terms forbid redistributing them in a component library.
+Ports keep affectUI's MIT attribution in `THIRD_PARTY_NOTICES.md`. affectUI's
+Pro components are commercially licensed and their terms forbid redistributing
+them in a component library, which is why the Pro catalog only ever supplies
+ideas here, never code or design.

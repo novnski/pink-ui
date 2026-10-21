@@ -4,6 +4,9 @@
 
 use gpui::{AnyView, App, Window};
 
+pub const NAME: &str = "Comment Thread";
+pub const DESCRIPTION: &str = "One comment with replies – an assistant reports what it did, folds open details and answers @mentions";
+
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     crate::story::view(cx, |_, _| "Comment Thread is not ported yet")
 }

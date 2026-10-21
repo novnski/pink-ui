@@ -25,6 +25,10 @@ use crate::{
     story,
 };
 
+pub const NAME: &str = "Profile Menu";
+pub const DESCRIPTION: &str =
+    "Account card with the signed-in user, menu actions and profile setup progress";
+
 const AVATAR: &str = "icons/profile-menu/avatar.svg";
 
 type Handler = Rc<dyn Fn(&mut Window, &mut App)>;

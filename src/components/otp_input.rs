@@ -4,6 +4,9 @@
 
 use gpui::{AnyView, App, Window};
 
+pub const NAME: &str = "OTP Input";
+pub const DESCRIPTION: &str = "The verification code field done right – a gliding focus ring, paste and SMS autofill, a calm shake on errors and a morph into Verified";
+
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     crate::story::view(cx, |_, _| "OTP Input is not ported yet")
 }

@@ -4,6 +4,10 @@
 
 use gpui::{AnyView, App, Window};
 
+pub const NAME: &str = "Smart Recommendation";
+pub const DESCRIPTION: &str =
+    "Suggestion card with a confidence signal, alternatives to switch to and accept with undo";
+
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     crate::story::view(cx, |_, _| "Smart Recommendation is not ported yet")
 }

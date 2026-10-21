@@ -4,6 +4,10 @@
 
 use gpui::{AnyView, App, Window};
 
+pub const NAME: &str = "Tips Panel";
+pub const DESCRIPTION: &str =
+    "Grid of short tips with one action each – taken tips turn into a done state";
+
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     crate::story::view(cx, |_, _| "Tips Panel is not ported yet")
 }

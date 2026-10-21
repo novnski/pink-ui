@@ -2,7 +2,7 @@
 
 ## affectUI
 
-The components in `src/components/` are GPUI ports of the free components from
+The components marked as ports in `src/components/` are GPUI ports of the free components from
 [affectUI](https://www.affectui.com) ([flohoeller/affectui](https://github.com/flohoeller/affectui)):
 their design, color tokens, sizes, copy and demo content. The SVG icons in
 `assets/icons/` are copied from those components.
@@ -47,6 +47,8 @@ Apache License 2.0.
 
 ## Fonts
 
+- `assets/fonts/Geist*.ttf` – [Geist](https://github.com/vercel/geist-font),
+  SIL Open Font License 1.1 (`assets/fonts/Geist-OFL.txt`), as used by luna.
 - `assets/fonts/Inter-*.ttf` – [Inter](https://rsms.me/inter/) by Rasmus Andersson,
   SIL Open Font License 1.1 (`assets/fonts/Inter-OFL.txt`).
 - `assets/fonts/JetBrainsMono-*.ttf` – [JetBrains Mono](https://www.jetbrains.com/lp/mono/),

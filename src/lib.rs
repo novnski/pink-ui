@@ -32,6 +32,7 @@
 pub mod assets;
 pub mod components;
 pub mod interaction;
+pub mod luna;
 pub mod motion;
 pub mod primitives;
 pub mod story;

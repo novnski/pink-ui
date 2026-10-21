@@ -13,7 +13,7 @@
 
 use affectui::{
     ActiveTheme, Assets, HoverFill, Look, Theme, ThemeMode,
-    components::{CATEGORIES, COMPONENTS},
+    components::{CATEGORIES, COMPONENTS, Kind},
     primitives::{SANS, hex, hexa},
 };
 use gpui::{
@@ -331,7 +331,21 @@ impl Gallery {
                                     .text_size(px(12.))
                                     .text_color(chrome.muted)
                                     .child(entry.category),
-                            ),
+                            )
+                            .when(entry.kind == Kind::Original, |row| {
+                                row.child(
+                                    div()
+                                        .px(px(8.))
+                                        .h(px(22.))
+                                        .flex()
+                                        .items_center()
+                                        .rounded(px(999.))
+                                        .bg(chrome.hover)
+                                        .text_size(px(12.))
+                                        .text_color(chrome.muted)
+                                        .child("Original · luna style"),
+                                )
+                            }),
                     )
                     .child(
                         div()
