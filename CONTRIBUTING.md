@@ -105,8 +105,10 @@ The entity lives as long as the component keeps rendering.
 - Loops (shimmer, spinners, pulses): `.with_animation(id, Animation::new(d).repeat(), …)`.
 - Curves: `motion::EASE_OUT_QUINT` is affectUI's `cubic-bezier(.22, 1, .36, 1)`;
   `EASE`, `EASE_OUT`, `EASE_IN_OUT` match CSS keywords.
-- Call `motion::keep_alive(window)` at the end of render when the component
-  uses hover fades or followers (the story wrapper already does).
+- Hosts keep fades and followers moving: the story wrapper adds
+  `motion::driver()` (an invisible element that requests frames after
+  layout). A view that renders its own animated content calls
+  `motion::keep_alive(window)` at the end of its render.
 
 ### What GPUI can't do, and the substitutes
 
@@ -121,6 +123,7 @@ The entity lives as long as the component keeps rendering.
 | `letter-spacing`, `font-variant-numeric` | ignore                                              |
 | container / media queries             | design for the desktop size the demo stage shows       |
 | `::before` / `::after`                | an extra absolutely positioned `div`                   |
+| `margin-left: auto` inside a `gap` row | `flex_1()` + `justify_end()` – in Taffy an auto margin cancels the row's gap |
 | charts, rings, dials, waveforms       | `canvas(prepaint, paint)` + `PathBuilder` / `window.paint_quad` |
 
 ### Icons and images

@@ -570,6 +570,10 @@ pub fn frame(window: &mut Window, cx: &App) {
 
 /// Requests a frame for the current view while a fade or follower is moving.
 /// Components call this at the end of their render; it never prunes.
+///
+/// A view whose children are builders (`RenderOnce`) should use [`driver`]
+/// instead: builders render after their parent's `render` returns, so a
+/// follower they start would be missed here.
 pub fn keep_alive(window: &mut Window) {
     let now = Instant::now();
     let moving =
@@ -577,6 +581,15 @@ pub fn keep_alive(window: &mut Window) {
     if moving {
         window.request_animation_frame();
     }
+}
+
+/// An invisible element that calls [`keep_alive`] after layout, once every
+/// child has rendered and registered its fades and followers. Add it as the
+/// last child of a view that hosts animated builders.
+pub fn driver() -> impl IntoElement {
+    gpui::canvas(|_, window, _| keep_alive(window), |_, _, _, _| {})
+        .absolute()
+        .size_0()
 }
 
 // ---------------------------------------------------------------------------

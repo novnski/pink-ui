@@ -18,7 +18,6 @@ pub struct Story {
 impl Render for Story {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let element = (self.build)(window, cx);
-        motion::keep_alive(window);
         div()
             .size_full()
             .flex()
@@ -26,6 +25,7 @@ impl Render for Story {
             .justify_center()
             .font_family(SANS)
             .child(element)
+            .child(motion::driver())
     }
 }
 
