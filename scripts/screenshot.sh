@@ -21,12 +21,16 @@ out=$(realpath "$out")
 
 # Several checkouts may share one CARGO_TARGET_DIR; build and take a private
 # copy of the binary under a lock so nobody runs another checkout's gallery.
+# Cargo fingerprints this crate the same way in every checkout, so a newer build
+# elsewhere looks "fresh" here: with a shared target dir, bump src/lib.rs first
+# to make sure the binary is built from this checkout.
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 bin="$tmp/gallery"
 mkdir -p "$target_dir"
 flock "$target_dir/.gallery-build.lock" bash -c \
-  'cargo build --quiet --bin gallery && cp "$1/debug/gallery" "$2"' _ "$target_dir" "$bin"
+  '[ -n "$3" ] && touch src/lib.rs; cargo build --quiet --bin gallery && cp "$1/debug/gallery" "$2"' \
+  _ "$target_dir" "$bin" "${CARGO_TARGET_DIR:-}"
 
 xvfb-run -a -s "-screen 0 1400x1100x24" bash -c '
   openbox >/dev/null 2>&1 &
