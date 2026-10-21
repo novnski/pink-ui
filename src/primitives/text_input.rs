@@ -15,8 +15,8 @@ use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, ElementId, ElementInputHandler, Entity,
     EntityInputHandler, EventEmitter, FocusHandle, Focusable, GlobalElementId, Hsla, KeyBinding,
     LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point,
-    SharedString, Style, TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window, WrappedLine,
-    actions, div, fill, point, prelude::*, px, relative, size,
+    SharedString, Style, TextAlign, TextRun, TextStyle, UTF16Selection, UnderlineStyle, Window,
+    WrappedLine, actions, div, fill, point, prelude::*, px, relative, size,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -788,15 +788,38 @@ impl IntoElement for TextElement {
     }
 }
 
+/// The inherited text style, captured where it is valid: layout measurement
+/// runs outside the element's style stack, where `window.text_style()` would
+/// return the root style.
+#[derive(Clone)]
+struct InheritedText {
+    style: TextStyle,
+    line_height: Pixels,
+    font_size: Pixels,
+}
+
+impl InheritedText {
+    fn capture(window: &Window) -> Self {
+        let style = window.text_style();
+        let font_size = style.font_size.to_pixels(window.rem_size());
+        Self {
+            style,
+            line_height: window.line_height(),
+            font_size,
+        }
+    }
+}
+
 /// Shapes the visible text into hard lines, wrapped to `wrap_width` when given.
 fn shape(
     input: &TextInput,
+    text: &InheritedText,
     window: &mut Window,
     wrap_width: Option<Pixels>,
 ) -> (Vec<(usize, Pixels, WrappedLine)>, Pixels) {
-    let style = window.text_style();
-    let line_height = window.line_height();
-    let font_size = style.font_size.to_pixels(window.rem_size());
+    let style = &text.style;
+    let line_height = text.line_height;
+    let font_size = text.font_size;
 
     let (display_text, color) = if input.content.is_empty() {
         let placeholder = input
@@ -886,13 +909,14 @@ impl Element for TextElement {
             return (window.request_layout(style, [], cx), ());
         }
         let input = self.input.clone();
+        let text = InheritedText::capture(window);
         let layout_id =
             window.request_measured_layout(style, move |known, available, window, cx| {
                 let width = known.width.or(match available.width {
                     gpui::AvailableSpace::Definite(w) => Some(w),
                     _ => None,
                 });
-                let (lines, line_height) = shape(input.read(cx), window, width);
+                let (lines, line_height) = shape(input.read(cx), &text, window, width);
                 let rows: usize = lines
                     .iter()
                     .map(|(_, _, l)| l.wrap_boundaries().len() + 1)
@@ -913,7 +937,8 @@ impl Element for TextElement {
     ) -> Self::PrepaintState {
         let input = self.input.read(cx);
         let wrap = input.multiline.then_some(bounds.size.width);
-        let (lines, line_height) = shape(input, window, wrap);
+        let text = InheritedText::capture(window);
+        let (lines, line_height) = shape(input, &text, window, wrap);
         let layout = InputLayout {
             bounds,
             line_height,
