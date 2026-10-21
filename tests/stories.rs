@@ -17,9 +17,11 @@ fn every_story_renders(cx: &mut TestAppContext) {
             for entry in COMPONENTS {
                 // Twice: the first frame mounts state, the second renders with it.
                 for _ in 0..2 {
-                    cx.draw(point(px(0.), px(0.)), size(px(894.), px(800.)), |window, cx| {
-                        (entry.story)(window, cx)
-                    });
+                    cx.draw(
+                        point(px(0.), px(0.)),
+                        size(px(894.), px(800.)),
+                        |window, cx| (entry.story)(window, cx),
+                    );
                     cx.run_until_parked();
                 }
             }
