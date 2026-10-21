@@ -1,0 +1,31 @@
+[package]
+name = "affectui"
+version = "0.1.0"
+edition = "2024"
+description = "affectUI's component library, rebuilt for Rust with GPUI"
+license = "MIT"
+readme = "README.md"
+default-run = "gallery"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "gallery"
+path = "src/bin/gallery.rs"
+
+[dependencies]
+anyhow = "1"
+gpui = "0.2.2"
+rust-embed = { version = "8", features = ["include-exclude"] }
+unicode-segmentation = "1"
+
+[dev-dependencies]
+gpui = { version = "0.2.2", features = ["test-support"] }
+
+# Keep debug builds small: GPUI with full debuginfo links 500MB binaries.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
