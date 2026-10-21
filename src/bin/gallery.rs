@@ -364,15 +364,19 @@ impl Gallery {
                     .rounded(px(10.))
                     .border_1()
                     .border_color(chrome.border)
-                    .child(
-                        pill("clean", "Clean", look == Look::Clean)
-                            .on_click(cx.listener(|_, _, _, cx| Theme::set_look(Look::Clean, cx))),
-                    )
-                    .child(
-                        pill("classic", "Classic", look == Look::Classic).on_click(
-                            cx.listener(|_, _, _, cx| Theme::set_look(Look::Classic, cx)),
-                        ),
-                    )
+                    // Only ports come in affectUI's two looks
+                    .when(entry.kind == Kind::Port, |row| {
+                        row.child(
+                            pill("clean", "Clean", look == Look::Clean).on_click(
+                                cx.listener(|_, _, _, cx| Theme::set_look(Look::Clean, cx)),
+                            ),
+                        )
+                        .child(
+                            pill("classic", "Classic", look == Look::Classic).on_click(
+                                cx.listener(|_, _, _, cx| Theme::set_look(Look::Classic, cx)),
+                            ),
+                        )
+                    })
                     .child(pill("replay", "Replay", false).on_click(
                         cx.listener(|this, _, window, cx| this.replay(&Replay, window, cx)),
                     ))

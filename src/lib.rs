@@ -1,8 +1,10 @@
 //! affectUI for GPUI.
 //!
 //! The components from <https://www.affectui.com/components>, rebuilt as
-//! native GPUI elements. Call [`init`] once at startup, then render any
-//! component; [`components::COMPONENTS`] lists them all with a demo story.
+//! native GPUI elements: ports of affectUI's free components, and originals
+//! in luna's design language built around the ideas of its Pro catalog.
+//! Call [`init`] once at startup, then render any component;
+//! [`components::COMPONENTS`] lists them all with a demo story.
 //!
 //! Components are builders you drop into any element tree, the same way
 //! luna's controls work:
@@ -16,10 +18,13 @@
 //! impl Render for Root {
 //!     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 //!         affectui::motion::frame(window, cx); // eased hovers, once per frame
-//!         div().size_full().child(
-//!             ProfileMenu::new("account", "Lena Hartmann", "lena@fastmail.com")
-//!                 .setup(ProfileSetup::new(3, 5).next("Add a profile photo")),
-//!         )
+//!         div()
+//!             .size_full()
+//!             .child(
+//!                 ProfileMenu::new("account", "Lena Hartmann", "lena@fastmail.com")
+//!                     .setup(ProfileSetup::new(3, 5).next("Add a profile photo")),
+//!             )
+//!             .child(affectui::motion::driver())
 //!     }
 //! }
 //!

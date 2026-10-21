@@ -86,8 +86,9 @@ The entity lives as long as the component keeps rendering.
   600 `SEMIBOLD`, 650 → `FontWeight(650.)`, 700 `BOLD`.
 - `font-family: Inter` is already set by the story wrapper and the gallery
   (`primitives::SANS`); use `primitives::MONO` for monospace.
-- `box-shadow` → `.shadow(vec![shadow(x, y, blur, spread, color), …])`;
-  `0 0 0 1px c` → `ring(1., c)`. Inset shadows don't exist: use a border.
+- `box-shadow` → `.shadow(shadows([shadow(x, y, blur, spread, color), …]))`
+  with the CSS values; `0 0 0 1px c` → `ring(1., c)`. Inset shadows don't
+  exist: use a border.
 - `color-mix(in srgb, a 20%, b)` → `color_mix(a, b, 0.2)`.
 
 ### Hover, focus and motion
@@ -106,9 +107,10 @@ The entity lives as long as the component keeps rendering.
 - Curves: `motion::EASE_OUT_QUINT` is affectUI's `cubic-bezier(.22, 1, .36, 1)`;
   `EASE`, `EASE_OUT`, `EASE_IN_OUT` match CSS keywords.
 - Hosts keep fades and followers moving: the story wrapper adds
-  `motion::driver()` (an invisible element that requests frames after
-  layout). A view that renders its own animated content calls
-  `motion::keep_alive(window)` at the end of its render.
+  `motion::driver()`, an invisible element that requests frames after
+  layout, once every builder has rendered. Add it to any view that hosts
+  animated components (or call `motion::keep_alive(window)` at the end of a
+  component's own render).
 
 ### What GPUI can't do, and the substitutes
 
@@ -125,6 +127,38 @@ The entity lives as long as the component keeps rendering.
 | `::before` / `::after`                | an extra absolutely positioned `div`                   |
 | `margin-left: auto` inside a `gap` row | `flex_1()` + `justify_end()` – in Taffy an auto margin cancels the row's gap |
 | charts, rings, dials, waveforms       | `canvas(prepaint, paint)` + `PathBuilder` / `window.paint_quad` |
+
+### GPUI gotchas
+
+Things every port ran into, with the fix that works:
+
+- **Shadows**: use `primitives::shadow`/`ring` with CSS values; they convert
+  to GPUI's Gaussian sigma (CSS blur ÷ 2), keep crisp rings drawable (a
+  sigma of 0 paints nothing) and turn sub-pixel rings into one pixel. GPUI
+  paints a shadow list last-on-top – build CSS-ordered lists with
+  `primitives::shadows([...])` – and paints shadows under the whole element,
+  so they show through translucent fills.
+- **Hairlines**: a `0.5px` border can vanish at 1x; use
+  `.border_b(primitives::hairline(window))`.
+- **One hover listener per element**: `on_hover` (and so `HoverFill`) can be
+  set once. To react to hover yourself as well, combine
+  `motion::hover_listener(key)` with your own logic in a single `on_hover`.
+- **Enter and Space click** a focused element that has `on_click`; don't also
+  handle them in `on_key_down` or the action fires twice.
+- **Tab stops**: a `FocusHandle` passed to `track_focus` needs
+  `.tab_stop(true)` (on the handle) for `window.focus_next()` to reach it.
+- **Truncation**: `truncate()` text measures once; inside a shrinking flex
+  item or a `w_full()` child it can collapse to "…". Give it a row parent
+  (`flex` → `flex_1().min_w_0().truncate()`) or an explicit px width.
+- **Wrapping** counts the trailing space of a line, so text can break one word
+  early; a few px of slack on the right brings breaks in line with the browser.
+- **Negative margins** in a flex row (overlapping avatars) can measure as zero
+  width; give the row an explicit width.
+- **`opacity` isn't group opacity**: it applies per layer, and
+  `Hsla::opacity` multiplies alpha (it can't make a color more opaque).
+- **`motion::rise_in` sets `.relative()`**; for absolutely positioned
+  elements, use `with_animation` directly.
+- **SVGs don't inherit text color**: always set `.text_color(..)` on `svg()`.
 
 ### Icons and images
 

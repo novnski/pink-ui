@@ -448,7 +448,8 @@ pub fn icon_button(
         )
 }
 
-/// A leading glyph sized for `size`.
+/// A leading glyph sized for `size`. GPUI paints an SVG only with its own
+/// text color – it never inherits the button's – so chain `.text_color(..)`.
 pub fn glyph(path: impl Into<SharedString>, size: ControlSize) -> Svg {
     svg().path(path).size(px(size.glyph())).flex_none()
 }
