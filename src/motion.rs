@@ -434,8 +434,9 @@ struct FollowEntry {
     origin: f32,
     target: f32,
     started: Instant,
+    /// Wall-clock span of the whole timeline, delay included.
     duration: Duration,
-    curve: CubicBezier,
+    spec: MotionSpec,
     seen: u64,
 }
 
@@ -446,7 +447,8 @@ impl FollowEntry {
             return self.target;
         }
         let raw = elapsed.as_secs_f32() / self.duration.as_secs_f32();
-        lerp(self.origin, self.target, self.curve.eval(raw))
+        // Holds through the spec's delay, then eases, like a CSS transition.
+        lerp(self.origin, self.target, self.spec.progress(raw))
     }
 
     fn settled(&self, now: Instant) -> bool {
@@ -481,7 +483,7 @@ impl Followers {
                         target,
                         started: now,
                         duration,
-                        curve: spec.curve,
+                        spec,
                         seen: frame,
                     };
                 }
@@ -501,7 +503,7 @@ impl Followers {
                         target,
                         started: now,
                         duration,
-                        curve: spec.curve,
+                        spec,
                         seen: frame,
                     },
                 );
