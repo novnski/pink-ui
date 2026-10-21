@@ -684,11 +684,10 @@ fn mix_shadows(rest: &[BoxShadow], hover: &[BoxShadow], t: f32) -> Vec<BoxShadow
         .collect()
 }
 
-/// `box-shadow: x y blur spread color`. GPUI's blur radius is the Gaussian
-/// sigma, which CSS sets to half the blur, and a zero blur paints nothing, so
-/// crisp rings keep a hair of blur to stay visible.
+/// `box-shadow: x y blur spread color` (CSS values; `primitives::shadow`
+/// converts them for GPUI).
 fn shadow(x: f32, y: f32, blur: f32, spread: f32, color: Hsla) -> BoxShadow {
-    primitives::shadow(x, y, (blur / 2.).max(0.3), spread, color)
+    primitives::shadow(x, y, blur, spread, color)
 }
 
 /// `box-shadow: 0 0 0 <width> color`.

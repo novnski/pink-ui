@@ -1068,6 +1068,7 @@ mod tests {
         let b = vec![shadow(0., 3., 4., 0., black_a(0.3))];
         let m = mix_shadows(&a, &b, 0.5);
         assert_eq!(m[0].offset.y, px(2.));
-        assert_eq!(m[0].blur_radius, px(3.));
+        // CSS blurs of 2 and 4 are Gaussian sigmas of 1 and 2.
+        assert_eq!(m[0].blur_radius, px(1.5));
     }
 }

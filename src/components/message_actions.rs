@@ -388,27 +388,10 @@ impl Metrics {
 }
 
 /// A CSS `box-shadow` list for GPUI, which paints the layers the other way
-/// round (CSS puts the first on top), blurs with sigma = radius (CSS: radius
-/// / 2) and draws nothing for a blur-0 shadow. Rings get a hair of blur, and
-/// a sub-pixel ring becomes one device pixel at that coverage, like the
-/// browser's antialiased edge.
-fn css_shadows(layers: Vec<BoxShadow>, scale: f32) -> Vec<BoxShadow> {
-    layers
-        .into_iter()
-        .rev()
-        .map(|mut s| {
-            s.blur_radius /= 2.;
-            if s.blur_radius <= px(0.) {
-                s.blur_radius = px(0.01);
-                let device = f32::from(s.spread_radius) * scale;
-                if device > 0. && device < 1. {
-                    s.color = s.color.opacity(device);
-                    s.spread_radius = px(1. / scale);
-                }
-            }
-            s
-        })
-        .collect()
+/// round (CSS puts the first on top). Each layer is already converted by
+/// `primitives::shadow`.
+fn css_shadows(layers: Vec<BoxShadow>, _scale: f32) -> Vec<BoxShadow> {
+    crate::primitives::shadows(layers)
 }
 
 fn icon(look: Look, name: &str) -> SharedString {

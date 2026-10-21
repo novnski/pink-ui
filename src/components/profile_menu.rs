@@ -21,7 +21,7 @@ use gpui::{
 use crate::{
     ActiveTheme, HoverFill, Look,
     motion::{self, FILL},
-    primitives::{SANS, black_a, hex, hexa, shadow, white_a},
+    primitives::{SANS, black_a, hairline, hex, hexa, shadow, white_a},
     story,
 };
 
@@ -344,6 +344,7 @@ impl RenderOnce for ProfileMenu {
         let look = self.look.unwrap_or(cx.look());
         let p = Palette::get(look, cx);
         let m = Metrics::get(look);
+        let hair = hairline(window);
         let key = self.id.to_string();
         let items = self.items.unwrap_or_else(|| default_items(look));
 
@@ -480,7 +481,7 @@ impl RenderOnce for ProfileMenu {
                 .pt(px(8.))
                 .px(px(12.))
                 .pb(px(10.))
-                .border_b(px(0.5))
+                .border_b(hair)
                 .border_color(p.line),
             Look::Classic => user.px(px(10.)).pb(px(12.)),
         };
@@ -500,7 +501,7 @@ impl RenderOnce for ProfileMenu {
             .child(list);
         let setup = self
             .setup
-            .map(|setup| setup_progress(&key, look, setup, &p));
+            .map(|setup| setup_progress(&key, look, setup, &p, hair));
 
         let root = div()
             .id(self.id.clone())
@@ -524,7 +525,13 @@ impl RenderOnce for ProfileMenu {
 
 /// Count, bar and the next step: the last row of the Clean card, or the gray
 /// extension under the Classic one.
-fn setup_progress(key: &str, look: Look, setup: ProfileSetup, p: &Palette) -> impl IntoElement {
+fn setup_progress(
+    key: &str,
+    look: Look,
+    setup: ProfileSetup,
+    p: &Palette,
+    hair: Pixels,
+) -> impl IntoElement {
     let ratio = if setup.total > 0 {
         (setup.done as f32 / setup.total as f32).clamp(0., 1.)
     } else {
@@ -545,7 +552,7 @@ fn setup_progress(key: &str, look: Look, setup: ProfileSetup, p: &Palette) -> im
                 .pt(px(10.))
                 .px(px(12.))
                 .pb(px(if open { 6. } else { 12. }))
-                .border_t(px(0.5))
+                .border_t(hair)
                 .border_color(p.line)
         })
         .when(!clean, |d| d.px(px(18.)).pt(px(10.)).pb(px(12.)))

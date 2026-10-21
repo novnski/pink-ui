@@ -18,7 +18,7 @@ use gpui::{
     prelude::*, px, svg,
 };
 
-use crate::{ActiveTheme, HoverFill, motion, primitives::shadow};
+use crate::{ActiveTheme, HoverFill, motion};
 
 /// luna's interface font (bundled under `assets/fonts`).
 pub const SANS: &str = "Geist";
@@ -118,6 +118,18 @@ pub fn neutral(l: f32) -> Hsla {
 
 fn grey(value: u8) -> Hsla {
     hsla(0.0, 0.0, value as f32 / 255.0, 1.0)
+}
+
+/// A shadow with GPUI's own blur semantics (a Gaussian sigma), exactly as
+/// luna-ui writes its elevations. `primitives::shadow` converts CSS values
+/// instead, which would halve these.
+fn shadow(x: f32, y: f32, sigma: f32, spread: f32, color: Hsla) -> BoxShadow {
+    BoxShadow {
+        color,
+        offset: gpui::point(px(x), px(y)),
+        blur_radius: px(sigma),
+        spread_radius: px(spread),
+    }
 }
 
 /// luna's tokens for the active light/dark mode.
