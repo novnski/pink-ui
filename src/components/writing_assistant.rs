@@ -1,13 +1,14 @@
 //! Writing Assistant – a pink component.
 //!
-//! A rewrite companion for a piece of selected text. The reader picks a
-//! direction ("Friendlier", "Shorter", …), types an instruction or dictates
-//! one, and the rewrite streams into a panel lit from below by a slowly
-//! drifting accent glow that brightens while it writes. Every rewrite is
-//! kept as a version to step through, and the chosen one can replace the
-//! selection (which flashes as it updates) or be copied. While dictating, the
-//! instruction field turns into a live level meter with a timer and the
-//! words as they are heard.
+//! A rewrite panel for a piece of selected text, laid out like pink's
+//! question wizard (the composer pill that becomes a prompt): a tracked
+//! uppercase header with a version counter, the selection quoted the way
+//! pink's markdown quotes, the rewrite as plain prose that dissolves in
+//! chunk by chunk while pink's working line ticks under it, an action lane
+//! (copy, try again, version paging) in the transcript's meta-lane anatomy,
+//! direction chips as composer ghost pills, an instruction field drawn as a
+//! nested composer pill with the microphone and the Send disc, and a footer
+//! whose one Primary button replaces the selection.
 //!
 //! The component owns its input and view state; the caller owns the text:
 //!
@@ -19,45 +20,61 @@
 //!     .on_apply(|text, _, cx| { /* replace the selection */ })
 //! ```
 
-use std::{f32::consts::TAU, rc::Rc, sync::Arc};
+use std::{ops::Range, rc::Rc, sync::Arc};
 use web_time::{Duration, Instant};
 
 use gpui::{
-    Animation, AnyElement, AnyView, App, Bounds, ClipboardItem, Context, ElementId, Entity,
-    FontWeight, Hsla, IntoElement, SharedString, Subscription, Task, Transformation, Window,
-    canvas, div, fill, linear_color_stop, linear_gradient, percentage, point, prelude::*, px, size,
-    svg,
+    AnyElement, AnyView, App, ClipboardItem, Context, Div, ElementId, Entity, FontWeight,
+    HighlightStyle, IntoElement, Role, SharedString, Stateful, StyledText, Subscription, Task,
+    Toggled, Window, div, prelude::*, px, svg,
 };
 
 use crate::{
     HoverFill,
-    motion::{self, AnimationExt, EASE_IN_OUT, EASE_OUT, GLIDE, MotionSpec, ROW_IN},
-    pink::{self, ButtonKind, ControlSize, FillTier, Pink, oklch, radius, space, text},
+    motion::{self, AnimationExt, GLYPH_SWAP, TRANSCRIPT_IN, TRANSCRIPT_IN_RISE},
+    pink::{self, ButtonKind, ControlSize, Pink, loaders, radius},
     primitives::{InputEvent, TextInput},
     story,
 };
 
 pub const NAME: &str = "Writing Assistant";
-pub const DESCRIPTION: &str = "A rewrite companion for selected text: pick a direction, type or dictate an instruction, and watch the new version stream in over a drifting glow, then step through versions and replace the selection";
+pub const DESCRIPTION: &str = "Rewrite a selection in place – pick a direction, type or dictate what to change, watch the new version fade in under a live working line, page through versions and replace the selection";
 
-const ICON_PEN: &str = "icons/writing-assistant/pen.svg";
-const ICON_SPARK: &str = "icons/writing-assistant/spark.svg";
-const ICON_MIC: &str = "icons/writing-assistant/mic.svg";
-const ICON_STOP: &str = "icons/writing-assistant/stop.svg";
-const ICON_SEND: &str = "icons/writing-assistant/send.svg";
-const ICON_CLOSE: &str = "icons/writing-assistant/close.svg";
-const ICON_PREV: &str = "icons/writing-assistant/prev.svg";
-const ICON_NEXT: &str = "icons/writing-assistant/next.svg";
-const ICON_RETRY: &str = "icons/writing-assistant/retry.svg";
+const ICON_SEND: &str = "icons/writing-assistant/arrow-up.svg";
+const ICON_MIC: &str = "icons/writing-assistant/microphone.svg";
 const ICON_COPY: &str = "icons/writing-assistant/copy.svg";
-const ICON_CHECK: &str = "icons/writing-assistant/check.svg";
-const ICON_REPLACE: &str = "icons/writing-assistant/replace.svg";
-const ICON_RING: &str = "icons/writing-assistant/ring.svg";
-const ICON_ARC: &str = "icons/writing-assistant/arc.svg";
+const ICON_COPIED: &str = "icons/writing-assistant/copy-check.svg";
+const ICON_RETRY: &str = "icons/writing-assistant/refresh.svg";
+const ICON_PREV: &str = "icons/writing-assistant/alt-arrow-left.svg";
+const ICON_NEXT: &str = "icons/writing-assistant/alt-arrow-right.svg";
 
-const BODY_SIZE: f32 = text::CALLOUT;
-const BODY_LINE: f32 = 22.;
-const WORD_GAP: f32 = BODY_SIZE * 0.25;
+/// Prose, quoted or rewritten: pink's markdown body, 14/22
+/// (`markdown/render.rs` `MD_TEXT_SIZE` / `MD_LINE_HEIGHT`).
+const PROSE_SIZE: f32 = 14.;
+const PROSE_LINE: f32 = 22.;
+/// The instruction field: the composer input, 14 / 22.75 (`composer.rs`
+/// `INPUT_TEXT_SIZE` / `INPUT_LINE_HEIGHT`).
+const INPUT_SIZE: f32 = 14.;
+const INPUT_LINE: f32 = 22.75;
+/// Every composer-row control is a 28 pt capsule or circle (`pickers.rs`
+/// `CONTROL_HEIGHT`).
+const ROW_CONTROL: f32 = 28.;
+/// The meta lane: 24 pt actions under a 4 pt lead (`transcript.rs`
+/// `META_LANE_HEIGHT`).
+const META_LANE: f32 = 28.;
+const META_ACTION: f32 = 24.;
+/// How long Copy shows its check (pink's code-block "Copied", ~1.2 s).
+const COPIED_MS: u64 = 1200;
+/// Heard words beyond this many characters scroll off the front of the
+/// one-line dictation field.
+const HEARD_CHARS: usize = 54;
+
+// pink: markdown/veil.rs – the streaming fade's constants (mugen FadePainter).
+const VEIL_EMA_SEED_MS: f32 = 160.;
+const VEIL_MIN_FADE_MS: f32 = 120.;
+const VEIL_MAX_FADE_MS: f32 = 400.;
+const VEIL_CURVE_POW: f32 = 1.6;
+const VEIL_GAP_CLAMP_MS: f32 = 1000.;
 
 type TextHandler = Rc<dyn Fn(SharedString, &mut Window, &mut App)>;
 type ToggleHandler = Rc<dyn Fn(bool, &mut Window, &mut App)>;
@@ -92,6 +109,140 @@ impl Version {
         self.reveal
             .is_some_and(|n| n < self.text.split_whitespace().count())
     }
+
+    /// The text that has arrived: the first `reveal` words, spacing kept.
+    fn visible(&self) -> &str {
+        match self.reveal {
+            Some(words) => &self.text[..word_end(&self.text, words)],
+            None => &self.text,
+        }
+    }
+}
+
+/// Byte offset just past the `words`-th word of `text`.
+fn word_end(text: &str, words: usize) -> usize {
+    if words == 0 {
+        return 0;
+    }
+    let mut seen = 0;
+    let mut in_word = false;
+    for (i, c) in text.char_indices() {
+        if c.is_whitespace() {
+            if in_word {
+                seen += 1;
+                if seen == words {
+                    return i;
+                }
+            }
+            in_word = false;
+        } else {
+            in_word = true;
+        }
+    }
+    text.len()
+}
+
+/// The last `max` characters of `heard`, from a word start, behind an
+/// ellipsis, so the newest words stay in view.
+fn heard_tail(heard: &str, max: usize) -> String {
+    let count = heard.chars().count();
+    if count <= max {
+        return heard.to_string();
+    }
+    let tail: String = heard.chars().skip(count - max).collect();
+    let tail = tail.split_once(' ').map_or(tail.as_str(), |(_, rest)| rest);
+    format!("…{tail}")
+}
+
+/// One appended run of text mid-dissolve.
+struct Chunk {
+    range: Range<usize>,
+    started: Instant,
+    duration_ms: f32,
+}
+
+/// pink: markdown/veil.rs `ElemVeil` – streamed text commits to layout at
+/// once and a cosmetic veil dissolves over each newly arrived chunk: opacity
+/// only, `alpha = 1 − (1 − p)^1.6`, each chunk's duration `clamp(ema × 3,
+/// 120, 400)` from the cadence of appends, a backed-up stream sped up.
+struct Veil {
+    version: Option<usize>,
+    prev: String,
+    chunks: Vec<Chunk>,
+    ema_ms: f32,
+    last_append: Option<Instant>,
+}
+
+impl Veil {
+    fn new() -> Self {
+        Veil {
+            version: None,
+            prev: String::new(),
+            chunks: Vec::new(),
+            ema_ms: VEIL_EMA_SEED_MS,
+            last_append: None,
+        }
+    }
+
+    /// Follows `version`'s visible `text`. A version arriving `fresh` fades
+    /// in from nothing; one paged to (or on screen at mount) is adopted as
+    /// already painted, like pink's seeded baseline.
+    fn advance(
+        &mut self,
+        version: usize,
+        text: &str,
+        fresh: bool,
+        now: Instant,
+    ) -> Vec<(Range<usize>, f32)> {
+        if self.version != Some(version) {
+            *self = Veil::new();
+            self.version = Some(version);
+            if !fresh {
+                self.prev.push_str(text);
+            }
+        }
+        if text != self.prev {
+            let mut p = self
+                .prev
+                .bytes()
+                .zip(text.bytes())
+                .take_while(|(a, b)| a == b)
+                .count();
+            while p > 0 && !text.is_char_boundary(p) {
+                p -= 1;
+            }
+            self.chunks.retain_mut(|c| {
+                c.range.end = c.range.end.min(p);
+                c.range.start < c.range.end
+            });
+            if text.len() > p {
+                if let Some(last) = self.last_append {
+                    let gap = now.saturating_duration_since(last).as_secs_f32() * 1000.;
+                    self.ema_ms = self.ema_ms * 0.7 + gap.min(VEIL_GAP_CLAMP_MS) * 0.3;
+                }
+                self.last_append = Some(now);
+                self.chunks.push(Chunk {
+                    range: p..text.len(),
+                    started: now,
+                    duration_ms: (self.ema_ms * 3.).clamp(VEIL_MIN_FADE_MS, VEIL_MAX_FADE_MS),
+                });
+            }
+            self.prev.clear();
+            self.prev.push_str(text);
+        }
+        let boost = |n: usize| 1. + 0.3 * n.saturating_sub(2) as f32;
+        let elapsed = |c: &Chunk| now.saturating_duration_since(c.started).as_secs_f32() * 1000.;
+        let b = boost(self.chunks.len());
+        self.chunks.retain(|c| elapsed(c) * b < c.duration_ms);
+        let b = boost(self.chunks.len());
+        self.chunks
+            .iter()
+            .map(|c| {
+                let p = (elapsed(c) * b / c.duration_ms).clamp(0., 1.);
+                (c.range.clone(), 1. - (1. - p).powf(VEIL_CURVE_POW))
+            })
+            .collect()
+    }
 }
 
 struct State {
@@ -100,16 +251,22 @@ struct State {
     /// Index of the version on screen; `None` follows the newest.
     viewing: Option<usize>,
     seen_versions: usize,
-    copied: bool,
+    primed: bool,
+    veil: Veil,
+    /// When the version on screen started writing, for the working timer.
+    writing_since: Option<(usize, Instant)>,
+    /// The version whose Copy shows its check.
+    copied: Option<usize>,
     listen_started: Option<Instant>,
     on_request: Option<TextHandler>,
+    on_close: Option<Handler>,
     _reset: Option<Task<()>>,
     _input_events: Subscription,
 }
 
 impl State {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let input = cx.new(|cx| TextInput::new(window, cx).placeholder("Tell it what to change…"));
+        let input = cx.new(|cx| TextInput::new(window, cx).placeholder("Say what to change…"));
         let sub = cx.subscribe_in(
             &input,
             window,
@@ -130,6 +287,11 @@ impl State {
                     }
                     cx.notify();
                 }
+                InputEvent::Escape => {
+                    if let Some(f) = this.on_close.clone() {
+                        f(window, cx);
+                    }
+                }
                 _ => {}
             },
         );
@@ -138,9 +300,13 @@ impl State {
             has_text: false,
             viewing: None,
             seen_versions: 0,
-            copied: false,
+            primed: false,
+            veil: Veil::new(),
+            writing_since: None,
+            copied: None,
             listen_started: None,
             on_request: None,
+            on_close: None,
             _reset: None,
             _input_events: sub,
         }
@@ -231,149 +397,118 @@ impl WritingAssistant {
         self
     }
 
+    /// "Keep original" (or Escape in the field): dismiss without replacing.
     pub fn on_close(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_close = Some(Rc::new(handler));
         self
     }
 }
 
-fn spinner(id: impl Into<ElementId>, size: f32, color: Hsla, reduced: bool) -> AnyElement {
-    let arc = svg().path(ICON_ARC).size(px(size)).text_color(color);
+/// pink: composer.rs `composer_surface` – the pill chrome the question
+/// wizard shares with the composer: radius 26, a 1 px `border`, the opaque
+/// `input_glass_bg` plate. `floating` adds the opaque treatment's
+/// `shadow_lg`; the nested field stays flat.
+fn composer_surface(floating: bool, t: &Pink) -> Div {
     div()
-        .relative()
-        .flex_none()
-        .size(px(size))
-        .child(
-            svg()
-                .path(ICON_RING)
-                .absolute()
-                .size(px(size))
-                .text_color(color.opacity(0.22)),
-        )
-        .child(if reduced {
-            arc.into_any_element()
-        } else {
-            arc.with_animation(
-                id,
-                Animation::new(Duration::from_millis(850)).repeat(),
-                |s, d| s.with_transformation(Transformation::rotate(percentage(d))),
-            )
-            .into_any_element()
-        })
-        .into_any_element()
+        .rounded(px(radius::COMPOSER))
+        .border_1()
+        .border_color(t.border)
+        .bg(t.input_glass_bg())
+        .when(floating, |el| el.shadow(pink::shadow_lg()))
 }
 
-/// A small square icon button.
-fn tool(id: impl Into<SharedString>, icon: &'static str, t: &Pink) -> gpui::Stateful<gpui::Div> {
+/// pink: transcript.rs `meta_action` – a 24 pt square, radius 6,
+/// transparent → `ink(0.08)`, a 14 pt glyph in `content_muted`, its name
+/// as the tooltip. Disabled (the ends of the version list) it rests at
+/// pink's disabled 45%.
+fn meta_action(
+    id: impl Into<SharedString>,
+    icon: &'static str,
+    label: &'static str,
+    enabled: bool,
+    t: &Pink,
+) -> Stateful<Div> {
     let id: SharedString = id.into();
-    let key = format!("wa-tool-{id}");
+    let key = format!("wa-meta-{id}");
+    let ring = t.focus_ring();
     div()
         .id(id)
+        .role(Role::Button)
+        .aria_label(label)
         .flex_none()
-        .size(px(28.))
+        .size(px(META_ACTION))
         .flex()
         .items_center()
         .justify_center()
-        .rounded(px(radius::MD))
-        .cursor_pointer()
-        .hover_fill(
-            key.clone(),
-            t.fill(FillTier::Tertiary).opacity(0.),
-            t.fill(FillTier::Tertiary),
-        )
+        .rounded(px(radius::SM))
+        .map(|el| {
+            if enabled {
+                el.tab_index(0)
+                    .cursor_pointer()
+                    .focus_visible(move |s| pink::focus_ring(s, ring))
+                    .on_key_down(pink::swallow_activation_key)
+                    .hover_fill(key, t.ink(0.), t.ink(0.08))
+                    .tooltip(pink::text_tooltip(label))
+                    .tooltip_show_delay(pink::layout::TOOLTIP_DELAY)
+            } else {
+                el.opacity(0.45)
+            }
+        })
         .child(
             svg()
                 .path(icon)
-                .size(px(15.))
-                .text_color(motion::hover_blend(&key, t.text_faint, t.text)),
+                .size(px(14.))
+                .flex_none()
+                .text_color(t.content_muted),
         )
 }
 
-/// The glow's second hue: a soft magenta beside Pink's indigo.
-fn glow_hue(t: &Pink) -> Hsla {
-    if t.dark {
-        oklch(0.66, 0.17, 330.)
-    } else {
-        oklch(0.64, 0.2, 330.)
-    }
-}
-
-/// Two gradient washes rising from the bottom edge, their angles drifting
-/// against each other. `strength` scales them; `phase` (0..1) drives the drift.
-fn glow(t: &Pink, strength: f32, phase: f32) -> impl IntoElement {
-    let a = 180. + 28. * (phase * TAU).sin();
-    let b = 180. - 32. * (phase * TAU + 1.3).cos();
-    let (alpha_a, alpha_b) = if t.dark { (0.30, 0.20) } else { (0.16, 0.12) };
-    let clear = t.surface_card.opacity(0.);
+/// pink: composer/goals.rs `render_goal_mode_chip` – a ghost pill that is
+/// on: the same 28 pt capsule at 12 medium, washed in `accent @ 0.14`
+/// (0.2 under the pointer) with the label in `readable_tone(accent)`. The
+/// direction of the version on screen wears it.
+fn chip_on(id: impl Into<SharedString>, t: &Pink) -> Stateful<Div> {
+    let id: SharedString = id.into();
+    let ring = t.focus_ring();
     div()
-        .absolute()
-        .top_0()
-        .left_0()
-        .size_full()
-        .child(
-            div()
-                .absolute()
-                .top_0()
-                .left_0()
-                .size_full()
-                .rounded(px(radius::LG - 1.))
-                .bg(linear_gradient(
-                    a,
-                    linear_color_stop(clear, 0.25),
-                    linear_color_stop(t.accent.opacity(alpha_a * strength), 1.),
-                )),
-        )
-        .child(
-            div()
-                .absolute()
-                .top_0()
-                .left_0()
-                .size_full()
-                .rounded(px(radius::LG - 1.))
-                .bg(linear_gradient(
-                    b,
-                    linear_color_stop(clear, 0.45),
-                    linear_color_stop(glow_hue(t).opacity(alpha_b * strength), 1.),
-                )),
+        .id(id.clone())
+        .role(Role::Button)
+        .aria_toggled(Toggled::True)
+        .tab_index(0)
+        .focus_visible(move |s| pink::focus_ring(s, ring))
+        .on_key_down(pink::swallow_activation_key)
+        .flex_none()
+        .h(px(ROW_CONTROL))
+        .px(px(10.))
+        .flex()
+        .items_center()
+        .rounded_full()
+        .text_size(px(12.))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(t.readable_tone(t.accent, 0.95))
+        .cursor_pointer()
+        .hover_fill(
+            format!("wa-chip-on-{id}"),
+            t.accent.opacity(0.14),
+            t.accent.opacity(0.2),
         )
 }
 
-/// A live level meter: bars swaying on a few sines, as if following a voice.
-fn level_meter(started: Instant, color: Hsla) -> impl IntoElement {
-    canvas(
-        move |_, _, _| started.elapsed().as_secs_f32(),
-        move |bounds, time, window, _| {
-            let bars = 22;
-            let bar_w = 2.;
-            let gap = 2.;
-            let mid = f32::from(bounds.size.height) / 2.;
-            for i in 0..bars {
-                let x = f32::from(bounds.origin.x) + i as f32 * (bar_w + gap);
-                let f = i as f32;
-                let level =
-                    0.5 + 0.5 * (time * 7.1 + f * 0.9).sin() * (time * 2.3 + f * 0.37).cos();
-                let envelope = 0.45 + 0.55 * (time * 1.7 + f * 0.21).sin().abs();
-                let h = (3. + (f32::from(bounds.size.height) - 3.) * level * envelope).max(3.);
-                let y = f32::from(bounds.origin.y) + mid - h / 2.;
-                window.paint_quad(
-                    fill(
-                        Bounds::new(point(px(x), px(y)), size(px(bar_w), px(h))),
-                        color,
-                    )
-                    .corner_radii(px(1.)),
-                );
-            }
-        },
-    )
-    .w(px(22. * 4. - 2.))
-    .h(px(18.))
-    .flex_none()
+/// An approval-context label (pink: composer.rs question wizard): 11 pt in
+/// `readable_muted(0.65)`, one line.
+fn context_label(copy: impl Into<SharedString>, t: &Pink) -> Div {
+    div()
+        .flex()
+        .min_w_0()
+        .text_size(px(11.))
+        .line_height(px(14.))
+        .text_color(t.readable_muted(0.65))
+        .child(div().flex_1().min_w_0().truncate().child(copy.into()))
 }
 
 impl RenderOnce for WritingAssistant {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Pink::get(cx);
-        let reduced = motion::reduced_motion(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
@@ -381,19 +516,22 @@ impl RenderOnce for WritingAssistant {
             State::new,
         );
 
+        let now = Instant::now();
         let listening = self.listening.is_some();
         let version_count = self.versions.len();
-        let on_request = self.on_request.clone();
-        let input_colors = (t.text_faint, t.accent, t.selection);
-        state.update(cx, |s, cx| {
-            s.on_request = on_request.clone();
-            // A new version takes the stage.
+        let input_colors = (t.placeholder, t.caret, t.selection);
+        let (shown_ix, veil, writing_secs) = state.update(cx, |s, cx| {
+            s.on_request = self.on_request.clone();
+            s.on_close = self.on_close.clone();
+            // A new version takes the stage and dissolves in from nothing.
+            let arrived = s.primed && version_count > s.seen_versions;
             if version_count != s.seen_versions {
                 s.seen_versions = version_count;
                 s.viewing = None;
             }
+            s.primed = true;
             match (listening, s.listen_started) {
-                (true, None) => s.listen_started = Some(Instant::now()),
+                (true, None) => s.listen_started = Some(now),
                 (false, Some(_)) => s.listen_started = None,
                 _ => {}
             }
@@ -404,562 +542,599 @@ impl RenderOnce for WritingAssistant {
                     Some(input_colors.2),
                 )
             });
+            let shown_ix = s
+                .viewing
+                .filter(|ix| *ix < version_count)
+                .or(version_count.checked_sub(1));
+            let Some(ix) = shown_ix else {
+                s.veil = Veil::new();
+                return (None, Vec::new(), 0);
+            };
+            let version = &self.versions[ix];
+            let veil = s.veil.advance(ix, version.visible(), arrived, now);
+            let secs = if version.writing() {
+                let since = match s.writing_since {
+                    Some((i, since)) if i == ix => since,
+                    _ => {
+                        s.writing_since = Some((ix, now));
+                        now
+                    }
+                };
+                now.saturating_duration_since(since).as_secs() as i64
+            } else {
+                0
+            };
+            (Some(ix), veil, secs)
         });
+        if !veil.is_empty() {
+            window.request_animation_frame();
+        }
         let s = state.read(cx);
         let input = s.input.clone();
         let has_text = s.has_text;
         let copied = s.copied;
         let listen_started = s.listen_started;
-        let shown_ix = s
-            .viewing
-            .filter(|ix| *ix < version_count)
-            .or(version_count.checked_sub(1));
+        let input_focused = input.read(cx).is_focused(window);
         let shown = shown_ix.map(|ix| self.versions[ix].clone());
         let writing = shown.as_ref().is_some_and(|v| v.writing());
 
-        // ---- header ---------------------------------------------------------
+        // ---- header: pink's wizard header -------------------------------
+        // Tracked uppercase 11 medium in `readable_muted(0.6)`, gap 10, and
+        // the counter chip once there is more than one version (h 20, px 6,
+        // radius 6, `ink(0.06)`).
         let header = div()
-            .px(px(space::S16))
-            .h(px(52.))
             .flex()
             .items_center()
-            .gap(px(space::S10))
+            .gap(px(10.))
+            .h(px(20.))
             .child(
                 div()
-                    .flex_none()
-                    .size(px(28.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(radius::MD))
-                    .bg(t.accent_wash)
-                    .child(svg().path(ICON_PEN).size(px(16.)).text_color(if t.dark {
-                        t.text
-                    } else {
-                        t.accent
-                    })),
+                    .text_size(px(11.))
+                    .line_height(px(14.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(t.readable_muted(0.6))
+                    .child(pink::tracked_upper("Rewrite")),
             )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .text_size(px(text::BODY))
-                            .line_height(px(18.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(t.text)
-                            .child("Rewrite"),
-                    )
-                    .when_some(self.context.clone(), |d, c| {
-                        d.child(
-                            div()
-                                .truncate()
-                                .text_size(px(text::FOOTNOTE))
-                                .line_height(px(16.))
-                                .text_color(t.text_faint)
-                                .child(c),
-                        )
-                    }),
-            )
-            .when_some(self.on_close.clone(), |d, f| {
-                d.child(
-                    tool(format!("{key}-close"), ICON_CLOSE, &t)
-                        .on_click(move |_, window, cx| f(window, cx)),
+            .when_some(shown_ix.filter(|_| version_count > 1), |el, ix| {
+                el.child(
+                    div()
+                        .h(px(20.))
+                        .px(px(6.))
+                        .flex()
+                        .items_center()
+                        .rounded(px(radius::SM))
+                        .bg(t.ink(0.06))
+                        .text_size(px(11.))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(t.readable_muted(0.6))
+                        .child(format!("{}/{version_count}", ix + 1)),
                 )
             });
 
-        // ---- the selection --------------------------------------------------
-        let flash_id = ElementId::NamedInteger(
-            "wa-flash".into(),
-            self.selection.len() as u64 * 31
-                + self
-                    .selection
-                    .chars()
-                    .take(24)
-                    .map(|c| c as u64)
-                    .sum::<u64>(),
-        );
-        let wash = t.accent.opacity(if t.dark { 0.28 } else { 0.14 });
-        let base_bg = t.fill(FillTier::Quaternary);
-        let selection = div()
-            .mx(px(space::S16))
-            .child(
-                div()
-                    .text_size(px(text::CAPTION))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(t.text_faint)
-                    .mb(px(space::S6))
-                    .child("Selected text"),
-            )
-            .child(
-                div()
-                    .id("wa-selection")
-                    .rounded(px(radius::MD))
-                    .border_1()
-                    .border_color(t.border)
-                    .px(px(space::S12))
-                    .py(px(space::S10))
-                    .text_size(px(text::BODY))
-                    .line_height(px(20.))
-                    .text_color(t.text_muted)
-                    .line_clamp(3)
-                    .child(self.selection.clone())
-                    .with_animation(
-                        flash_id,
-                        MotionSpec::new(1200, EASE_OUT).animation(),
-                        move |el, d| el.bg(motion::mix(wash, base_bg, d)),
-                    ),
-            );
-
-        // ---- suggestions ------------------------------------------------------
-        let active_label = shown.as_ref().map(|v| v.label.clone());
-        let chips = self.suggestions.iter().enumerate().map(|(i, label)| {
-            let selected = active_label.as_ref() == Some(label);
-            let on_request = self.on_request.clone();
-            let label2 = label.clone();
-            pink::chip(format!("{key}-chip-{i}"), selected, ControlSize::Md, &t)
-                .when_some(on_request, |c, f| {
-                    c.on_click(move |_, window, cx| f(label2.clone(), window, cx))
-                })
-                .child(label.clone())
-        });
-        let suggestions = div()
-            .mx(px(space::S16))
+        // ---- the selection: pink's markdown blockquote --------------------
+        // A 2 px `accent @ 0.6` rail, `accent @ 0.05` behind, right corners
+        // 6, `pl 12 pr 10 py 6`, prose in `content_muted`. Replacing it swaps
+        // the quote in place (pink TRANSCRIPT_IN, 160 ms + 4 pt).
+        let quote_id = loaders::label_id("wa-quote", &self.selection);
+        let original = div()
+            .mt(px(8.))
             .flex()
-            .flex_wrap()
-            .gap(px(space::S6))
-            .children(chips);
+            .flex_col()
+            .gap(px(4.))
+            .child(context_label(
+                match &self.context {
+                    Some(c) => format!("Selected text · {c}"),
+                    None => "Selected text".into(),
+                },
+                &t,
+            ))
+            .child(motion::rise_in(
+                quote_id,
+                TRANSCRIPT_IN,
+                TRANSCRIPT_IN_RISE,
+                div()
+                    .border_l_2()
+                    .border_color(t.accent.opacity(0.6))
+                    .bg(t.accent.opacity(0.05))
+                    .rounded_tr(px(radius::SM))
+                    .rounded_br(px(radius::SM))
+                    .pl(px(12.))
+                    .pr(px(10.))
+                    .py(px(6.))
+                    .text_size(px(PROSE_SIZE))
+                    .line_height(px(PROSE_LINE))
+                    .text_color(t.content_muted)
+                    .line_clamp(3)
+                    .child(self.selection.clone()),
+            ));
 
-        // ---- the rewrite panel ------------------------------------------------
-        let strength = motion::follow(
-            &format!("{key}-glow"),
-            if writing {
-                1.
-            } else if shown.is_some() {
-                0.55
-            } else {
-                0.35
-            },
-            MotionSpec::new(900, EASE_IN_OUT),
-        );
-        let glow_layer: AnyElement = if reduced {
-            glow(&t, strength, 0.15).into_any_element()
-        } else {
-            let tt = t.clone();
-            div()
-                .absolute()
-                .top_0()
-                .left_0()
-                .size_full()
-                .with_animation(
-                    "wa-glow",
-                    Animation::new(Duration::from_millis(9000)).repeat(),
-                    move |el, d| el.child(glow(&tt, strength, d)),
+        // ---- the rewrite ------------------------------------------------
+        let rewrite: AnyElement = match (&shown, shown_ix) {
+            (Some(version), Some(ix)) => {
+                // The prose: transcript text, bare on the plate, the veil's
+                // chunks multiplied into the text color.
+                let prose_text: SharedString = version.visible().to_string().into();
+                let highlights = veil.iter().map(|(range, alpha)| {
+                    (
+                        range.clone(),
+                        HighlightStyle {
+                            color: Some(t.text.opacity(*alpha)),
+                            ..Default::default()
+                        },
+                    )
+                });
+                let prose = div()
+                    .min_h(px(PROSE_LINE))
+                    .text_size(px(PROSE_SIZE))
+                    .line_height(px(PROSE_LINE))
+                    .text_color(t.text)
+                    .child(StyledText::new(prose_text).with_highlights(highlights));
+
+                // The lane under it: pink's working line while it writes,
+                // then the meta lane's actions (both fit the reserved 28).
+                let lane_body: AnyElement = if writing {
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .child(loaders::orb_slot(t.accent))
+                        .child(loaders::working_status("Rewriting", t.content_muted, t.text))
+                        .child(loaders::working_timer(writing_secs, t.content_faint))
+                        .into_any_element()
+                } else {
+                    let delta = version.text.split_whitespace().count() as i64
+                        - self.selection.split_whitespace().count() as i64;
+                    let note = match delta {
+                        _ if version.text == self.selection => "In your text".to_string(),
+                        0 => "Same length".to_string(),
+                        1 => "1 word longer".to_string(),
+                        -1 => "1 word shorter".to_string(),
+                        d if d < 0 => format!("{} words shorter", -d),
+                        d => format!("{d} words longer"),
+                    };
+                    let is_copied = copied == Some(ix);
+                    let copy_text = version.text.clone();
+                    let copy_state = state.clone();
+                    let retry_label = version.label.clone();
+                    let on_request = self.on_request.clone();
+                    let (prev_state, next_state) = (state.clone(), state.clone());
+                    div()
+                        .flex_1()
+                        .flex()
+                        .items_center()
+                        .gap(px(2.))
+                        .child(
+                            div()
+                                .mr(px(6.))
+                                .text_size(px(12.))
+                                .line_height(px(16.))
+                                .text_color(t.content_faint)
+                                .child(note),
+                        )
+                        .child(
+                            meta_action(
+                                format!("{key}-copy"),
+                                if is_copied { ICON_COPIED } else { ICON_COPY },
+                                if is_copied { "Copied" } else { "Copy" },
+                                true,
+                                &t,
+                            )
+                            .on_click(move |_, _, cx| {
+                                cx.write_to_clipboard(ClipboardItem::new_string(
+                                    copy_text.to_string(),
+                                ));
+                                let entity = copy_state.clone();
+                                copy_state.update(cx, |s, cx| {
+                                    s.copied = Some(ix);
+                                    cx.notify();
+                                    s._reset = Some(cx.spawn(async move |_, cx| {
+                                        cx.background_executor()
+                                            .timer(Duration::from_millis(COPIED_MS))
+                                            .await;
+                                        let _ = entity.update(cx, |s, cx| {
+                                            s.copied = None;
+                                            cx.notify();
+                                        });
+                                    }));
+                                });
+                            }),
+                        )
+                        .child(
+                            meta_action(format!("{key}-retry"), ICON_RETRY, "Try again", true, &t)
+                                .when_some(on_request, |b, f| {
+                                    b.on_click(move |_, window, cx| {
+                                        f(retry_label.clone(), window, cx)
+                                    })
+                                }),
+                        )
+                        .child(div().flex_1())
+                        .when(version_count > 1, |el| {
+                            el.child(
+                                meta_action(
+                                    format!("{key}-prev"),
+                                    ICON_PREV,
+                                    "Previous version",
+                                    ix > 0,
+                                    &t,
+                                )
+                                .on_click(move |_, _, cx| {
+                                    prev_state.update(cx, |s, cx| {
+                                        s.viewing = Some(ix.saturating_sub(1));
+                                        cx.notify();
+                                    })
+                                }),
+                            )
+                            .child(
+                                meta_action(
+                                    format!("{key}-next"),
+                                    ICON_NEXT,
+                                    "Next version",
+                                    ix + 1 < version_count,
+                                    &t,
+                                )
+                                .on_click(move |_, _, cx| {
+                                    next_state.update(cx, |s, cx| {
+                                        s.viewing = Some((ix + 1).min(version_count - 1));
+                                        cx.notify();
+                                    })
+                                }),
+                            )
+                        })
+                        .into_any_element()
+                };
+                // The lane swaps like pink's status line (STATUS_SWAP:
+                // opacity + 2 pt settle, 180 ms quint).
+                let lane = div()
+                    .h(px(META_LANE))
+                    .pt(px(META_LANE - META_ACTION))
+                    .flex()
+                    .items_center()
+                    .child(motion::status_swap(
+                        loaders::label_id(
+                            "wa-lane",
+                            &format!("{ix}-{}", if writing { "writing" } else { "done" }),
+                        ),
+                        div().flex_1().h(px(META_ACTION)).flex().items_center().child(lane_body),
+                    ));
+
+                // Paging swaps the version in place (TRANSCRIPT_IN).
+                motion::rise_in(
+                    ElementId::NamedInteger("wa-version".into(), ix as u64),
+                    TRANSCRIPT_IN,
+                    TRANSCRIPT_IN_RISE,
+                    // The lane sits right under the prose, its own 4 pt
+                    // lead the only space, as under a transcript message.
+                    div()
+                        .flex()
+                        .flex_col()
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(px(4.))
+                                .child(context_label(version.label.clone(), &t))
+                                .child(prose),
+                        )
+                        .child(lane),
                 )
                 .into_any_element()
-        };
-
-        let panel_body: AnyElement = match &shown {
-            None => div()
+            }
+            // Nothing asked yet: the wizard's question, 15/20 medium, and a
+            // 12 pt note in `readable_muted(0.65)`.
+            _ => div()
                 .flex()
                 .flex_col()
-                .gap(px(space::S4))
-                .py(px(space::S10))
+                .gap(px(4.))
                 .child(
                     div()
-                        .text_size(px(text::CALLOUT))
+                        .text_size(px(15.))
+                        .line_height(px(20.))
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(t.text)
                         .child("How should it read?"),
                 )
                 .child(
                     div()
-                        .text_size(px(text::BODY))
-                        .text_color(t.text_muted)
-                        .child("Pick a direction above, or tell me below. Your text stays as it is until you replace it."),
+                        .text_size(px(12.))
+                        .line_height(px(16.))
+                        .text_color(t.readable_muted(0.65))
+                        .child(
+                            "Pick a direction or say what to change. Your text stays as it is until you replace it.",
+                        ),
                 )
                 .into_any_element(),
-            Some(version) => {
-                let ix = shown_ix.unwrap_or(0);
-                let all: Vec<&str> = version.text.split_whitespace().collect();
-                let limit = version.reveal.unwrap_or(all.len()).min(all.len());
-                let streaming = version.writing();
-                let mut words: Vec<AnyElement> = all[..limit]
-                    .iter()
-                    .enumerate()
-                    .map(|(n, w)| {
-                        div()
-                            .flex_none()
-                            .pr(px(WORD_GAP))
-                            .child(SharedString::from(w.to_string()))
-                            .with_animation(
-                                ElementId::NamedInteger(format!("wa-w-{ix}").into(), n as u64),
-                                MotionSpec::new(220, EASE_OUT).animation(),
-                                |el, d| el.opacity(0.15 + 0.85 * d).top(px(2. * (1. - d))),
-                            )
-                            .into_any_element()
-                    })
-                    .collect();
-                if streaming {
-                    let caret = div()
-                        .flex_none()
-                        .w(px(2.))
-                        .h(px(15.))
-                        .rounded(px(1.))
-                        .bg(t.accent);
-                    words.push(if reduced {
-                        caret.into_any_element()
-                    } else {
-                        caret
-                            .with_animation(
-                                "wa-caret",
-                                Animation::new(Duration::from_millis(1000)).repeat(),
-                                |el, d| el.opacity(0.6 + 0.4 * (d * TAU).cos()),
-                            )
-                            .into_any_element()
-                    });
-                }
-
-                let state_prev = state.clone();
-                let state_next = state.clone();
-                let nav = (version_count > 1).then(|| {
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(2.))
-                        .child(
-                            tool(format!("{key}-prev"), ICON_PREV, &t)
-                                .size(px(22.))
-                                .when(ix == 0, |d| d.opacity(0.4))
-                                .on_click(move |_, _, cx| {
-                                    state_prev.update(cx, |s, cx| {
-                                        s.viewing = Some(ix.saturating_sub(1));
-                                        cx.notify();
-                                    })
-                                }),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(text::CAPTION))
-                                .font_family(pink::MONO)
-                                .text_color(t.text_faint)
-                                .child(format!("{}/{}", ix + 1, version_count)),
-                        )
-                        .child(
-                            tool(format!("{key}-next"), ICON_NEXT, &t)
-                                .size(px(22.))
-                                .when(ix + 1 >= version_count, |d| d.opacity(0.4))
-                                .on_click(move |_, _, cx| {
-                                    state_next.update(cx, |s, cx| {
-                                        s.viewing = Some((ix + 1).min(version_count - 1));
-                                        cx.notify();
-                                    })
-                                }),
-                        )
-                });
-
-                let actions = (!streaming).then(|| {
-                    let on_apply = self.on_apply.clone();
-                    let on_request = self.on_request.clone();
-                    let text_apply = version.text.clone();
-                    let text_copy = version.text.clone();
-                    let label = version.label.clone();
-                    let copy_state = state.clone();
-                    let delta = all.len() as i64
-                        - self.selection.split_whitespace().count() as i64;
-                    let buttons: Vec<AnyElement> = vec![
-                        pink::button(format!("{key}-apply"), ButtonKind::Primary, ControlSize::Md, &t)
-                            .child(pink::glyph(ICON_REPLACE, ControlSize::Md).text_color(t.on_solid))
-                            .child("Replace selection")
-                            .when_some(on_apply, |b, f| {
-                                b.on_click(move |_, window, cx| f(text_apply.clone(), window, cx))
-                            })
-                            .into_any_element(),
-                        pink::button(format!("{key}-copy"), ButtonKind::Secondary, ControlSize::Md, &t)
-                            .child(
-                                pink::glyph(if copied { ICON_CHECK } else { ICON_COPY }, ControlSize::Md)
-                                    .text_color(if copied { t.success } else { t.text_muted }),
-                            )
-                            .child(if copied { "Copied" } else { "Copy" })
-                            .on_click(move |_, _, cx| {
-                                cx.write_to_clipboard(ClipboardItem::new_string(text_copy.to_string()));
-                                let entity = copy_state.clone();
-                                copy_state.update(cx, |s, cx| {
-                                    s.copied = true;
-                                    cx.notify();
-                                    s._reset = Some(cx.spawn(async move |_, cx| {
-                                        cx.background_executor().timer(Duration::from_millis(1400)).await;
-                                        let _ = entity.update(cx, |s, cx| {
-                                            s.copied = false;
-                                            cx.notify();
-                                        });
-                                    }));
-                                });
-                            })
-                            .into_any_element(),
-                        tool(format!("{key}-retry"), ICON_RETRY, &t)
-                            .when_some(on_request, |b, f| {
-                                b.on_click(move |_, window, cx| f(label.clone(), window, cx))
-                            })
-                            .into_any_element(),
-                    ];
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(space::S6))
-                        .mt(px(space::S12))
-                        .children(buttons.into_iter().enumerate().map(|(i, b)| {
-                            motion::rise_in(
-                                ElementId::NamedInteger(format!("wa-act-{ix}").into(), i as u64),
-                                ROW_IN.with_delay(50 * i as u64),
-                                4.,
-                                div().child(b),
-                            )
-                        }))
-                        .child(div().flex_1())
-                        .child(
-                            div()
-                                .text_size(px(text::FOOTNOTE))
-                                .text_color(t.text_faint)
-                                .child(match delta {
-                                    0 => "Same length".to_string(),
-                                    d if d < 0 => format!("{} words shorter", -d),
-                                    d => format!("{d} words longer"),
-                                }),
-                        )
-                });
-
-                div()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(space::S6))
-                            .h(px(22.))
-                            .mb(px(space::S6))
-                            .child(if streaming {
-                                spinner("wa-spin", 13., t.accent, reduced)
-                            } else {
-                                svg()
-                                    .path(ICON_SPARK)
-                                    .size(px(14.))
-                                    .text_color(t.accent)
-                                    .into_any_element()
-                            })
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_size(px(text::FOOTNOTE))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_color(t.text_muted)
-                                    .child(if streaming {
-                                        format!("{} · writing", version.label)
-                                    } else {
-                                        version.label.to_string()
-                                    }),
-                            )
-                            .children(nav),
-                    )
-                    .child(
-                        div()
-                            .id(ElementId::NamedInteger("wa-text".into(), ix as u64))
-                            .flex()
-                            .flex_wrap()
-                            .items_center()
-                            .text_size(px(BODY_SIZE))
-                            .line_height(px(BODY_LINE))
-                            .text_color(t.text)
-                            .children(words),
-                    )
-                    .children(actions)
-                    .into_any_element()
-            }
         };
-        let panel = div()
-            .mx(px(space::S16))
-            .relative()
-            .overflow_hidden()
-            .rounded(px(radius::LG))
-            .border_1()
-            .border_color(t.border)
-            .bg(t.surface_card)
-            .child(glow_layer)
-            .child(
-                div()
-                    .relative()
-                    .px(px(space::S16))
-                    .pt(px(space::S12))
-                    .pb(px(space::S16))
-                    .min_h(px(132.))
-                    .child(panel_body),
-            );
 
-        // ---- instruction / dictation -----------------------------------------
+        // ---- directions: composer ghost pills ------------------------------
+        // pink: pickers.rs `trigger_chip` (28 pt, `px 10`, 12 medium,
+        // transparent → `element_hover`), chips 4 apart as in the composer's
+        // row; the direction on screen is on (`chip_on`).
+        let active_label = shown.as_ref().map(|v| v.label.clone());
+        let chips = self.suggestions.iter().enumerate().map(|(i, label)| {
+            let id = format!("{key}-chip-{i}");
+            let chip = if active_label.as_ref() == Some(label) {
+                chip_on(id, &t)
+            } else {
+                pink::trigger_chip(id, false, false, &t).flex_none()
+            };
+            let on_request = self.on_request.clone();
+            let ask = label.clone();
+            chip.aria_label(label.clone())
+                .when_some(on_request, |c, f| {
+                    c.on_click(move |_, window, cx| f(ask.clone(), window, cx))
+                })
+                .child(label.clone())
+        });
+        let directions = div()
+            .mt(px(12.))
+            .flex()
+            .flex_wrap()
+            .gap(px(4.))
+            .children(chips);
+
+        // ---- the instruction field: a nested composer pill -----------------
+        // The question wizard's free answer (a `composer_surface` inside the
+        // panel, `mt 12 pb 4 px 4`) with the composer's controls inside it: the input
+        // at 14 / 22.75, a 28 pt microphone circle and the 28 pt Send disc
+        // 8 apart, 10 from the edge like the composer's controls row.
+        let heard = self.listening.clone().unwrap_or_default();
+        let has_heard = !heard.trim().is_empty();
+        let send_ready = if listening { has_heard } else { has_text };
+
         let on_listen = self.on_listen.clone();
-        let transcript = self.listening.clone();
         let on_request_mic = self.on_request.clone();
+        let heard_mic = heard.clone();
+        // pink: composer.rs Attach – a 28 pt circle, transparent →
+        // `ink(0.10)`, a 16 pt glyph in `text_muted`. While listening it holds
+        // the wash with the glyph in `text`, the composer row's open state.
+        let mic_key = format!("{key}-mic");
+        let mic_label = if listening {
+            "Stop dictation"
+        } else {
+            "Dictate"
+        };
+        let ring = t.focus_ring();
         let mic = div()
-            .id("wa-mic")
+            .id(SharedString::from(mic_key.clone()))
+            .role(Role::Button)
+            .aria_label(mic_label)
+            .tab_index(0)
+            .focus_visible(move |s| pink::focus_ring(s, ring))
+            .on_key_down(pink::swallow_activation_key)
             .flex_none()
-            .size(px(30.))
+            .size(px(ROW_CONTROL))
             .flex()
             .items_center()
             .justify_center()
             .rounded_full()
             .cursor_pointer()
+            .tooltip(pink::text_tooltip(mic_label))
+            .tooltip_show_delay(pink::layout::TOOLTIP_DELAY)
             .map(|d| {
                 if listening {
-                    d.bg(t.danger.opacity(if t.dark { 0.22 } else { 0.12 }))
-                        .child(svg().path(ICON_STOP).size(px(13.)).text_color(t.danger))
+                    d.bg(t.ink(0.10))
                 } else {
-                    let mk = format!("{key}-mic");
-                    d.hover_fill(
-                        mk.clone(),
-                        t.fill(FillTier::Tertiary).opacity(0.),
-                        t.fill(FillTier::Tertiary),
-                    )
-                    .child(
-                        svg()
-                            .path(ICON_MIC)
-                            .size(px(16.))
-                            .text_color(motion::hover_blend(&mk, t.text_muted, t.text)),
-                    )
+                    d.hover_fill(mic_key.clone(), t.ink(0.), t.ink(0.10))
                 }
             })
+            .child(
+                svg()
+                    .path(ICON_MIC)
+                    .size(px(16.))
+                    .flex_none()
+                    .text_color(if listening { t.text } else { t.text_muted }),
+            )
             .on_click(move |_, window, cx| {
                 if let Some(f) = &on_listen {
                     f(!listening, window, cx);
                 }
                 if listening
-                    && let (Some(words), Some(f)) = (&transcript, &on_request_mic)
-                    && !words.trim().is_empty()
+                    && has_heard
+                    && let Some(f) = &on_request_mic
                 {
-                    f(words.clone(), window, cx);
+                    f(heard_mic.clone(), window, cx);
                 }
             });
 
-        let send_ready = has_text && !listening;
+        // pink: composer.rs `render_send_button` – one stable disc: solid
+        // `text` (→ `text @ 0.88` under the pointer, 0.76 pressed) with the
+        // arrow in `bg` when it can send; recessed `ink(0.08)` with the arrow
+        // at `text @ 0.35` when empty, the arrow turning accent while the
+        // field is focused. The glyph fades in on each change (180 ms quint).
+        let ready_glyph = !send_ready && input_focused && !listening;
+        let glyph_color = if send_ready {
+            t.bg
+        } else if ready_glyph {
+            t.readable_tone(t.accent, 1.0)
+        } else {
+            t.text.opacity(0.35)
+        };
+        let glyph_state = if send_ready {
+            "send"
+        } else if ready_glyph {
+            "ready"
+        } else {
+            "rest"
+        };
+        let send_key = format!("{key}-send");
         let send_input = input.clone();
+        let on_listen_send = self.on_listen.clone();
+        let heard_send = heard.clone();
         let send = div()
-            .id("wa-send")
+            .id(SharedString::from(send_key.clone()))
+            .role(Role::Button)
+            .aria_label("Send")
             .flex_none()
-            .size(px(30.))
+            .size(px(ROW_CONTROL))
             .flex()
             .items_center()
             .justify_center()
             .rounded_full()
-            .bg(motion::mix(
-                t.fill(FillTier::Secondary),
-                t.accent_strong,
-                motion::follow(
-                    &format!("{key}-send"),
-                    if send_ready { 1. } else { 0. },
-                    GLIDE,
-                ),
-            ))
-            .when(send_ready, |d| d.cursor_pointer())
-            .on_click({
-                let state = state.clone();
-                move |_, window, cx| {
-                    let text = send_input.read(cx).text();
-                    if text.trim().is_empty() {
-                        return;
-                    }
-                    send_input.update(cx, |i, cx| i.clear(cx));
-                    let f = state.update(cx, |s, _| {
-                        s.has_text = false;
-                        s.on_request.clone()
-                    });
-                    if let Some(f) = f {
-                        f(text.trim().to_string().into(), window, cx);
-                    }
-                }
-            })
+            .tooltip(pink::text_tooltip("Send (⏎)"))
+            .tooltip_show_delay(pink::layout::TOOLTIP_DELAY)
             .child(
                 svg()
                     .path(ICON_SEND)
-                    .size(px(15.))
-                    .text_color(if send_ready {
-                        t.on_accent
-                    } else {
-                        t.text_faint
-                    }),
-            );
+                    .size(px(14.))
+                    .flex_none()
+                    .text_color(glyph_color)
+                    .with_animation(
+                        SharedString::from(format!("{send_key}-glyph-{glyph_state}")),
+                        GLYPH_SWAP.animation(),
+                        |el, d| el.opacity(d),
+                    ),
+            )
+            .map(|d| {
+                if !send_ready {
+                    return d.bg(t.ink(0.08));
+                }
+                let state = state.clone();
+                d.cursor_pointer()
+                    .hover_fill(send_key.clone(), t.text, t.text.opacity(0.88))
+                    .active(|s| s.opacity(0.76))
+                    .on_click(move |_, window, cx| {
+                        if listening {
+                            if let Some(f) = &on_listen_send {
+                                f(false, window, cx);
+                            }
+                            let f = state.read(cx).on_request.clone();
+                            if let Some(f) = f {
+                                f(heard_send.clone(), window, cx);
+                            }
+                            return;
+                        }
+                        let text = send_input.read(cx).text();
+                        if text.trim().is_empty() {
+                            return;
+                        }
+                        send_input.update(cx, |i, cx| i.clear(cx));
+                        let f = state.update(cx, |s, _| {
+                            s.has_text = false;
+                            s.on_request.clone()
+                        });
+                        if let Some(f) = f {
+                            f(text.trim().to_string().into(), window, cx);
+                        }
+                    })
+            });
 
-        let field: AnyElement = if let (true, Some(started)) = (listening, listen_started) {
-            window.request_animation_frame();
-            let secs = started.elapsed().as_secs();
-            div()
+        // While dictating, the field is a live line: the breathing orb, the
+        // words as they are heard (the newest kept in view; a shimmering
+        // "Listening…" until the first one) and pink's elapsed timer.
+        let field: AnyElement = match (listening, listen_started) {
+            (true, Some(started)) => div()
                 .flex_1()
                 .min_w_0()
                 .flex()
                 .items_center()
-                .gap(px(space::S10))
-                .child(
-                    div()
-                        .flex_none()
-                        .size(px(8.))
-                        .rounded_full()
-                        .bg(t.danger)
-                        .with_animation(
-                            "wa-rec",
-                            Animation::new(Duration::from_millis(1200)).repeat(),
-                            |el, d| el.opacity(0.55 + 0.45 * (d * TAU).cos()),
-                        ),
-                )
-                .child(level_meter(started, t.danger.opacity(0.8)))
-                .child(
+                .gap(px(8.))
+                .child(loaders::orb_slot(t.accent))
+                .child(if has_heard {
                     div()
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_size(px(text::BODY))
-                        .text_color(t.text_muted)
-                        .child(match &self.listening {
-                            Some(words) if !words.is_empty() => words.clone(),
-                            _ => "Listening…".into(),
-                        }),
-                )
-                .child(
-                    div()
-                        .flex_none()
-                        .text_size(px(text::FOOTNOTE))
-                        .font_family(pink::MONO)
-                        .text_color(t.text_faint)
-                        .child(format!("{}:{:02}", secs / 60, secs % 60)),
-                )
-                .into_any_element()
-        } else {
-            div()
+                        .text_color(t.text)
+                        .child(heard_tail(heard.trim(), HEARD_CHARS))
+                        .into_any_element()
+                } else {
+                    loaders::shimmer_text(
+                        "Listening…",
+                        INPUT_SIZE,
+                        INPUT_LINE,
+                        t.placeholder,
+                        t.text,
+                    )
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .into_any_element()
+                })
+                .child(loaders::working_timer(
+                    now.saturating_duration_since(started).as_secs() as i64,
+                    t.content_faint,
+                ))
+                .into_any_element(),
+            _ => div()
                 .flex_1()
                 .min_w_0()
-                .text_size(px(text::BODY))
-                .line_height(px(20.))
                 .text_color(t.text)
                 .child(input.clone())
-                .into_any_element()
+                .into_any_element(),
         };
+        let field = div().mt(px(12.)).pb(px(4.)).px(px(4.)).child(
+            composer_surface(false, &t)
+                .w_full()
+                .overflow_hidden()
+                .pl(px(16.))
+                .pr(px(10.))
+                .py(px(10.))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .text_size(px(INPUT_SIZE))
+                .line_height(px(INPUT_LINE))
+                .child(field)
+                .child(mic)
+                .child(send),
+        );
 
-        let composer = div()
-            .mt(px(space::S4))
-            .border_t_1()
-            .border_color(t.border)
-            .h(px(52.))
-            .pl(px(space::S16))
-            .pr(px(space::S10))
+        // ---- footer: pink's wizard footer -----------------------------------
+        // `px 16 pb 16 pt 4`, gap 12, ghost buttons on the left and the one
+        // Primary on the right (`Lg`, `px 16`), resting at pink's disabled
+        // opacity until a finished version differs from the selection.
+        let applied = shown.as_ref().is_some_and(|v| v.text == self.selection);
+        let can_apply = shown.is_some() && !writing && !applied;
+        let on_apply = self.on_apply.clone();
+        let apply_text = shown.as_ref().map(|v| v.text.clone());
+        let replace = pink::button_enabled(
+            format!("{key}-apply"),
+            ButtonKind::Primary,
+            ControlSize::Lg,
+            can_apply,
+            &t,
+        )
+        .px(px(16.))
+        .aria_label("Replace selection")
+        .child(if applied {
+            "Replaced"
+        } else {
+            "Replace selection"
+        })
+        .when_some(
+            on_apply.zip(apply_text).filter(|_| can_apply),
+            |b, (f, text)| b.on_click(move |_, window, cx| f(text.clone(), window, cx)),
+        );
+        let footer = div()
             .flex()
             .items_center()
-            .gap(px(space::S6))
-            .child(field)
-            .child(mic)
-            .child(send);
+            .justify_between()
+            .gap(px(12.))
+            .px(px(16.))
+            .pb(px(16.))
+            .pt(px(4.))
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_w_0()
+                    .items_center()
+                    .gap(px(8.))
+                    .when_some(self.on_close.clone(), |el, f| {
+                        el.child(
+                            pink::button(
+                                format!("{key}-close"),
+                                ButtonKind::Ghost,
+                                ControlSize::Lg,
+                                &t,
+                            )
+                            .aria_label("Keep original")
+                            .child("Keep original")
+                            .on_click(move |_, window, cx| f(window, cx)),
+                        )
+                    }),
+            )
+            .child(replace);
 
         div()
             .id(self.id.clone())
@@ -967,15 +1142,23 @@ impl RenderOnce for WritingAssistant {
             .max_w_full()
             .font_family(pink::SANS)
             .child(
-                pink::card(&t)
+                composer_surface(true, &t)
                     .flex()
                     .flex_col()
-                    .gap(px(space::S12))
-                    .child(header)
-                    .child(selection)
-                    .child(suggestions)
-                    .child(panel)
-                    .child(composer),
+                    .text_color(t.text)
+                    .child(
+                        div()
+                            .px(px(16.))
+                            .pt(px(16.))
+                            .flex()
+                            .flex_col()
+                            .child(header)
+                            .child(original)
+                            .child(div().mt(px(12.)).child(rewrite))
+                            .child(directions)
+                            .child(field),
+                    )
+                    .child(footer),
             )
     }
 }
@@ -1011,12 +1194,18 @@ fn rewrite_for(label: &str) -> &'static str {
 const DICTATION: &str = "make it sound more excited and mention the webinar on Thursday";
 
 const WORDS_PER_SEC: f32 = 16.;
+/// Dictation "hears" a word this often (seconds).
+const WORD_HEARD: f32 = 0.24;
 
 struct Demo {
     selection: SharedString,
     /// (label, text, started)
     versions: Vec<(SharedString, &'static str, Instant)>,
     listening: Option<Instant>,
+    /// The scripted tour: a first rewrite, a shorter one, then dictation.
+    /// It stops as soon as the reader takes over.
+    step: u8,
+    touched: bool,
     _ticker: Task<()>,
 }
 
@@ -1024,23 +1213,33 @@ impl Demo {
     fn new(cx: &mut Context<Self>) -> Self {
         let mounted = Instant::now();
         let ticker = cx.spawn(async move |this, cx| {
-            let mut kicked_off = false;
             loop {
                 cx.background_executor()
                     .timer(Duration::from_millis(40))
                     .await;
                 let alive = this.update(cx, |demo, cx| {
-                    // Open with a first rewrite so the panel has something to show.
-                    if !kicked_off && mounted.elapsed() > Duration::from_millis(900) {
-                        kicked_off = true;
-                        if demo.versions.is_empty() {
-                            demo.request("Friendlier".into());
+                    let at = mounted.elapsed().as_secs_f32();
+                    if !demo.touched {
+                        match demo.step {
+                            0 if at > 1.4 => {
+                                demo.step = 1;
+                                demo.request("Friendlier".into());
+                            }
+                            1 if at > 3.9 => {
+                                demo.step = 2;
+                                demo.request("Shorter".into());
+                            }
+                            2 if at > 5.2 => {
+                                demo.step = 3;
+                                demo.listening = Some(Instant::now());
+                            }
+                            _ => {}
                         }
                     }
-                    // Dictation "hears" a word every 240ms, then sends itself.
+                    // Dictation sends itself once the sentence is heard.
                     if let Some(started) = demo.listening {
                         let total = DICTATION.split(' ').count() as f32;
-                        if started.elapsed().as_secs_f32() > total * 0.24 + 0.9 {
+                        if started.elapsed().as_secs_f32() > total * WORD_HEARD + 0.9 {
                             demo.listening = None;
                             demo.request(DICTATION.into());
                         }
@@ -1056,6 +1255,8 @@ impl Demo {
             selection: DRAFT.into(),
             versions: Vec::new(),
             listening: None,
+            step: 0,
+            touched: false,
             _ticker: ticker,
         }
     }
@@ -1076,7 +1277,7 @@ impl Demo {
 
     fn transcript(&self) -> Option<SharedString> {
         self.listening.map(|started| {
-            let n = (started.elapsed().as_secs_f32() / 0.24) as usize;
+            let n = (started.elapsed().as_secs_f32() / WORD_HEARD) as usize;
             DICTATION
                 .split(' ')
                 .take(n)
@@ -1104,7 +1305,8 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                 }
             })
             .collect();
-        let (on_req, on_apply, on_listen) = (demo.clone(), demo.clone(), demo.clone());
+        let (on_req, on_apply, on_listen, on_close) =
+            (demo.clone(), demo.clone(), demo.clone(), demo.clone());
         WritingAssistant::new("writing-assistant", d.selection.clone())
             .context("Release announcement · #general draft")
             .suggestions(SUGGESTIONS.iter().map(|s| SharedString::from(*s)).collect())
@@ -1112,19 +1314,30 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .listening(d.transcript())
             .on_request(move |label, _, cx| {
                 on_req.update(cx, |d, cx| {
+                    d.touched = true;
                     d.request(label);
                     cx.notify();
                 })
             })
             .on_apply(move |text, _, cx| {
                 on_apply.update(cx, |d, cx| {
+                    d.touched = true;
                     d.selection = text;
                     cx.notify();
                 })
             })
             .on_listen(move |on, _, cx| {
                 on_listen.update(cx, |d, cx| {
+                    d.touched = true;
                     d.listening = on.then(Instant::now);
+                    cx.notify();
+                })
+            })
+            .on_close(move |_, cx| {
+                on_close.update(cx, |d, cx| {
+                    d.touched = true;
+                    d.versions.clear();
+                    d.listening = None;
                     cx.notify();
                 })
             })
