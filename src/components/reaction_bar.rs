@@ -1,12 +1,18 @@
-//! Reaction Bar – like, comment, repost and share in one row.
+//! Reaction Bar – a pink component.
 //!
-//! Clean: a row of quiet chips with a hairline edge; taking an action tints
-//! the chip blue. Classic: one white pill on a soft shadow; taking an action
-//! colors its icon (pink like, blue comment, violet repost). Either way the
-//! icon pops (shrinks, springs past full size, settles), the heart and the
-//! bubble fill in, and the count rolls in digit by digit while the chip
-//! glides to its new width. Arrow keys, Home and End move between the
-//! actions, Enter or Space takes the focused one.
+//! Like, comment, repost and share as a row of pink's quiet transcript
+//! actions (pink: transcript.rs `meta_action` and the hover lane's action
+//! row): 24px r6 buttons 2px apart, transparent easing to `ink(0.08)` on
+//! hover, 14px Solar glyphs in `content_muted`, the inset focus ring and a
+//! text tooltip. A count follows its glyph in 12px tabular figures and the
+//! button widens to hold it; with nothing to count the button is pink's bare
+//! 24px square. Taking an action swaps the glyph for its filled twin and
+//! lifts glyph and count to `text` – pink marks a toggle by swapping the
+//! glyph (Copy → Copied, the model picker's star), never with a colored
+//! chip. The new glyph fades in (pink's composer glyph swap) and the new
+//! count fades and settles 2px (pink's status swap) while the button eases
+//! to its new width. Arrow keys, Home and End move between the actions,
+//! Enter or Space takes the focused one.
 //!
 //! ```ignore
 //! ReactionBar::new("post-reactions")
@@ -15,32 +21,33 @@
 //!     .on_react(|key, state, _, _| println!("{key:?} → {state:?}"))
 //! ```
 
-use std::{rc::Rc, sync::Arc};
+use std::{cell::Cell, rc::Rc, sync::Arc};
 
 use gpui::{
-    AnyView, App, BoxShadow, ElementId, FocusHandle, FontFeatures, FontWeight, Hsla, IntoElement,
-    KeyDownEvent, MouseDownEvent, Pixels, SharedString, TextRun, Transformation, Window, div, font,
-    prelude::*, px, size, svg,
+    AnyElement, AnyView, App, Div, ElementId, FocusHandle, Font, Hsla, IntoElement, KeyDownEvent,
+    Role, SharedString, Stateful, TextRun, Toggled, Window, div, font, prelude::*, px, relative,
+    svg,
 };
 
 use crate::{
-    ActiveTheme, Look,
-    motion::{self, AnimationExt as _, CubicBezier, LINEAR, MotionSpec},
-    primitives::{SANS, black_a, hex, hexa, shadow, white_a},
+    motion::{self, AnimationExt as _},
+    pink::{self, ControlSize, Pink, TextStyle, TypeStyleExt, icon_size, radius, space, text},
     story,
 };
 
 pub const NAME: &str = "Reaction Bar";
-pub const DESCRIPTION: &str = "Like, comment, repost and share in one pill – icons pop and fill, counts roll in digit by digit";
+pub const DESCRIPTION: &str = "Like, comment, repost and share as quiet icon actions under a post – each count in tabular figures beside its glyph, a taken action swapping to its filled glyph as the new count settles in";
 
-/// `--ui-rb-ease`: the count's width glide and the digit roll.
-const ROLL_EASE: CubicBezier = CubicBezier::new(0.85, 0.0, 0.15, 1.0);
-/// The press pop's per-keyframe curve.
-const POP_EASE: CubicBezier = CubicBezier::new(0.65, 0.0, 0.35, 1.0);
-/// `ui-rb-pop`: 320ms, eased per keyframe in [`pop_scale`].
-const POP: MotionSpec = MotionSpec::new(320, LINEAR);
-/// `ui-rb-roll` and the count's `transition: width`.
-const ROLL: MotionSpec = MotionSpec::new(400, ROLL_EASE);
+/// One action's height, and its width with nothing to count (pink:
+/// transcript.rs `meta_action`).
+const ACTION_SIZE: f32 = 24.0;
+/// Centers the 14px glyph in the 24px square, and keeps it there when a
+/// count widens the button.
+const GLYPH_INSET: f32 = (ACTION_SIZE - icon_size::SM) / 2.0;
+/// Glyph → count, and the count's trailing pad up to pink's small-control
+/// inset (`ControlSize::Sm`: gap 4, pad 8).
+const COUNT_GAP: f32 = ControlSize::Sm.gap();
+const COUNT_END: f32 = ControlSize::Sm.pad_x() - GLYPH_INSET;
 
 /// One of the four actions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -78,20 +85,34 @@ impl ReactionKey {
         }
     }
 
-    /// The heart and the bubble fill in once taken.
-    fn fills(self) -> bool {
-        matches!(self, ReactionKey::Like | ReactionKey::Comment)
-    }
-
-    fn icon(self, look: Look) -> SharedString {
-        match look {
-            Look::Clean => format!("icons/reaction-bar/clean/{}.svg", self.slug()).into(),
-            Look::Classic => format!("icons/reaction-bar/{}.svg", self.slug()).into(),
+    /// The tooltip: the verb, or what it became once taken (pink's Copy
+    /// reads "Copied").
+    fn tooltip(self, active: bool) -> &'static str {
+        match (self, active) {
+            (ReactionKey::Like, false) => "Like",
+            (ReactionKey::Like, true) => "Liked",
+            (ReactionKey::Comment, false) => "Comment",
+            (ReactionKey::Comment, true) => "Commented",
+            (ReactionKey::Repost, false) => "Repost",
+            (ReactionKey::Repost, true) => "Reposted",
+            (ReactionKey::Share, false) => "Share",
+            (ReactionKey::Share, true) => "Shared",
         }
     }
 
-    fn fill_icon(self) -> SharedString {
-        format!("icons/reaction-bar/{}-fill.svg", self.slug()).into()
+    /// Solar Linear glyphs; once taken, Solar Bold where the glyph has a
+    /// filled twin (heart, bubble, share). The bubble is pink's own
+    /// `chat-round-line`.
+    fn icon(self, active: bool) -> &'static str {
+        match (self, active) {
+            (ReactionKey::Like, false) => "icons/reaction-bar/like.svg",
+            (ReactionKey::Like, true) => "icons/reaction-bar/like-fill.svg",
+            (ReactionKey::Comment, false) => "icons/reaction-bar/comment.svg",
+            (ReactionKey::Comment, true) => "icons/reaction-bar/comment-fill.svg",
+            (ReactionKey::Repost, _) => "icons/reaction-bar/repost.svg",
+            (ReactionKey::Share, false) => "icons/reaction-bar/share.svg",
+            (ReactionKey::Share, true) => "icons/reaction-bar/share-fill.svg",
+        }
     }
 }
 
@@ -145,160 +166,18 @@ pub fn aria_label(key: ReactionKey, count: u64) -> String {
 
 type ReactHandler = Rc<dyn Fn(ReactionKey, ReactionState, &mut Window, &mut App)>;
 
-/// The `--ui-rb-*` / `--ui-rbc-*` tokens.
-struct Palette {
-    /// Count color at rest and under the pointer.
-    fg: Hsla,
-    fg_hover: Hsla,
-    icon: Hsla,
-    icon_hover: Hsla,
-    /// Hover background.
-    wash: Hsla,
-    /// Clean chips: hairline edge, and the tint and edge of a taken action.
-    line: Option<Hsla>,
-    mine: Option<(Hsla, Hsla)>,
-    /// Color of a taken action, per key (like, comment, repost, share).
-    tones: [Hsla; 4],
-    focus: Hsla,
-    /// Classic: the pill's fill and shadow.
-    pill: Option<(Hsla, Vec<BoxShadow>)>,
-}
-
-impl Palette {
-    fn get(look: Look, cx: &App) -> Self {
-        match (look, cx.is_dark()) {
-            (Look::Clean, false) => {
-                let accent = hexa(0x0060e2, 0.765);
-                Palette {
-                    fg: black_a(0.61),
-                    fg_hover: black_a(0.88),
-                    icon: black_a(0.447),
-                    icon_hover: black_a(0.88),
-                    wash: black_a(0.03),
-                    line: Some(black_a(0.06)),
-                    mine: Some((hexa(0x0060e2, 0.05), hexa(0x0060e2, 0.35))),
-                    tones: [accent; 4],
-                    focus: hexa(0x0060e2, 0.35),
-                    pill: None,
-                }
-            }
-            (Look::Clean, true) => {
-                let accent = hex(0x4d8dff);
-                Palette {
-                    fg: white_a(0.62),
-                    fg_hover: white_a(0.9),
-                    icon: white_a(0.46),
-                    icon_hover: white_a(0.9),
-                    wash: white_a(0.04),
-                    line: Some(white_a(0.08)),
-                    mine: Some((hexa(0x4d8dff, 0.14), hexa(0x4d8dff, 0.4))),
-                    tones: [accent; 4],
-                    focus: hexa(0x4d8dff, 0.45),
-                    pill: None,
-                }
-            }
-            (Look::Classic, false) => Palette {
-                fg: hex(0x404040),
-                fg_hover: hex(0x404040),
-                icon: hex(0x404040),
-                icon_hover: hex(0x404040),
-                wash: hex(0xf5f5f5),
-                line: None,
-                mine: None,
-                tones: [hex(0xec4899), hex(0x2f6bff), hex(0x8b5cf6), hex(0x171717)],
-                focus: hex(0x2f6bff),
-                pill: Some((
-                    hex(0xffffff),
-                    vec![
-                        shadow(0., 0., 0., 1., hex(0xececec)),
-                        shadow(0., 1., 2., 0., black_a(0.04)),
-                        shadow(0., 4., 12., 0., black_a(0.03)),
-                    ],
-                )),
-            },
-            (Look::Classic, true) => Palette {
-                fg: hex(0xc4c4c4),
-                fg_hover: hex(0xc4c4c4),
-                icon: hex(0xc4c4c4),
-                icon_hover: hex(0xc4c4c4),
-                wash: white_a(0.06),
-                line: None,
-                mine: None,
-                tones: [hex(0xf472b6), hex(0x6b95ff), hex(0xa78bfa), hex(0xededed)],
-                focus: hex(0x6b95ff),
-                pill: Some((
-                    hex(0x232326),
-                    vec![
-                        shadow(0., 0., 0., 1., white_a(0.08)),
-                        shadow(0., 1., 2., 0., black_a(0.4)),
-                        shadow(0., 4., 12., 0., black_a(0.35)),
-                    ],
-                )),
-            },
-        }
-    }
-}
-
-/// Sizes from the two stylesheets.
-struct Metrics {
-    gap: Pixels,
-    height: Pixels,
-    min_width: Pixels,
-    pad_x: Pixels,
-    radius: Pixels,
-    icon: Pixels,
-    digit_size: Pixels,
-    digits_pad: (Pixels, Pixels),
-    /// `outline-offset` of the focus ring.
-    focus_offset: Pixels,
-    /// Icon color and fill transition.
-    color_spec: MotionSpec,
-}
-
-impl Metrics {
-    fn get(look: Look) -> Self {
-        match look {
-            Look::Clean => Metrics {
-                gap: px(4.),
-                height: px(28.),
-                min_width: px(0.),
-                pad_x: px(8.),
-                radius: px(6.),
-                icon: px(16.),
-                digit_size: px(13.),
-                digits_pad: (px(6.), px(2.)),
-                focus_offset: px(1.),
-                color_spec: MotionSpec::new(160, motion::EASE),
-            },
-            Look::Classic => Metrics {
-                gap: px(2.),
-                height: px(42.),
-                min_width: px(42.),
-                pad_x: px(10.),
-                radius: px(21.),
-                icon: px(22.),
-                digit_size: px(14.),
-                digits_pad: (px(6.), px(0.)),
-                focus_offset: px(2.),
-                color_spec: MotionSpec::new(200, motion::EASE),
-            },
-        }
-    }
-}
-
 struct Entry {
     key: ReactionKey,
     count: u64,
     active: bool,
-    /// Taps so far; each one restarts the pop.
-    pops: u32,
+    /// Toggles so far. Keys the glyph and count swaps, so only a change
+    /// animates, never the first render.
+    taps: u32,
     focus: FocusHandle,
 }
 
 struct BarState {
     entries: Vec<Entry>,
-    /// Focus came from the keyboard, so the ring shows (`:focus-visible`).
-    keyboard: bool,
 }
 
 #[derive(IntoElement)]
@@ -307,7 +186,6 @@ pub struct ReactionBar {
     reactions: Vec<(ReactionKey, ReactionState)>,
     actions: Vec<ReactionKey>,
     on_react: Option<ReactHandler>,
-    look: Option<Look>,
 }
 
 impl ReactionBar {
@@ -317,7 +195,6 @@ impl ReactionBar {
             reactions: Vec::new(),
             actions: ReactionKey::ALL.to_vec(),
             on_react: None,
-            look: None,
         }
     }
 
@@ -343,68 +220,160 @@ impl ReactionBar {
         self.on_react = Some(Rc::new(handler));
         self
     }
+}
 
-    /// Overrides the global Clean/Classic look for this bar.
-    pub fn look(mut self, look: Look) -> Self {
-        self.look = Some(look);
-        self
+/// The hover fade of one action (pink: `meta_action`'s `tl-{id}`).
+fn fade_key(bar: &str, key: ReactionKey) -> String {
+    format!("tl-{bar}-{}", key.slug())
+}
+
+/// The count's face: Geist regular with tabular figures (pink
+/// `typography::tabular_figures`), so a ticking count never jitters.
+fn count_font() -> Font {
+    Font {
+        features: pink::tabular_figures(),
+        ..font(pink::SANS)
     }
 }
 
-/// `ui-rb-pop`: 1 → 0.75 (35%) → 1.12 (70%) → 1, each step eased.
-fn pop_scale(t: f32) -> f32 {
-    let step = |from_t: f32, to_t: f32, from: f32, to: f32| {
-        motion::lerp(from, to, POP_EASE.eval((t - from_t) / (to_t - from_t)))
+/// The count's laid-out width, rounded up like a text box.
+fn count_width(window: &Window, label: &str) -> f32 {
+    let run = TextRun {
+        len: label.len(),
+        font: count_font(),
+        color: gpui::black(),
+        background_color: None,
+        underline: None,
+        strikethrough: None,
     };
-    if t < 0.35 {
-        step(0., 0.35, 1., 0.75)
-    } else if t < 0.7 {
-        step(0.35, 0.7, 0.75, 1.12)
+    let width = window
+        .text_system()
+        .shape_line(
+            SharedString::from(label.to_string()),
+            px(TextStyle::Footnote.size()),
+            &[run],
+            None,
+        )
+        .width;
+    f32::from(width).ceil()
+}
+
+/// The count after the glyph: 12/16 tabular figures in the action's tone.
+/// Its box eases to the new width over `QUICK` (0 when there is nothing to
+/// count), and a changed count fades in and settles 2px over `STATUS_SWAP`
+/// (pink: transcript.rs working-status swap).
+fn count_view(window: &Window, id: &str, count: u64, taps: u32, tone: Hsla) -> Div {
+    let label = (count > 0).then(|| short(count));
+    let natural = label.as_deref().map_or(0., |label| {
+        COUNT_GAP + count_width(window, label) + COUNT_END
+    });
+    let width = motion::follow(&format!("{id}-w"), natural, motion::QUICK);
+    let digits = label.map(|label| -> AnyElement {
+        let digits = div().flex_none().whitespace_nowrap().child(label);
+        if taps == 0 {
+            return digits.into_any_element();
+        }
+        digits
+            .with_animation(
+                ElementId::Name(format!("{id}-count-{taps}").into()),
+                motion::STATUS_SWAP.animation(),
+                |el, p| el.relative().opacity(p).top(px(2.0 * (1.0 - p))),
+            )
+            .into_any_element()
+    });
+    div()
+        .flex_none()
+        .w(px(width))
+        .h(px(TextStyle::Footnote.line_height()))
+        .overflow_hidden()
+        .child(
+            div()
+                .flex()
+                .flex_none()
+                .pl(px(COUNT_GAP))
+                .pr(px(COUNT_END))
+                .type_style(TextStyle::Footnote)
+                .font_features(pink::tabular_figures())
+                .text_color(tone)
+                .children(digits),
+        )
+}
+
+/// One action (pink: transcript.rs `meta_action`): 24px tall, r6,
+/// transparent easing to `ink(0.08)` on hover, a 14px glyph, the inset
+/// focus ring and a text tooltip. Pink's square at rest; a count widens it.
+/// A taken action shows its filled glyph and lifts glyph and count from
+/// `content_muted` to `text`; a fresh swap fades the glyph in over
+/// `GLYPH_SWAP` (pink: composer.rs `composer-primary-glyph`).
+#[allow(clippy::too_many_arguments)]
+fn reaction_action(
+    window: &Window,
+    bar: &str,
+    key: ReactionKey,
+    count: u64,
+    active: bool,
+    taps: u32,
+    focus: &FocusHandle,
+    t: &Pink,
+) -> Stateful<Div> {
+    let id = format!("{bar}-{}", key.slug());
+    let fade = fade_key(bar, key);
+    let ring = t.focus_ring();
+    let tone = if active { t.text } else { t.content_muted };
+
+    let glyph = svg()
+        .path(key.icon(active))
+        .flex_none()
+        .size(px(icon_size::SM))
+        .text_color(tone);
+    let glyph: AnyElement = if taps == 0 {
+        glyph.into_any_element()
     } else {
-        step(0.7, 1., 1.12, 1.)
-    }
-}
+        div()
+            .flex_none()
+            .child(glyph)
+            .with_animation(
+                ElementId::Name(format!("{id}-glyph-{taps}").into()),
+                motion::GLYPH_SWAP.animation(),
+                |el, p| el.opacity(p),
+            )
+            .into_any_element()
+    };
 
-/// Width of the count's text as the digits lay it out, one box per glyph.
-/// Inter Medium with `font-variant-numeric: tabular-nums`.
-fn digits_font() -> gpui::Font {
-    gpui::Font {
-        weight: FontWeight::MEDIUM,
-        features: FontFeatures(Arc::new(vec![("tnum".into(), 1)])),
-        ..font(SANS)
-    }
-}
-
-fn digits_width(window: &Window, text: &str, font_size: Pixels) -> Pixels {
-    let face = digits_font();
-    text.chars()
-        .map(|ch| {
-            let glyph: SharedString = ch.to_string().into();
-            let run = TextRun {
-                len: glyph.len(),
-                font: face.clone(),
-                color: gpui::black(),
-                background_color: None,
-                underline: None,
-                strikethrough: None,
-            };
-            window
-                .text_system()
-                .shape_line(glyph, font_size, &[run], None)
-                .width
-                // A text box is as wide as its line, rounded up
-                .ceil()
+    div()
+        .id(ElementId::Name(id.clone().into()))
+        .track_focus(focus)
+        .role(Role::Button)
+        .aria_label(aria_label(key, count))
+        .aria_toggled(if active {
+            Toggled::True
+        } else {
+            Toggled::False
         })
-        .fold(px(0.), |a, b| a + b)
+        .flex_none()
+        .h(px(ACTION_SIZE))
+        .px(px(GLYPH_INSET))
+        .flex()
+        .flex_row()
+        .items_center()
+        .rounded(px(radius::SM))
+        .cursor_pointer()
+        .bg(motion::hover_blend(
+            &fade,
+            gpui::transparent_black(),
+            t.ink(0.08),
+        ))
+        .on_hover(motion::hover_listener(fade))
+        .focus_visible(move |style| pink::focus_ring(style, ring))
+        .tooltip(pink::text_tooltip(key.tooltip(active)))
+        .child(glyph)
+        .child(count_view(window, &id, count, taps, tone))
 }
 
 impl RenderOnce for ReactionBar {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let look = self.look.unwrap_or(cx.look());
-        let p = Palette::get(look, cx);
-        let m = Metrics::get(look);
-        let key = self.id.to_string();
-        let reduced = motion::reduced_motion(cx);
+        let t = Pink::get(cx);
+        let bar = self.id.to_string();
 
         let reactions = self.reactions.clone();
         let actions = self.actions.clone();
@@ -414,164 +383,46 @@ impl RenderOnce for ReactionBar {
             move |_, cx| BarState {
                 entries: actions
                     .iter()
-                    .map(|&k| {
+                    .map(|&key| {
                         let start = reactions
                             .iter()
-                            .find(|(r, _)| *r == k)
+                            .find(|(r, _)| *r == key)
                             .map(|(_, s)| *s)
                             .unwrap_or_default();
                         Entry {
-                            key: k,
+                            key,
                             count: start.count,
                             active: start.active,
-                            pops: 0,
-                            focus: cx.focus_handle(),
+                            taps: 0,
+                            focus: cx.focus_handle().tab_stop(true),
                         }
                     })
                     .collect(),
-                keyboard: false,
             },
         );
 
-        let (snapshot, keyboard): (Vec<_>, bool) = {
-            let s = state.read(cx);
-            (
-                s.entries
-                    .iter()
-                    .map(|e| (e.key, e.count, e.active, e.pops, e.focus.clone()))
-                    .collect(),
-                s.keyboard,
-            )
-        };
+        let snapshot: Vec<_> = state
+            .read(cx)
+            .entries
+            .iter()
+            .map(|e| (e.key, e.count, e.active, e.taps, e.focus.clone()))
+            .collect();
         let handles: Vec<FocusHandle> = snapshot.iter().map(|e| e.4.clone()).collect();
 
         let buttons: Vec<_> = snapshot
             .into_iter()
             .enumerate()
-            .map(|(ix, (rkey, count, active, pops, focus))| {
-                let bkey = format!("{key}-{}", rkey.slug());
-                let hover = motion::hover_t(&bkey);
-                let on = motion::follow(
-                    &format!("{bkey}-on"),
-                    if active { 1. } else { 0. },
-                    m.color_spec,
-                );
-                let tone = p.tones[ix_of(rkey)];
-
-                let mut bg = motion::mix(p.wash.opacity(0.), p.wash, hover);
-                let mut edge = p.line;
-                if let Some((mine, mine_line)) = p.mine {
-                    bg = motion::mix(bg, mine, on);
-                    edge = edge.map(|line| motion::mix(line, mine_line, on));
-                }
-                // Clean eases the label with the chip; Classic only eases the icon.
-                let fg = match look {
-                    Look::Clean => motion::mix(motion::mix(p.fg, p.fg_hover, hover), tone, on),
-                    Look::Classic if active => tone,
-                    Look::Classic => p.fg,
-                };
-                let icon_color = motion::mix(motion::mix(p.icon, p.icon_hover, hover), tone, on);
-
-                let icon_size = m.icon;
-                let outline = rkey.icon(look);
-                let fill = rkey.fills().then(|| rkey.fill_icon());
-                let icon = move |scale: f32| {
-                    let scaled = Transformation::scale(size(scale, scale));
-                    div()
-                        .relative()
-                        .flex_none()
-                        .size(icon_size)
-                        .child(
-                            svg()
-                                .path(outline.clone())
-                                .size(icon_size)
-                                .text_color(icon_color)
-                                .with_transformation(scaled),
-                        )
-                        .when_some(fill.clone(), |d, fill| {
-                            d.child(
-                                svg()
-                                    .absolute()
-                                    .top_0()
-                                    .left_0()
-                                    .path(fill)
-                                    .size(icon_size)
-                                    .text_color(icon_color.opacity(on))
-                                    .with_transformation(scaled),
-                            )
-                        })
-                };
-                let icon = if pops > 0 && !reduced {
-                    div()
-                        .flex_none()
-                        .with_animation(
-                            ElementId::Name(format!("{bkey}-pop-{pops}").into()),
-                            POP.animation(),
-                            move |d, t| d.child(icon(pop_scale(t))),
-                        )
-                        .into_any_element()
-                } else {
-                    icon(1.).into_any_element()
-                };
-
-                let focused = keyboard && focus.is_focused(window);
+            .map(|(ix, (key, count, active, taps, focus))| {
                 let on_react = self.on_react.clone();
-                let click_state = state.clone();
-                let mouse_state = state.clone();
-
-                div()
-                    .id(ElementId::Name(bkey.clone().into()))
-                    .track_focus(&focus)
-                    .relative()
-                    .flex()
-                    .flex_none()
-                    .items_center()
-                    .h(m.height)
-                    .min_w(m.min_width)
-                    .px(m.pad_x)
-                    .rounded(m.radius)
-                    .cursor_pointer()
-                    .bg(bg)
-                    .text_color(fg)
-                    .on_hover(motion::hover_listener(bkey.clone()))
-                    .on_mouse_down(gpui::MouseButton::Left, move |_: &MouseDownEvent, _, cx| {
-                        mouse_state.update(cx, |s, _| s.keyboard = false);
-                    })
-                    // Enter and Space on a focused chip click it too (GPUI does that)
-                    .on_click(move |_, window, cx| {
-                        toggle(&click_state, ix, on_react.as_ref(), window, cx)
-                    })
-                    // `box-shadow: inset 0 0 0 .5px` – under the content, like CSS
-                    .when_some(edge, |d, edge| {
-                        d.child(
-                            div()
-                                .absolute()
-                                .inset_0()
-                                .rounded(m.radius)
-                                .border(px(0.5))
-                                .border_color(edge),
-                        )
-                    })
-                    .when(focused, |d| {
-                        let o = m.focus_offset + px(2.);
-                        d.child(
-                            div()
-                                .absolute()
-                                .top(-o)
-                                .left(-o)
-                                .right(-o)
-                                .bottom(-o)
-                                .rounded(m.radius + o)
-                                .border_2()
-                                .border_color(p.focus),
-                        )
-                    })
-                    .child(icon)
-                    .child(count_view(window, &bkey, count, &m, reduced))
+                let click = state.clone();
+                // Enter and Space on a focused action click it too (GPUI)
+                reaction_action(window, &bar, key, count, active, taps, &focus, &t).on_click(
+                    move |_, window, cx| toggle(&click, ix, on_react.as_ref(), window, cx),
+                )
             })
             .collect();
 
-        let nav_state = state.clone();
+        // A toolbar: arrows, Home and End move focus between the actions.
         let on_key = move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {
             let len = handles.len();
             if len == 0 {
@@ -585,40 +436,25 @@ impl RenderOnce for ReactionBar {
                 "end" => len - 1,
                 _ => return,
             };
-            nav_state.update(cx, |s, cx| {
-                s.keyboard = true;
-                cx.notify();
-            });
             window.focus(&handles[next], cx);
             cx.stop_propagation();
         };
 
-        let root = div()
+        // Followers and hover fades started in this render need frames.
+        motion::keep_alive(window);
+
+        div()
             .id(self.id.clone())
             .flex()
+            .flex_row()
             .items_center()
-            .gap(m.gap)
+            // pink: the hover lane's 2px action rhythm
+            .gap(px(space::S2))
             .max_w_full()
-            .font_family(SANS)
-            .text_size(px(13.))
-            .line_height(px(20.))
-            .font_weight(FontWeight::MEDIUM)
+            .font_family(pink::SANS)
             .on_key_down(on_key)
-            .children(buttons);
-        match p.pill {
-            Some((fill, pill_shadow)) => root
-                .py(px(4.))
-                .px(px(10.))
-                .rounded(px(999.))
-                .bg(fill)
-                .shadow(pill_shadow),
-            None => root,
-        }
+            .children(buttons)
     }
-}
-
-fn ix_of(key: ReactionKey) -> usize {
-    ReactionKey::ALL.iter().position(|k| *k == key).unwrap_or(0)
 }
 
 fn toggle(
@@ -637,7 +473,7 @@ fn toggle(
         } else {
             entry.count + 1
         };
-        entry.pops += 1;
+        entry.taps += 1;
         cx.notify();
         (
             entry.key,
@@ -652,71 +488,181 @@ fn toggle(
     }
 }
 
-/// The count: its box glides to the new width while each changed digit
-/// rolls in from below.
-fn count_view(
-    window: &Window,
-    bkey: &str,
-    count: u64,
-    m: &Metrics,
-    reduced: bool,
-) -> impl IntoElement {
-    let text = if count > 0 {
-        short(count)
-    } else {
-        String::new()
-    };
-    let natural = if text.is_empty() {
-        px(0.)
-    } else {
-        digits_width(window, &text, m.digit_size) + m.digits_pad.0 + m.digits_pad.1
-    };
-    // The first render settles at once, like the web's `data-smooth` flag.
-    let width = motion::follow(&format!("{bkey}-w"), f32::from(natural), ROLL);
-    let len = text.chars().count();
+// ---------------------------------------------------------------------------
+// Story
+// ---------------------------------------------------------------------------
 
-    let digits = text.chars().enumerate().map(|(i, ch)| {
-        let glyph = div().flex_none().child(ch.to_string());
-        if reduced {
-            return glyph.into_any_element();
-        }
-        // Keyed by place and digit: only the digits that changed roll in.
-        glyph
-            .with_animation(
-                ElementId::Name(format!("{bkey}-digit-{}-{ch}", len - i).into()),
-                ROLL.animation(),
-                |el, t| el.relative().top(px(14. * (1. - t))).opacity(t),
-            )
-            .into_any_element()
-    });
+/// The demo's content column.
+const COLUMN: f32 = 560.;
+/// Avatar plus its gap: the body and the bar line up with the name.
+const BODY_INSET: f32 = 20. + space::S8;
 
+struct Post {
+    initial: &'static str,
+    author: &'static str,
+    when: &'static str,
+    body: &'static str,
+    reactions: [ReactionState; 4],
+}
+
+const POSTS: [Post; 3] = [
+    Post {
+        initial: "M",
+        author: "Mara Lindqvist",
+        when: "2h",
+        body: "Offline mode shipped today. Drafts sync the moment you're back online, and conflicting edits open side by side instead of quietly overwriting each other.",
+        reactions: [
+            ReactionState {
+                count: 128,
+                active: true,
+            },
+            ReactionState {
+                count: 24,
+                active: false,
+            },
+            ReactionState {
+                count: 9,
+                active: false,
+            },
+            ReactionState {
+                count: 0,
+                active: false,
+            },
+        ],
+    },
+    Post {
+        initial: "T",
+        author: "Theo Okafor",
+        when: "5h",
+        body: "Small thing I love: the command palette remembers what you ran last, so ⌘K then Enter repeats it.",
+        reactions: [
+            ReactionState {
+                count: 1240,
+                active: false,
+            },
+            ReactionState {
+                count: 86,
+                active: false,
+            },
+            ReactionState {
+                count: 31,
+                active: true,
+            },
+            ReactionState {
+                count: 12,
+                active: false,
+            },
+        ],
+    },
+    Post {
+        initial: "I",
+        author: "Ines Duarte",
+        when: "Just now",
+        body: "Does anyone have a checklist for reviewing database migrations before they reach staging?",
+        reactions: [
+            ReactionState {
+                count: 0,
+                active: false,
+            },
+            ReactionState {
+                count: 2,
+                active: false,
+            },
+            ReactionState {
+                count: 0,
+                active: false,
+            },
+            ReactionState {
+                count: 0,
+                active: false,
+            },
+        ],
+    },
+];
+
+fn bar_id(ix: usize) -> ElementId {
+    ElementId::NamedInteger("rb-post".into(), ix as u64)
+}
+
+/// One post: avatar, author and age (pink: the lane's 12px `content_faint`
+/// timestamp), the text in 14/22 prose, then the reactions under it.
+fn post(ix: usize, post: &Post, t: &Pink) -> Div {
+    let bar = ReactionKey::ALL
+        .iter()
+        .zip(post.reactions)
+        .fold(ReactionBar::new(bar_id(ix)), |bar, (key, state)| {
+            bar.reaction(*key, state)
+        });
     div()
-        .flex_none()
-        .w(px(width))
-        .h(px(20.))
-        .overflow_hidden()
+        .w_full()
+        .flex()
+        .flex_col()
+        .gap(px(space::S4))
         .child(
             div()
                 .flex()
-                .flex_none()
-                .when(!text.is_empty(), |d| {
-                    d.pl(m.digits_pad.0).pr(m.digits_pad.1)
-                })
-                .font(digits_font())
-                .text_size(m.digit_size)
-                .line_height(px(20.))
-                .whitespace_nowrap()
-                .children(digits),
+                .flex_row()
+                .items_center()
+                .gap(px(space::S8))
+                .child(pink::avatar(post.initial, t))
+                .child(
+                    div()
+                        .type_style(TextStyle::Body)
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .text_color(t.text)
+                        .child(post.author),
+                )
+                .child(
+                    div()
+                        .type_style(TextStyle::Footnote)
+                        .text_color(t.content_faint)
+                        .child(post.when),
+                ),
         )
+        .child(
+            div()
+                .pl(px(BODY_INSET))
+                .text_size(px(text::PROSE))
+                .line_height(px(22.))
+                .text_color(t.text)
+                .child(post.body),
+        )
+        .child(div().pl(px(BODY_INSET)).child(bar))
 }
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
-    story::view(cx, |_, _| {
-        ReactionBar::new("reaction-bar")
-            .reaction(ReactionKey::Like, ReactionState::new(128))
-            .reaction(ReactionKey::Comment, ReactionState::new(24))
-            .reaction(ReactionKey::Repost, ReactionState::new(9))
-            .reaction(ReactionKey::Share, ReactionState::new(0))
+    // A pointer rests on Theo's Comment until the real one moves, so the
+    // stage shows the hover wash.
+    let resting = fade_key(&bar_id(1).to_string(), ReactionKey::Comment);
+    let parked = Rc::new(Cell::new(true));
+    story::view(cx, move |_, cx| {
+        let t = Pink::get(cx);
+        // Set once the fade entry is missing (first frame, or pruned).
+        if parked.get() && motion::hover_t_or(&resting, -1.) < 0. {
+            motion::set_hover(&resting, true, motion::reduced_motion(cx));
+        }
+        let (parked, resting) = (parked.clone(), resting.clone());
+        let mut feed = div()
+            .id("rb-feed")
+            .w(px(COLUMN))
+            .max_w(relative(1.))
+            .flex()
+            .flex_col()
+            .font_family(pink::SANS)
+            .text_color(t.text)
+            .on_mouse_move(move |_, window, cx| {
+                if parked.replace(false) {
+                    motion::set_hover(&resting, false, motion::reduced_motion(cx));
+                    window.refresh();
+                }
+            });
+        for (ix, p) in POSTS.iter().enumerate() {
+            if ix > 0 {
+                feed = feed.child(div().py(px(space::S16)).child(pink::divider(&t)));
+            }
+            feed = feed.child(post(ix, p, &t));
+        }
+        feed
     })
 }
 
@@ -743,10 +689,8 @@ mod tests {
     }
 
     #[test]
-    fn pop_curve_keyframes() {
-        assert!((pop_scale(0.) - 1.).abs() < 1e-4);
-        assert!((pop_scale(0.35) - 0.75).abs() < 1e-3);
-        assert!((pop_scale(0.7) - 1.12).abs() < 1e-3);
-        assert!((pop_scale(1.) - 1.).abs() < 1e-4);
+    fn bare_action_is_pinks_square() {
+        assert_eq!(GLYPH_INSET * 2. + icon_size::SM, ACTION_SIZE);
+        assert_eq!(GLYPH_INSET + COUNT_END, ControlSize::Sm.pad_x());
     }
 }
