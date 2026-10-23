@@ -1,12 +1,21 @@
 //! Cited Answer – a pink component.
 //!
-//! An answer on the left and the evidence on the right. Every sentence ends
-//! in numbered citations. Point at one and its sentence takes a soft accent
-//! wash while the rest of the answer steps back, and the source it cites
-//! lights up in the side panel. Click it and that source unfolds to the
-//! quoted passage, with the words that back the sentence marked one after
-//! another. Sources can also be opened from the panel, copied as a quote or
-//! followed to the original.
+//! An answer beside the sources it rests on. The answer is bare markdown
+//! prose at pink's 14/22 (pink: `markdown/render.rs` `text_element`) on the
+//! canvas, with no card around it. Every sentence ends in superscript
+//! citation numbers in pink's list-marker tone. Point at one and its sentence
+//! takes a soft accent wash while the rest of the answer steps back, its
+//! source card lights up in the column beside it, and the source's name shows
+//! in pink's link-destination tooltip (pink: `markdown/link_destination.rs`).
+//!
+//! The sources are pink's expandable chip cards (pink: `transcript.rs`
+//! `chip_header_row`): a quiet r10 plate holding the citation number, the
+//! title and the site, with a chevron that turns as the card folds open on
+//! pink's tool fold. Inside is the quoted passage in pink's blockquote, and
+//! when a citation opened it, the words that back the sentence are marked
+//! one after another in pink's match wash (pink: `popover.rs`
+//! `search_highlight`). Below the quote, the message meta lane copies it or
+//! opens the original (pink: `transcript.rs` `meta_action`).
 //!
 //! ```ignore
 //! CitedAnswer::new("refunds", "Can customers on annual plans get a refund?")
@@ -16,39 +25,73 @@
 //!             .cite(Citation::new(0).mark("refunded in full within 30 days")),
 //!     ])
 //!     .default_open(0)
+//!     .on_open_source(|source, _, _| open_in_browser(source))
 //! ```
 
-use std::{cell::Cell, f32::consts::TAU, ops::Range, rc::Rc, sync::Arc, time::Duration};
+use std::{cell::Cell, f32::consts::FRAC_PI_2, ops::Range, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, AnyView, App, ClipboardItem, Context, ElementId, Entity, FontWeight, Hsla,
-    IntoElement, SharedString, Task, Transformation, Window, canvas, div, prelude::*, px, radians,
-    svg,
+    AnyElement, AnyView, App, BorderStyle, Bounds, ClipboardItem, Context, Div, ElementId, Font,
+    FontFeatures, FontWeight, Hsla, InteractiveText, IntoElement, Pixels, Render, Role,
+    SharedString, Stateful, StyledText, Task, TextLayout, TextRun, Transformation, Window, canvas,
+    div, point, prelude::*, px, quad, radians, size, svg, transparent_black,
 };
 
 use crate::{
-    HoverFill,
-    motion::{self, AnimationExt, EASE, EASE_OUT, GLIDE, MotionSpec},
-    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, radius, space, text},
+    motion::{
+        self, FOLD_TWEEN_WINDOW, HOVER_FADE, TOOL_BODY_FADE, TOOL_BODY_RISE, TOOL_ROW_REVEAL,
+        TOOL_ROW_STAGGER_MS,
+    },
+    pink::{
+        self, Pink, TextStyle, TypeStyleExt, icon_size, layout,
+        loaders::{TOOL_LABEL_LINE_HEIGHT, TOOL_LABEL_SIZE},
+        radius, space, text,
+    },
     story,
 };
 
 pub const NAME: &str = "Cited Answer";
-pub const DESCRIPTION: &str = "An answer wired to its evidence: point at a citation to light its sentence and its source, click it to unfold the quoted passage beside the answer with the supporting words marked";
+pub const DESCRIPTION: &str = "An answer beside the sources it rests on – superscript citations that wash their sentence and light their source when pointed at, and source cards that fold open on the quoted passage with the backing words marked, ready to copy or open";
 
-const ICON_CHEVRON: &str = "icons/cited-answer/chevron.svg";
+const ICON_CHEVRON: &str = "icons/cited-answer/alt-arrow-right.svg";
 const ICON_COPY: &str = "icons/cited-answer/copy.svg";
-const ICON_CHECK: &str = "icons/cited-answer/check.svg";
-const ICON_OPEN: &str = "icons/cited-answer/open.svg";
-const ICON_GROUNDED: &str = "icons/cited-answer/grounded.svg";
+const ICON_COPIED: &str = "icons/cited-answer/copy-check.svg";
+const ICON_OPEN: &str = "icons/cited-answer/arrow-right-up.svg";
 
-const BODY_SIZE: f32 = text::CALLOUT;
-const BODY_LINE: f32 = 23.;
-const WORD_GAP: f32 = BODY_SIZE * 0.25;
-const QUOTE_SIZE: f32 = 12.5;
-const QUOTE_GAP: f32 = QUOTE_SIZE * 0.25;
-/// Sentence and source lighting: a quick ease, like a hover.
-const LIGHT: MotionSpec = MotionSpec::new(200, EASE);
+/// Markdown body type and block gap (pink: `MD_TEXT_SIZE`, `MD_LINE_HEIGHT`,
+/// `MD_BLOCK_GAP`): 14 on a 22 line, one line looser than the kit's Prose.
+const MD_TEXT_SIZE: f32 = text::PROSE;
+const MD_LINE_HEIGHT: f32 = 22.;
+const MD_BLOCK_GAP: f32 = space::S12;
+/// Between two superscript numbers of one sentence.
+const CITE_GAP: &str = "\u{2009}";
+/// Rounded match washes under shaped glyphs (pink: `search_highlight`):
+/// 1 px wider than the glyphs, 1.5 px in from the line box, nudged 0.5 px
+/// down to sit on the glyphs' optical center, radius 3.
+const WASH_PAD_X: f32 = 1.;
+const WASH_INSET_Y: f32 = 1.5;
+const WASH_NUDGE_Y: f32 = 0.5;
+const WASH_RADIUS: f32 = 3.;
+/// The source column: pink's large menu width.
+const PANEL_WIDTH: f32 = layout::MENU_W_L;
+/// The column's heading row (pink: `SIDEBAR_DISCLOSURE_HEADER_HEIGHT`).
+const SECTION_HEADING_HEIGHT: f32 = 28.;
+/// A two-line source header (pink: command palette history row, `min_h 44`,
+/// `py 5`).
+const SOURCE_HEADER_HEIGHT: f32 = 44.;
+/// The header's tiles: number at left, chevron at right (pink: chip header
+/// tiles, 18 px, chevron 12).
+const TILE: f32 = 18.;
+const CHEVRON: f32 = icon_size::XS;
+/// A meta-lane action (pink: `meta_action`, 24 px, icon 14).
+const META_ACTION: f32 = 24.;
+const META_ICON: f32 = icon_size::SM;
+/// Stacked chip cards sit 8 px apart (pink: `CHIP_HEIGHT` 38 around a
+/// `CHIP_CARD_HEIGHT` 30 card).
+const CARD_GAP: f32 = space::S8;
+/// How long "Copied" shows (pink: `copy_ui_for`).
+const COPIED_FOR: Duration = Duration::from_millis(1200);
 
 type SourceHandler = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 
@@ -61,7 +104,6 @@ pub struct CitedSource {
     pub date: SharedString,
     /// The passage the citations point into.
     pub passage: SharedString,
-    pub tone: Tone,
 }
 
 impl CitedSource {
@@ -71,7 +113,6 @@ impl CitedSource {
             site: site.into(),
             date: SharedString::default(),
             passage: SharedString::default(),
-            tone: Tone::Neutral,
         }
     }
 
@@ -85,9 +126,13 @@ impl CitedSource {
         self
     }
 
-    pub fn tone(mut self, tone: Tone) -> Self {
-        self.tone = tone;
-        self
+    /// "Help Center · Updated Sep 2".
+    fn meta(&self) -> SharedString {
+        if self.date.is_empty() {
+            self.site.clone()
+        } else {
+            format!("{} · {}", self.site, self.date).into()
+        }
     }
 }
 
@@ -135,24 +180,6 @@ impl Sentence {
     }
 }
 
-/// What the side panel has unfolded.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Open {
-    /// From the panel: the plain passage.
-    Source(usize),
-    /// From a citation (global index): the passage with its marks.
-    Cite(usize),
-}
-
-struct State {
-    hover: Option<usize>,
-    open: Option<Open>,
-    copied: Option<usize>,
-    heights: Vec<Rc<Cell<f32>>>,
-    seeded: bool,
-    _reset: Option<Task<()>>,
-}
-
 #[derive(IntoElement)]
 pub struct CitedAnswer {
     id: ElementId,
@@ -172,7 +199,7 @@ impl CitedAnswer {
             sources: Vec::new(),
             paragraphs: Vec::new(),
             default_open: None,
-            width: 804.,
+            width: layout::COMPOSER_MAX_WIDTH,
             on_open_source: None,
         }
     }
@@ -187,19 +214,22 @@ impl CitedAnswer {
         self
     }
 
-    /// Unfolds the passage of the `n`th citation (counted through the whole
-    /// answer) on first render.
+    /// Folds open the source of the `n`th citation (counted through the
+    /// whole answer), its marks shown, on first render.
     pub fn default_open(mut self, citation: usize) -> Self {
         self.default_open = Some(citation);
         self
     }
 
+    /// The whole component's width; the answer takes what the source column
+    /// leaves. Defaults to pink's 768 px content column.
     pub fn width(mut self, width: f32) -> Self {
         self.width = width;
         self
     }
 
-    /// "Open" on a source: called with its index.
+    /// "Open" in a source's meta lane: called with the source's index. The
+    /// action shows only when a handler is set.
     pub fn on_open_source(
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
@@ -209,6 +239,256 @@ impl CitedAnswer {
     }
 }
 
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+
+/// What the source column has folded open.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Open {
+    /// From the column: the plain passage.
+    Source(usize),
+    /// From a citation (its index through the answer): the passage with the
+    /// citation's marks.
+    Cite(usize),
+}
+
+/// The source an open state shows. `cite_sources[c]` is citation `c`'s source.
+fn source_of(open: Option<Open>, cite_sources: &[usize]) -> Option<usize> {
+    match open? {
+        Open::Source(ix) => Some(ix),
+        Open::Cite(c) => cite_sources.get(c).copied(),
+    }
+}
+
+struct State {
+    /// The citation under the pointer.
+    hover_cite: Option<usize>,
+    /// The source header under the pointer.
+    hover_source: Option<usize>,
+    open: Option<Open>,
+    /// When each source last folded open or shut (pink: the tool fold's
+    /// `toggled_at`), so chevron, height and body fade share one clock.
+    toggled: Vec<Option<Instant>>,
+    /// When the open citation's marks began revealing.
+    marked_at: Option<Instant>,
+    copied: Option<usize>,
+    heights: Vec<Rc<Cell<f32>>>,
+    seeded: bool,
+    _reset: Option<Task<()>>,
+}
+
+impl State {
+    fn set_open(&mut self, next: Option<Open>, cite_sources: &[usize]) {
+        let now = Instant::now();
+        let before = source_of(self.open, cite_sources);
+        let after = source_of(next, cite_sources);
+        if before != after {
+            for ix in [before, after].into_iter().flatten() {
+                if let Some(slot) = self.toggled.get_mut(ix) {
+                    *slot = Some(now);
+                }
+            }
+        }
+        self.marked_at = matches!(next, Some(Open::Cite(_))).then_some(now);
+        self.open = next;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Answer text: sentences → shaped runs (pink: `flatten_runs`)
+// ---------------------------------------------------------------------------
+
+/// A citation's superscript number inside a paragraph.
+#[derive(Clone, Debug, PartialEq)]
+struct CiteHit {
+    range: Range<usize>,
+    /// Its position among all the answer's citations.
+    ordinal: usize,
+    source: usize,
+}
+
+/// One paragraph's flat text, runs, sentence spans and citations.
+#[derive(Default)]
+struct ParagraphFlat {
+    text: String,
+    runs: Vec<TextRun>,
+    /// (sentence index through the answer, its span with its citations).
+    sentences: Vec<(usize, Range<usize>)>,
+    cites: Vec<CiteHit>,
+}
+
+fn sans() -> Font {
+    gpui::font(pink::SANS)
+}
+
+/// Geist's superscript figures (OpenType `sups`) at 500. The weight keeps the
+/// shaper from merging the number into a regular word and dropping `sups`.
+fn superscript() -> Font {
+    Font {
+        features: FontFeatures(Arc::new(vec![("sups".into(), 1)])),
+        weight: FontWeight::MEDIUM,
+        ..gpui::font(pink::SANS)
+    }
+}
+
+fn push_run(flat: &mut ParagraphFlat, s: &str, font: Font, color: Hsla) {
+    if s.is_empty() {
+        return;
+    }
+    flat.text.push_str(s);
+    if let Some(last) = flat.runs.last_mut()
+        && last.font == font
+        && last.color == color
+    {
+        last.len += s.len();
+        return;
+    }
+    flat.runs.push(TextRun {
+        len: s.len(),
+        font,
+        color,
+        background_color: None,
+        underline: None,
+        strikethrough: None,
+    });
+}
+
+/// Flattens one paragraph: sentences joined by a space, each followed by its
+/// citations as superscript numbers (thin-spaced when there are several).
+/// `sentence_color(si)` and `cite_color(ordinal, source)` paint them.
+fn flatten_paragraph(
+    sentences: &[Sentence],
+    first_sentence: usize,
+    first_cite: usize,
+    sentence_color: &dyn Fn(usize) -> Hsla,
+    cite_color: &dyn Fn(usize, usize) -> Hsla,
+) -> ParagraphFlat {
+    let mut flat = ParagraphFlat::default();
+    let mut ordinal = first_cite;
+    for (k, sentence) in sentences.iter().enumerate() {
+        let si = first_sentence + k;
+        if k > 0 {
+            push_run(&mut flat, " ", sans(), sentence_color(si));
+        }
+        let start = flat.text.len();
+        push_run(&mut flat, &sentence.text, sans(), sentence_color(si));
+        for (n, cite) in sentence.cites.iter().enumerate() {
+            let color = cite_color(ordinal, cite.source);
+            if n > 0 {
+                push_run(&mut flat, CITE_GAP, superscript(), color);
+            }
+            let at = flat.text.len();
+            push_run(
+                &mut flat,
+                &(cite.source + 1).to_string(),
+                superscript(),
+                color,
+            );
+            flat.cites.push(CiteHit {
+                range: at..flat.text.len(),
+                ordinal,
+                source: cite.source,
+            });
+            ordinal += 1;
+        }
+        flat.sentences.push((si, start..flat.text.len()));
+    }
+    flat
+}
+
+/// The rectangles a byte range covers on its shaped lines, one per visual
+/// row (pink: `markdown/render.rs` `range_rects`).
+fn range_rects(
+    layout: &TextLayout,
+    range: &Range<usize>,
+    pad_x: f32,
+    inset_y: f32,
+) -> Vec<Bounds<Pixels>> {
+    let bounds = layout.bounds();
+    let line_height = layout.line_height();
+    let position = |ix: usize| layout.position_for_index(ix);
+    let mut rects = Vec::new();
+    let mut cur = range.start;
+    let mut guard = 0;
+    while cur < range.end && guard < 256 {
+        guard += 1;
+        let Some(mut p1) = position(cur) else {
+            break;
+        };
+        // A soft-wrap boundary reports the end of the row above; start the
+        // wash at the left of the row it really opens.
+        if let Some(after) = position(cur.saturating_add(1))
+            && after.y > p1.y
+        {
+            p1 = point(bounds.left(), after.y);
+        }
+        let (seg_end, next) = match position(range.end) {
+            Some(pe) if pe.y == p1.y => (range.end, range.end),
+            _ => {
+                let (mut lo, mut hi) = (cur, range.end);
+                while hi - lo > 1 {
+                    let mid = lo + (hi - lo) / 2;
+                    match position(mid) {
+                        Some(pm) if pm.y == p1.y => lo = mid,
+                        _ => hi = mid,
+                    }
+                }
+                (lo, lo)
+            }
+        };
+        if let Some(p2) = position(seg_end)
+            && p2.x > p1.x
+        {
+            rects.push(Bounds::new(
+                point(p1.x - px(pad_x), p1.y + px(inset_y)),
+                size(p2.x - p1.x + px(2. * pad_x), line_height - px(2. * inset_y)),
+            ));
+        }
+        if next <= cur {
+            break;
+        }
+        cur = next;
+    }
+    rects
+}
+
+/// A canvas painting rounded washes under `layout`'s glyphs; place it before
+/// the text in a relative parent (pink: `search_highlight`'s underlay).
+fn wash_underlay(layout: TextLayout, washes: Vec<(Range<usize>, Hsla)>) -> impl IntoElement {
+    canvas(
+        |_, _, _| (),
+        move |_, _, window, _| {
+            for (range, color) in &washes {
+                for mut rect in range_rects(&layout, range, WASH_PAD_X, WASH_INSET_Y) {
+                    rect.origin.y += px(WASH_NUDGE_Y);
+                    window.paint_quad(quad(
+                        rect,
+                        px(WASH_RADIUS),
+                        *color,
+                        px(0.),
+                        transparent_black(),
+                        BorderStyle::default(),
+                    ));
+                }
+            }
+        },
+    )
+    .absolute()
+    .top_0()
+    .left_0()
+    .size_full()
+}
+
+/// Byte ranges of each mark inside the passage.
+fn mark_ranges(passage: &str, marks: &[SharedString]) -> Vec<Range<usize>> {
+    marks
+        .iter()
+        .filter_map(|m| passage.find(m.as_ref()).map(|at| at..at + m.len()))
+        .collect()
+}
+
+/// Records an element's laid-out height, refreshing once when it changes.
 fn measure(cell: Rc<Cell<f32>>) -> impl IntoElement {
     canvas(
         move |bounds, window, _| {
@@ -226,72 +506,112 @@ fn measure(cell: Rc<Cell<f32>>) -> impl IntoElement {
     .size_full()
 }
 
-fn tile(source: &CitedSource, size: f32, t: &Pink) -> gpui::Div {
-    let color = source.tone.color(t);
+// ---------------------------------------------------------------------------
+// Pieces
+// ---------------------------------------------------------------------------
+
+/// pink: `markdown/link_destination.rs` `destination_card` – where a citation
+/// leads, shown while it is pointed at: `px 6 py 4`, radius 4, a
+/// `border_strong` edge on the opaque tooltip surface, `shadow_sm`, 11/14.
+struct CiteDestination(SharedString);
+
+impl Render for CiteDestination {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = Pink::get(cx);
+        div()
+            .px(px(6.))
+            .py(px(4.))
+            .rounded(px(radius::XS))
+            .border_1()
+            .border_color(t.border_strong)
+            .bg(t.tooltip_surface())
+            .shadow(pink::shadow_sm())
+            .font_family(pink::SANS)
+            .type_style(TextStyle::Caption)
+            .text_color(t.text)
+            .whitespace_nowrap()
+            .child(self.0.clone())
+    }
+}
+
+/// pink: `transcript.rs` `meta_action` – a 24 px icon button with the shared
+/// hover fade to `ink(0.08)`, a text tooltip, an accessible name and the
+/// inset focus ring. `live` is false while its card is folded shut, so a
+/// hidden action is neither a tab stop nor a tooltip.
+fn meta_action(
+    id: SharedString,
+    icon: &'static str,
+    label: SharedString,
+    live: bool,
+    t: &Pink,
+) -> Stateful<Div> {
+    let fade_key = SharedString::from(format!("{id}-fade"));
+    let ring = t.focus_ring();
     div()
+        .id(id)
+        .role(Role::Button)
+        .aria_label(label.clone())
+        .when(live, |el| {
+            el.tab_index(0)
+                .tooltip(pink::text_tooltip(label))
+                .tooltip_show_delay(layout::TOOLTIP_DELAY)
+        })
+        .size(px(META_ACTION))
         .flex_none()
-        .size(px(size))
         .flex()
         .items_center()
         .justify_center()
         .rounded(px(radius::SM))
-        .bg(color.opacity(if t.dark { 0.2 } else { 0.12 }))
-        .text_size(px((size * 0.46).round()))
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(color)
+        .cursor_pointer()
+        .bg(motion::hover_blend(
+            &fade_key,
+            transparent_black(),
+            t.ink(0.08),
+        ))
+        .on_hover(motion::hover_listener(fade_key))
+        .focus_visible(move |style| pink::focus_ring(style, ring))
         .child(
-            source
-                .site
-                .chars()
-                .next()
-                .map(|c| c.to_uppercase().to_string())
-                .unwrap_or_default(),
+            svg()
+                .path(icon)
+                .size(px(META_ICON))
+                .flex_none()
+                .text_color(t.content_muted),
         )
 }
 
-/// Words of `text` with their byte ranges.
-fn words(text: &str) -> Vec<(Range<usize>, &str)> {
-    let mut out = Vec::new();
-    let mut start = None;
-    for (i, ch) in text.char_indices() {
-        if ch == ' ' {
-            if let Some(s) = start.take() {
-                out.push((s..i, &text[s..i]));
-            }
-        } else if start.is_none() {
-            start = Some(i);
-        }
-    }
-    if let Some(s) = start {
-        out.push((s..text.len(), &text[s..]));
-    }
-    out
-}
-
-/// Byte ranges of each mark inside the passage.
-fn mark_ranges(passage: &str, marks: &[SharedString]) -> Vec<Range<usize>> {
-    marks
-        .iter()
-        .filter_map(|m| passage.find(m.as_ref()).map(|at| at..at + m.len()))
-        .collect()
-}
-
-/// The highlight wash for a lit sentence or marked words.
-fn wash(t: &Pink) -> Hsla {
-    t.accent.opacity(if t.dark { 0.2 } else { 0.11 })
-}
+// ---------------------------------------------------------------------------
+// Render
+// ---------------------------------------------------------------------------
 
 impl RenderOnce for CitedAnswer {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Pink::get(cx);
         let key = self.id.to_string();
+        let reduced = motion::reduced_motion(cx);
+        let now = Instant::now();
         let source_count = self.sources.len();
+
+        // Citations through the whole answer: (sentence, citation).
+        let mut cites: Vec<(usize, &Citation)> = Vec::new();
+        let mut sentence_sources: Vec<Vec<usize>> = Vec::new();
+        for sentence in self.paragraphs.iter().flatten() {
+            let si = sentence_sources.len();
+            for c in &sentence.cites {
+                cites.push((si, c));
+            }
+            sentence_sources.push(sentence.cites.iter().map(|c| c.source).collect());
+        }
+        let cite_sources: Rc<Vec<usize>> = Rc::new(cites.iter().map(|c| c.1.source).collect());
+
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, _: &mut Context<State>| State {
-                hover: None,
+                hover_cite: None,
+                hover_source: None,
                 open: None,
+                toggled: Vec::new(),
+                marked_at: None,
                 copied: None,
                 heights: Vec::new(),
                 seeded: false,
@@ -307,591 +627,647 @@ impl RenderOnce for CitedAnswer {
             while s.heights.len() < source_count {
                 s.heights.push(Rc::new(Cell::new(0.)));
             }
+            s.toggled.resize(source_count.max(s.toggled.len()), None);
         });
         let s = state.read(cx);
-        let (hover, open, copied) = (s.hover, s.open, s.copied);
+        let (hover_cite, hover_source, open, copied, marked_at) =
+            (s.hover_cite, s.hover_source, s.open, s.copied, s.marked_at);
+        let toggled = s.toggled.clone();
         let heights = s.heights.clone();
 
-        // Flatten the citations: (sentence index, citation).
-        let mut cites: Vec<(usize, Citation)> = Vec::new();
-        let mut sentence_ix = 0;
-        for paragraph in &self.paragraphs {
-            for sentence in paragraph {
-                for c in &sentence.cites {
-                    cites.push((sentence_ix, c.clone()));
-                }
-                sentence_ix += 1;
-            }
-        }
         let open_cite = match open {
-            Some(Open::Cite(c)) => Some(c),
+            Some(Open::Cite(c)) if c < cites.len() => Some(c),
             _ => None,
         };
-        let lit_sentence = hover.or(open_cite).and_then(|c| cites.get(c)).map(|c| c.0);
-        let hovered_source = hover.and_then(|c| cites.get(c)).map(|c| c.1.source);
-        let open_source = match open {
-            Some(Open::Source(s)) => Some(s),
-            Some(Open::Cite(c)) => cites.get(c).map(|c| c.1.source),
-            None => None,
+        let open_source = source_of(open, &cite_sources).filter(|ix| *ix < source_count);
+        // The source a pointed-at citation lights in the column.
+        let hot_source = hover_cite.and_then(|c| cite_sources.get(c).copied());
+        let pointing = hover_cite.is_some() || hover_source.is_some();
+
+        // A sentence is lit while its citation is pointed at, while the
+        // pointer is on a source it cites, or (at rest) while its citation
+        // holds the column open.
+        let lit_target = |si: usize| -> bool {
+            if let Some(c) = hover_cite {
+                cites.get(c).map(|c| c.0) == Some(si)
+            } else if let Some(src) = hover_source {
+                sentence_sources[si].contains(&src)
+            } else if let Some(c) = open_cite {
+                cites[c].0 == si
+            } else {
+                false
+            }
         };
-        let dim = motion::follow(
-            &format!("{key}-dim"),
-            if hover.is_some() { 1. } else { 0. },
-            LIGHT,
-        );
-
-        let sentence_cited: Vec<bool> = self
-            .paragraphs
-            .iter()
-            .flatten()
-            .map(|s| !s.cites.is_empty())
+        let dim = motion::follow(&format!("{key}-dim"), pointing as u8 as f32, HOVER_FADE);
+        let lit: Vec<f32> = (0..sentence_sources.len())
+            .map(|si| {
+                motion::follow(
+                    &format!("{key}-lit-{si}"),
+                    lit_target(si) as u8 as f32,
+                    HOVER_FADE,
+                )
+            })
             .collect();
-
-        // ---- answer column -------------------------------------------------
-        let mut sentence_ix = 0;
-        let mut cite_ix = 0;
-        let paragraphs: Vec<AnyElement> = self
-            .paragraphs
-            .iter()
-            .map(|paragraph| {
-                let mut groups: Vec<AnyElement> = Vec::new();
-                let count = paragraph.len();
-                for (k, sentence) in paragraph.iter().enumerate() {
-                    let si = sentence_ix;
-                    sentence_ix += 1;
-                    let lit = motion::follow(
-                        &format!("{key}-lit-{si}"),
-                        if lit_sentence == Some(si) { 1. } else { 0. },
-                        LIGHT,
-                    );
-                    let ink = motion::mix(t.text, t.text_faint, dim * (1. - lit));
-                    let bg = wash(&t).opacity(lit);
-                    let ws = words(&sentence.text);
-                    let last_word = ws.len().saturating_sub(1);
-                    let last_sentence = k + 1 == count;
-                    for (w, (_, word)) in ws.iter().enumerate() {
-                        let first = w == 0;
-                        if w < last_word {
-                            groups.push(
-                                div()
-                                    .flex_none()
-                                    .pr(px(WORD_GAP))
-                                    .bg(bg)
-                                    .when(first, |d| {
-                                        d.rounded_l(px(radius::XS)).pl(px(2.)).ml(px(-2.))
-                                    })
-                                    .text_color(ink)
-                                    .child(SharedString::from(word.to_string()))
-                                    .into_any_element(),
-                            );
-                            continue;
-                        }
-                        // The last word carries the citation chips.
-                        let chips = sentence.cites.iter().map(|c| {
-                            let ix = cite_ix;
-                            cite_ix += 1;
-                            let is_lit = hover == Some(ix) || open_cite == Some(ix);
-                            citation_chip(&t, &key, &state, ix, c.source, is_lit)
-                        });
-                        let chips: Vec<AnyElement> = chips.collect();
-                        groups.push(
-                            div()
-                                .flex()
-                                .flex_none()
-                                .items_center()
-                                .bg(bg)
-                                .rounded_r(px(radius::XS))
-                                .when(first, |d| d.rounded_l(px(radius::XS)))
-                                .pr(px(2.))
-                                .text_color(ink)
-                                .child(SharedString::from(word.to_string()))
-                                .children(chips)
-                                .into_any_element(),
-                        );
-                        if !last_sentence {
-                            groups.push(
-                                div()
-                                    .flex_none()
-                                    .w(px(WORD_GAP + 2.))
-                                    .h(px(BODY_LINE))
-                                    .into_any_element(),
-                            );
-                        }
-                    }
-                }
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .items_center()
-                    .text_size(px(BODY_SIZE))
-                    .line_height(px(BODY_LINE))
-                    .children(groups)
-                    .into_any_element()
+        let glow: Vec<f32> = (0..cites.len())
+            .map(|c| {
+                let src = cite_sources[c];
+                let on = hover_cite == Some(c)
+                    || open_cite == Some(c)
+                    || hover_source == Some(src)
+                    || open == Some(Open::Source(src));
+                motion::follow(&format!("{key}-glow-{c}"), on as u8 as f32, HOVER_FADE)
             })
             .collect();
 
+        // ---- answer --------------------------------------------------------
+        let sentence_wash = t.tab_focused_fill();
+        let marker = t.readable_tone(t.accent, 1.);
+        let labels: Rc<Vec<SharedString>> = Rc::new(
+            self.sources
+                .iter()
+                .map(|s| SharedString::from(format!("{} · {}", s.site, s.title)))
+                .collect(),
+        );
+        let mut first_sentence = 0;
+        let mut first_cite = 0;
+        let paragraphs: Vec<AnyElement> = self
+            .paragraphs
+            .iter()
+            .enumerate()
+            .map(|(pix, sentences)| {
+                let sentence_color =
+                    |si: usize| motion::mix(t.text, t.content_muted, dim * (1. - lit[si]));
+                let cite_color = |c: usize, _: usize| motion::mix(marker, t.text, glow[c]);
+                let flat = flatten_paragraph(
+                    sentences,
+                    first_sentence,
+                    first_cite,
+                    &sentence_color,
+                    &cite_color,
+                );
+                first_sentence += sentences.len();
+                first_cite += flat.cites.len();
+                paragraph(
+                    pix,
+                    flat,
+                    &lit,
+                    sentence_wash,
+                    &labels,
+                    &state,
+                    &cite_sources,
+                )
+            })
+            .collect();
+
+        let total = sentence_sources.len();
+        let backed = sentence_sources.iter().filter(|c| !c.is_empty()).count();
         let answer = div()
             .flex_1()
             .min_w_0()
-            .px(px(space::S24))
-            .pt(px(space::S20))
-            .pb(px(space::S24))
             .flex()
             .flex_col()
             .child(
+                // pink: the question wizard's question, 15/20 medium.
                 div()
-                    .flex()
-                    .items_center()
-                    .gap(px(space::S6))
-                    .text_size(px(text::FOOTNOTE))
-                    .child(svg().path(ICON_GROUNDED).size(px(14.)).text_color(t.accent))
-                    .child(
-                        div()
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(t.text_muted)
-                            .child("Answer"),
-                    )
-                    .child(div().text_color(t.text_faint).child(format!(
-                        "· grounded in {source_count} source{}",
-                        if source_count == 1 { "" } else { "s" }
-                    ))),
-            )
-            .child(
-                div()
-                    .mt(px(space::S8))
-                    .mb(px(space::S12))
-                    .text_size(px(text::TITLE))
-                    .line_height(px(24.))
+                    .type_style(TextStyle::Title3)
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(t.text)
                     .child(self.question.clone()),
             )
             .child(
                 div()
+                    .mt(px(space::S2))
+                    .type_style(TextStyle::Footnote)
+                    .font_features(pink::tabular_figures())
+                    .text_color(t.content_faint)
+                    .child(format!(
+                        "{source_count} source{} · {backed} of {total} sentences cited",
+                        if source_count == 1 { "" } else { "s" }
+                    )),
+            )
+            .child(
+                div()
+                    .mt(px(space::S16))
                     .flex()
                     .flex_col()
-                    .gap(px(space::S12))
+                    .gap(px(MD_BLOCK_GAP))
                     .children(paragraphs),
-            )
-            .child(coverage(&t, &key, &sentence_cited, lit_sentence));
+            );
 
-        // ---- source panel --------------------------------------------------
-        let rows = self.sources.iter().enumerate().map(|(ix, source)| {
-            let is_open = open_source == Some(ix);
-            let is_hot = hovered_source == Some(ix);
-            let row_key = format!("{key}-row-{ix}");
-            let openness = motion::follow(
-                &format!("{key}-open-{ix}"),
-                if is_open { 1. } else { 0. },
-                GLIDE,
-            );
-            let hot = motion::follow(
-                &format!("{key}-hot-{ix}"),
-                if is_hot { 1. } else { 0. },
-                LIGHT,
-            );
-            let raised = openness.max(hot);
-            let marks: Vec<SharedString> = match open {
-                Some(Open::Cite(c)) if is_open => {
-                    cites.get(c).map(|c| c.1.marks.clone()).unwrap_or_default()
+        // ---- sources -------------------------------------------------------
+        let mut animating = false;
+        let cards: Vec<AnyElement> = self
+            .sources
+            .iter()
+            .enumerate()
+            .map(|(ix, source)| {
+                let is_open = open_source == Some(ix);
+                let elapsed = toggled[ix]
+                    .map(|at| now.saturating_duration_since(at))
+                    .filter(|e| !reduced && *e < FOLD_TWEEN_WINDOW);
+                animating |= elapsed.is_some();
+                let (progress, body_alpha) = motion::fold_progress(is_open, elapsed);
+                let marks: Vec<SharedString> = match open_cite {
+                    Some(c) if is_open => cites[c].1.marks.clone(),
+                    _ => Vec::new(),
+                };
+                let reveal = |n: usize| match marked_at {
+                    Some(at) if !reduced => TOOL_ROW_REVEAL
+                        .with_delay(TOOL_BODY_FADE.duration_ms + n as u64 * TOOL_ROW_STAGGER_MS)
+                        .progress_at(now.saturating_duration_since(at)),
+                    _ => 1.,
+                };
+                let mark_progress: Vec<f32> = (0..marks.len()).map(reveal).collect();
+                animating |= mark_progress.iter().any(|p| *p < 1.);
+                SourceCard {
+                    key: &key,
+                    ix,
+                    source,
+                    is_open,
+                    hot: hot_source == Some(ix),
+                    progress,
+                    body_alpha,
+                    marks,
+                    mark_progress,
+                    copied: copied == Some(ix),
+                    height: heights[ix].clone(),
+                    on_open: self.on_open_source.clone(),
                 }
-                _ => Vec::new(),
-            };
-            let passage_key = match open {
-                Some(Open::Cite(c)) if is_open => c + 1,
-                _ => 0,
-            };
-
-            let toggle_state = state.clone();
-            let head = div()
-                .id(ElementId::NamedInteger("ca-row".into(), ix as u64))
-                .h(px(52.))
-                .px(px(space::S10))
-                .flex()
-                .items_center()
-                .gap(px(space::S10))
-                .cursor_pointer()
-                .rounded(px(radius::MD))
-                .hover_fill(
-                    row_key.clone(),
-                    t.fill(FillTier::Tertiary).opacity(0.),
-                    t.fill(FillTier::Quaternary),
-                )
-                .on_click(move |_, _, cx| {
-                    toggle_state.update(cx, |s, cx| {
-                        s.open = if is_open {
-                            None
-                        } else {
-                            Some(Open::Source(ix))
-                        };
-                        cx.notify();
-                    })
-                })
-                .child(number_chip(&t, ix, hot.max(openness)))
-                .child(tile(source, 26., &t))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .child(
-                            div()
-                                .truncate()
-                                .text_size(px(text::BODY))
-                                .line_height(px(18.))
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(t.text)
-                                .child(source.title.clone()),
-                        )
-                        .child(
-                            div()
-                                .truncate()
-                                .text_size(px(text::FOOTNOTE))
-                                .line_height(px(16.))
-                                .text_color(t.text_faint)
-                                .child(format!("{} · {}", source.site, source.date)),
-                        ),
-                )
-                .child(
-                    svg()
-                        .path(ICON_CHEVRON)
-                        .size(px(14.))
-                        .flex_none()
-                        .text_color(motion::hover_blend(&row_key, t.text_faint, t.text_muted))
-                        .with_transformation(Transformation::rotate(radians(openness * TAU / 2.))),
-                );
-
-            // The passage, always laid out so its height is known before it opens.
-            let ranges = mark_ranges(&source.passage, &marks);
-            let mut mark_n = 0u64;
-            let passage_words = words(&source.passage);
-            let last = passage_words.len().saturating_sub(1);
-            let quote_groups = passage_words
-                .into_iter()
-                .enumerate()
-                .map(|(w, (range, word))| {
-                    let marked = ranges
-                        .iter()
-                        .any(|m| m.start < range.end && range.start < m.end);
-                    // Marks join across the gap when the next word is marked too.
-                    let joins = marked
-                        && ranges
-                            .iter()
-                            .any(|m| m.start <= range.end + 1 && range.end + 1 < m.end);
-                    let el = div()
-                        .flex_none()
-                        .when(w < last, |d| d.pr(px(QUOTE_GAP)))
-                        .text_color(if marked { t.text } else { t.text_muted })
-                        .child(SharedString::from(word.to_string()));
-                    if marked {
-                        let n = mark_n;
-                        mark_n += 1;
-                        let wash = wash(&t);
-                        el.when(!joins, |d| d.pr(px(0.)).mr(px(QUOTE_GAP)))
-                            .with_animation(
-                                ElementId::NamedInteger(format!("ca-mark-{passage_key}").into(), n),
-                                MotionSpec::new(360, EASE_OUT)
-                                    .with_delay(220 + 45 * n)
-                                    .animation(),
-                                move |el, d| el.bg(wash.opacity(d)),
-                            )
-                            .into_any_element()
-                    } else {
-                        el.into_any_element()
-                    }
-                });
-            let copy_state = state.clone();
-            let passage_text = source.passage.clone();
-            let on_open = self.on_open_source.clone();
-            let is_copied = copied == Some(ix);
-            let body = div()
-                .relative()
-                .flex_none()
-                .px(px(space::S10))
-                .pb(px(space::S10))
-                .child(
-                    div()
-                        .flex()
-                        .gap(px(space::S10))
-                        .child(
-                            div()
-                                .flex_none()
-                                .w(px(2.))
-                                .rounded(px(1.))
-                                .bg(source.tone.color(&t).opacity(0.55)),
-                        )
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .flex()
-                                .flex_wrap()
-                                .text_size(px(QUOTE_SIZE))
-                                .line_height(px(19.))
-                                .children(quote_groups),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .gap(px(space::S6))
-                        .mt(px(space::S10))
-                        .child(
-                            pink::button(
-                                format!("{key}-copy-{ix}"),
-                                ButtonKind::Secondary,
-                                ControlSize::Sm,
-                                &t,
-                            )
-                            .child(
-                                pink::glyph(
-                                    if is_copied { ICON_CHECK } else { ICON_COPY },
-                                    ControlSize::Sm,
-                                )
-                                .text_color(if is_copied {
-                                    t.success
-                                } else {
-                                    t.text_muted
-                                }),
-                            )
-                            .child(if is_copied { "Copied" } else { "Copy quote" })
-                            .on_click(move |_, _, cx| {
-                                cx.write_to_clipboard(ClipboardItem::new_string(format!(
-                                    "“{passage_text}”"
-                                )));
-                                let entity = copy_state.clone();
-                                copy_state.update(cx, |s, cx| {
-                                    s.copied = Some(ix);
-                                    cx.notify();
-                                    s._reset = Some(cx.spawn(async move |_, cx| {
-                                        cx.background_executor()
-                                            .timer(Duration::from_millis(1400))
-                                            .await;
-                                        let _ = entity.update(cx, |s, cx| {
-                                            s.copied = None;
-                                            cx.notify();
-                                        });
-                                    }));
-                                });
-                            }),
-                        )
-                        .child(
-                            pink::button(
-                                format!("{key}-goto-{ix}"),
-                                ButtonKind::Ghost,
-                                ControlSize::Sm,
-                                &t,
-                            )
-                            .child(pink::glyph(ICON_OPEN, ControlSize::Sm).text_color(t.text_muted))
-                            .child(format!("Open in {}", source.site))
-                            .when_some(on_open, |b, f| {
-                                b.on_click(move |_, window, cx| f(ix, window, cx))
-                            }),
-                        ),
-                )
-                .child(measure(heights[ix].clone()));
-            let natural = heights[ix].get();
-
-            div()
-                .id(ElementId::NamedInteger("ca-src".into(), ix as u64))
-                .flex()
-                .flex_col()
-                .rounded(px(radius::LG))
-                .border_1()
-                .border_color(motion::mix(
-                    t.border.opacity(0.),
-                    if is_hot {
-                        t.accent.opacity(0.55)
-                    } else {
-                        t.border
-                    },
-                    raised,
-                ))
-                .bg(motion::mix(
-                    t.surface_card.opacity(0.),
-                    t.surface_card,
-                    raised,
-                ))
-                .when(raised > 0.5, |d| d.shadow(t.card_shadow()))
-                .child(head)
-                .child(
-                    div()
-                        .overflow_hidden()
-                        .when(natural > 0. || !is_open, |d| d.h(px(natural * openness)))
-                        .opacity(openness)
-                        .child(div().id(("ca-passage", passage_key)).child(body)),
-                )
-        });
+                .render(&t, &state, &cite_sources)
+            })
+            .collect();
+        if animating {
+            window.request_animation_frame();
+        }
 
         let panel = div()
-            .w(px(312.))
+            .w(px(PANEL_WIDTH))
             .flex_none()
             .flex()
             .flex_col()
-            .gap(px(space::S4))
-            .p(px(space::S10))
-            .border_l_1()
-            .border_color(t.border)
-            .bg(t.fill(FillTier::Quaternary))
-            .rounded_r(px(radius::LG - 1.))
             .child(
+                // pink: `activity_center.rs` `activity_section_heading` – a
+                // 28 px heading row, `px 8 gap 8`, the 11 px semibold name
+                // and its count trailing.
                 div()
-                    .px(px(space::S10))
-                    .pt(px(space::S6))
-                    .pb(px(space::S6))
+                    .id("ca-sources-heading")
+                    .role(Role::Heading)
+                    .aria_label(SharedString::from(format!(
+                        "Sources, {source_count} source{}",
+                        if source_count == 1 { "" } else { "s" }
+                    )))
+                    .h(px(SECTION_HEADING_HEIGHT))
+                    .px(px(space::S8))
                     .flex()
                     .items_center()
-                    .justify_between()
-                    .text_size(px(text::FOOTNOTE))
+                    .gap(px(space::S8))
+                    .type_style(TextStyle::Caption)
                     .child(
                         div()
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(t.text_muted)
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(t.readable_faint(0.9))
                             .child("Sources"),
                     )
-                    .when(open_source.is_none(), |d| {
-                        d.child(
-                            div()
-                                .text_color(t.text_faint)
-                                .child("Click a number to read"),
-                        )
-                    }),
+                    .child(
+                        div()
+                            .flex_none()
+                            .font_features(pink::tabular_figures())
+                            .text_color(t.readable_faint(0.7))
+                            .child(source_count.to_string()),
+                    ),
             )
-            .children(rows);
+            .child(div().flex().flex_col().gap(px(CARD_GAP)).children(cards));
 
         div()
             .id(self.id.clone())
             .w(px(self.width))
             .max_w_full()
+            .flex()
+            .items_start()
+            .gap(px(space::S32))
             .font_family(pink::SANS)
-            .child(pink::card(&t).flex().child(answer).child(panel))
+            .text_color(t.text)
+            .child(answer)
+            .child(panel)
     }
 }
 
-/// One tick per sentence: cited ones in the accent, the lit one solid.
-fn coverage(t: &Pink, key: &str, cited: &[bool], lit: Option<usize>) -> impl IntoElement {
-    let total = cited.len();
-    let backed = cited.iter().filter(|c| **c).count();
-    div()
-        .mt_auto()
-        .pt(px(space::S20))
-        .flex()
-        .items_center()
-        .gap(px(space::S10))
-        .child(
-            div()
-                .flex()
-                .gap(px(3.))
-                .children(cited.iter().enumerate().map(|(i, &c)| {
-                    let on = motion::follow(
-                        &format!("{key}-tick-{i}"),
-                        if lit == Some(i) { 1. } else { 0. },
-                        LIGHT,
-                    );
-                    let rest = if c {
-                        t.accent.opacity(0.35)
-                    } else {
-                        t.fill(FillTier::Primary)
-                    };
-                    div()
-                        .w(px(18.))
-                        .h(px(4.))
-                        .rounded(px(2.))
-                        .bg(motion::mix(rest, t.accent, on))
-                })),
-        )
-        .child(
-            div()
-                .text_size(px(text::FOOTNOTE))
-                .text_color(t.text_faint)
-                .child(format!("{backed} of {total} sentences cited")),
-        )
-}
-
-/// The source number in the panel, lit while its source is in play.
-fn number_chip(t: &Pink, ix: usize, lit: f32) -> impl IntoElement {
-    div()
-        .flex_none()
-        .h(px(16.))
-        .min_w(px(16.))
-        .px(px(4.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(radius::XS))
-        .bg(motion::mix(t.fill(FillTier::Secondary), t.accent_wash, lit))
-        .text_size(px(10.5))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(motion::mix(
-            t.text_muted,
-            if t.dark { t.text } else { t.accent },
-            lit,
-        ))
-        .child(format!("{}", ix + 1))
-}
-
-fn citation_chip(
-    t: &Pink,
-    key: &str,
-    state: &Entity<State>,
-    ix: usize,
-    source: usize,
-    lit: bool,
+/// One paragraph: shaped runs at 14/22 over the lit sentences' washes, its
+/// citations hoverable (lighting their sentence and source), clickable
+/// (folding their source open) and previewing where they lead.
+fn paragraph(
+    pix: usize,
+    flat: ParagraphFlat,
+    lit: &[f32],
+    wash: Hsla,
+    labels: &Rc<Vec<SharedString>>,
+    state: &gpui::Entity<State>,
+    cite_sources: &Rc<Vec<usize>>,
 ) -> AnyElement {
-    let chip_key = format!("{key}-cite-{ix}");
-    let glow = if lit { 1. } else { motion::hover_t(&chip_key) };
+    let washes: Vec<(Range<usize>, Hsla)> = flat
+        .sentences
+        .iter()
+        .filter(|(si, _)| lit[*si] > 0.001)
+        .map(|(si, range)| (range.clone(), wash.opacity(lit[*si])))
+        .collect();
+    let styled = StyledText::new(flat.text).with_runs(flat.runs);
+    let underlay = wash_underlay(styled.layout().clone(), washes);
+    let hits = Rc::new(flat.cites);
+    let ranges = hits.iter().map(|h| h.range.clone()).collect();
+
+    let hover_hits = hits.clone();
     let hover_state = state.clone();
+    let tip_hits = hits.clone();
+    let tip_labels = labels.clone();
+    let click_hits = hits.clone();
     let click_state = state.clone();
+    let click_sources = cite_sources.clone();
+    let text = InteractiveText::new(
+        ElementId::NamedInteger("ca-text".into(), pix as u64),
+        styled,
+    )
+    .on_hover(move |ix, _, _, cx| {
+        let hovered = ix.and_then(|i| {
+            hover_hits
+                .iter()
+                .find(|h| h.range.contains(&i))
+                .map(|h| h.ordinal)
+        });
+        hover_state.update(cx, |s, cx| {
+            if s.hover_cite != hovered {
+                s.hover_cite = hovered;
+                cx.notify();
+            }
+        });
+    })
+    .tooltip(move |ix, _, cx| -> Option<AnyView> {
+        let hit = tip_hits.iter().find(|h| h.range.contains(&ix))?;
+        let label = tip_labels.get(hit.source)?.clone();
+        Some(cx.new(|_| CiteDestination(label)).into())
+    })
+    .on_click(ranges, move |range_ix, _, cx| {
+        let Some(ordinal) = click_hits.get(range_ix).map(|h| h.ordinal) else {
+            return;
+        };
+        click_state.update(cx, |s, cx| {
+            let next = if s.open == Some(Open::Cite(ordinal)) {
+                None
+            } else {
+                Some(Open::Cite(ordinal))
+            };
+            s.set_open(next, &click_sources);
+            cx.notify();
+        });
+    });
+
+    let leave = state.clone();
     div()
-        .id(ElementId::NamedInteger("ca-cite".into(), ix as u64))
-        .flex_none()
-        .h(px(16.))
-        .min_w(px(16.))
-        .px(px(4.))
-        .ml(px(3.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(radius::XS))
-        .cursor_pointer()
-        .text_size(px(10.5))
-        .line_height(px(16.))
-        .font_weight(FontWeight::MEDIUM)
-        .bg(motion::mix(
-            t.fill(FillTier::Secondary),
-            t.accent_wash,
-            glow,
-        ))
-        .text_color(motion::mix(
-            t.text_muted,
-            if t.dark { t.text } else { t.accent },
-            glow,
-        ))
-        .on_hover(move |hovered, window, cx| {
-            motion::set_hover(&chip_key, *hovered, motion::reduced_motion(cx));
-            window.refresh();
-            hover_state.update(cx, |s, cx| {
-                if *hovered {
-                    s.hover = Some(ix);
-                } else if s.hover == Some(ix) {
-                    s.hover = None;
-                }
-                cx.notify();
-            })
+        .id(ElementId::NamedInteger("ca-para".into(), pix as u64))
+        .relative()
+        .w_full()
+        .text_size(px(MD_TEXT_SIZE))
+        .line_height(px(MD_LINE_HEIGHT))
+        .on_hover(move |hovered, _, cx| {
+            if !*hovered {
+                leave.update(cx, |s, cx| {
+                    if s.hover_cite.take().is_some() {
+                        cx.notify();
+                    }
+                });
+            }
         })
-        .on_click(move |_, _, cx| {
-            click_state.update(cx, |s, cx| {
-                s.open = if s.open == Some(Open::Cite(ix)) {
-                    None
-                } else {
-                    Some(Open::Cite(ix))
-                };
-                cx.notify();
-            })
-        })
-        .child(format!("{}", source + 1))
+        .child(underlay)
+        .child(text)
         .into_any_element()
+}
+
+/// One source in the column.
+struct SourceCard<'a> {
+    key: &'a str,
+    ix: usize,
+    source: &'a CitedSource,
+    is_open: bool,
+    /// A citation of this source is pointed at.
+    hot: bool,
+    /// The fold: 0 shut, 1 open, and the body's fade.
+    progress: f32,
+    body_alpha: f32,
+    marks: Vec<SharedString>,
+    mark_progress: Vec<f32>,
+    copied: bool,
+    height: Rc<Cell<f32>>,
+    on_open: Option<SourceHandler>,
+}
+
+impl SourceCard<'_> {
+    /// pink: `transcript.rs` – the expandable chip card (r10,
+    /// `hairline(0.07)`, `ink(0.03)`) with a two-line header and a body that
+    /// folds open under a 1 px `hairline(0.06)` rule, fading in with a 6 px
+    /// settle.
+    fn render(
+        self,
+        t: &Pink,
+        state: &gpui::Entity<State>,
+        cite_sources: &Rc<Vec<usize>>,
+    ) -> AnyElement {
+        let Self {
+            key,
+            ix,
+            source,
+            is_open,
+            hot,
+            progress,
+            body_alpha,
+            ..
+        } = self;
+        let hot_t = motion::follow(&format!("{key}-hot-{ix}"), hot as u8 as f32, HOVER_FADE);
+        let lit = motion::follow(
+            &format!("{key}-tile-{ix}"),
+            (hot || is_open) as u8 as f32,
+            HOVER_FADE,
+        );
+        let group = SharedString::from(format!("{key}-src-{ix}"));
+        let ring = t.focus_ring();
+
+        // pink: the chip header's 18 px tile (r6, `ink(0.08)`), here holding
+        // the citation number; it takes the accent wash while the source is
+        // in play.
+        let tile = div()
+            .size(px(TILE))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(radius::SM))
+            .bg(motion::mix(t.ink(0.08), t.accent_wash, lit))
+            .type_style(TextStyle::Caption)
+            .font_weight(FontWeight::MEDIUM)
+            .font_features(pink::tabular_figures())
+            .text_color(motion::mix(
+                t.content_muted,
+                t.readable_tone(t.accent, 1.),
+                lit,
+            ))
+            .child((ix + 1).to_string());
+
+        // pink: the trailing disclosure tile – half strength at rest, full
+        // under the pointer; the 12 px chevron turns 90° with the fold.
+        let chevron = div()
+            .size(px(TILE))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .opacity(0.5)
+            .group_hover(group.clone(), |style| style.opacity(1.))
+            .child(
+                svg()
+                    .path(ICON_CHEVRON)
+                    .size(px(CHEVRON))
+                    .flex_none()
+                    .text_color(t.content_faint)
+                    .group_hover(group.clone(), |style| style.text_color(t.text))
+                    .with_transformation(Transformation::rotate(radians(FRAC_PI_2 * progress))),
+            );
+
+        let hover_state = state.clone();
+        let toggle_state = state.clone();
+        let toggle_sources = cite_sources.clone();
+        let header = div()
+            .id(ElementId::NamedInteger("ca-src-head".into(), ix as u64))
+            .group(group.clone())
+            .role(Role::Button)
+            .aria_label(source.title.clone())
+            .aria_expanded(is_open)
+            .tab_index(0)
+            .rounded(px(radius::SM))
+            .focus_visible(move |style| pink::focus_ring(style, ring))
+            .h(px(SOURCE_HEADER_HEIGHT))
+            .flex_none()
+            .px(px(space::S8))
+            .flex()
+            .items_center()
+            .gap(px(space::S8))
+            .cursor_pointer()
+            .on_hover(move |hovered, _, cx| {
+                hover_state.update(cx, |s, cx| {
+                    let next = if *hovered {
+                        Some(ix)
+                    } else if s.hover_source == Some(ix) {
+                        None
+                    } else {
+                        s.hover_source
+                    };
+                    if s.hover_source != next {
+                        s.hover_source = next;
+                        cx.notify();
+                    }
+                })
+            })
+            .on_click(move |_, _, cx| {
+                toggle_state.update(cx, |s, cx| {
+                    let next = if source_of(s.open, &toggle_sources) == Some(ix) {
+                        None
+                    } else {
+                        Some(Open::Source(ix))
+                    };
+                    s.set_open(next, &toggle_sources);
+                    cx.notify();
+                })
+            })
+            .child(tile)
+            .child(
+                // pink: command palette history row – a 12 px title over an
+                // 11 px faint meta line, 2 px apart.
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap(px(space::S2))
+                    .child(
+                        div()
+                            .id("ca-src-title")
+                            .truncate()
+                            .type_style(TextStyle::Footnote)
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(t.text.opacity(0.85))
+                            .group_hover(group.clone(), |style| style.text_color(t.text))
+                            .child(source.title.clone()),
+                    )
+                    .child(
+                        div()
+                            .truncate()
+                            .type_style(TextStyle::Caption)
+                            .text_color(t.content_faint)
+                            .child(source.meta()),
+                    ),
+            )
+            .child(chevron);
+
+        let body = self.body(t, state);
+        let natural = self.height.get();
+        div()
+            .id(ElementId::NamedInteger("ca-src".into(), ix as u64))
+            .flex()
+            .flex_col()
+            .overflow_hidden()
+            .rounded(px(radius::PANEL))
+            .border_1()
+            .border_color(motion::mix(t.hairline(0.07), t.accent.opacity(0.35), hot_t))
+            .bg(t.ink(0.03))
+            .child(header)
+            .child(
+                div()
+                    .flex_none()
+                    .overflow_hidden()
+                    .when(natural > 0. || !is_open, |d| d.h(px(natural * progress)))
+                    .child(
+                        div()
+                            .relative()
+                            .top(px(TOOL_BODY_RISE * (1. - body_alpha)))
+                            .opacity(body_alpha)
+                            .child(body),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    /// The folded part: the passage in pink's blockquote (a 2 px accent@0.6
+    /// rail on accent@0.05, right corners 6, `pl 12 pr 10 py 6`, muted text),
+    /// set at pink's 12/18 tool-detail size for the narrow column, with its
+    /// marks in pink's match wash, then the meta lane.
+    fn body(&self, t: &Pink, state: &gpui::Entity<State>) -> Div {
+        let ix = self.ix;
+        let key = self.key;
+        let passage = &self.source.passage;
+
+        // Marked words: `code_text` over a rounded `code_wash`, each mark
+        // arriving on its own beat.
+        let mut ranges: Vec<(Range<usize>, f32)> = mark_ranges(passage, &self.marks)
+            .into_iter()
+            .zip(self.mark_progress.iter().copied())
+            .collect();
+        ranges.sort_by_key(|(r, _)| r.start);
+        let mut runs = Vec::new();
+        let mut at = 0;
+        let run = |len: usize, color: Hsla| TextRun {
+            len,
+            font: sans(),
+            color,
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        for (range, p) in &ranges {
+            if range.start < at {
+                continue;
+            }
+            if range.start > at {
+                runs.push(run(range.start - at, t.content_muted));
+            }
+            runs.push(run(
+                range.len(),
+                motion::mix(t.content_muted, t.code_text, *p),
+            ));
+            at = range.end;
+        }
+        if at < passage.len() {
+            runs.push(run(passage.len() - at, t.content_muted));
+        }
+        let styled = StyledText::new(passage.clone()).with_runs(runs);
+        let washes = ranges
+            .iter()
+            .filter(|(_, p)| *p > 0.001)
+            .map(|(r, p)| (r.clone(), t.code_wash.opacity(*p)))
+            .collect();
+        let quote = div()
+            .relative()
+            .border_l_2()
+            .border_color(t.accent.opacity(0.6))
+            .bg(t.accent.opacity(0.05))
+            .rounded_tr(px(radius::SM))
+            .rounded_br(px(radius::SM))
+            .pl(px(space::S12))
+            .pr(px(space::S10))
+            .py(px(space::S6))
+            .text_size(px(TOOL_LABEL_SIZE))
+            .line_height(px(TOOL_LABEL_LINE_HEIGHT))
+            .text_color(t.content_muted)
+            .child(
+                div()
+                    .relative()
+                    .child(wash_underlay(styled.layout().clone(), washes))
+                    .child(styled),
+            );
+
+        // pink: the meta lane – `pt 4`, 24 px actions 2 px apart.
+        let live = self.is_open;
+        let copy_state = state.clone();
+        let quoted = SharedString::from(format!(
+            "“{}”\n— {}, {}",
+            passage, self.source.title, self.source.site
+        ));
+        let copy = meta_action(
+            format!("{key}-copy-{ix}").into(),
+            if self.copied { ICON_COPIED } else { ICON_COPY },
+            if self.copied { "Copied" } else { "Copy quote" }.into(),
+            live,
+            t,
+        )
+        .when(live, |el| {
+            el.on_click(move |_, _, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(quoted.to_string()));
+                let entity = copy_state.clone();
+                copy_state.update(cx, |s, cx| {
+                    s.copied = Some(ix);
+                    s._reset = Some(cx.spawn(async move |_, cx| {
+                        cx.background_executor().timer(COPIED_FOR).await;
+                        let _ = entity.update(cx, |s, cx| {
+                            s.copied = None;
+                            cx.notify();
+                        });
+                    }));
+                    cx.notify();
+                });
+            })
+        });
+        let open = self.on_open.clone().map(|handler| {
+            meta_action(
+                format!("{key}-goto-{ix}").into(),
+                ICON_OPEN,
+                format!("Open in {}", self.source.site).into(),
+                live,
+                t,
+            )
+            .when(live, |el| {
+                el.on_click(move |_, window, cx| handler(ix, window, cx))
+            })
+        });
+
+        div()
+            .relative()
+            .flex_none()
+            .flex()
+            .flex_col()
+            .child(div().h(px(1.)).flex_none().bg(t.hairline(0.06)))
+            .child(div().px(px(space::S8)).pt(px(space::S8)).child(quote))
+            .child(
+                div()
+                    .px(px(space::S4))
+                    .pt(px(space::S4))
+                    .pb(px(space::S4))
+                    .flex()
+                    .items_center()
+                    .gap(px(space::S2))
+                    .child(copy)
+                    .children(open),
+            )
+            .child(measure(self.height.clone()))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -904,16 +1280,13 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .sources(vec![
                 CitedSource::new("Refunds and cancellations", "Help Center")
                     .date("Updated Sep 2")
-                    .passage("Annual subscriptions can be refunded in full within 30 days of purchase or renewal. After 30 days we refund the unused months on a prorated basis, minus one month's fee. Monthly plans are not refunded but can be cancelled at any time.")
-                    .tone(Tone::Accent),
+                    .passage("Annual subscriptions can be refunded in full within 30 days of purchase or renewal. After 30 days we refund the unused months on a prorated basis, minus one month's fee. Monthly plans are not refunded but can be cancelled at any time."),
                 CitedSource::new("Billing terms, section 4.2", "Legal")
                     .date("Effective Jan 1")
-                    .passage("Add-ons bought during a subscription term, including extra seats and storage, are refundable under the same conditions as the plan they are attached to, measured from the add-on's own purchase date.")
-                    .tone(Tone::Warning),
+                    .passage("Add-ons bought during a subscription term, including extra seats and storage, are refundable under the same conditions as the plan they are attached to, measured from the add-on's own purchase date."),
                 CitedSource::new("Issuing refunds", "Support playbook")
                     .date("Edited 3 days ago")
-                    .passage("Agents can issue refunds of up to $5,000 directly from the billing console. Anything larger needs a finance approver on the ticket. Customers who pay by invoice receive a credit note rather than a card refund.")
-                    .tone(Tone::Success),
+                    .passage("Agents can issue refunds of up to $5,000 directly from the billing console. Anything larger needs a finance approver on the ticket. Customers who pay by invoice receive a credit note rather than a card refund."),
             ])
             .paragraph(vec![
                 Sentence::new("Yes. Annual plans get a full refund within 30 days of purchase or renewal.")
@@ -931,7 +1304,8 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                         Citation::new(1)
                             .mark("same conditions as the plan")
                             .mark("measured from the add-on's own purchase date"),
-                    ),
+                    )
+                    .cite(Citation::new(0).mark("refunded in full within 30 days")),
                 Sentence::new("Support can refund up to $5,000 from the billing console; larger amounts need a finance approver.")
                     .cite(
                         Citation::new(2)
@@ -942,6 +1316,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                     .cite(Citation::new(2).mark("receive a credit note rather than a card refund")),
             ])
             .default_open(1)
+            .on_open_source(|_, _, _| {})
     })
 }
 
@@ -950,21 +1325,47 @@ mod tests {
     use super::*;
 
     #[test]
-    fn words_carry_byte_ranges() {
-        let w = words("a  bc d");
-        assert_eq!(
-            w.iter().map(|(_, s)| *s).collect::<Vec<_>>(),
-            ["a", "bc", "d"]
-        );
-        assert_eq!(w[1].0, 3..5);
-    }
-
-    #[test]
     fn marks_found_in_passage() {
         let ranges = mark_ranges(
             "refund the unused months",
             &["unused months".into(), "absent".into()],
         );
         assert_eq!(ranges, vec![11..24]);
+    }
+
+    #[test]
+    fn sentences_flatten_with_superscript_citations() {
+        let sentences = vec![
+            Sentence::new("One.").cite(Citation::new(0)),
+            Sentence::new("Two.")
+                .cite(Citation::new(1))
+                .cite(Citation::new(2)),
+        ];
+        let color = |_: usize| Hsla::default();
+        let cite = |_: usize, _: usize| Hsla::default();
+        let flat = flatten_paragraph(&sentences, 3, 5, &color, &cite);
+        assert_eq!(flat.text, format!("One.1 Two.2{CITE_GAP}3"));
+        assert_eq!(flat.sentences[0], (3, 0..5));
+        assert_eq!(flat.sentences[1].0, 4);
+        assert_eq!(
+            &flat.text[flat.sentences[1].1.clone()],
+            format!("Two.2{CITE_GAP}3")
+        );
+        let ordinals: Vec<_> = flat.cites.iter().map(|c| (c.ordinal, c.source)).collect();
+        assert_eq!(ordinals, [(5, 0), (6, 1), (7, 2)]);
+        assert_eq!(&flat.text[flat.cites[2].range.clone()], "3");
+        assert_eq!(
+            flat.runs.iter().map(|r| r.len).sum::<usize>(),
+            flat.text.len()
+        );
+    }
+
+    #[test]
+    fn open_state_names_its_source() {
+        let cite_sources = [0, 0, 2];
+        assert_eq!(source_of(Some(Open::Cite(2)), &cite_sources), Some(2));
+        assert_eq!(source_of(Some(Open::Source(1)), &cite_sources), Some(1));
+        assert_eq!(source_of(Some(Open::Cite(9)), &cite_sources), None);
+        assert_eq!(source_of(None, &cite_sources), None);
     }
 }
