@@ -15,11 +15,8 @@
 //!     .on_auto(|on, _, _| println!("auto {on}"))
 //! ```
 
-use std::sync::Arc;
-use std::{
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnimationExt, AnyView, App, Context, ElementId, Entity, FontWeight, IntoElement,

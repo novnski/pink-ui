@@ -14,13 +14,8 @@
 //!     .done(finished)
 //! ```
 
-use std::sync::Arc;
-use std::{
-    f32::consts::PI,
-    mem,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{f32::consts::PI, mem, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     AnyElement, AnyView, App, BoxShadow, Context, ElementId, FontWeight, HighlightStyle, Hsla,

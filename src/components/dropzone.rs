@@ -15,14 +15,14 @@
 //!     .on_files(|paths, _, _| upload(paths))
 //! ```
 
-use std::sync::Arc;
 use std::{
     cell::Cell,
     f32::consts::PI,
     path::{Path, PathBuf},
     rc::Rc,
-    time::{Duration, Instant},
+    sync::Arc,
 };
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnyView, App, Context, ElementId, Entity, ExternalPaths, FillOptions, FillRule,

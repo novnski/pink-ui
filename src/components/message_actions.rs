@@ -20,14 +20,8 @@
 //!     .on_feedback(|kind, reason, window, cx| { /* store the vote */ })
 //! ```
 
-use std::sync::Arc;
-use std::{
-    cell::Cell,
-    collections::HashMap,
-    f32::consts::TAU,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::Cell, collections::HashMap, f32::consts::TAU, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnyElement, AnyView, App, BoxShadow, ClipboardItem, Context, Div, ElementId, Entity,

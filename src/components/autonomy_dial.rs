@@ -19,8 +19,7 @@
 //! .on_change(|level, _, _| println!("level {level}"))
 //! ```
 
-use std::sync::Arc;
-use std::{collections::HashSet, f32::consts::PI, rc::Rc};
+use std::{collections::HashSet, f32::consts::PI, rc::Rc, sync::Arc};
 
 use gpui::{
     AnyView, App, Bounds, DispatchPhase, ElementId, Entity, FocusHandle, FontWeight, Hsla,

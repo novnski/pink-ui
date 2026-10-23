@@ -23,8 +23,7 @@
 //! .on_change(|value, _, _| println!("{value}"))
 //! ```
 
-use std::sync::Arc;
-use std::{rc::Rc, time::Duration};
+use std::{rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     AnyElement, AnyView, App, BoxShadow, DispatchPhase, Entity, FocusHandle, FontWeight,

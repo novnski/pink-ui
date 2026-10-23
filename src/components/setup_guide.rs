@@ -16,12 +16,12 @@
 //!     .on_toggle(|task, done, _, _| println!("{task}: {done}"))
 //! ```
 
-use std::sync::Arc;
 use std::{
     cell::Cell,
     collections::{HashMap, HashSet},
     f32::consts::PI,
     rc::Rc,
+    sync::Arc,
     time::Duration,
 };
 

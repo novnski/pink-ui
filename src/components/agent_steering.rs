@@ -14,11 +14,8 @@
 //!     .on_steer(|note, _, _| println!("{} (interrupt: {})", note.text, note.interrupt))
 //! ```
 
-use std::sync::Arc;
-use std::{
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnimationExt, AnyElement, AnyView, App, ElementId, Entity, FontWeight, Hsla,

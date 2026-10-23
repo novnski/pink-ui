@@ -18,14 +18,14 @@
 //!     })
 //! ```
 
-use std::sync::Arc;
 use std::{
     cell::{Cell, RefCell},
     collections::{HashMap, HashSet},
     f32::consts::PI,
     rc::Rc,
-    time::{Duration, Instant, SystemTime},
+    sync::Arc,
 };
+use web_time::{Duration, Instant, SystemTime};
 
 use gpui::{
     Animation, AnimationExt, AnyElement, AnyView, App, Bounds, BoxShadow, Context, ElementId,

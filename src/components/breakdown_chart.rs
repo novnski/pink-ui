@@ -15,8 +15,7 @@
 //!     .segment(2) // dimension stacked inside each column
 //! ```
 
-use std::sync::Arc;
-use std::{cell::Cell, rc::Rc};
+use std::{cell::Cell, rc::Rc, sync::Arc};
 
 use gpui::{
     AnyView, App, Bounds, Corners, ElementId, FocusHandle, FontWeight, Hsla, KeyDownEvent,

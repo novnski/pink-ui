@@ -19,12 +19,8 @@
 //!     .on_apply(|text, _, cx| { /* replace the selection */ })
 //! ```
 
-use std::sync::Arc;
-use std::{
-    f32::consts::TAU,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{f32::consts::TAU, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnyElement, AnyView, App, Bounds, ClipboardItem, Context, ElementId, Entity,

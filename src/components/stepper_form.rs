@@ -13,8 +13,7 @@
 //! StepperForm::new("new-project").on_complete(|project, _, _| create(project))
 //! ```
 
-use std::sync::Arc;
-use std::{cell::Cell, f32::consts::PI, rc::Rc, time::Duration};
+use std::{cell::Cell, f32::consts::PI, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     Animation, AnyElement, AnyView, App, Context, ElementId, Entity, FontWeight, IntoElement,

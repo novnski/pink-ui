@@ -15,11 +15,8 @@
 //!     .block(LaneBlock::new(1, "Patch partial refunds").span(-530.0, 40.0).handoff(0, "spec.md"))
 //! ```
 
-use std::sync::Arc;
-use std::{
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnimationExt, AnyView, App, ElementId, FontWeight, Hsla, IntoElement, PathBuilder,

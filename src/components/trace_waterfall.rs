@@ -15,8 +15,8 @@
 //!     .playback(1.0)
 //! ```
 
-use std::sync::Arc;
-use std::{collections::HashSet, rc::Rc, time::Instant};
+use std::{collections::HashSet, rc::Rc, sync::Arc};
+use web_time::Instant;
 
 use gpui::{
     AnyElement, AnyView, App, ElementId, Entity, FocusHandle, FontWeight, Hsla, IntoElement,

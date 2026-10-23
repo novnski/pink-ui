@@ -15,8 +15,7 @@
 //!     .on_connect(|service, connected, _, _| println!("{} → {connected}", service.name))
 //! ```
 
-use std::sync::Arc;
-use std::{collections::HashMap, rc::Rc, time::Duration};
+use std::{collections::HashMap, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     Animation, AnimationExt, AnyView, App, Context, ElementId, Entity, Focusable, FontWeight, Hsla,

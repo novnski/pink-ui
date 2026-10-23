@@ -15,12 +15,8 @@
 //!     .on_resolve(|decision, _, _| println!("{decision:?}"))
 //! ```
 
-use std::sync::Arc;
-use std::{
-    cell::Cell,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::Cell, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     AnyView, App, Bounds, ElementId, Entity, FocusHandle, FontWeight, HighlightStyle, Hsla,

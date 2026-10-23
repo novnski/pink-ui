@@ -13,11 +13,8 @@
 //!     .on_change(|change, _, _| println!("{change:?}"))
 //! ```
 
-use std::sync::Arc;
-use std::{
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     AnyElement, AnyView, App, Context, ElementId, Entity, FontWeight, IntoElement, SharedString,

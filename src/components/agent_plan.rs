@@ -16,12 +16,12 @@
 //! The run is simulated from each step's estimate (use [`AgentPlan::fail_once`]
 //! to rehearse a failure), so the component works on its own in a demo.
 
-use std::sync::Arc;
 use std::{
     f32::consts::{PI, TAU},
     rc::Rc,
-    time::{Duration, Instant},
+    sync::Arc,
 };
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnimationExt, AnyElement, AnyView, App, ClickEvent, ElementId, Entity, FontWeight,

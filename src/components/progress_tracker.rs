@@ -19,11 +19,8 @@
 //! .on_change(|steps, _, _| println!("{} done", steps.iter().filter(|s| s.done).count()))
 //! ```
 
-use std::sync::Arc;
-use std::{
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     AnyView, App, BoxShadow, Context, ElementId, FocusHandle, FontWeight, Hsla, IntoElement,

@@ -14,8 +14,7 @@
 //!     .period(BreakdownPeriod::new("7d", vec![352e6]).previous(vec![331e6]))
 //! ```
 
-use std::sync::Arc;
-use std::{cell::Cell, f32::consts::TAU, rc::Rc};
+use std::{cell::Cell, f32::consts::TAU, rc::Rc, sync::Arc};
 
 use gpui::{
     AnyView, App, Bounds, ElementId, FocusHandle, FontWeight, Hsla, KeyDownEvent, MouseButton,

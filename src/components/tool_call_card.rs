@@ -26,14 +26,8 @@
 //!     )
 //! ```
 
-use std::sync::Arc;
-use std::{
-    cell::Cell,
-    f32::consts::PI,
-    ops::Range,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::Cell, f32::consts::PI, ops::Range, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     AlignItems, Animation, AnyElement, AnyView, App, AsyncApp, BoxShadow, ClipboardItem, Context,

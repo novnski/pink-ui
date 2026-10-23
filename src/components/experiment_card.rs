@@ -19,8 +19,7 @@
 //!     .on_ship(|ix, _, _| println!("ship variant {ix}"))
 //! ```
 
-use std::sync::Arc;
-use std::{rc::Rc, time::Duration};
+use std::{rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     Animation, AnyView, App, Bounds, ElementId, FocusHandle, FontWeight, Hsla, KeyDownEvent,

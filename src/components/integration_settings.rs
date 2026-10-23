@@ -12,8 +12,7 @@
 //!     .on_save(|values, _, _| persist(values))
 //! ```
 
-use std::sync::Arc;
-use std::{rc::Rc, time::Duration};
+use std::{rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     Animation, AnyView, App, ClipboardItem, Context, ElementId, Entity, FontWeight, Hsla,

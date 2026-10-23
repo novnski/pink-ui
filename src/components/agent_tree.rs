@@ -17,8 +17,7 @@
 //!     .on_retry(|id, _, _| println!("retry {id}"))
 //! ```
 
-use std::sync::Arc;
-use std::{collections::HashSet, rc::Rc, time::Duration};
+use std::{collections::HashSet, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     Animation, AnimationExt, AnyElement, AnyView, App, Div, ElementId, Entity, FocusHandle,

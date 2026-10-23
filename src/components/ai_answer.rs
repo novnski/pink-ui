@@ -22,13 +22,8 @@
 //!     .on_follow_up(|question, _, _| println!("{question}"))
 //! ```
 
-use std::sync::Arc;
-use std::{
-    cell::Cell,
-    f32::consts::TAU,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::Cell, f32::consts::TAU, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     Anchor, Animation, AnyElement, AnyView, App, ClipboardItem, Context, ElementId, Entity,

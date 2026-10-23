@@ -17,11 +17,8 @@
 //!     .on_compact(|_, _| {})
 //! ```
 
-use std::sync::Arc;
-use std::{
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnimationExt, AnyView, App, ElementId, Entity, FontWeight, Hsla, SharedString, Task,

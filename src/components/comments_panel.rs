@@ -17,13 +17,8 @@
 //!     .on_run(|id, _, cx| { /* apply the edit */ })
 //! ```
 
-use std::sync::Arc;
-use std::{
-    cell::Cell,
-    collections::HashMap,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::Cell, collections::HashMap, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnyElement, AnyView, App, Context, ElementId, Entity, FontWeight, Hsla, IntoElement,

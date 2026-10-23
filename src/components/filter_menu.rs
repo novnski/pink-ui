@@ -20,11 +20,11 @@
 //! .on_change(|value, _, _| println!("{value:?}"))
 //! ```
 
-use std::sync::Arc;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     f32::consts::FRAC_PI_2,
     rc::Rc,
+    sync::Arc,
 };
 
 use gpui::{

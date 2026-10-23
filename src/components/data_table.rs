@@ -22,8 +22,7 @@
 //!     .on_change(|rows, _, _| println!("{} rows", rows.len()))
 //! ```
 
-use std::sync::Arc;
-use std::{rc::Rc, time::Duration};
+use std::{rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     AnyView, App, ClipboardItem, Context, ElementId, Entity, FocusHandle, FontWeight, KeyDownEvent,

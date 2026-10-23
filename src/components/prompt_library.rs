@@ -17,8 +17,7 @@
 //!     .on_use(|template, prompt, _, _| println!("{}: {prompt}", template.title))
 //! ```
 
-use std::sync::Arc;
-use std::{collections::HashMap, f32::consts::TAU, rc::Rc, time::Duration};
+use std::{collections::HashMap, f32::consts::TAU, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     Animation, AnimationExt, AnyView, App, Context, ElementId, Entity, FontWeight, HighlightStyle,

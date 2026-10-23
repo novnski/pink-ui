@@ -18,8 +18,7 @@
 //!     .default_open(0)
 //! ```
 
-use std::sync::Arc;
-use std::{cell::Cell, f32::consts::TAU, ops::Range, rc::Rc, time::Duration};
+use std::{cell::Cell, f32::consts::TAU, ops::Range, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     AnyElement, AnyView, App, ClipboardItem, Context, ElementId, Entity, FontWeight, Hsla,

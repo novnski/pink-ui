@@ -18,11 +18,11 @@
 //! .on_dismiss(|notice, _, _| println!("dismissed {}", notice.id))
 //! ```
 
-use std::sync::Arc;
 use std::{
     collections::{HashMap, HashSet},
     f32::consts::PI,
     rc::Rc,
+    sync::Arc,
     time::Duration,
 };
 

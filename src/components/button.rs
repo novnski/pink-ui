@@ -21,8 +21,7 @@
 //!     .loading(uploading);
 //! ```
 
-use std::sync::Arc;
-use std::{collections::HashMap, f32::consts::TAU, ops::Range, rc::Rc, time::Duration};
+use std::{collections::HashMap, f32::consts::TAU, ops::Range, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     AnyElement, AnyView, App, BoxShadow, ClickEvent, Context, CursorStyle, Div, ElementId, Entity,

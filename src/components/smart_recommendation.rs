@@ -19,8 +19,7 @@
 //! .on_accept(|option, _, _| println!("{}", option.label))
 //! ```
 
-use std::sync::Arc;
-use std::{f32::consts::FRAC_PI_2, ops::Range, rc::Rc};
+use std::{f32::consts::FRAC_PI_2, ops::Range, rc::Rc, sync::Arc};
 
 use gpui::{
     AnyView, App, BoxShadow, ElementId, Entity, FocusHandle, Font, FontWeight, Hsla, IntoElement,

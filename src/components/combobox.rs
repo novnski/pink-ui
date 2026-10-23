@@ -17,8 +17,7 @@
 //!     .on_change(|ids, _, _| println!("{ids:?}"))
 //! ```
 
-use std::sync::Arc;
-use std::{ops::Range, rc::Rc};
+use std::{ops::Range, rc::Rc, sync::Arc};
 
 use gpui::{
     AnimationExt, AnyView, App, Bounds, Context, ElementId, Entity, Focusable, FontWeight,

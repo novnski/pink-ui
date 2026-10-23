@@ -19,13 +19,8 @@
 //! ])
 //! ```
 
-use std::sync::Arc;
-use std::{
-    cell::Cell,
-    f32::consts::TAU,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::Cell, f32::consts::TAU, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnyView, App, Context, ElementId, FocusHandle, FontWeight, Hsla, IntoElement,

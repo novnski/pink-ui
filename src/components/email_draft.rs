@@ -17,13 +17,8 @@
 //!     .on_send(|email, _, _| println!("to {}", email.to.email))
 //! ```
 
-use std::sync::Arc;
-use std::{
-    cell::Cell,
-    f32::consts::PI,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::Cell, f32::consts::PI, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     AnyElement, AnyView, App, BoxShadow, Context, CursorStyle, Div, ElementId, Entity, FocusHandle,

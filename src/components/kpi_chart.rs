@@ -14,8 +14,7 @@
 //!     .on_range_change(|ix, _, _| println!("range {ix}"))
 //! ```
 
-use std::sync::Arc;
-use std::{cell::Cell, rc::Rc};
+use std::{cell::Cell, rc::Rc, sync::Arc};
 
 use gpui::{
     AnyView, App, BorderStyle, Bounds, ContentMask, Corners, Edges, ElementId, FocusHandle,

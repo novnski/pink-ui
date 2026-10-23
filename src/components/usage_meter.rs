@@ -16,8 +16,7 @@
 //!     .on_raise_limit(|_, _| {})
 //! ```
 
-use std::sync::Arc;
-use std::{cell::Cell, f32::consts::TAU, rc::Rc, time::Duration};
+use std::{cell::Cell, f32::consts::TAU, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     Animation, AnyView, App, Bounds, ElementId, FontWeight, Hsla, MouseMoveEvent, PathBuilder,

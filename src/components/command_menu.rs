@@ -14,8 +14,7 @@
 //!     .on_run(|command, _, _| println!("{}", command.label))
 //! ```
 
-use std::sync::Arc;
-use std::{ops::Range, rc::Rc, time::Duration};
+use std::{ops::Range, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     AnimationExt, AnyView, App, Context, ElementId, Entity, Focusable, FontWeight, HighlightStyle,

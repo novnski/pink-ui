@@ -14,13 +14,13 @@
 //! .on_decide(|decision, answer, _, _| println!("{}: {answer:?}", decision.id))
 //! ```
 
-use std::sync::Arc;
 use std::{
     cell::{Cell, RefCell},
     collections::HashMap,
     rc::Rc,
-    time::{Duration, Instant},
+    sync::Arc,
 };
+use web_time::{Duration, Instant};
 
 use gpui::{
     AnyElement, AnyView, App, Bounds, BoxShadow, Context, ElementId, FocusHandle, FontWeight, Hsla,

@@ -16,12 +16,8 @@
 //!     .on_send(|message, _, cx| println!("{} via {}", message.text, message.model))
 //! ```
 
-use std::sync::Arc;
-use std::{
-    f32::consts::TAU,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{f32::consts::TAU, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     Anchor, Animation, AnyElement, AnyView, App, Bounds, Context, ElementId, Entity, FocusHandle,

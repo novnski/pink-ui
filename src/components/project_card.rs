@@ -15,8 +15,7 @@
 //!     .subtask(Subtask::new("Map old plans to new prices", 0).done(true))
 //! ```
 
-use std::sync::Arc;
-use std::{cell::Cell, f32::consts::PI, rc::Rc};
+use std::{cell::Cell, f32::consts::PI, rc::Rc, sync::Arc};
 
 use gpui::{
     AnyView, App, Bounds, ElementId, FontWeight, Hsla, IntoElement, MouseMoveEvent, PathBuilder,

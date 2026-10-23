@@ -20,13 +20,8 @@
 //! records its bounds when painted) and move on a critically damped spring,
 //! so they keep up with targets that shift while the page reflows.
 
-use std::sync::Arc;
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnimationExt, AnyElement, AnyView, App, Bounds, Div, ElementId, FontWeight, Hsla,

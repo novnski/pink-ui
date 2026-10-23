@@ -14,13 +14,13 @@
 //!     .on_action(|task, action, _, _| println!("{task}: {action:?}"))
 //! ```
 
-use std::sync::Arc;
 use std::{
     cell::RefCell,
     f32::consts::{PI, TAU},
     rc::Rc,
-    time::{Duration, Instant},
+    sync::Arc,
 };
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnimationExt, AnyElement, AnyView, App, Bounds, Div, ElementId, FontWeight, Hsla,
