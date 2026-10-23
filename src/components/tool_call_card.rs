@@ -9,7 +9,8 @@
 //! hairline trunk that bends into each row's 14px glyph (the mini spinner
 //! while the call runs, a red danger circle when it failed), the label and
 //! detail in 12/18 muted text that brightens under the pointer, a red
-//! "Failed" word and a half-strength chevron. A row with an invocation or an
+//! "Failed" word and a half-strength chevron; a call that names a file shows
+//! pink's file badge for its detail. A row with an invocation or an
 //! output folds open into pink's code surface: "Invocation" or "Command" and
 //! "Output" segments with copy actions, 24 lines with a counted tail and a
 //! "Show full output" affordance. Rows arrive with the rail drawing into
@@ -39,7 +40,7 @@ use gpui::{
     AnyElement, AnyView, App, AsyncApp, BoxShadow, ClickEvent, ClipboardItem, Context, Div,
     ElementId, Entity, FillOptions, FillRule, FontWeight, IntoElement, PathBuilder, PathStyle,
     Pixels, Point, Role, SharedString, Stateful, Task, Transformation, WeakEntity, Window, canvas,
-    div, point, prelude::*, px, radians, svg,
+    div, img, point, prelude::*, px, radians, svg,
 };
 
 use crate::{
@@ -81,9 +82,12 @@ const TOOL_TREE_ROW_HEIGHT: f32 = 32.0;
 const DISCLOSURE_CHEVRON_SIZE: f32 = pink::icon_size::XS;
 /// Space above the first rail row (pink `CHIPS_TOP_PAD`).
 const CHIPS_TOP_PAD: f32 = 2.0;
-/// Lines a code segment shows before its counted tail (pink
+/// Lines an output segment shows before its counted tail (pink
 /// `OUTPUT_DETAIL_MAX_LINES`).
 const OUTPUT_DETAIL_MAX_LINES: usize = 24;
+/// The ceiling for an invocation and for a full output (pink
+/// `FULL_OUTPUT_MAX_LINES`).
+const FULL_OUTPUT_MAX_LINES: usize = 400;
 /// Invocation and output lines soft-wrap here (pink `CALL_WRAP_COLS`).
 const CALL_WRAP_COLS: usize = 80;
 /// The code surface header (pink `OUTPUT_CODE_HEADER_HEIGHT`).
@@ -107,6 +111,10 @@ const CODE_ACTION_SIZE: f32 = 22.0;
 const COPIED_FOR: Duration = Duration::from_millis(1200);
 /// Rows hover their label, detail and chevron together.
 const HEADER_GROUP: &str = "tool-header";
+/// A file badge: a 22px chip, a 20px well, the 14px file-type artwork (pink
+/// `file_badges::render_file_badge`).
+const FILE_BADGE_HEIGHT: f32 = 22.0;
+const FILE_WELL: f32 = 20.0;
 
 const ICONS: &str = "icons/tool-call-card";
 const ALT_ARROW_RIGHT: &str = "icons/tool-call-card/alt-arrow-right.svg";
@@ -117,6 +125,13 @@ const DANGER_CIRCLE: &str = "icons/tool-call-card/danger-circle.svg";
 const LAYERS: &str = "icons/tool-call-card/layers-minimalistic.svg";
 /// Pink's glyph for a tool it has no kind for.
 const TOOLBOX: &str = "icons/tool-call-card/toolbox.svg";
+/// The polychrome file-type artwork in a file badge's well (pink
+/// `file_icons`, vscode-symbols; dark variants lifted like pink's
+/// `dark_icon_svg`).
+const FILE_RUST: &str = "icons/tool-call-card/file-rust.svg";
+const FILE_RUST_DARK: &str = "icons/tool-call-card/file-rust-dark.svg";
+const FILE_DOCUMENT: &str = "icons/tool-call-card/file-document.svg";
+const FILE_DOCUMENT_DARK: &str = "icons/tool-call-card/file-document-dark.svg";
 
 type OpenHandler = Rc<dyn Fn(bool, &mut Window, &mut App)>;
 
@@ -717,6 +732,7 @@ pub struct ToolCallCard {
     id: ElementId,
     name: SharedString,
     summary: Option<SharedString>,
+    file: Option<SharedString>,
     icon: Option<SharedString>,
     status: ToolCallStatus,
     args: Option<ToolPayload>,
@@ -742,6 +758,7 @@ impl ToolCallCard {
             id: id.into(),
             name: name.into(),
             summary: None,
+            file: None,
             icon: None,
             status,
             args: None,
@@ -760,6 +777,14 @@ impl ToolCallCard {
     /// or URL ("cargo test -p cart").
     pub fn summary(mut self, summary: impl Into<SharedString>) -> Self {
         self.summary = Some(summary.into());
+        self
+    }
+
+    /// The file the call reads or writes ("src/cart/total.rs"): its detail
+    /// becomes pink's file badge, the file-type artwork beside the file's
+    /// name. Takes the place of [`summary`](Self::summary).
+    pub fn file(mut self, path: impl Into<SharedString>) -> Self {
+        self.file = Some(path.into());
         self
     }
 
@@ -817,8 +842,8 @@ impl ToolCallCard {
         self
     }
 
-    /// Lines a segment shows before "… N more lines" and "Show full output"
-    /// (default 24, as in pink).
+    /// Lines the output shows before "… N more lines" and "Show full
+    /// output" (default 24, as in pink).
     pub fn max_lines(mut self, lines: usize) -> Self {
         self.max_lines = lines.max(1);
         self
@@ -829,19 +854,29 @@ impl ToolCallCard {
     }
 
     fn detail(&self) -> SharedString {
-        self.summary.as_deref().map(single_line).unwrap_or_default()
+        self.file
+            .as_ref()
+            .or(self.summary.as_ref())
+            .map(|detail| single_line(detail))
+            .unwrap_or_default()
     }
 
-    /// Invocation first (what was asked), then the output (what came back).
+    /// Invocation first (what was asked, whole up to pink's 400-line
+    /// ceiling), then the output (what came back, capped until "Show full
+    /// output").
     fn sections(&self, full: bool) -> Vec<Section> {
-        let cap = if full { usize::MAX } else { self.max_lines };
+        let cap = if full {
+            FULL_OUTPUT_MAX_LINES
+        } else {
+            self.max_lines
+        };
         let asked = self.args.as_ref().and_then(|args| {
             let (label, copy) = if self.command {
                 ("Command", "Copy command")
             } else {
                 ("Invocation", "Copy invocation")
             };
-            Section::new(0, label, copy, args.text(), cap)
+            Section::new(0, label, copy, args.text(), FULL_OUTPUT_MAX_LINES)
         });
         let answer = self
             .result
@@ -859,10 +894,11 @@ impl ToolCallCard {
     /// The row's fold for this frame (pink: `render_tool_group` row heights).
     fn geometry(&self, row: &mut RowState, base: f32, now: Instant, reduced: bool) -> Geometry {
         let sections = self.sections(row.full);
-        let affordance = (!row.full)
-            .then(|| sections.iter().rev().find(|s| s.truncated_by > 0))
-            .flatten()
-            .map(|s| SharedString::from(format!("Show full {}", s.label.to_lowercase())));
+        let affordance = (!row.full
+            && sections
+                .iter()
+                .any(|section| section.slot == 1 && section.truncated_by > 0))
+        .then(|| SharedString::from("Show full output"));
         let expandable = !sections.is_empty();
         // A streaming call with output defaults open; a settled one folded
         let default_open = self
@@ -1266,7 +1302,11 @@ fn chip_header_row(
                 div()
                     .when(!rail, |detail| detail.flex_1())
                     .min_w_0()
-                    .h(px(TOOL_LINE_HEIGHT))
+                    .h(px(if card.file.is_some() {
+                        FILE_BADGE_HEIGHT
+                    } else {
+                        TOOL_LINE_HEIGHT
+                    }))
                     .flex()
                     .items_center()
                     .truncate()
@@ -1275,7 +1315,10 @@ fn chip_header_row(
                     } else {
                         t.text.opacity(0.85)
                     })
-                    .child(div().min_w_0().truncate().child(detail))
+                    .child(match &card.file {
+                        Some(path) => file_badge(path, hover_text, t),
+                        None => div().min_w_0().truncate().child(detail).into_any_element(),
+                    })
                     .map(|detail| {
                         if hover_text {
                             detail
@@ -1330,6 +1373,77 @@ fn chip_header_row(
                     .child(chevron),
             )
         })
+}
+
+/// The file-type artwork for a path (pink `file_icons::asset_path`, for
+/// the kinds this component carries; anything else is pink's generic
+/// document).
+fn file_icon(path: &str, dark: bool) -> &'static str {
+    let rust = file_name(path)
+        .rsplit_once('.')
+        .is_some_and(|(_, ext)| ext.eq_ignore_ascii_case("rs"));
+    match (rust, dark) {
+        (true, true) => FILE_RUST_DARK,
+        (true, false) => FILE_RUST,
+        (false, true) => FILE_DOCUMENT_DARK,
+        (false, false) => FILE_DOCUMENT,
+    }
+}
+
+/// A badge names the last path component (pink `file_badge_name`).
+fn file_name(path: &str) -> &str {
+    path.rsplit(['/', '\\'])
+        .find(|component| !component.is_empty())
+        .unwrap_or(path)
+}
+
+/// Pink's file badge (`file_badges::render_file_badge`, no open route): a
+/// 22px r6 chip on `ink(0.06)` holding the file-type artwork in a 20px well
+/// and the file name in `text` at 85%, brightening with the row's hover.
+fn file_badge(path: &str, hover_text: bool, t: &Pink) -> AnyElement {
+    let text = t.text;
+    // pink `file_icons::well_bg`: a counter-shade seat for the artwork
+    let well = pink::grey(if t.dark { 0 } else { 255 }).opacity(0.16);
+    let chip = div()
+        .min_w_0()
+        .h(px(FILE_BADGE_HEIGHT))
+        .flex()
+        .items_center()
+        .overflow_hidden()
+        .gap(px(6.0))
+        .rounded(px(radius::SM))
+        .bg(t.ink(0.06))
+        .pl(px(1.0))
+        .pr(px(6.0))
+        .text_color(t.text.opacity(0.85))
+        .child(
+            div()
+                .size(px(FILE_WELL))
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(radius::XS))
+                .bg(well)
+                .child(
+                    img(file_icon(path, t.dark))
+                        .flex_none()
+                        .size(px(ACTIVITY_ICON_SIZE)),
+                ),
+        )
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .child(SharedString::from(file_name(path).to_owned())),
+        );
+    if hover_text {
+        chip.id("tool-file-badge")
+            .group_hover(HEADER_GROUP, move |style| style.text_color(text))
+            .into_any_element()
+    } else {
+        chip.into_any_element()
+    }
 }
 
 /// The tree beside a row (pink `activity_rail`): a 1px `hairline(0.12)`
@@ -2115,8 +2229,8 @@ impl RenderOnce for ToolCallGroup {
 // ---------------------------------------------------------------------------
 
 /// When each step of the demo lands (ms), and when it starts over.
-const STEPS: [u64; 10] = [0, 1000, 1800, 2200, 2700, 3200, 4200, 4700, 6400, 6700];
-const LOOP: u64 = 14000;
+const STEPS: [u64; 10] = [0, 1000, 1800, 2400, 3200, 4000, 5200, 5800, 8200, 8500];
+const LOOP: u64 = 16000;
 
 const TOTAL_RS: &str = r#"use crate::{discount::apply_discount, tax::add_tax, Cart, Money};
 
@@ -2312,7 +2426,7 @@ fn demo_view(demo: &Entity<Demo>, cx: &App) -> Div {
         .child(
             ToolCallCard::new("read", "Read", done(1))
                 .icon(icon("file-text"))
-                .summary("src/cart/total.rs")
+                .file("src/cart/total.rs")
                 .args("src/cart/total.rs")
                 .when(step >= 1, |c| c.result(TOTAL_RS)),
         );
@@ -2499,6 +2613,9 @@ mod tests {
             "Ran 2 commands · read 1 file · searched 1 time"
         );
         assert_eq!(single_line("a\n  b\tc"), "a b c");
+        assert_eq!(file_name("src/cart/total.rs"), "total.rs");
+        assert_eq!(file_icon("src/cart/total.rs", true), FILE_RUST_DARK);
+        assert_eq!(file_icon("Cargo.lock", false), FILE_DOCUMENT);
     }
 
     #[test]
