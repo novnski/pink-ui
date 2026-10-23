@@ -3915,6 +3915,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "pink-ui-web"
+version = "0.1.0"
+dependencies = [
+ "gpui-pre",
+ "gpui-pre-platform",
+ "js-sys",
+ "pink-ui",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "piper"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

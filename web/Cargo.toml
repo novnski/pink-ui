@@ -1,0 +1,22 @@
+[package]
+name = "pink-ui-web"
+version = "0.1.0"
+edition = "2024"
+description = "Runs the component demos in the browser for the showcase site"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+pink-ui = { path = ".." }
+gpui = { package = "gpui-pre", version = "=0.3.9" }
+
+# Single-threaded: threads in the browser need nightly Rust and
+# cross-origin isolation headers, which GitHub Pages can't send.
+[target.'cfg(target_family = "wasm")'.dependencies]
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.9", default-features = false }
+js-sys = "0.3"
+wasm-bindgen = "0.2"
