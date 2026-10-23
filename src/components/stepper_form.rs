@@ -1,11 +1,17 @@
-//! Stepper Form – a multi-step setup flow with a vertical step rail.
+//! Stepper Form – a paged setup flow on pink's question-wizard card.
 //!
-//! The rail on the left numbers the steps, checks them off and fills the
-//! line between them as you go; finished steps can be revisited. Each step
-//! slides in from the side it comes from while the card's height glides to
-//! fit it. Continue validates the step in place (the offending field shakes
-//! and says why), and the last step plays a short "creating" beat before a
-//! success screen.
+//! Every step is one page of pink's question wizard (pink: composer.rs
+//! `Composer::render_wizard`): the composer pill's chrome, a tracked
+//! uppercase header with an "n/4" counter chip, the question in 15/20
+//! medium, then the page's controls – captioned fields (pink: automations.rs
+//! `input_frame`), numbered option rows, staged invites or a review – and the
+//! Back / Next footer whose one Primary dims until the page can advance.
+//!
+//! Picking a region moves on by itself after pink's 220ms beat; digits pick,
+//! Enter advances and Escape goes back while no field has focus. Next checks
+//! the page and says what's missing under it, the review's Edit links jump
+//! back to a page, and the last page reads "Creating…" before the finished
+//! project.
 //!
 //! The demo creates a project: name and key, data region, invites, review.
 //!
@@ -13,43 +19,57 @@
 //! StepperForm::new("new-project").on_complete(|project, _, _| create(project))
 //! ```
 
-use std::{cell::Cell, f32::consts::PI, rc::Rc, sync::Arc, time::Duration};
+use std::{rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
-    Animation, AnyElement, AnyView, App, Context, ElementId, Entity, FontWeight, IntoElement,
-    SharedString, Subscription, Task, Transformation, Window, canvas, div, prelude::*, px, radians,
-    svg,
+    AnyElement, AnyView, App, Context, Div, ElementId, Entity, FocusHandle, FontWeight,
+    IntoElement, KeyDownEvent, Role, SharedString, Stateful, Subscription, Task, Toggled, Window,
+    div, prelude::*, px, svg,
 };
 
 use crate::{
-    HoverFill,
-    motion::{self, AnimationExt, GLIDE, MotionSpec},
-    pink::{self, ButtonKind, ControlSize, FillTier, Pink, radius, space, text},
-    primitives::{InputEvent, TextInput, ring},
+    HoverFill, motion,
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, radius},
+    primitives::{InputEvent, TextInput},
     story,
 };
 
 pub const NAME: &str = "Stepper Form";
-pub const DESCRIPTION: &str = "A multi-step setup flow with a vertical rail that checks steps off, steps that slide in, a card that resizes to each step, inline validation and a success screen";
+pub const DESCRIPTION: &str = "A multi-step setup flow on one paged card – a step counter, captioned fields, numbered choices that move on by themselves, invites you can take back, a review with edit links and a Back / Next footer that says what's missing";
 
-const ICON_CHECK: &str = "icons/stepper-form/check.svg";
-const ICON_BACK: &str = "icons/stepper-form/arrow-left.svg";
-const ICON_NEXT: &str = "icons/stepper-form/arrow-right.svg";
-const ICON_GLOBE: &str = "icons/stepper-form/globe.svg";
-const ICON_REMOVE: &str = "icons/stepper-form/x.svg";
-const ICON_MAIL: &str = "icons/stepper-form/mail.svg";
-const ICON_SPARKLE: &str = "icons/stepper-form/sparkle.svg";
-const ICON_SPINNER: &str = "icons/stepper-form/spinner.svg";
+const ICON_CLOSE: &str = "icons/stepper-form/close.svg";
 
-const STEP_IN: MotionSpec = MotionSpec::new(380, motion::EASE_OUT_QUINT);
-const RAIL_W: f32 = 196.;
+/// A single-choice pick moves to the next page after this beat (pink
+/// `composer::AUTO_ADVANCE_MS`).
+const AUTO_ADVANCE_MS: u64 = 220;
+/// The demo's "creating" beat before the finished page.
+const CREATE_MS: u64 = 1300;
+/// The line every pink text field lays out on (pink
+/// `composer::INPUT_LINE_HEIGHT`, `ComposerInput`'s default).
+const INPUT_LINE_HEIGHT: f32 = 22.75;
 
-/// The four steps: title and the line under it in the rail.
-const STEPS: [(&str, &str); 4] = [
-    ("Project", "Name and key"),
-    ("Region", "Where data lives"),
-    ("Team", "Invite people"),
-    ("Review", "Check and create"),
+/// The pages: header, question and the line under it.
+const STEPS: [(&str, &str, &str); 4] = [
+    (
+        "Project",
+        "Name your project",
+        "Shown in the sidebar and in links. The key starts every issue.",
+    ),
+    (
+        "Region",
+        "Where should its data live?",
+        "You can't move a project between regions later.",
+    ),
+    (
+        "Team",
+        "Who else is working on it?",
+        "Invites can also be sent later from Settings.",
+    ),
+    (
+        "Review",
+        "Ready to create it?",
+        "Check the details. Edit jumps back to that page.",
+    ),
 ];
 
 /// Data regions: name, code and a latency hint.
@@ -89,22 +109,22 @@ struct FormState {
     name: Entity<TextInput>,
     key: Entity<TextInput>,
     email: Entity<TextInput>,
+    /// The card's own focus, so digits, Enter and Escape reach it on the
+    /// pages without a field (pink tracks `wizard_focus` on the panel).
+    focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
     colors_dark: Option<bool>,
     key_touched: bool,
     region: Option<usize>,
     invites: Vec<SharedString>,
     step: usize,
-    /// Furthest step reached, for the rail.
-    reached: usize,
-    dir: f32,
+    /// Bumped on every page change, keying the page's entrance.
     epoch: usize,
-    /// Field with an error after the last Continue, and how often it shook.
+    /// The field Next found wanting, and what to say under it.
     error: Option<(Field, &'static str)>,
-    shakes: usize,
     phase: Phase,
-    task: Option<Task<()>>,
-    height: Rc<Cell<f32>>,
+    advance_task: Option<Task<()>>,
+    create_task: Option<Task<()>>,
     on_complete: Option<CompleteHandler>,
 }
 
@@ -154,6 +174,7 @@ impl FormState {
                         cx.notify();
                     }
                     InputEvent::Submit(_) | InputEvent::Tab => s.focus_field(Field::Key, cx),
+                    InputEvent::Escape => s.escape_from(Field::Name, cx),
                     _ => {}
                 },
             ),
@@ -169,7 +190,8 @@ impl FormState {
                         s.clear_error(&[Field::Key]);
                         cx.notify();
                     }
-                    InputEvent::Submit(_) => s.advance_from_event(cx),
+                    InputEvent::Submit(_) => s.advance(cx),
+                    InputEvent::Escape => s.escape_from(Field::Key, cx),
                     _ => {}
                 },
             ),
@@ -181,8 +203,13 @@ impl FormState {
                         cx.notify();
                     }
                     InputEvent::Submit(text) => {
-                        s.add_invite(text.clone(), cx);
+                        if text.trim().is_empty() {
+                            s.advance(cx);
+                        } else {
+                            s.add_invite(text.clone(), cx);
+                        }
                     }
+                    InputEvent::Escape => s.escape_from(Field::Email, cx),
                     _ => {}
                 },
             ),
@@ -191,21 +218,28 @@ impl FormState {
             name,
             key,
             email,
+            focus: cx.focus_handle(),
             _subscriptions: subs,
             colors_dark: None,
             key_touched: false,
             region: None,
             invites: Vec::new(),
             step: 0,
-            reached: 0,
-            dir: 1.,
             epoch: 0,
             error: None,
-            shakes: 0,
             phase: Phase::Editing,
-            task: None,
-            height: Rc::default(),
+            advance_task: None,
+            create_task: None,
             on_complete: None,
+        }
+    }
+
+    fn input(&self, field: Field) -> Option<&Entity<TextInput>> {
+        match field {
+            Field::Name => Some(&self.name),
+            Field::Key => Some(&self.key),
+            Field::Email => Some(&self.email),
+            Field::Region => None,
         }
     }
 
@@ -215,21 +249,86 @@ impl FormState {
         }
     }
 
-    /// Focus moves happen on the next frame, where a window is at hand.
+    /// Focus moves happen on the next frame, where a window is at hand. A
+    /// page without a field focuses the card itself.
     fn focus_field(&mut self, field: Field, cx: &mut Context<Self>) {
-        let input = match field {
-            Field::Name => self.name.clone(),
-            Field::Key => self.key.clone(),
-            Field::Email => self.email.clone(),
-            Field::Region => return,
-        };
+        let input = self.input(field).cloned();
+        let card = self.focus.clone();
         cx.defer(move |cx| {
             if let Some(window) = cx.active_window() {
                 window
-                    .update(cx, |_, window, cx| TextInput::focus(&input, window, cx))
+                    .update(cx, |_, window, cx| match &input {
+                        Some(input) => TextInput::focus(input, window, cx),
+                        None => window.focus(&card, cx),
+                    })
                     .ok();
             }
         });
+    }
+
+    /// Escape in an empty field goes back a page (pink
+    /// `wizard_escape_goes_back`).
+    fn escape_from(&mut self, field: Field, cx: &mut Context<Self>) {
+        let empty = self.input(field).is_none_or(|i| i.read(cx).is_empty());
+        if empty && self.phase == Phase::Editing && self.step > 0 {
+            self.go(self.step - 1, cx);
+        }
+    }
+
+    /// The card's keys while no field has focus (pink `on_wizard_key`): a
+    /// bare digit picks a region, Enter advances, Escape goes back.
+    fn on_key(&mut self, event: &KeyDownEvent, window: &Window, cx: &mut Context<Self>) -> bool {
+        if self.phase != Phase::Editing
+            || [&self.name, &self.key, &self.email]
+                .iter()
+                .any(|i| i.read(cx).is_focused(window))
+        {
+            return false;
+        }
+        let key = event.keystroke.key.as_str();
+        if self.step == 1 && !event.keystroke.modifiers.modified() {
+            if let Some(ix) = key
+                .parse::<usize>()
+                .ok()
+                .filter(|d| (1..=REGIONS.len()).contains(d))
+            {
+                self.pick_region(ix - 1, cx);
+                return true;
+            }
+        }
+        match key {
+            "enter" => {
+                self.advance(cx);
+                true
+            }
+            "escape" if self.step > 0 => {
+                self.go(self.step - 1, cx);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// A single-choice pick lands, then the page moves on (pink
+    /// `Wizard::select` → `WizardStep::AutoAdvance`).
+    fn pick_region(&mut self, ix: usize, cx: &mut Context<Self>) {
+        if self.phase != Phase::Editing {
+            return;
+        }
+        self.region = Some(ix);
+        self.clear_error(&[Field::Region]);
+        self.advance_task = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(AUTO_ADVANCE_MS))
+                .await;
+            this.update(cx, |s, cx| {
+                if s.step == 1 {
+                    s.advance(cx);
+                }
+            })
+            .ok();
+        }));
+        cx.notify();
     }
 
     fn add_invite(&mut self, text: SharedString, cx: &mut Context<Self>) {
@@ -238,9 +337,9 @@ impl FormState {
             return;
         }
         if !valid_email(&email) {
-            self.fail(Field::Email, "That doesn't look like an email address");
+            self.error = Some((Field::Email, "That doesn't look like an email address."));
         } else if self.invites.iter().any(|i| i.as_ref() == email) {
-            self.fail(Field::Email, "Already on the list");
+            self.error = Some((Field::Email, "Already on the list."));
         } else {
             self.invites.push(email.into());
             self.email.update(cx, |e, cx| e.clear(cx));
@@ -248,69 +347,65 @@ impl FormState {
         cx.notify();
     }
 
-    fn fail(&mut self, field: Field, message: &'static str) {
-        self.error = Some((field, message));
-        self.shakes += 1;
-    }
-
-    /// Checks the current step; returns false (and flags the field) when it isn't done.
-    fn validate(&mut self, cx: &App) -> bool {
+    /// Whether the page has its answer; the Primary dims to 0.4 until it
+    /// does (pink `can_advance`).
+    fn can_advance(&self, cx: &App) -> bool {
         match self.step {
-            0 => {
-                let name = self.name.read(cx).text();
-                let key = self.key.read(cx).text();
-                if name.trim().chars().count() < 3 {
-                    self.fail(
-                        Field::Name,
-                        "Give the project a name of 3 characters or more",
-                    );
-                    return false;
-                }
-                let len = key.chars().count();
-                if !(2..=5).contains(&len) || !key.chars().all(|c| c.is_ascii_uppercase()) {
-                    self.fail(Field::Key, "Use 2 to 5 letters, A to Z");
-                    return false;
-                }
-                true
-            }
-            1 if self.region.is_none() => {
-                self.fail(Field::Region, "Pick where the project's data should live");
-                false
-            }
-            2 => {
-                let pending = self.email.read(cx).text();
-                if !pending.trim().is_empty() {
-                    // Typed but not added yet: add it on the way out.
-                    if !valid_email(pending.trim()) {
-                        self.fail(Field::Email, "That doesn't look like an email address");
-                        return false;
-                    }
-                }
-                true
-            }
+            0 => !self.name.read(cx).is_empty() && !self.key.read(cx).is_empty(),
+            1 => self.region.is_some(),
             _ => true,
         }
     }
 
-    fn go(&mut self, step: usize, cx: &mut Context<Self>) {
-        if step == self.step {
-            return;
-        }
-        self.dir = if step > self.step { 1. } else { -1. };
-        self.step = step;
-        self.reached = self.reached.max(step);
-        self.epoch += 1;
-        self.error = None;
-        match step {
-            0 => self.focus_field(Field::Name, cx),
-            2 => self.focus_field(Field::Email, cx),
-            _ => {}
-        }
-        cx.notify();
+    /// Checks the current page; returns false (and flags the field) when it isn't done.
+    fn validate(&mut self, cx: &App) -> bool {
+        let failure = match self.step {
+            0 => {
+                let name = self.name.read(cx).text();
+                let key = self.key.read(cx).text();
+                let len = key.chars().count();
+                if name.trim().chars().count() < 3 {
+                    Some((
+                        Field::Name,
+                        "Give the project a name of 3 characters or more.",
+                    ))
+                } else if !(2..=5).contains(&len) || !key.chars().all(|c| c.is_ascii_uppercase()) {
+                    Some((Field::Key, "Use 2 to 5 letters, A to Z, for the key."))
+                } else {
+                    None
+                }
+            }
+            1 if self.region.is_none() => {
+                Some((Field::Region, "Pick where the project's data should live."))
+            }
+            2 => {
+                let pending = self.email.read(cx).text();
+                (!pending.trim().is_empty() && !valid_email(pending.trim()))
+                    .then_some((Field::Email, "That doesn't look like an email address."))
+            }
+            _ => None,
+        };
+        self.error = failure;
+        failure.is_none()
     }
 
-    fn advance_from_event(&mut self, cx: &mut Context<Self>) {
-        self.advance(cx);
+    fn go(&mut self, step: usize, cx: &mut Context<Self>) {
+        if step == self.step || self.phase != Phase::Editing {
+            return;
+        }
+        self.advance_task = None;
+        self.step = step;
+        self.epoch += 1;
+        self.error = None;
+        self.focus_field(
+            match step {
+                0 => Field::Name,
+                2 => Field::Email,
+                _ => Field::Region,
+            },
+            cx,
+        );
+        cx.notify();
     }
 
     fn advance(&mut self, cx: &mut Context<Self>) {
@@ -337,13 +432,12 @@ impl FormState {
         self.phase = Phase::Creating;
         let project = self.project(cx);
         let on_complete = self.on_complete.clone();
-        self.task = Some(cx.spawn(async move |this, cx| {
+        self.create_task = Some(cx.spawn(async move |this, cx| {
             cx.background_executor()
-                .timer(Duration::from_millis(1300))
+                .timer(Duration::from_millis(CREATE_MS))
                 .await;
             this.update(cx, |s, cx| {
                 s.phase = Phase::Done;
-                s.reached = STEPS.len();
                 s.epoch += 1;
                 cx.notify();
             })
@@ -377,9 +471,7 @@ impl FormState {
         self.key_touched = false;
         self.region = None;
         self.invites.clear();
-        self.reached = 0;
         self.phase = Phase::Editing;
-        self.dir = -1.;
         self.step = 0;
         self.epoch += 1;
         self.error = None;
@@ -406,7 +498,8 @@ impl StepperForm {
         }
     }
 
-    /// The heading above the rail.
+    /// The flow's name: the card's accessible label, and its header once
+    /// the project exists.
     pub fn title(mut self, title: impl Into<SharedString>) -> Self {
         self.title = title.into();
         self
@@ -424,16 +517,6 @@ impl StepperForm {
 
 impl RenderOnce for StepperForm {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let element = self.build(window, cx);
-        // Followers started while building need frames: the story's own
-        // keep_alive ran before this component rendered.
-        motion::keep_alive(window);
-        element
-    }
-}
-
-impl StepperForm {
-    fn build(self, window: &mut Window, cx: &mut App) -> AnyElement {
         let t = Pink::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
@@ -448,621 +531,447 @@ impl StepperForm {
                 s.colors_dark = Some(t.dark);
                 for input in [&s.name, &s.key, &s.email] {
                     input.update(cx, |i, _| {
-                        i.set_colors(Some(t.text_faint), Some(t.accent), Some(t.selection))
+                        i.set_colors(Some(t.placeholder), Some(t.caret), Some(t.selection))
                     });
                 }
             }
         });
 
         let s = state.read(cx);
-        let phase = s.phase;
-        let rail = rail(&key, &state, &self.title, &t, cx);
+        let (phase, step, epoch) = (s.phase, s.step, s.epoch);
+        let focus = s.focus.clone();
+        let project = s.project(cx);
 
-        let content: AnyElement = if phase == Phase::Done {
-            success(&key, &state, &t, cx)
+        let (header, counter): (SharedString, Option<SharedString>) = if phase == Phase::Done {
+            (self.title.clone(), None)
         } else {
-            let body = match s.step {
-                0 => step_project(&key, &state, &t, window, cx),
-                1 => step_region(&key, &state, &t, cx),
-                2 => step_team(&key, &state, &t, window, cx),
-                _ => step_review(&key, &state, &t, cx),
-            };
-            let (step, dir, epoch) = (s.step, s.dir, s.epoch);
-            let heading = div()
-                .flex()
-                .flex_col()
-                .gap(px(2.))
-                .mb(px(space::S16))
-                .child(
-                    div()
-                        .text_size(px(text::CAPTION))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(t.text_faint)
-                        .child(format!("Step {} of {}", step + 1, STEPS.len())),
+            (
+                STEPS[step].0.into(),
+                Some(format!("{}/{}", step + 1, STEPS.len()).into()),
+            )
+        };
+        let (question, description): (SharedString, SharedString) = match (phase, step) {
+            (Phase::Done, _) => (
+                format!("{} is ready", project.name).into(),
+                format!(
+                    "{} invite{} sent · data in {}",
+                    project.invites.len(),
+                    if project.invites.len() == 1 { "" } else { "s" },
+                    project.region
                 )
-                .child(
-                    div()
-                        .text_size(px(text::TITLE))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(t.text)
-                        .child(match step {
-                            0 => "Name your project",
-                            1 => "Choose a data region",
-                            2 => "Invite your team",
-                            _ => "Review and create",
-                        }),
-                );
-            let page = div().flex().flex_col().child(heading).child(body);
-            if epoch == 0 {
-                page.into_any_element()
-            } else {
-                page.with_animation(
-                    SharedString::from(format!("{key}-page-{epoch}")),
-                    STEP_IN.animation(),
-                    move |el, p| el.relative().left(px(28. * dir * (1. - p))).opacity(p),
-                )
-                .into_any_element()
-            }
+                .into(),
+            ),
+            (_, 3) => (
+                format!("Create {}?", project.name).into(),
+                STEPS[3].2.into(),
+            ),
+            (_, ix) => (STEPS[ix].1.into(), STEPS[ix].2.into()),
+        };
+        let content = match (phase, step) {
+            (Phase::Done, _) => None,
+            (_, 0) => Some(step_project(&key, &state, &t, cx)),
+            (_, 1) => Some(step_region(&key, &state, &t, cx)),
+            (_, 2) => Some(step_team(&key, &state, &t, cx)),
+            _ => Some(step_review(&key, &state, &t, cx)),
         };
 
-        // The content box glides to each step's natural height.
-        let measured = s.height.clone();
-        let natural = measured.get();
-        let height =
-            (natural > 0.).then(|| motion::follow(&format!("{key}-height"), natural, GLIDE));
-
-        let footer = (phase != Phase::Done).then(|| footer(&key, &state, &t, cx));
-
-        pink::card(&t)
-            .id(self.id.clone())
-            .w(self.width)
+        // pink render_wizard: the question at mt 6 in 15/20 medium, a
+        // 12 px line under it (the multi-select hint's recipe), the page's
+        // controls at mt 12 / pb 4 (the answer field's wrapper).
+        let page = div()
             .flex()
-            .font_family(pink::SANS)
-            .text_color(t.text)
-            .text_size(px(text::BODY))
-            .overflow_hidden()
-            .child(rail)
+            .flex_col()
             .child(
                 div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .overflow_hidden()
-                            .when_some(height, |d, h| d.h(px(h)))
-                            .child(
-                                div()
-                                    .relative()
-                                    .px(px(space::S24))
-                                    .pt(px(space::S24))
-                                    .pb(px(space::S20))
-                                    .child(content)
-                                    .child(measure(measured)),
-                            ),
-                    )
-                    .children(footer),
+                    .mt(px(6.))
+                    .text_size(px(15.))
+                    .line_height(px(20.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(t.text)
+                    .child(question),
+            )
+            .child(
+                div()
+                    .mt(px(4.))
+                    .text_size(px(12.))
+                    .text_color(t.readable_muted(0.65))
+                    .child(description),
+            )
+            .map(|el| match content {
+                Some(content) => el.child(div().mt(px(12.)).pb(px(4.)).child(content)),
+                // The finished page has no controls; keep their room.
+                None => el.pb(px(12.)),
+            });
+        // Pages swap in place: pink's in-place content swap, a 160ms fade
+        // with a 4 px settle.
+        let page = if epoch == 0 {
+            page.into_any_element()
+        } else {
+            motion::rise_in(
+                SharedString::from(format!("{key}-page-{epoch}")),
+                motion::TRANSCRIPT_IN,
+                motion::TRANSCRIPT_IN_RISE,
+                page,
             )
             .into_any_element()
+        };
+
+        let keys = state.clone();
+        // pink composer_surface (opaque): the composer pill's radius, edge,
+        // input plate and shadow, which the wizard reuses.
+        div()
+            .id(self.id.clone())
+            .aria_label(self.title.clone())
+            .track_focus(&focus)
+            .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                if keys.update(cx, |s, cx| s.on_key(event, window, cx)) {
+                    cx.stop_propagation();
+                }
+            })
+            .w(self.width)
+            .flex()
+            .flex_col()
+            .rounded(px(radius::COMPOSER))
+            .border_1()
+            .border_color(t.border)
+            .bg(t.input_glass_bg())
+            .shadow(pink::shadow_lg())
+            .font_family(pink::SANS)
+            .text_size(px(14.))
+            .text_color(t.text)
+            .child(
+                div()
+                    .px(px(16.))
+                    .pt(px(16.))
+                    .flex()
+                    .flex_col()
+                    .child(wizard_header(header, counter, &t))
+                    .child(page),
+            )
+            .child(footer(&key, &state, &t, cx))
     }
 }
 
-fn rail(
-    key: &str,
-    state: &Entity<FormState>,
-    title: &SharedString,
-    t: &Pink,
-    cx: &App,
-) -> impl IntoElement {
-    let s = state.read(cx);
-    let done_all = s.phase == Phase::Done;
-    let editing = s.phase == Phase::Editing;
-    let steps = STEPS.iter().enumerate().map(|(ix, (name, hint))| {
-        let current = ix == s.step && !done_all;
-        let done = done_all || ix < s.step || (ix <= s.reached && ix != s.step && ix < s.reached);
-        let reachable = editing && ix <= s.reached && ix != s.step;
-        let fill = motion::follow(
-            &format!("{key}-line-{ix}"),
-            if done_all || ix < s.step { 1. } else { 0. },
-            MotionSpec::new(420, motion::EASE_OUT_QUINT).with_delay(60),
-        );
-        let state = state.clone();
-        let hover = format!("{key}-rail-{ix}");
-        let dot = div()
-            .size(px(24.))
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_full()
-            .text_size(px(text::CAPTION))
-            .font_weight(FontWeight::SEMIBOLD)
-            .map(|d| {
-                if done {
-                    d.bg(t.accent_strong).child(
-                        svg()
-                            .path(ICON_CHECK)
-                            .size(px(13.))
-                            .text_color(t.on_accent)
-                            .with_animation(
-                                SharedString::from(format!("{key}-check-{ix}-{}", s.epoch)),
-                                MotionSpec::new(300, motion::EASE_OUT_QUINT).animation(),
-                                |el, p| el.size(px(5. + 8. * p)),
-                            ),
-                    )
-                } else if current {
-                    d.border_1()
-                        .border_color(t.accent)
-                        .bg(t.accent_wash)
-                        .shadow(vec![ring(3., t.accent.opacity(0.12))])
-                        .text_color(if t.dark { t.text } else { t.accent })
-                        .child((ix + 1).to_string())
-                } else {
-                    d.border_1()
-                        .border_color(t.border_strong)
-                        .text_color(t.text_faint)
-                        .child((ix + 1).to_string())
-                }
-            });
-        let connector = (ix + 1 < STEPS.len()).then(|| {
-            div()
-                .absolute()
-                .left(px(11.5))
-                .top(px(28.))
-                .w(px(1.5))
-                .h(px(28.))
-                .rounded(px(1.))
-                .bg(t.border_strong)
-                .child(
-                    div()
-                        .w_full()
-                        .h(gpui::relative(fill))
-                        .rounded(px(1.))
-                        .bg(t.accent),
-                )
-        });
-        div()
-            .id(SharedString::from(hover.clone()))
-            .relative()
-            .flex()
-            .gap(px(space::S10))
-            .h(px(56.))
-            .when(reachable, |d| d.cursor_pointer())
-            .on_hover(motion::hover_listener(hover.clone()))
-            .on_click(move |_, _, cx| {
-                if reachable {
-                    state.update(cx, |s, cx| s.go(ix, cx));
-                }
-            })
-            .child(dot)
-            .children(connector)
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .pt(px(2.))
-                    .child(
-                        div()
-                            .text_size(px(text::BODY))
-                            .line_height(px(20.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(if current || done {
-                                t.text
-                            } else if reachable {
-                                motion::hover_blend(&hover, t.text_muted, t.text)
-                            } else {
-                                t.text_muted
-                            })
-                            .child(*name),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(text::FOOTNOTE))
-                            .line_height(px(16.))
-                            .text_color(t.text_faint)
-                            .child(*hint),
-                    ),
-            )
-    });
-
+/// The wizard header (pink render_wizard): the label tracked uppercase in
+/// 11 medium, and the "1/3" counter chip (h 20, px 6, radius 6, `ink(0.06)`).
+fn wizard_header(label: SharedString, counter: Option<SharedString>, t: &Pink) -> Div {
+    let tone = t.readable_muted(0.6);
     div()
-        .w(px(RAIL_W))
-        .flex_none()
         .flex()
-        .flex_col()
-        .p(px(space::S20))
-        .bg(t.fill(FillTier::Quaternary))
-        .border_r_1()
-        .border_color(t.border)
+        .flex_row()
+        .items_center()
+        .gap(px(10.))
         .child(
             div()
-                .mb(px(space::S20))
-                .flex()
-                .flex_col()
-                .child(
-                    div()
-                        .text_size(px(text::CALLOUT))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(t.text)
-                        .child(title.clone()),
-                )
-                .child(
-                    div()
-                        .text_size(px(text::FOOTNOTE))
-                        .text_color(t.text_muted)
-                        .child("About two minutes"),
-                ),
+                .text_size(px(11.))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(tone)
+                .child(pink::tracked_upper(&label)),
         )
-        .children(steps)
+        .when_some(counter, |el, counter| {
+            el.child(
+                div()
+                    .h(px(20.))
+                    .px(px(6.))
+                    .flex()
+                    .items_center()
+                    .rounded(px(radius::SM))
+                    .bg(t.ink(0.06))
+                    .text_size(px(11.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(tone)
+                    .child(counter),
+            )
+        })
 }
 
-/// A labelled field around a text input, with its error under it.
-#[allow(clippy::too_many_arguments)]
-fn text_field(
+/// The line under a page's controls: what Next found missing, in the error
+/// copy tone (pink accounts.rs login dialog, `mt 8`, 12), or a hint in the
+/// wizard footer note's tone (`readable_muted(0.7)`).
+fn note(copy: impl Into<SharedString>, error: bool, t: &Pink) -> Div {
+    div()
+        .mt(px(8.))
+        .text_size(px(12.))
+        .text_color(if error {
+            t.readable_tone(t.danger_muted, 0.9)
+        } else {
+            t.readable_muted(0.7)
+        })
+        .child(copy.into())
+}
+
+/// A captioned field (pink automations.rs `render_editor` `field`): an
+/// 11/14 `readable_muted(0.85)` caption over `input_frame`, gap 4, growing
+/// from `min`. Pink frames don't change on focus; the caret says it.
+fn field(
     key: &str,
     label: &'static str,
     input: &Entity<TextInput>,
-    prefix: Option<&'static str>,
-    hint: Option<SharedString>,
-    error: Option<&'static str>,
-    shakes: usize,
+    min: f32,
+    mono: bool,
     t: &Pink,
-    window: &Window,
-    cx: &App,
-) -> AnyElement {
-    let focused = input.read(cx).is_focused(window);
-    let edge = if error.is_some() {
-        t.danger.opacity(0.7)
-    } else if focused {
-        t.accent.opacity(0.6)
-    } else {
-        t.border
-    };
+) -> Div {
     let focus = input.clone();
-    let shell = div()
-        .id(SharedString::from(format!("{key}-{label}")))
-        .flex()
-        .items_center()
-        .h(px(34.))
-        .px(px(space::S10))
-        .rounded(px(radius::MD))
-        .border_1()
-        .border_color(edge)
-        .bg(t.input_bg)
-        .cursor_text()
-        .when(focused, |d| {
-            d.shadow(vec![ring(
-                3.,
-                if error.is_some() { t.danger } else { t.accent }.opacity(0.14),
-            )])
-        })
-        .on_click(move |_, window, cx| TextInput::focus(&focus, window, cx))
-        .when_some(prefix, |d, p| {
-            d.child(div().text_color(t.text_faint).child(p))
-        })
-        .child(div().flex_1().min_w_0().child(input.clone()));
-    let shell = shake(&format!("{key}-{label}"), error.is_some(), shakes, shell);
-
     div()
+        .flex_1()
+        .min_w(px(min))
         .flex()
         .flex_col()
-        .gap(px(space::S6))
+        .gap(px(4.))
         .child(
             div()
-                .text_size(px(text::FOOTNOTE))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(t.text_muted)
+                .text_size(px(11.))
+                .line_height(px(14.))
+                .text_color(t.readable_muted(0.85))
                 .child(label),
         )
-        .child(shell)
-        .child(match error {
-            Some(message) => div()
-                .text_size(px(text::FOOTNOTE))
-                .text_color(t.danger)
-                .child(message)
-                .into_any_element(),
-            None => div()
-                .text_size(px(text::FOOTNOTE))
-                .text_color(t.text_faint)
-                .children(hint)
-                .into_any_element(),
+        .child(
+            pink::input_frame(t)
+                .id(SharedString::from(format!("{key}-field-{label}")))
+                .line_height(px(INPUT_LINE_HEIGHT))
+                .text_color(t.text)
+                .cursor_text()
+                .when(mono, |el| el.font_family(pink::MONO))
+                .on_click(move |_, window, cx| TextInput::focus(&focus, window, cx))
+                .child(input.clone()),
+        )
+}
+
+fn field_error(s: &FormState, field: Field) -> Option<&'static str> {
+    s.error.filter(|(f, _)| *f == field).map(|(_, m)| m)
+}
+
+fn step_project(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> AnyElement {
+    let s = state.read(cx);
+    let project_key = s.key.read(cx).text();
+    let error = field_error(s, Field::Name).or(field_error(s, Field::Key));
+    let hint = (!project_key.is_empty())
+        .then(|| format!("Issues will read {project_key}-1, {project_key}-2, …"));
+    div()
+        .flex()
+        .flex_col()
+        .child(
+            pink::row_block()
+                .items_start()
+                .child(field(key, "Project name", &s.name, 160., false, t))
+                .child(
+                    field(key, "Key", &s.key, 96., true, t)
+                        .flex_none()
+                        .w(px(160.)),
+                ),
+        )
+        .map(|el| match (error, hint) {
+            (Some(message), _) => el.child(note(message, true, t)),
+            (None, Some(hint)) => el.child(note(hint, false, t)),
+            (None, None) => el,
         })
         .into_any_element()
 }
 
-/// Shakes `el` sideways once per failed Continue.
-fn shake<E: IntoElement + Styled + 'static>(
+/// One choice (pink render_wizard option rows): px 14 / py 10, gap 12,
+/// radius 12; picked rows take an `ink(0.16)` edge on `ink(0.09)`, others
+/// ease `ink(0.025)` → `ink(0.06)` under the pointer; the label 13.5 medium
+/// over an 11.5 description, and the 22 px number chip its digit picks.
+fn option_row(
     key: &str,
-    active: bool,
-    shakes: usize,
-    el: E,
-) -> AnyElement {
-    if !active || shakes == 0 {
-        return el.into_any_element();
-    }
-    el.with_animation(
-        SharedString::from(format!("{key}-shake-{shakes}")),
-        Animation::new(Duration::from_millis(360)),
-        |el, p| el.relative().left(px((p * PI * 5.).sin() * 5. * (1. - p))),
-    )
-    .into_any_element()
-}
-
-fn step_project(
-    key: &str,
+    ix: usize,
+    label: &'static str,
+    description: SharedString,
+    picked: bool,
     state: &Entity<FormState>,
     t: &Pink,
-    window: &Window,
-    cx: &App,
-) -> AnyElement {
-    let s = state.read(cx);
-    let error = |f: Field| s.error.filter(|(e, _)| *e == f).map(|(_, m)| m);
-    let project_key = s.key.read(cx).text();
-    let key_hint: SharedString = if project_key.is_empty() {
-        "Prefixes every issue in the project".into()
-    } else {
-        format!("Issues will read {project_key}-1, {project_key}-2, …").into()
-    };
+) -> Stateful<Div> {
+    let hover = format!("{key}-option-{ix}");
+    let accent = t.accent;
+    let state = state.clone();
     div()
+        .id(SharedString::from(hover.clone()))
+        .role(Role::RadioButton)
+        .aria_label(label)
+        .aria_toggled(if picked {
+            Toggled::True
+        } else {
+            Toggled::False
+        })
+        .tab_index(0)
+        .focus_visible(move |style| style.border_color(accent))
         .flex()
-        .flex_col()
-        .gap(px(space::S16))
-        .child(text_field(
-            key,
-            "Project name",
-            &s.name,
-            None,
-            Some("Shown in the sidebar and in links".into()),
-            error(Field::Name),
-            s.shakes,
-            t,
-            window,
-            cx,
-        ))
-        .child(div().w(px(200.)).child(text_field(
-            key,
-            "Project key",
-            &s.key,
-            None,
-            Some(key_hint),
-            error(Field::Key),
-            s.shakes,
-            t,
-            window,
-            cx,
-        )))
-        .into_any_element()
+        .flex_row()
+        .items_center()
+        .gap(px(12.))
+        .px(px(14.))
+        .py(px(10.))
+        .rounded(px(12.))
+        .border_1()
+        .border_color(if picked {
+            t.ink(0.16)
+        } else {
+            gpui::transparent_black()
+        })
+        .bg(if picked {
+            t.ink(0.09)
+        } else {
+            motion::hover_blend(&hover, t.ink(0.025), t.ink(0.06))
+        })
+        .on_hover(motion::hover_listener(hover))
+        .cursor_pointer()
+        .on_key_down(pink::swallow_activation_key)
+        .on_click(move |_, _, cx| state.update(cx, |s, cx| s.pick_region(ix, cx)))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap(px(3.))
+                .text_size(px(13.5))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(if picked { t.text } else { t.text.opacity(0.9) })
+                .child(label)
+                .child(
+                    div()
+                        .text_size(px(11.5))
+                        .font_weight(FontWeight::NORMAL)
+                        .text_color(t.readable_muted(0.65))
+                        .child(description),
+                ),
+        )
+        .child(
+            div()
+                .flex_none()
+                .size(px(22.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(radius::SM))
+                .bg(if picked { t.ink(0.16) } else { t.ink(0.05) })
+                .text_size(px(11.))
+                .text_color(if picked {
+                    t.text
+                } else {
+                    t.readable_muted(0.6)
+                })
+                .child(SharedString::from((ix + 1).to_string())),
+        )
 }
 
 fn step_region(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> AnyElement {
     let s = state.read(cx);
-    let error = s.error.filter(|(f, _)| *f == Field::Region).map(|(_, m)| m);
-    let cards = REGIONS
+    let rows = REGIONS
         .iter()
         .enumerate()
         .map(|(ix, (city, code, latency))| {
-            let selected = s.region == Some(ix);
-            let state = state.clone();
-            let hover = format!("{key}-region-{ix}");
-            let pick = motion::follow(
-                &format!("{hover}-pick"),
-                if selected { 1. } else { 0. },
-                MotionSpec::new(220, motion::EASE_OUT_QUINT),
-            );
-            div()
-                .id(SharedString::from(hover.clone()))
-                .flex()
-                .items_center()
-                .gap(px(space::S12))
-                .px(px(space::S12))
-                .h(px(52.))
-                .rounded(px(radius::LG))
-                .border_1()
-                .cursor_pointer()
-                .map(|d| {
-                    if selected {
-                        d.border_color(t.accent.opacity(0.7))
-                            .bg(t.accent_wash.opacity(if t.dark { 0.5 } else { 0.6 }))
-                            .shadow(vec![ring(3., t.accent.opacity(0.10))])
-                    } else {
-                        d.hover_colors(
-                            hover.clone(),
-                            crate::interaction::HoverColors {
-                                bg: t.input_bg,
-                                border: if error.is_some() {
-                                    t.danger.opacity(0.5)
-                                } else {
-                                    t.border
-                                },
-                                fg: t.text,
-                            },
-                            crate::interaction::HoverColors {
-                                bg: t.fill(FillTier::Quaternary),
-                                border: t.border_strong,
-                                fg: t.text,
-                            },
-                        )
-                    }
-                })
-                .on_click(move |_, _, cx| {
-                    state.update(cx, |s, cx| {
-                        s.region = Some(ix);
-                        s.clear_error(&[Field::Region]);
-                        cx.notify();
-                    })
-                })
-                .child(
-                    div()
-                        .size(px(30.))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded(px(radius::MD))
-                        .bg(if selected {
-                            t.accent_wash
-                        } else {
-                            t.fill(FillTier::Tertiary)
-                        })
-                        .child(
-                            svg()
-                                .path(ICON_GLOBE)
-                                .size(px(15.))
-                                .text_color(if selected { t.accent } else { t.text_muted }),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .flex_1()
-                        .child(
-                            div()
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(t.text)
-                                .child(*city),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(text::FOOTNOTE))
-                                .font_family(pink::MONO)
-                                .text_color(t.text_faint)
-                                .child(*code),
-                        ),
-                )
-                .child(
-                    div()
-                        .text_size(px(text::FOOTNOTE))
-                        .text_color(t.text_muted)
-                        .child(*latency),
-                )
-                // Radio dot.
-                .child(
-                    div()
-                        .size(px(16.))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded_full()
-                        .border_1()
-                        .border_color(motion::mix(t.border_strong, t.accent, pick))
-                        .child(div().size(px(8. * pick)).rounded_full().bg(t.accent)),
-                )
+            option_row(
+                key,
+                ix,
+                city,
+                format!("{code} · {latency}").into(),
+                s.region == Some(ix),
+                state,
+                t,
+            )
         });
-    let list = div().flex().flex_col().gap(px(space::S8)).children(cards);
     div()
         .flex()
         .flex_col()
-        .gap(px(space::S8))
-        .child(shake(
-            &format!("{key}-regions"),
-            error.is_some(),
-            s.shakes,
-            list,
-        ))
-        .child(match error {
-            Some(m) => div()
-                .text_size(px(text::FOOTNOTE))
-                .text_color(t.danger)
-                .child(m),
-            None => div()
-                .text_size(px(text::FOOTNOTE))
-                .text_color(t.text_faint)
-                .child("You can't move a project between regions later."),
+        .child(
+            div()
+                .id(SharedString::from(format!("{key}-options")))
+                .role(Role::RadioGroup)
+                .max_h(px(220.))
+                .overflow_y_scroll()
+                .flex()
+                .flex_col()
+                .gap(px(4.))
+                .children(rows),
+        )
+        .when_some(field_error(s, Field::Region), |el, message| {
+            el.child(note(message, true, t))
         })
         .into_any_element()
 }
 
-fn step_team(
-    key: &str,
-    state: &Entity<FormState>,
-    t: &Pink,
-    window: &Window,
-    cx: &App,
-) -> AnyElement {
-    let s = state.read(cx);
-    let error = s.error.filter(|(f, _)| *f == Field::Email).map(|(_, m)| m);
-    let chips = s.invites.iter().enumerate().map(|(ix, email)| {
-        let state = state.clone();
-        let email_for_remove = email.clone();
-        motion::rise_in(
-            SharedString::from(format!("{key}-invite-{email}")),
-            motion::MENU_IN,
-            3.,
-            div()
-                .flex()
-                .items_center()
-                .gap(px(space::S6))
-                .h(px(26.))
-                .pl(px(space::S8))
-                .pr(px(2.))
-                .rounded(px(radius::SM))
-                .bg(t.fill(FillTier::Tertiary))
-                .text_size(px(text::FOOTNOTE))
-                .text_color(t.text)
-                .child(svg().path(ICON_MAIL).size(px(12.)).text_color(t.text_faint))
-                .child(email.clone())
-                .child(
-                    pink::icon_button(
-                        format!("{key}-remove-{ix}"),
-                        ICON_REMOVE,
-                        ControlSize::Sm,
-                        t,
-                    )
-                    .size(px(22.))
+/// A staged invite: pink's message badge (min-h 24, px 8, radius 8,
+/// `ink(0.06)`, 12 medium) holding the address and a 20 px remove control
+/// (pink's sidebar row action: `hover_wash`, glyph `text_muted` → `text`).
+/// It arrives like a staged attachment (pink `ATTACHMENT_IN`).
+fn invite_chip(key: &str, email: &SharedString, state: &Entity<FormState>, t: &Pink) -> AnyElement {
+    let remove = format!("{key}-invite-remove-{email}");
+    let ring = t.focus_ring();
+    let state = state.clone();
+    let address = email.clone();
+    motion::rise_in(
+        SharedString::from(format!("{key}-invite-{email}")),
+        motion::ATTACHMENT_IN,
+        8.,
+        pink::message_badge(t)
+            .pr(px(2.))
+            .child(email.clone())
+            .child(
+                div()
+                    .id(SharedString::from(remove.clone()))
+                    .role(Role::Button)
+                    .aria_label(SharedString::from(format!("Remove {email}")))
+                    .tab_index(0)
+                    .focus_visible(move |style| pink::focus_ring(style, ring))
+                    .size(px(20.))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(radius::inner(radius::MD, 2.)))
+                    .cursor_pointer()
+                    .hover_wash(remove.clone(), t.fill(FillTier::Tertiary))
+                    .on_key_down(pink::swallow_activation_key)
                     .on_click(move |_, _, cx| {
                         state.update(cx, |s, cx| {
-                            s.invites.retain(|e| *e != email_for_remove);
+                            s.invites.retain(|e| *e != address);
                             cx.notify();
                         })
-                    }),
-                ),
-        )
-    });
-    let count = s.invites.len();
+                    })
+                    .child(
+                        svg()
+                            .path(ICON_CLOSE)
+                            .size(px(10.))
+                            .text_color(motion::hover_blend(&remove, t.text_muted, t.text)),
+                    ),
+            ),
+    )
+    .into_any_element()
+}
+
+fn step_team(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> AnyElement {
+    let s = state.read(cx);
+    let chips: Vec<AnyElement> = s
+        .invites
+        .iter()
+        .map(|email| invite_chip(key, email, state, t))
+        .collect();
     div()
         .flex()
         .flex_col()
-        .gap(px(space::S12))
-        .child(text_field(
-            key,
-            "Email address",
-            &s.email,
-            None,
-            Some("Press Enter to add · invites can also be sent later".into()),
-            error,
-            s.shakes,
-            t,
-            window,
-            cx,
-        ))
-        .child(if count == 0 {
-            div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h(px(56.))
-                .rounded(px(radius::MD))
-                .border_1()
-                .border_dashed()
-                .border_color(t.border)
-                .text_size(px(text::FOOTNOTE))
-                .text_color(t.text_faint)
-                .child("No one invited yet")
-                .into_any_element()
-        } else {
-            div()
-                .flex()
-                .flex_wrap()
-                .gap(px(space::S6))
-                .children(chips)
-                .into_any_element()
+        .child(pink::row_block().child(field(key, "Email address", &s.email, 160., false, t)))
+        .child(match field_error(s, Field::Email) {
+            Some(message) => note(message, true, t),
+            None => note("Press Enter to add each address.", false, t),
+        })
+        .when(!chips.is_empty(), |el| {
+            el.child(
+                div()
+                    .mt(px(10.))
+                    .flex()
+                    .flex_wrap()
+                    .gap(px(6.))
+                    .children(chips),
+            )
         })
         .into_any_element()
 }
 
+/// The review (pink render_wizard approval context): label 11
+/// `readable_muted(0.65)` over its value in 12 `text`, gap 2, rows gap 6;
+/// each with an Edit text link (pink accounts.rs `url_link`: 12,
+/// `text_muted` → `text`).
 fn step_review(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> AnyElement {
     let s = state.read(cx);
     let project = s.project(cx);
@@ -1076,251 +985,154 @@ fn step_review(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> AnyE
         1 => project.invites[0].to_string(),
         n => format!("{} and {} more", project.invites[0], n - 1),
     };
+    // The key rides beside the name in mono: both are edited on page 1.
     let rows = [
-        ("Project", project.name.to_string(), 0usize),
-        ("Key", project.key.to_string(), 0),
-        ("Region", region, 1),
-        ("Invites", invites, 2),
+        (
+            "Project",
+            project.name.to_string(),
+            Some(project.key.clone()),
+            0usize,
+        ),
+        ("Region", region, None, 1),
+        ("Invites", invites, None, 2),
     ];
     let items = rows
         .into_iter()
         .enumerate()
-        .map(|(ix, (label, value, step))| {
+        .map(|(ix, (label, value, code, step))| {
             let state = state.clone();
             let link = format!("{key}-edit-{ix}");
             div()
                 .flex()
+                .flex_row()
                 .items_center()
-                .gap(px(space::S12))
-                .h(px(40.))
-                .px(px(space::S12))
-                .when(ix > 0, |d| d.border_t_1().border_color(t.border))
-                .child(
-                    div()
-                        .w(px(72.))
-                        .text_size(px(text::FOOTNOTE))
-                        .text_color(t.text_muted)
-                        .child(label),
-                )
+                .gap(px(12.))
                 .child(
                     div()
                         .flex_1()
                         .min_w_0()
-                        .truncate()
-                        .font_weight(FontWeight::MEDIUM)
-                        .when(label == "Key", |d| d.font_family(pink::MONO))
-                        .child(value),
+                        .flex()
+                        .flex_col()
+                        .gap(px(2.))
+                        .child(
+                            div()
+                                .text_size(px(11.))
+                                .text_color(t.readable_muted(0.65))
+                                .child(label),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .gap(px(6.))
+                                .text_size(px(12.))
+                                .text_color(t.text)
+                                .child(value)
+                                .when_some(code, |el, code| {
+                                    el.child(
+                                        div()
+                                            .font_family(pink::MONO)
+                                            .text_color(t.readable_muted(0.85))
+                                            .child(code),
+                                    )
+                                }),
+                        ),
                 )
-                .when(!creating, |d| {
-                    d.child(
+                .when(!creating, |el| {
+                    el.child(
                         div()
                             .id(SharedString::from(link.clone()))
-                            .text_size(px(text::FOOTNOTE))
-                            .font_weight(FontWeight::MEDIUM)
+                            .flex_none()
+                            .text_size(px(12.))
                             .cursor_pointer()
-                            .hover_fg(link, t.accent.opacity(0.8), t.accent)
-                            .child("Edit")
-                            .on_click(move |_, _, cx| state.update(cx, |s, cx| s.go(step, cx))),
+                            .hover_fg(link, t.text_muted, t.text)
+                            .on_click(move |_, _, cx| state.update(cx, |s, cx| s.go(step, cx)))
+                            .child("Edit"),
                     )
                 })
         });
     div()
         .flex()
         .flex_col()
-        .rounded(px(radius::LG))
-        .border_1()
-        .border_color(t.border)
-        .bg(t.input_bg)
+        .gap(px(6.))
         .children(items)
         .into_any_element()
 }
 
+/// The wizard footer (pink render_wizard): no hairline, px 16 / pb 16 /
+/// pt 4, gap 12; quiet ghost actions on the left, one Primary (px 16) on
+/// the right at 0.4 opacity until the page can advance, reading "Next",
+/// "Create project" and "Creating…" (pink "Next" / "Send" / "Sending…").
 fn footer(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> impl IntoElement {
     let s = state.read(cx);
-    let step = s.step;
-    let creating = s.phase == Phase::Creating;
-    let last = step + 1 == STEPS.len();
-    let back = (step > 0 && !creating).then(|| {
+    let (phase, step) = (s.phase, s.step);
+    let editing = phase == Phase::Editing;
+    let ghost = |id: &str, label: &'static str| {
+        pink::button(format!("{key}-{id}"), ButtonKind::Ghost, ControlSize::Lg, t)
+            .aria_label(label)
+            .child(label)
+    };
+    let back = (editing && step > 0).then(|| {
         let state = state.clone();
-        pink::button(format!("{key}-back"), ButtonKind::Ghost, ControlSize::Lg, t)
-            .child(pink::glyph(ICON_BACK, ControlSize::Lg).text_color(t.text_muted))
-            .child("Back")
+        ghost("back", "Back")
             .on_click(move |_, _, cx| state.update(cx, |s, cx| s.go(s.step - 1, cx)))
     });
-    let skip = (step == 2 && s.invites.is_empty()).then(|| {
+    let skip = (editing && step == 2 && s.invites.is_empty()).then(|| {
         let state = state.clone();
-        pink::button(format!("{key}-skip"), ButtonKind::Ghost, ControlSize::Lg, t)
-            .child("Skip for now")
-            .on_click(move |_, _, cx| {
-                state.update(cx, |s, cx| {
-                    s.email.update(cx, |e, cx| e.clear(cx));
-                    s.go(3, cx);
-                })
+        ghost("skip", "Skip for now").on_click(move |_, _, cx| {
+            state.update(cx, |s, cx| {
+                s.email.update(cx, |e, cx| e.clear(cx));
+                s.go(3, cx);
             })
+        })
     });
-    let next = {
+    let restart = (phase == Phase::Done).then(|| {
         let state = state.clone();
-        let arrow_key = format!("{key}-next");
-        let shift = motion::hover_t(&format!("pink-btn-{arrow_key}")) * 2.;
-        pink::button(arrow_key, ButtonKind::Primary, ControlSize::Lg, t)
-            .min_w(px(112.))
-            .map(|b| {
-                if creating {
-                    b.child(
-                        svg()
-                            .path(ICON_SPINNER)
-                            .size(px(14.))
-                            .text_color(t.on_solid)
-                            .with_animation(
-                                SharedString::from(format!("{key}-spin")),
-                                Animation::new(Duration::from_millis(760)).repeat(),
-                                |svg, p| {
-                                    svg.with_transformation(Transformation::rotate(radians(
-                                        p * 2. * PI,
-                                    )))
-                                },
-                            ),
-                    )
-                    .child("Creating…")
-                } else if last {
-                    b.child("Create project")
-                } else {
-                    b.child("Continue").child(
-                        div()
-                            .w(px(16.))
-                            .pl(px(shift))
-                            .child(pink::glyph(ICON_NEXT, ControlSize::Lg).text_color(t.on_solid)),
-                    )
-                }
-            })
-            .on_click(move |_, _, cx| state.update(cx, |s, cx| s.advance(cx)))
+        ghost("restart", "Start over")
+            .on_click(move |_, _, cx| state.update(cx, |s, cx| s.restart(cx)))
+    });
+    let label = match phase {
+        Phase::Done => "Open project",
+        Phase::Creating => "Creating…",
+        Phase::Editing if step + 1 == STEPS.len() => "Create project",
+        Phase::Editing => "Next",
+    };
+    let ready = phase == Phase::Done || (editing && s.can_advance(cx));
+    let submit = {
+        let state = state.clone();
+        pink::button(
+            format!("{key}-submit"),
+            ButtonKind::Primary,
+            ControlSize::Lg,
+            t,
+        )
+        .aria_label(label)
+        .px(px(16.))
+        .when(!ready, |el| el.opacity(0.4))
+        .on_click(move |_, _, cx| state.update(cx, |s, cx| s.advance(cx)))
+        .child(label)
     };
     div()
         .flex()
+        .flex_row()
+        .justify_between()
         .items_center()
-        .gap(px(space::S8))
-        .px(px(space::S24))
-        .py(px(space::S16))
-        .border_t_1()
-        .border_color(t.border)
-        .children(back)
-        .child(div().flex_1())
-        .children(skip)
-        .child(next)
-}
-
-fn success(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> AnyElement {
-    let s = state.read(cx);
-    let project = s.project(cx);
-    let epoch = s.epoch;
-    let restart = state.clone();
-    let badge = div()
-        .size(px(56.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded_full()
-        .bg(t.success.opacity(if t.dark { 0.16 } else { 0.10 }))
+        .gap(px(12.))
+        .px(px(16.))
+        .pb(px(16.))
+        .pt(px(4.))
         .child(
-            svg()
-                .path(ICON_CHECK)
-                .size(px(26.))
-                .text_color(t.success)
-                .with_animation(
-                    SharedString::from(format!("{key}-done-check-{epoch}")),
-                    MotionSpec::new(460, motion::EASE_OUT_QUINT)
-                        .with_delay(120)
-                        .animation(),
-                    |el, p| el.size(px(8. + 18. * p)).opacity(p),
-                ),
-        )
-        .with_animation(
-            SharedString::from(format!("{key}-done-badge-{epoch}")),
-            MotionSpec::new(420, motion::EASE_OUT_QUINT).animation(),
-            |el, p| el.opacity(p),
-        );
-    let line = |delay: u64, el: gpui::Div| {
-        el.with_animation(
-            SharedString::from(format!("{key}-done-line-{delay}-{epoch}")),
-            MotionSpec::new(380, motion::EASE_OUT_QUINT)
-                .with_delay(delay)
-                .animation(),
-            |el, p| el.relative().top(px(6. * (1. - p))).opacity(p),
-        )
-    };
-    div()
-        .flex()
-        .flex_col()
-        .items_center()
-        .gap(px(space::S12))
-        .py(px(space::S20))
-        .child(badge)
-        .child(line(
-            180,
-            div()
-                .text_size(px(text::TITLE))
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(t.text)
-                .child(format!("{} is ready", project.name)),
-        ))
-        .child(line(
-            240,
-            div()
-                .text_size(px(text::BODY))
-                .text_color(t.text_muted)
-                .child(format!(
-                    "{} invite{} sent · data in {}",
-                    project.invites.len(),
-                    if project.invites.len() == 1 { "" } else { "s" },
-                    project.region
-                )),
-        ))
-        .child(line(
-            300,
             div()
                 .flex()
-                .gap(px(space::S8))
-                .mt(px(space::S8))
-                .child(
-                    pink::button(
-                        format!("{key}-again"),
-                        ButtonKind::Ghost,
-                        ControlSize::Lg,
-                        t,
-                    )
-                    .child("Start over")
-                    .on_click(move |_, _, cx| restart.update(cx, |s, cx| s.restart(cx))),
-                )
-                .child(
-                    pink::button(
-                        format!("{key}-open"),
-                        ButtonKind::Primary,
-                        ControlSize::Lg,
-                        t,
-                    )
-                    .child(pink::glyph(ICON_SPARKLE, ControlSize::Lg).text_color(t.on_solid))
-                    .child("Open project"),
-                ),
-        ))
-        .into_any_element()
-}
-
-/// Records its parent's height in `cell` (and asks for a frame when it changes).
-fn measure(cell: Rc<Cell<f32>>) -> impl IntoElement {
-    canvas(
-        move |bounds, window, _| {
-            let h = f32::from(bounds.size.height);
-            if (cell.get() - h).abs() > 0.5 {
-                cell.set(h);
-                window.request_animation_frame();
-            }
-        },
-        |_, _, _, _| {},
-    )
-    .absolute()
-    .top_0()
-    .left_0()
-    .size_full()
+                .flex_1()
+                .min_w_0()
+                .items_center()
+                .gap(px(8.))
+                .children(back)
+                .children(skip)
+                .children(restart),
+        )
+        .child(submit)
 }
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
