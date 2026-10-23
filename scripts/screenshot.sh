@@ -4,7 +4,7 @@
 #   scripts/screenshot.sh <slug> [light|dark] [out.png] [WxH] [clean|classic]
 #
 # Needs Xvfb (xvfb-run), a window manager (openbox), xdotool and ImageMagick.
-# The default size matches the website's preview stage for side-by-side checks.
+# The default size is the gallery's preview stage.
 set -euo pipefail
 
 slug=${1:?usage: screenshot.sh <slug> [light|dark] [out.png] [WxH]}

@@ -1,4 +1,4 @@
-//! Thinking State – an original component in luna style.
+//! Thinking State – a luna component.
 //!
 //! A live panel for an assistant at work. The header carries a spinner, the
 //! running step count and a ticking timer, with a hairline along its bottom

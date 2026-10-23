@@ -1,8 +1,8 @@
 [package]
-name = "affectui"
+name = "pink-ui"
 version = "0.1.0"
 edition = "2024"
-description = "affectUI's component library, rebuilt for Rust with GPUI"
+description = "Animated components for GPUI, native and in the browser"
 license = "MIT"
 readme = "README.md"
 default-run = "gallery"
@@ -39,3 +39,4 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
+

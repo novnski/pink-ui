@@ -1,6 +1,6 @@
 //! Model Picker – a chat composer's model menu with a live spec sheet.
 //!
-//! An original in luna's design language. A quiet trigger names the current
+//! A luna component. A quiet trigger names the current
 //! model; its menu opens above the composer with the models on the left and
 //! a spec sheet on the right. Point at a model (or arrow to it) and its
 //! speed, depth and cost meters glide to the new values while the latency,

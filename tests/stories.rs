@@ -1,8 +1,8 @@
 //! Renders every component's story in each theme and look on GPUI's test
 //! platform, so a panic in any layout, state or paint path fails the build.
 
-use affectui::{Look, Theme, ThemeMode, components::COMPONENTS};
 use gpui::{AnyView, Context, IntoElement, Render, TestAppContext, Window, div, prelude::*};
+use pink_ui::{Look, Theme, ThemeMode, components::COMPONENTS};
 
 /// The window root: shows whichever story the test swaps in. Drawing through
 /// a real window (rather than a one-off `draw`) also paints deferred overlays.
@@ -18,7 +18,7 @@ impl Render for Host {
 
 #[gpui::test]
 fn every_story_renders(cx: &mut TestAppContext) {
-    cx.update(affectui::init);
+    cx.update(pink_ui::init);
     let (host, cx) = cx.add_window_view(|_, _| Host { story: None });
     for mode in [ThemeMode::Light, ThemeMode::Dark] {
         for look in [Look::Clean, Look::Classic] {

@@ -1,4 +1,4 @@
-//! Small helpers for translating affectUI's CSS into GPUI styles.
+//! Small helpers for writing CSS values (hex colors, box shadows) as GPUI styles.
 
 use gpui::{BoxShadow, Hsla, Pixels, Rgba, Window, point, px};
 

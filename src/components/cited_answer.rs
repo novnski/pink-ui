@@ -1,4 +1,4 @@
-//! Cited Answer – an original component in luna style.
+//! Cited Answer – a luna component.
 //!
 //! An answer on the left and the evidence on the right. Every sentence ends
 //! in numbered citations. Point at one and its sentence takes a soft accent

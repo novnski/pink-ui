@@ -77,7 +77,7 @@ pub enum LoaderVariant {
 struct Palette {
     bg: Hsla,
     shadow: Vec<BoxShadow>,
-    /// Classic draws a 1px edge (an inset ring on the web).
+    /// Classic draws a 1px edge (an inset ring in CSS).
     border: Option<Hsla>,
     text: Hsla,
     ink: Hsla,

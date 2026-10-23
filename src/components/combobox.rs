@@ -1,6 +1,6 @@
 //! Combobox – pick one or many from a searchable, grouped list.
 //!
-//! An original in luna's design language. Picks sit in the field as chips
+//! A luna component. Picks sit in the field as chips
 //! with a small avatar; the list below groups the options, lights up the
 //! letters that match what you typed and offers to create the entry when
 //! nothing fits. A plate glides to the active row, checks pop in as rows are

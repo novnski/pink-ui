@@ -1018,7 +1018,7 @@ fn button(
     }
 }
 
-/// The site demo's two decisions.
+/// The demo's two decisions.
 pub fn demo_decisions() -> Vec<Decision> {
     vec![
         Decision::new(
@@ -1039,7 +1039,7 @@ pub fn demo_decisions() -> Vec<Decision> {
 }
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
-    // Like the site: once every decision is answered, the inbox starts over
+    // Once every decision is answered, the inbox starts over
     // 3.2s later with fresh state.
     let round = Rc::new(Cell::new(0usize));
     let left = Rc::new(Cell::new(demo_decisions().len()));

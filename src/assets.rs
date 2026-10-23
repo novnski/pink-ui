@@ -35,6 +35,6 @@ pub fn load_fonts(cx: &mut App) {
         .filter_map(|p| Assets::get(&p).map(|f| f.data))
         .collect();
     if let Err(err) = cx.text_system().add_fonts(fonts) {
-        eprintln!("affectui: could not load bundled fonts: {err}");
+        eprintln!("pink-ui: could not load bundled fonts: {err}");
     }
 }

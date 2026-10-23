@@ -1,4 +1,4 @@
-//! Chat Composer – an original component in luna style.
+//! Chat Composer – a luna component.
 //!
 //! A prompt box for an assistant. Attachments sit above the text as small
 //! file cards, the empty field cycles through example prompts, and the

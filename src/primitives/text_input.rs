@@ -21,7 +21,7 @@ use gpui::{
 use unicode_segmentation::UnicodeSegmentation;
 
 actions!(
-    affect_text_input,
+    pink_text_input,
     [
         Backspace,
         Delete,
@@ -50,7 +50,7 @@ actions!(
     ]
 );
 
-const KEY_CONTEXT: &str = "AffectTextInput";
+const KEY_CONTEXT: &str = "PinkTextInput";
 
 /// Registers the key bindings. Called once from [`crate::init`].
 pub fn bind_keys(cx: &mut App) {
@@ -1099,7 +1099,7 @@ impl Element for TextElement {
 impl Render for TextInput {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
-            .id("affect-text-input")
+            .id("pink-text-input")
             .flex()
             .w_full()
             .key_context(KEY_CONTEXT)

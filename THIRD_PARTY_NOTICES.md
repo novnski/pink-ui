@@ -1,11 +1,11 @@
 # Third-party notices
 
-## affectUI
+## Core components
 
-The components marked as ports in `src/components/` are GPUI ports of the free components from
-[affectUI](https://www.affectui.com) ([flohoeller/affectui](https://github.com/flohoeller/affectui)):
-their design, color tokens, sizes, copy and demo content. The SVG icons in
-`assets/icons/` are copied from those components.
+The core components in `src/components/` (`Kind::Core`) are derived from
+MIT-licensed web components by Florian Höller: their design, color tokens,
+sizes, copy and demo content. Their SVG icons in `assets/icons/` come from the
+same work. It is used under the following license:
 
 ```
 MIT License
@@ -31,8 +31,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-affectUI's demos show other companies' logos and names as sample content
-(e.g. Figma, Slack, Stripe). Those marks belong to their owners.
+The demos show other companies' names and logos as sample content (e.g.
+GitHub, Slack, Stripe). Those marks belong to their owners.
 
 ## GPUI
 

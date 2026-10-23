@@ -1,4 +1,4 @@
-//! AI Answer – an original component in luna style.
+//! AI Answer – a luna component.
 //!
 //! A question, the sources the assistant gathered and its streamed reply in
 //! one card. While it searches, monogram tiles drop into a stacked "sources"

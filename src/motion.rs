@@ -1,16 +1,16 @@
 //! Motion kit: CSS timing curves, transition specs and eased hover fades.
 //!
-//! Adapted from luna-ui's `motion` module so components animate the way
-//! affectUI's CSS does:
+//! Adapted from luna-ui's `motion` module so components animate the way CSS
+//! transitions do:
 //!
 //! - [`CubicBezier`] evaluates CSS `cubic-bezier()` exactly; the common
-//!   affectUI curves are constants ([`EASE`], [`EASE_OUT_QUINT`], ...).
+//!   curves are constants ([`EASE`], [`EASE_OUT_QUINT`], ...).
 //! - [`MotionSpec`] is one transition (duration + delay + curve) and turns
 //!   into a GPUI [`Animation`] with the delay folded in.
 //! - Element helpers ([`fade_in`], [`rise_in`], [`pop_in`]) cover the
 //!   entrance keyframes the components share.
-//! - Hover fades: GPUI's `.hover()` styles snap, while affectUI puts
-//!   `transition: background-color 160ms ease` on every control. [`hover_t`]
+//! - Hover fades: GPUI's `.hover()` styles snap, while every control here
+//!   eases its colors over 160ms, like `transition: background-color 160ms`. [`hover_t`]
 //!   and [`hover_listener`] (wrapped by [`crate::interaction::HoverFill`])
 //!   ease a per-element progress instead.
 //! - [`follow`] eases a value toward a changing target (switch knobs,
@@ -128,7 +128,7 @@ pub const EASE_OUT: CubicBezier = CubicBezier::new(0.0, 0.0, 0.58, 1.0);
 pub const EASE_IN_OUT: CubicBezier = CubicBezier::new(0.42, 0.0, 0.58, 1.0);
 /// CSS `ease-in`.
 pub const EASE_IN: CubicBezier = CubicBezier::new(0.42, 0.0, 1.0, 1.0);
-/// `cubic-bezier(0.22, 1, 0.36, 1)` – affectUI's `--ui-*-ease`, used for
+/// `cubic-bezier(0.22, 1, 0.36, 1)` – the library's standard ease, used for
 /// nearly every glide, reveal and spring in the library.
 pub const EASE_OUT_QUINT: CubicBezier = CubicBezier::new(0.22, 1.0, 0.36, 1.0);
 /// `cubic-bezier(0.16, 1, 0.3, 1)`.
@@ -228,7 +228,7 @@ where
 }
 
 /// Opacity 0 → 1 while rising `rise` px into place – the `translateY(4px)`
-/// entrance most affectUI views use. Pass a negative `rise` to drop in.
+/// entrance most views use. Pass a negative `rise` to drop in.
 pub fn rise_in<E>(
     id: impl Into<ElementId>,
     spec: MotionSpec,
@@ -598,12 +598,12 @@ pub fn driver() -> impl IntoElement {
 // Reduced motion
 // ---------------------------------------------------------------------------
 
-/// Dev knob (`AFFECTUI_MOTION_SCALE`, default 1): stretches every timeline,
+/// Dev knob (`PINK_UI_MOTION_SCALE`, default 1): stretches every timeline,
 /// e.g. `10` slows a 160ms fade to 1.6s for frame-by-frame screenshots.
 pub fn speed_scale() -> f32 {
     static SCALE: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
     *SCALE.get_or_init(|| {
-        std::env::var("AFFECTUI_MOTION_SCALE")
+        std::env::var("PINK_UI_MOTION_SCALE")
             .ok()
             .and_then(|v| v.parse::<f32>().ok())
             .filter(|s| s.is_finite())

@@ -1,4 +1,4 @@
-//! Writing Assistant – an original component in luna style.
+//! Writing Assistant – a luna component.
 //!
 //! A rewrite companion for a piece of selected text. The reader picks a
 //! direction ("Friendlier", "Shorter", …), types an instruction or dictates

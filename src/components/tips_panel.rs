@@ -863,7 +863,7 @@ fn text_width(window: &Window, text: &str, size: Pixels, weight: FontWeight) -> 
         .width
 }
 
-/// The website's tips.
+/// The demo's tips.
 pub fn demo_tips() -> Vec<Tip> {
     vec![
         Tip::new("invite", "Invite your team", "Invite")

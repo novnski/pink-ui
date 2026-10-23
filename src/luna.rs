@@ -1,8 +1,7 @@
-//! luna's design language, for the original components.
+//! luna's design language, for the luna components.
 //!
-//! The affectUI ports keep affectUI's own tokens. The components that are our
-//! own designs (inspired by affectUI's Pro items, see `components::originals`)
-//! use luna's look instead: Geist type, Tailwind-neutral surfaces, the indigo
+//! The core components keep their own tokens. The luna components use luna's
+//! look instead: Geist type, Tailwind-neutral surfaces, the indigo
 //! luna accent, a 4pt spacing grid, the 4/6/8/10/16 radius ladder and the
 //! 24/28/32 control sizes. Values come from luna-ui's `theme` and `button`
 //! modules.

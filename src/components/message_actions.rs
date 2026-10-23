@@ -2425,7 +2425,7 @@ const ANSWERS: [&str; 3] = [
     "In short: teams can now share a workspace, syncing takes half as long and Windows exports are fixed.",
 ];
 
-/// One beat of the site demo's auto-play: what it clicks after how long.
+/// One beat of the demo's auto-play: what it clicks after how long.
 #[derive(Clone, Copy)]
 enum Step {
     Copy,
@@ -2781,7 +2781,7 @@ fn demo_view(demo: &Entity<Demo>, window: &Window, cx: &mut App) -> Stateful<Div
             .child(actions)
     };
 
-    // Any pointer or key on the demo stops the auto-play, like the site.
+    // Any pointer or key on the demo stops the auto-play.
     let (enter, press, key) = (weak.clone(), weak.clone(), weak);
     div()
         .id("ma-demo")

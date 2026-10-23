@@ -370,7 +370,7 @@ impl CheckGeometry {
     }
 }
 
-/// UI state the web version keeps in `useState`.
+/// UI state that lives across renders.
 struct FilterState {
     picked: FilterValue,
     open: HashSet<SharedString>,
@@ -1406,7 +1406,7 @@ fn hint_row(ctx: &Ctx, p: &Palette) -> impl IntoElement {
     }
 }
 
-/// Stage, Deal size and Region – the website demo's CRM filters.
+/// Stage, Deal size and Region – the demo's CRM filters.
 pub fn demo_groups() -> Vec<FilterGroup> {
     vec![
         FilterGroup::new("stage", "Stage")

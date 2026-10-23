@@ -1910,7 +1910,7 @@ fn tries_message(tries: u32) -> String {
     }
 }
 
-/// The website demo: types a wrong code, then the right one, and checks
+/// The demo: types a wrong code, then the right one, and checks
 /// each; any click or key takes over from the auto-play.
 struct DemoState {
     code: SharedString,

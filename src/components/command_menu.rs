@@ -1,6 +1,6 @@
 //! Command Menu – one field to search and run everything.
 //!
-//! An original in luna's design language. App actions sit on a strip of
+//! A luna component. App actions sit on a strip of
 //! tiles you can fire with Ctrl/⌘ 1–5; everyday commands follow in groups
 //! with their own shortcuts. Typing folds the strip away and filters every
 //! command at once, lighting up the matched letters. Scope chips narrow the

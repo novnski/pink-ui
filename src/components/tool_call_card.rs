@@ -193,7 +193,7 @@ impl<T: Into<Json>> From<Option<T>> for Json {
 }
 
 /// What a code section shows: JSON (pretty-printed and highlighted) or
-/// plain text. Strings that hold JSON are parsed, like the web version does.
+/// plain text. Strings that hold JSON are parsed.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ToolPayload {
     Json(Json),
@@ -2502,7 +2502,7 @@ impl RenderOnce for ToolCallGroup {
 }
 
 // ---------------------------------------------------------------------------
-// Story: the website demo
+// Story: the demo
 // ---------------------------------------------------------------------------
 
 /// When each step of the demo lands (ms), and when it starts over.

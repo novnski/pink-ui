@@ -339,7 +339,7 @@ fn paragraph_width(window: &Window, size: f32, n: f32) -> f32 {
     n * advance(window, size, '0') + advance(window, size, ' ')
 }
 
-/// UI state the web version keeps in `useState`.
+/// UI state that lives across renders.
 struct StackState {
     items: Vec<Notice>,
     /// Dismissed, still sliding out.
@@ -359,8 +359,7 @@ pub struct NotificationStack {
 }
 
 impl NotificationStack {
-    /// The stack keeps its own copy of `notices` from the first render on,
-    /// like the web version's `useState(notices)`.
+    /// The stack keeps its own copy of `notices` from the first render on.
     pub fn new(id: impl Into<ElementId>, notices: Vec<Notice>) -> Self {
         Self {
             id: id.into(),
@@ -982,7 +981,7 @@ fn paint_pattern(
     }
 }
 
-/// Dark mode, scheduled maintenance and a workspace invite – the website demo.
+/// Dark mode, scheduled maintenance and a workspace invite – the demo.
 pub fn demo_notices() -> Vec<Notice> {
     vec![
         Notice::new(

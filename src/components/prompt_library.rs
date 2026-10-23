@@ -1,6 +1,6 @@
 //! Prompt Library – saved prompt templates you fill in place.
 //!
-//! An original in luna's design language. The library lists templates by
+//! A luna component. The library lists templates by
 //! group; the open one reads as a sentence with blanks you type straight
 //! into, each blank growing with its text. A ring and a row of variable
 //! tokens track what is still missing, the assembled prompt updates below

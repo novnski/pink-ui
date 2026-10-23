@@ -544,7 +544,7 @@ fn hairline(window: &Window) -> f32 {
     0.5f32.max(1. / window.scale_factor())
 }
 
-/// Classic sets no line heights: its text takes the site's `line-height: 1.5`.
+/// Classic sets no line heights: its text inherits a 1.5 line height.
 fn inherited(size: f32) -> Pixels {
     px(size * 1.5)
 }
@@ -810,7 +810,7 @@ pub struct EmailDraft {
 }
 
 impl EmailDraft {
-    /// A draft with affectUI's demo content; override any of it below.
+    /// A draft with the demo content; override any of it below.
     pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
             id: id.into(),

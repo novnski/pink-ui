@@ -1,4 +1,4 @@
-//! Comments Panel – an original component in luna style.
+//! Comments Panel – a luna component.
 //!
 //! The comment sidebar of a document. Each comment shows who wrote it, the
 //! passage it is anchored to and the note itself. A comment that starts with

@@ -541,7 +541,7 @@ fn text_width(window: &Window, text: &SharedString, size: f32, weight: FontWeigh
     f32::from(line.width)
 }
 
-/// The content's width, like the web version's `offsetWidth` (rounded).
+/// The content's width, rounded to whole pixels.
 fn content_width(window: &Window, o: &SegmentOption, look: Look, m: &Metrics) -> f32 {
     let mut parts: Vec<f32> = Vec::new();
     if o.icon.is_some() {

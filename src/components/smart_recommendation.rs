@@ -48,7 +48,7 @@ const SWAP: MotionSpec = MotionSpec::new(300, EASE_OUT_QUINT);
 const SWAP_REASON: MotionSpec = MotionSpec::new(360, EASE_OUT_QUINT);
 /// `ui-src-drop`: the menu rises 4px into place.
 const DROP: MotionSpec = MotionSpec::new(180, EASE_OUT_QUINT);
-/// The site's body line height, which the Classic card inherits.
+/// The body line height the Classic card inherits.
 const INHERITED_LINE: f32 = 18.571;
 
 /// How sure the recommendation is.
@@ -798,9 +798,8 @@ impl RenderOnce for SmartRecommendation {
         // ---- Signal ---------------------------------------------------------
         let level = current.signal.level();
         let heights = if clean { [5., 8., 11.] } else { [6., 9., 12.] };
-        // As on affectui.com: the level colors only reach the menu's mini
-        // bars (`[data-level] > span[data-on]` skips the nested main bars), so
-        // the main signal stays neutral; at no signal Clean shades the whole
+        // The level colors only reach the menu's mini bars, so the main
+        // signal stays neutral; at no signal Clean shades the whole
         // bar group and Classic its first bar.
         let main_bars = div()
             .flex()
@@ -1376,7 +1375,7 @@ fn alternatives_menu(
     .with_priority(1)
 }
 
-/// The website demo's data: a nightly data sync.
+/// The demo's data: a nightly data sync.
 pub fn demo_options() -> Vec<Recommendation> {
     vec![
         Recommendation::new("incremental", "Incremental sync", Signal::Strong).reason(

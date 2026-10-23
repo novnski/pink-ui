@@ -1,6 +1,6 @@
 //! Integration Picker – the integrations page of a command menu.
 //!
-//! An original in luna's design language. A searchable sidebar splits the
+//! A luna component. A searchable sidebar splits the
 //! services into Connected and Available; the picked one fills the detail
 //! pane, where your workspace and the service sit on two tiles joined by a
 //! dotted link. Connecting runs a short handshake – the link pulses, the
