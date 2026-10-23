@@ -349,7 +349,7 @@ fn badge(
                 .border_color(color)
                 .into_any_element(),
         })
-        .child(div().min_w_0().child(label.into()))
+        .child(div().min_w_0().truncate().child(label.into()))
 }
 
 /// The status mark beside a column title: a muted ring while nothing runs
@@ -637,7 +637,7 @@ fn task_card(a: CardArgs, t: &Pink) -> AnyElement {
         .border_color(t.separator(false))
         .type_style(TextStyle::Caption)
         .text_color(t.readable_muted(0.8))
-        .child(div().flex_1().min_w_0().child(location))
+        .child(div().flex_1().min_w_0().truncate().child(location))
         .when_some(when, |row, when| {
             row.child(
                 div()
