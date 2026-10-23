@@ -63,9 +63,10 @@ drawn from the same sets where Pink does not bundle a glyph:
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Attribution:
   "Solar Icons by 480 Design". Some are recolored or have their stroke widths
   adjusted to sit at pink-ui's sizes.
-- File-type icons (`file-*.svg` in `dropzone/` and `thinking-state/`) from
+- File-type icons (`file-*.svg`) from
   [Symbols](https://github.com/miguelsolorio/vscode-symbols) by Miguel Solorio,
-  MIT License (`assets/icons/licenses/LICENSE.symbols`).
+  MIT License (`assets/icons/licenses/LICENSE.symbols`); the `-dark` variants
+  are lifted for dark mode the way Pink does.
 - `git-pull-request.svg` and `webhook.svg`: [Lucide](https://lucide.dev), ISC
   License (`assets/icons/licenses/LICENSE.lucide`).
 - `arrow-fork.svg`: [Tabler Icons](https://tabler.io/icons), MIT License
