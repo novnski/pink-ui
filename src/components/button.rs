@@ -1,94 +1,132 @@
-//! Button – primary, secondary, ghost and destructive buttons with icons,
-//! sizes and a shimmering loading state.
+//! Button – pink's push buttons: Primary, Secondary, Ghost and Danger in three
+//! sizes, with glyphs, icon-only squares and a busy spinner.
 //!
-//! Clean: a dark chip, a white button with hairline shadows, a quiet ghost and
-//! a minimal red fill, 24/28/32 high. Classic: a dark gradient with a light
-//! edge, a white outlined button, a gray ghost layer and a light red fill,
-//! 32/40/48 high. Both invert in dark mode.
+//! A pink component, built on the kit's control frame (pink: `button.rs`
+//! `button` / `icon_button` / `glyph`). Sizes follow pink's control ladder:
+//! Sm is 24 high with 11/14 type, radius 6 and 12 px glyphs, for toolbars and
+//! inline row actions; Md is 28 high (12/16, radius 8, 14 px glyphs), for the
+//! settings control column and panel headers; Lg is 32 high (13/18, radius 8,
+//! 16 px glyphs), for dialogs.
 //!
-//! When the label or an icon changes, the width glides to its new size and the
-//! new part fades in. While loading, a band of light sweeps across the dimmed
-//! label, a spinner takes the place of the leading icon and clicks are
-//! ignored. Pressing shrinks the button a little; Enter and Space click it
-//! when it has focus, Tab moves on to the next one.
+//! Primary is the one solid, `text`-colored plate in a group. Secondary is a
+//! faint plate with an edge, Ghost a faint plate whose muted label brightens on
+//! hover, and Danger the solid red plate. Hovers ease over 150 ms, keyboard
+//! focus draws the 2 px inset ring, and a disabled button rests at 45%. An
+//! icon-only Ghost button is pink's square icon button: transparent until
+//! hovered, with the glyph brightening alongside the wash. While `loading`,
+//! pink's gradient spinner takes the leading glyph's place. The button then
+//! stops taking clicks but keeps full strength (pink `goal_control`).
 //!
 //! ```ignore
 //! Button::new("save").label("Save changes").on_click(|_, _, _| {});
-//! Button::new("upload")
-//!     .variant(ButtonVariant::Secondary)
-//!     .icon(button::icon(cx.look(), "upload"))
-//!     .label("Upload file")
-//!     .loading(uploading);
+//! Button::new("check")
+//!     .secondary()
+//!     .icon(button::icon("refresh"))
+//!     .label(if checking { "Checking…" } else { "Check for updates" })
+//!     .loading(checking);
 //! ```
 
-use std::{collections::HashMap, f32::consts::TAU, ops::Range, rc::Rc, sync::Arc, time::Duration};
+use std::{collections::HashMap, rc::Rc, time::Duration};
 
 use gpui::{
-    AnyElement, AnyView, App, BoxShadow, ClickEvent, Context, CursorStyle, Div, ElementId, Entity,
-    FocusHandle, FontWeight, Hsla, IntoElement, MouseButton, Pixels, Rgba, SharedString,
-    StyledText, Task, TextRun, Transformation, Window, div, font, linear_color_stop,
-    linear_gradient, prelude::*, px, radians, svg,
+    AnyView, App, ClickEvent, Context, Div, ElementId, Hsla, IntoElement, SharedString, Task,
+    Window, div, prelude::*, px,
 };
 
 use crate::{
-    ActiveTheme, Look,
-    motion::{self, AnimationExt, CubicBezier, EASE_OUT_QUINT, MotionSpec},
-    primitives::{self, SANS, black_a, hex, hexa, white_a},
+    motion,
+    pink::{self, ButtonKind, ControlSize, Pink, layout, loaders},
     story,
 };
 
 pub const NAME: &str = "Button";
-pub const DESCRIPTION: &str = "Primary, secondary, ghost and destructive buttons with icons, sizes and a shimmering loading state";
+pub const DESCRIPTION: &str = "Primary, secondary, ghost and danger push buttons in three sizes, with glyphs, icon-only squares and a busy spinner";
 
-/// Drawn in place of the leading icon while loading.
-const SPINNER: &str = "icons/button/spinner.svg";
-
-/// `cubic-bezier(0.25, 1, 0.5, 1)`: the morph curve.
-const MORPH_CURVE: CubicBezier = CubicBezier::new(0.25, 1.0, 0.5, 1.0);
-/// The width glides to its new size.
-const MORPH: MotionSpec = MotionSpec::new(480, MORPH_CURVE);
-/// A changed label rises in (`ui-button-label-in`).
-const LABEL_IN: MotionSpec = MotionSpec::new(480, MORPH_CURVE);
-/// A changed icon grows in (`ui-button-icon-in`).
-const ICON_IN: MotionSpec = MotionSpec::new(520, MORPH_CURVE);
-/// `:active { transform: scale(0.97) }` over `160ms var(--ease)`.
-const PRESS: MotionSpec = MotionSpec::new(160, EASE_OUT_QUINT);
-/// One sweep of the loading shine: `var(--load) * 1.6`.
-const SWEEP: Duration = Duration::from_millis(1040);
-const SPIN: Duration = Duration::from_millis(900);
-
-/// The demo's icons, drawn for `look` (Clean strokes are a
-/// little thinner): `arrow-up`, `arrow-right`, `plus`, `dots`, `copy`,
-/// `upload`, `trash` and `check`.
-pub fn icon(look: Look, name: &str) -> SharedString {
-    match look {
-        Look::Clean => format!("icons/button/clean/{name}.svg").into(),
-        Look::Classic => format!("icons/button/{name}.svg").into(),
-    }
+/// The demo's glyphs, copied from pink's Solar Linear set: `refresh`, `copy`,
+/// `copy-check`, `more-horizontal` and `arrow-right-up`.
+pub fn icon(name: &str) -> SharedString {
+    format!("icons/button/{name}.svg").into()
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum ButtonVariant {
-    /// Clean: a dark chip. Classic: a dark gradient with a light edge.
+    /// The one solid action in a group: a `text`-colored plate (easing to 86%
+    /// on hover) with an `on_solid` label (pink `ButtonKind::Primary`).
     #[default]
     Primary,
-    /// White with a hairline shadow (Clean) or an outline (Classic).
+    /// A faint filled plate with a `separator(true)` edge and a `text` label
+    /// (pink `ButtonKind::Secondary`).
     Secondary,
-    /// A muted label; a soft wash appears on hover.
+    /// A quiet action on a faint resting plate; the muted label brightens to
+    /// `text` on hover (pink `ButtonKind::Ghost`). Icon-only, it is pink's
+    /// transparent `icon_button`.
     Ghost,
-    /// A red label on a light red fill, for deleting.
+    /// The solid red plate for deleting (pink `ButtonKind::Danger`).
     Destructive,
+}
+
+impl ButtonVariant {
+    fn kind(self) -> ButtonKind {
+        match self {
+            ButtonVariant::Primary => ButtonKind::Primary,
+            ButtonVariant::Secondary => ButtonKind::Secondary,
+            ButtonVariant::Ghost => ButtonKind::Ghost,
+            ButtonVariant::Destructive => ButtonKind::Danger,
+        }
+    }
+
+    /// The glyph tone (pink `button::glyph`): the shared `readable_muted(0.95)`
+    /// on the faint plates, the label color on the solid ones. It doesn't
+    /// follow the hover; only the icon button's glyph does.
+    fn glyph_tone(self, t: &Pink) -> Hsla {
+        match self {
+            ButtonVariant::Primary => t.on_solid,
+            ButtonVariant::Destructive => t.on_danger(),
+            ButtonVariant::Secondary | ButtonVariant::Ghost => t.glyph_tone(),
+        }
+    }
+
+    /// The spinner's row tints: the accent glyph palette on the faint plates
+    /// (pink `gradient_spinner`), a single label-colored tint on the solid
+    /// plates, where violet would sink into the fill.
+    fn spinner_tints(self, t: &Pink) -> [Hsla; 3] {
+        match self {
+            ButtonVariant::Primary => [t.on_solid; 3],
+            ButtonVariant::Destructive => [t.on_danger(); 3],
+            ButtonVariant::Secondary | ButtonVariant::Ghost => t.glyph,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum ButtonSize {
-    /// Clean 24, Classic 32 high.
+    /// 24 high, 11/14 type, 12 px glyphs: toolbars and inline row actions.
     Sm,
-    /// Clean 28, Classic 40 high.
+    /// 28 high, 12/16 type, 14 px glyphs: the settings control column.
     #[default]
     Md,
-    /// Clean 32, Classic 48 high.
+    /// 32 high, 13/18 type, 16 px glyphs: dialogs.
     Lg,
+}
+
+impl ButtonSize {
+    fn control(self) -> ControlSize {
+        match self {
+            ButtonSize::Sm => ControlSize::Sm,
+            ButtonSize::Md => ControlSize::Md,
+            ButtonSize::Lg => ControlSize::Lg,
+        }
+    }
+
+    /// The spinner's cell: 2.5 in a 12–14 px glyph box (pink
+    /// `composer/goals.rs` `SPINNER_CELL`), 3 in the 16 px one (pink's
+    /// sign-in poll spinner).
+    fn spinner_cell(self) -> f32 {
+        match self {
+            ButtonSize::Sm | ButtonSize::Md => 2.5,
+            ButtonSize::Lg => 3.0,
+        }
+    }
 }
 
 type ClickHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
@@ -101,10 +139,10 @@ pub struct Button {
     size: ButtonSize,
     icon: Option<SharedString>,
     icon_right: Option<SharedString>,
+    tooltip: Option<SharedString>,
     loading: bool,
     disabled: bool,
     on_click: Option<ClickHandler>,
-    look: Option<Look>,
 }
 
 impl Button {
@@ -116,10 +154,10 @@ impl Button {
             size: ButtonSize::default(),
             icon: None,
             icon_right: None,
+            tooltip: None,
             loading: false,
             disabled: false,
             on_click: None,
-            look: None,
         }
     }
 
@@ -155,26 +193,35 @@ impl Button {
         self
     }
 
-    /// An SVG under `assets/` before the label, tinted with the label color
-    /// (see [`icon`] for the demo's set).
+    /// An SVG under `assets/` before the label, sized for the button (see
+    /// [`icon`] for the demo's set).
     pub fn icon(mut self, path: impl Into<SharedString>) -> Self {
         self.icon = Some(path.into());
         self
     }
 
-    /// An SVG under `assets/` after the label.
+    /// An SVG under `assets/` after the label, like pink's "Go to chat ↗".
     pub fn icon_right(mut self, path: impl Into<SharedString>) -> Self {
         self.icon_right = Some(path.into());
         self
     }
 
-    /// Shimmers the label, swaps the leading icon for a spinner and ignores clicks.
+    /// Pink's text tooltip after the shared 400 ms delay; it also names the
+    /// button for assistive tech when there is no label. Icon-only buttons
+    /// should always have one.
+    pub fn tooltip(mut self, tooltip: impl Into<SharedString>) -> Self {
+        self.tooltip = Some(tooltip.into());
+        self
+    }
+
+    /// Swaps the leading glyph for pink's gradient spinner and stops taking
+    /// clicks, at full strength. Pair it with a busy label ("Checking…").
     pub fn loading(mut self, loading: bool) -> Self {
         self.loading = loading;
         self
     }
 
-    /// Fades the button to 40% and turns off hover, press and clicks.
+    /// Rests the button at 45% with no hover, pointer, tab stop or clicks.
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
@@ -187,1129 +234,391 @@ impl Button {
         self.on_click = Some(Rc::new(handler));
         self
     }
-
-    /// Overrides the global Clean/Classic look for this button.
-    pub fn look(mut self, look: Look) -> Self {
-        self.look = Some(look);
-        self
-    }
-
-    /// The width the button takes at rest – handy for reserving room for the
-    /// widest of several labels, like the demo's slots do.
-    pub fn measure(&self, window: &Window, cx: &App) -> Pixels {
-        let look = self.look.unwrap_or(cx.look());
-        let m = Metrics::get(look, self.size);
-        let label_width = self
-            .label
-            .as_ref()
-            .map_or(0., |label| f32::from(shape(window, label, m.fs).width));
-        px(self.natural_width(&m, label_width))
-    }
-
-    fn icon_only(&self) -> bool {
-        self.label.is_none() && (self.icon.is_some() || self.icon_right.is_some())
-    }
-
-    /// Left and right padding: an icon sits closer to the edge than text (Clean).
-    fn padding(&self, m: &Metrics) -> (f32, f32) {
-        if self.icon_only() {
-            return (0., 0.);
-        }
-        let left = m.pad
-            - if self.icon.is_some() {
-                m.icon_inset
-            } else {
-                0.
-            };
-        let right = m.pad
-            - if self.icon_right.is_some() {
-                m.icon_inset
-            } else {
-                0.
-            };
-        (left, right)
-    }
-
-    fn natural_width(&self, m: &Metrics, label_width: f32) -> f32 {
-        if self.icon_only() {
-            return m.h;
-        }
-        let (left, right) = self.padding(m);
-        let parts = [
-            self.icon.is_some(),
-            self.label.is_some(),
-            self.icon_right.is_some(),
-        ];
-        let count = parts.iter().filter(|p| **p).count();
-        let icons = (self.icon.is_some() as u8 + self.icon_right.is_some() as u8) as f32;
-        2. * m.border
-            + left
-            + right
-            + icons * m.icon
-            + label_width
-            + count.saturating_sub(1) as f32 * m.gap
-    }
 }
 
-/// A run of the label's font (Inter Medium) in `color`.
-fn label_run(len: usize, color: Hsla) -> TextRun {
-    TextRun {
-        len,
-        font: gpui::Font {
-            weight: FontWeight::MEDIUM,
-            ..font(SANS)
-        },
-        color,
-        background_color: None,
-        underline: None,
-        strikethrough: None,
-    }
-}
-
-/// Shapes `text` the way the label renders: Inter Medium at `size`.
-fn shape(window: &Window, text: &SharedString, size: f32) -> gpui::ShapedLine {
-    let run = label_run(text.len(), black_a(1.));
-    window
-        .text_system()
-        .shape_line(text.clone(), px(size), &[run], None)
-}
-
-/// `--h`, `--px`, `--gap`, `--fs`, `--lh`, `--icon` and `--radius` per look × size.
-#[derive(Clone, Copy)]
-struct Metrics {
-    h: f32,
-    pad: f32,
-    gap: f32,
-    fs: f32,
-    lh: f32,
-    icon: f32,
-    radius: f32,
-    /// Classic keeps a 1px (often transparent) border inside its height.
-    border: f32,
-    /// Clean pulls the padding in by 2px next to an icon.
-    icon_inset: f32,
-}
-
-impl Metrics {
-    fn get(look: Look, size: ButtonSize) -> Self {
-        match (look, size) {
-            (Look::Clean, ButtonSize::Sm) => Metrics::clean(24., 8., 4., 12., 16., 14.),
-            (Look::Clean, ButtonSize::Md) => Metrics::clean(28., 10., 6., 13., 20., 16.),
-            (Look::Clean, ButtonSize::Lg) => Metrics::clean(32., 12., 6., 13., 20., 16.),
-            (Look::Classic, ButtonSize::Sm) => Metrics::classic(32., 12., 6., 13., 16., 10.),
-            (Look::Classic, ButtonSize::Md) => Metrics::classic(40., 16., 8., 14., 18., 12.),
-            (Look::Classic, ButtonSize::Lg) => Metrics::classic(48., 20., 10., 15., 20., 14.),
-        }
-    }
-
-    fn clean(h: f32, pad: f32, gap: f32, fs: f32, lh: f32, icon: f32) -> Self {
-        Metrics {
-            h,
-            pad,
-            gap,
-            fs,
-            lh,
-            icon,
-            radius: 6.,
-            border: 0.,
-            icon_inset: 2.,
-        }
-    }
-
-    /// Classic sets `line-height: 1`.
-    fn classic(h: f32, pad: f32, gap: f32, fs: f32, icon: f32, radius: f32) -> Self {
-        Metrics {
-            h,
-            pad,
-            gap,
-            fs,
-            lh: fs,
-            icon,
-            radius,
-            border: 1.,
-            icon_inset: 0.,
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-enum Paint {
-    Solid(Hsla),
-    /// Top to bottom.
-    Gradient(Hsla, Hsla),
-}
-
-/// One variant's colors in one look × mode (the `--ui-btn-*` / `--ui-btnc-*` tokens).
-struct Skin {
-    fill: Paint,
-    fill_hover: Paint,
-    /// Classic primary: the light edge running down the 1px border.
-    edge: Option<(Hsla, Hsla)>,
-    /// Classic draws a 1px border on every variant, transparent but on secondary.
-    border: Option<Hsla>,
-    fg: Hsla,
-    fg_hover: Hsla,
-    icon: Hsla,
-    icon_hover: Hsla,
-    shadow: Vec<BoxShadow>,
-    shadow_hover: Vec<BoxShadow>,
-    /// The band of light that sweeps the label while loading.
-    shine: Hsla,
-    /// The share of the label color kept while loading.
-    dim: f32,
-    focus: Hsla,
-    focus_offset: f32,
-}
-
-impl Skin {
-    fn get(look: Look, variant: ButtonVariant, dark: bool) -> Self {
-        match look {
-            Look::Clean => Self::clean(variant, dark),
-            Look::Classic => Self::classic(variant, dark),
-        }
-    }
-
-    fn clean(variant: ButtonVariant, dark: bool) -> Self {
-        let (title, ink, muted, icon, solid, solid_hover, on_solid, surface) = if dark {
-            (
-                white_a(0.9),
-                white_a(0.9),
-                white_a(0.62),
-                white_a(0.5),
-                white_a(0.9),
-                white_a(0.82),
-                hex(0x161618),
-                hex(0x1c1c1e),
-            )
-        } else {
-            (
-                hex(0x000000),
-                black_a(0.88),
-                black_a(0.61),
-                black_a(0.447),
-                black_a(0.88),
-                black_a(0.8),
-                hex(0xfcfcfc),
-                hex(0xffffff),
-            )
-        };
-        let (shadow_rest, shadow_hover) = if dark {
-            (
-                vec![
-                    ring(0.5, white_a(0.1)),
-                    shadow(0., 1., 2., 0., black_a(0.4)),
-                ],
-                vec![
-                    ring(0.5, white_a(0.16)),
-                    shadow(0., 1., 2., 0., black_a(0.4)),
-                ],
-            )
-        } else {
-            (
-                vec![
-                    ring(0.5, black_a(0.06)),
-                    shadow(0., 1., 1., -1., black_a(0.1)),
-                    shadow(0., 1., 2., 0., black_a(0.05)),
-                ],
-                vec![
-                    ring(0.5, black_a(0.1)),
-                    shadow(0., 1., 1., -1., black_a(0.12)),
-                    shadow(0., 1., 3., 0., black_a(0.07)),
-                ],
-            )
-        };
-        let wash = if dark { white_a(0.06) } else { black_a(0.03) };
-        let (danger, danger_bg, danger_bg_hover) = if dark {
-            (hex(0xff6369), hexa(0xe5484d, 0.14), hexa(0xe5484d, 0.2))
-        } else {
-            (hex(0xe5484d), hexa(0xe5484d, 0.08), hexa(0xe5484d, 0.12))
-        };
-        let shine = if dark { hex(0xffffff) } else { white_a(0.82) };
-        let focus = if dark {
-            hexa(0x4d8dff, 0.5)
-        } else {
-            hexa(0x0060e2, 0.35)
-        };
-        let base = Skin {
-            fill: Paint::Solid(solid),
-            fill_hover: Paint::Solid(solid_hover),
-            edge: None,
-            border: None,
-            fg: on_solid,
-            fg_hover: on_solid,
-            icon: on_solid,
-            icon_hover: on_solid,
-            shadow: Vec::new(),
-            shadow_hover: Vec::new(),
-            // `--ui-btnc-shine-on-solid` is white in both modes
-            shine: hex(0xffffff),
-            dim: 0.5,
-            focus,
-            focus_offset: 1.,
-        };
-        match variant {
-            ButtonVariant::Primary => base,
-            ButtonVariant::Secondary => Skin {
-                fill: Paint::Solid(surface),
-                fill_hover: Paint::Solid(surface),
-                fg: title,
-                fg_hover: title,
-                icon,
-                icon_hover: icon,
-                shadow: shadow_rest,
-                shadow_hover,
-                shine,
-                ..base
-            },
-            ButtonVariant::Ghost => Skin {
-                fill: Paint::Solid(wash.opacity(0.)),
-                fill_hover: Paint::Solid(wash),
-                fg: muted,
-                fg_hover: ink,
-                icon,
-                icon_hover: ink,
-                shine,
-                ..base
-            },
-            ButtonVariant::Destructive => Skin {
-                fill: Paint::Solid(danger_bg),
-                fill_hover: Paint::Solid(danger_bg_hover),
-                fg: danger,
-                fg_hover: danger,
-                icon: danger,
-                icon_hover: danger,
-                shine,
-                ..base
-            },
-        }
-    }
-
-    fn classic(variant: ButtonVariant, dark: bool) -> Self {
-        let focus = if dark {
-            hexa(0xededed, 0.3)
-        } else {
-            hexa(0x171717, 0.22)
-        };
-        let shine = if dark {
-            hexa(0xededed, 0.95)
-        } else {
-            white_a(0.82)
-        };
-        let base = Skin {
-            fill: Paint::Solid(hex(0x000000).opacity(0.)),
-            fill_hover: Paint::Solid(hex(0x000000).opacity(0.)),
-            edge: None,
-            border: Some(hex(0x000000).opacity(0.)),
-            fg: hex(0x171717),
-            fg_hover: hex(0x171717),
-            icon: hex(0x171717),
-            icon_hover: hex(0x171717),
-            shadow: Vec::new(),
-            shadow_hover: Vec::new(),
-            shine,
-            dim: 0.55,
-            focus,
-            focus_offset: 2.,
-        };
-        match (variant, dark) {
-            (ButtonVariant::Primary, false) => {
-                let fg = hex(0xfafafa);
-                let shadows = vec![
-                    ring(1., hex(0x0d0d0d)),
-                    shadow(0., 2., 4., 0., black_a(0.1)),
-                ];
-                Skin {
-                    fill: Paint::Gradient(hex(0x323137), hex(0x201e25)),
-                    fill_hover: Paint::Gradient(hex(0x3c3b42), hex(0x29272f)),
-                    edge: Some((hex(0x4b4951), hex(0x18171b))),
-                    fg,
-                    fg_hover: fg,
-                    icon: fg,
-                    icon_hover: fg,
-                    shadow: shadows.clone(),
-                    shadow_hover: shadows,
-                    shine: white_a(0.95),
-                    ..base
-                }
-            }
-            (ButtonVariant::Primary, true) => {
-                let fg = hex(0x121213);
-                let shadows = vec![ring(1., black_a(0.6)), shadow(0., 2., 4., 0., black_a(0.4))];
-                Skin {
-                    fill: Paint::Gradient(hex(0xf4f4f5), hex(0xe4e4e7)),
-                    fill_hover: Paint::Gradient(hex(0xffffff), hex(0xececef)),
-                    edge: Some((hex(0xffffff), hex(0xd4d4d8))),
-                    fg,
-                    fg_hover: fg,
-                    icon: fg,
-                    icon_hover: fg,
-                    shadow: shadows.clone(),
-                    shadow_hover: shadows,
-                    shine: white_a(0.9),
-                    ..base
-                }
-            }
-            (ButtonVariant::Secondary, _) => {
-                let (surface, hover, line, ink, lift) = if dark {
-                    (
-                        hex(0x232326),
-                        hex(0x2a2a2d),
-                        white_a(0.1),
-                        hex(0xededed),
-                        black_a(0.4),
-                    )
-                } else {
-                    (
-                        hex(0xffffff),
-                        hex(0xfafafa),
-                        hex(0xe5e5e5),
-                        hex(0x171717),
-                        black_a(0.06),
-                    )
-                };
-                let shadows = vec![shadow(0., 1., 2., 0., lift)];
-                Skin {
-                    fill: Paint::Solid(surface),
-                    fill_hover: Paint::Solid(hover),
-                    border: Some(line),
-                    fg: ink,
-                    fg_hover: ink,
-                    icon: ink,
-                    icon_hover: ink,
-                    shadow: shadows.clone(),
-                    shadow_hover: shadows,
-                    ..base
-                }
-            }
-            (ButtonVariant::Ghost, _) => {
-                let (muted, hover, layer) = if dark {
-                    (hex(0x8f8f8f), hex(0xededed), white_a(0.06))
-                } else {
-                    (hex(0x737373), hex(0x404040), hex(0xf0f0f0))
-                };
-                Skin {
-                    fill: Paint::Solid(layer.opacity(0.)),
-                    fill_hover: Paint::Solid(layer),
-                    fg: muted,
-                    fg_hover: hover,
-                    icon: muted,
-                    icon_hover: hover,
-                    ..base
-                }
-            }
-            (ButtonVariant::Destructive, _) => {
-                let (danger, danger_bg) = if dark {
-                    (hex(0xff6b6b), hexa(0xff4040, 0.16))
-                } else {
-                    (hex(0xff0000), hex(0xffe6e9))
-                };
-                Skin {
-                    fill: Paint::Solid(danger_bg),
-                    // color-mix(in srgb, bg 88%, danger)
-                    fill_hover: Paint::Solid(motion::mix(danger_bg, danger, 0.12)),
-                    fg: danger,
-                    fg_hover: danger,
-                    icon: danger,
-                    icon_hover: danger,
-                    shine: white_a(0.82),
-                    ..base
-                }
-            }
-        }
-    }
-}
-
-impl Paint {
-    fn mix(self, hover: Paint, t: f32) -> Paint {
-        match (self, hover) {
-            (Paint::Solid(a), Paint::Solid(b)) => Paint::Solid(motion::mix(a, b, t)),
-            (Paint::Gradient(a, b), Paint::Gradient(c, d)) => {
-                Paint::Gradient(motion::mix(a, c, t), motion::mix(b, d, t))
-            }
-            (rest, hover) => {
-                if t < 0.5 {
-                    rest
-                } else {
-                    hover
-                }
-            }
-        }
-    }
-}
-
-fn gradient(top: Hsla, bottom: Hsla) -> gpui::Background {
-    linear_gradient(
-        180.,
-        linear_color_stop(top, 0.),
-        linear_color_stop(bottom, 1.),
-    )
-}
-
-/// Eases each shadow layer toward its hover twin, like `transition: box-shadow`.
-fn mix_shadows(rest: &[BoxShadow], hover: &[BoxShadow], t: f32) -> Vec<BoxShadow> {
-    if rest.len() != hover.len() {
-        return if t < 0.5 {
-            rest.to_vec()
-        } else {
-            hover.to_vec()
-        };
-    }
-    rest.iter()
-        .zip(hover)
-        .map(|(a, b)| BoxShadow {
-            color: motion::mix(a.color, b.color, t),
-            offset: gpui::point(
-                px(motion::lerp(
-                    f32::from(a.offset.x),
-                    f32::from(b.offset.x),
-                    t,
-                )),
-                px(motion::lerp(
-                    f32::from(a.offset.y),
-                    f32::from(b.offset.y),
-                    t,
-                )),
-            ),
-            blur_radius: px(motion::lerp(
-                f32::from(a.blur_radius),
-                f32::from(b.blur_radius),
-                t,
-            )),
-            spread_radius: px(motion::lerp(
-                f32::from(a.spread_radius),
-                f32::from(b.spread_radius),
-                t,
-            )),
-            inset: a.inset,
-        })
-        .collect()
-}
-
-/// `box-shadow: x y blur spread color` (CSS values; `primitives::shadow`
-/// converts them for GPUI).
-fn shadow(x: f32, y: f32, blur: f32, spread: f32, color: Hsla) -> BoxShadow {
-    primitives::shadow(x, y, blur, spread, color)
-}
-
-/// `box-shadow: 0 0 0 <width> color`.
-fn ring(width: f32, color: Hsla) -> BoxShadow {
-    shadow(0., 0., 0., width, color)
-}
-
-/// `top` painted over `bottom` (source-over).
-fn over(top: Hsla, bottom: Hsla) -> Hsla {
-    let (t, b) = (Rgba::from(top), Rgba::from(bottom));
-    let a = t.a + b.a * (1. - t.a);
-    if a <= f32::EPSILON {
-        return top.opacity(0.);
-    }
-    let channel = |x: f32, y: f32| (x * t.a + y * b.a * (1. - t.a)) / a;
-    Hsla::from(Rgba {
-        r: channel(t.r, b.r),
-        g: channel(t.g, b.g),
-        b: channel(t.b, b.b),
-        a,
-    })
-}
-
-/// What the parts are keyed by: a change remounts the part, which
-/// replays its entrance, and the width glides.
-#[derive(Clone, PartialEq)]
-struct Content {
-    label: Option<SharedString>,
-    icon: Option<SharedString>,
-    icon_right: Option<SharedString>,
-}
-
-struct ButtonState {
-    focus: FocusHandle,
-    pressed: bool,
-    /// Focus that came from a click shows no ring (`:focus-visible`).
-    pointer_focus: bool,
-    content: Option<Content>,
-    /// Bumped when the label, the leading icon or the trailing icon changes.
-    generation: [u64; 3],
-}
-
-impl ButtonState {
-    fn sync(&mut self, content: Content, focused: bool) -> ([u64; 3], bool, bool) {
-        if let Some(prev) = &self.content {
-            if prev.label != content.label {
-                self.generation[0] += 1;
-            }
-            if prev.icon != content.icon {
-                self.generation[1] += 1;
-            }
-            if prev.icon_right != content.icon_right {
-                self.generation[2] += 1;
-            }
-        }
-        self.content = Some(content);
-        if !focused {
-            self.pointer_focus = false;
-        }
-        (self.generation, self.pressed, self.pointer_focus)
-    }
+/// Pink's gradient spinner centered in a glyph-sized box, so it takes the
+/// glyph's place without moving the label (pink: `composer/goals.rs`
+/// `goal_control`, spinning).
+fn busy_glyph(variant: ButtonVariant, size: ButtonSize, t: &Pink) -> Div {
+    div()
+        .flex_none()
+        .size(px(size.control().glyph()))
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(loaders::gradient_spinner(
+            size.spinner_cell(),
+            variant.spinner_tints(t),
+        ))
 }
 
 impl RenderOnce for Button {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let look = self.look.unwrap_or(cx.look());
-        let skin = Skin::get(look, self.variant, cx.is_dark());
-        let m = Metrics::get(look, self.size);
-        let key = format!("button-{}", self.id);
-        let reduced = motion::reduced_motion(cx);
+        let t = Pink::get(cx);
+        let size = self.size.control();
+        let id = SharedString::from(self.id.to_string());
+        let square = self.label.is_none();
+        let enabled = !self.disabled && !self.loading;
+        let name = self.label.clone().or(self.tooltip.clone());
 
-        let state = window.use_keyed_state(
-            ElementId::NamedChild(Arc::new(self.id.clone()), "button".into()),
-            cx,
-            |_, cx| ButtonState {
-                focus: cx.focus_handle().tab_stop(true),
-                pressed: false,
-                pointer_focus: false,
-                content: None,
-                generation: [0; 3],
-            },
-        );
-        let focus = state.read(cx).focus.clone();
-        let focused = !self.disabled && focus.is_focused(window);
-        let content = Content {
-            label: self.label.clone(),
-            icon: match (&self.icon, self.loading) {
-                (Some(_), true) => Some(SPINNER.into()),
-                (icon, _) => icon.clone(),
-            },
-            icon_right: self.icon_right.clone(),
-        };
-        let (generation, pressed, pointer_focus) =
-            state.update(cx, |s, _| s.sync(content, focused));
-
-        // Hover still shows while loading; disabled buttons stay put.
-        let t = if self.disabled {
-            0.
+        let el = if square && self.variant == ButtonVariant::Ghost && !self.loading {
+            // pink: button.rs icon_button
+            let glyph = self.icon.or(self.icon_right).unwrap_or_default();
+            pink::icon_button_enabled(id, glyph, size, !self.disabled, &t)
         } else {
-            motion::hover_t(&key)
-        };
-        let pressable = !self.disabled && !self.loading;
-        let fg = motion::mix(skin.fg, skin.fg_hover, t);
-        let icon_color = motion::mix(skin.icon, skin.icon_hover, t);
-
-        // The width glides when the content changes; pressing scales it all by 0.97.
-        let label_shape = self.label.as_ref().map(|label| shape(window, label, m.fs));
-        let label_width = label_shape.as_ref().map_or(0., |s| f32::from(s.width));
-        let natural = self.natural_width(&m, label_width);
-        let width = motion::follow(
-            &format!("{key}-width-{look:?}-{:?}", self.size),
-            natural,
-            MORPH,
-        );
-        let scale = motion::follow(
-            &format!("{key}-press"),
-            if pressed && pressable { 0.97 } else { 1. },
-            PRESS,
-        );
-        let morphing = (width - natural).abs() > 0.01;
-        let pressing = scale < 0.9999;
-        let s = |v: f32| px(v * scale);
-        let (pad_left, pad_right) = self.padding(&m);
-        let radius = m.radius * scale;
-
-        let mut root = div()
-            .id(self.id.clone())
-            .relative()
-            .flex()
-            .flex_none()
-            .items_center()
-            .justify_center()
-            .gap(s(m.gap))
-            .h(s(m.h))
-            .pl(s(pad_left))
-            .pr(s(pad_right))
-            .rounded(px(radius))
-            .font_family(SANS)
-            .font_weight(FontWeight::MEDIUM)
-            .text_size(s(m.fs))
-            .line_height(s(m.lh))
-            .whitespace_nowrap()
-            .text_color(fg)
-            // GPUI fades each layer on its own, so a shadow would show
-            // through a disabled button's faded fill: leave it out.
-            .when(!self.disabled, |d| {
-                d.shadow(mix_shadows(&skin.shadow, &skin.shadow_hover, t))
-            })
-            .cursor(if pressable {
-                CursorStyle::PointingHand
+            // pink: button.rs button / button_keyed
+            let tone = self.variant.glyph_tone(&t);
+            let leading = if self.loading {
+                Some(busy_glyph(self.variant, self.size, &t).into_any_element())
             } else {
-                CursorStyle::Arrow
-            })
-            .when(self.disabled, |d| d.opacity(0.4));
-
-        // Fill, or for the Classic primary the edge gradient under a fill layer
-        let fill = skin.fill.mix(skin.fill_hover, t);
-        root = match (skin.edge, fill) {
-            (Some((top, bottom)), _) => root.bg(gradient(top, bottom)),
-            (None, Paint::Solid(color)) => root.bg(color),
-            (None, Paint::Gradient(top, bottom)) => root.bg(gradient(top, bottom)),
-        };
-        if let Some(border) = skin.border {
-            root = root.border(px(m.border)).border_color(border);
-        }
-        if self.icon_only() {
-            root = root.w(s(m.h));
-        } else if morphing || pressing {
-            root = root.w(s(width)).overflow_hidden();
-        }
-        if pressing {
-            let base_w = if self.icon_only() { m.h } else { width };
-            root = root
-                .mx(px(base_w * (1. - scale) / 2.))
-                .my(px(m.h * (1. - scale) / 2.));
-        }
-
-        if !self.disabled {
-            root = root
-                .track_focus(&focus)
-                .on_hover(motion::hover_listener(key.clone()))
-                .on_key_down(|event, window, cx| {
-                    if event.keystroke.key == "tab" {
-                        if event.keystroke.modifiers.shift {
-                            window.focus_prev(cx);
-                        } else {
-                            window.focus_next(cx);
-                        }
-                        cx.stop_propagation();
-                    }
-                })
-                .on_mouse_down(MouseButton::Left, {
-                    let state = state.clone();
-                    move |_, _, cx| {
-                        state.update(cx, |s, cx| {
-                            s.pressed = true;
-                            s.pointer_focus = true;
-                            cx.notify();
-                        })
-                    }
-                });
-            let release = {
-                let state = state.clone();
-                move |_: &gpui::MouseUpEvent, _: &mut Window, cx: &mut App| {
-                    state.update(cx, |s, cx| {
-                        if s.pressed {
-                            s.pressed = false;
-                            cx.notify();
-                        }
-                    })
-                }
+                self.icon
+                    .map(|path| pink::glyph(path, size).text_color(tone).into_any_element())
             };
-            root = root
-                .on_mouse_up(MouseButton::Left, release.clone())
-                .on_mouse_up_out(MouseButton::Left, release);
-            if pressable && let Some(handler) = self.on_click.clone() {
-                root = root.on_click(move |event, window, cx| handler(event, window, cx));
-            }
-        }
-
-        if let (Some(_), Paint::Gradient(top, bottom)) = (skin.edge, fill) {
-            // The padding-box fill inside the 1px light edge
-            root = root.child(
-                div()
-                    .absolute()
-                    .inset_0()
-                    .rounded(px((radius - m.border).max(0.)))
-                    .bg(gradient(top, bottom)),
-            );
-        }
-
-        let icon_size = m.icon * scale;
-        if let Some(path) = self.icon.clone() {
-            let path = if self.loading { SPINNER.into() } else { path };
-            root = root.child(icon_slot(
-                &key,
-                "icon",
-                path,
-                icon_size,
-                icon_color,
-                generation[1],
-                self.loading,
-                reduced,
-            ));
-        }
-        if let (Some(label), Some(shape)) = (self.label.clone(), label_shape) {
-            let sweep = (self.loading && !reduced).then(|| Sweep {
-                chars: label
-                    .char_indices()
-                    .map(|(ix, ch)| {
-                        let end = ix + ch.len_utf8();
-                        let x0 = f32::from(shape.x_for_index(ix));
-                        let x1 = f32::from(shape.x_for_index(end));
-                        (ix..end, (x0 + x1) / 2. * scale)
-                    })
-                    .collect(),
-                width: label_width * scale,
-                shine: skin.shine,
-            });
-            root = root.child(label_element(
-                &key,
-                label,
-                fg,
-                if self.loading { skin.dim } else { 1. },
-                m.lh * scale,
-                generation[0],
-                sweep,
-                reduced,
-            ));
-        }
-        if let Some(path) = self.icon_right.clone() {
-            root = root.child(icon_slot(
-                &key,
-                "icon-right",
-                path,
-                icon_size,
-                icon_color,
-                generation[2],
-                false,
-                reduced,
-            ));
-        }
-
-        if focused && !pointer_focus {
-            // `outline: 2px solid; outline-offset`, drawn outside the border
-            let out = skin.focus_offset + 2. + m.border;
-            root = root.child(
-                div()
-                    .absolute()
-                    .top(px(-out))
-                    .left(px(-out))
-                    .right(px(-out))
-                    .bottom(px(-out))
-                    .rounded(px(radius + out))
-                    .border_2()
-                    .border_color(skin.focus),
-            );
-        }
+            // In a square the spinner stands in for whichever glyph it had.
+            let trailing = self
+                .icon_right
+                .filter(|_| !(square && self.loading))
+                .map(|path| pink::glyph(path, size).text_color(tone));
+            pink::button_enabled(id, self.variant.kind(), size, enabled, &t)
+                // The control that is working keeps full strength for its spinner.
+                .when(self.loading && !self.disabled, |el| el.opacity(1.))
+                .when(square, |el| el.w(px(size.height())).px(px(0.)))
+                // A busy icon-only Ghost stays the transparent icon button.
+                .when(square && self.variant == ButtonVariant::Ghost, |el| {
+                    el.bg(gpui::transparent_black())
+                })
+                .children(leading)
+                .children(self.label)
+                .children(trailing)
+        };
 
         motion::keep_alive(window);
-        root
-    }
-}
-
-/// The 16–20px box an icon (or the spinner) sits in. A new icon grows in from
-/// 70% while it fades in.
-#[allow(clippy::too_many_arguments)]
-fn icon_slot(
-    key: &str,
-    part: &'static str,
-    path: SharedString,
-    size: f32,
-    color: Hsla,
-    generation: u64,
-    spinning: bool,
-    reduced: bool,
-) -> Div {
-    let glyph = svg().path(path).size_full().text_color(color);
-    let glyph = if spinning {
-        glyph
-            .with_animation(
-                ElementId::Name(format!("{key}-{part}-spin").into()),
-                gpui::Animation::new(SPIN).repeat(),
-                |svg, t| svg.with_transformation(Transformation::rotate(radians(t * TAU))),
-            )
-            .into_any_element()
-    } else {
-        glyph.into_any_element()
-    };
-    let inner = div().size(px(size)).child(glyph);
-    let inner = if generation > 0 && !reduced {
-        inner
-            .with_animation(
-                ElementId::NamedInteger(format!("{key}-{part}-in").into(), generation),
-                ICON_IN.animation(),
-                move |el, t| el.size(px(size * (0.7 + 0.3 * t))).opacity(t),
-            )
-            .into_any_element()
-    } else {
-        inner.into_any_element()
-    };
-    div()
-        .flex_none()
-        .size(px(size))
-        .flex()
-        .items_center()
-        .justify_center()
-        .child(inner)
-}
-
-/// Where each character sits, for the loading shine.
-struct Sweep {
-    chars: Vec<(Range<usize>, f32)>,
-    width: f32,
-    shine: Hsla,
-}
-
-/// The label; a new one rises in, and while loading a band of light sweeps
-/// across a dimmed copy (`background-clip: text` done per character).
-#[allow(clippy::too_many_arguments)]
-fn label_element(
-    key: &str,
-    label: SharedString,
-    color: Hsla,
-    dim: f32,
-    line_height: f32,
-    generation: u64,
-    sweep: Option<Sweep>,
-    reduced: bool,
-) -> AnyElement {
-    let base = color.opacity(dim);
-    let text = div().flex_none().text_color(base);
-    let text = match sweep {
-        Some(sweep) => text
-            .with_animation(
-                ElementId::Name(format!("{key}-sweep").into()),
-                gpui::Animation::new(SWEEP).repeat(),
-                move |el, t| {
-                    // A 300%-wide gradient sliding from 100% to 0%: the band's
-                    // center travels from -½ to 1½ label widths.
-                    let center = sweep.width * (2. * t - 0.5);
-                    let half = sweep.width * 0.36;
-                    // Explicit runs: highlight colors would be blended over
-                    // the dimmed label instead of replacing it.
-                    let runs = sweep
-                        .chars
-                        .iter()
-                        .map(|(range, x)| {
-                            let a = (1. - (x - center).abs() / half).max(0.);
-                            label_run(range.len(), over(sweep.shine.opacity(a), base))
-                        })
-                        .collect();
-                    el.child(StyledText::new(label.clone()).with_runs(runs))
-                },
-            )
-            .into_any_element(),
-        None => text.child(label).into_any_element(),
-    };
-    let wrapper = div().flex_none().child(text);
-    if generation > 0 && !reduced {
-        // translateY(25%) of the label box
-        let rise = line_height * 0.25;
-        wrapper
-            .with_animation(
-                ElementId::NamedInteger(format!("{key}-label-in").into(), generation),
-                LABEL_IN.animation(),
-                move |el, t| el.relative().top(px(rise * (1. - t))).opacity(t),
-            )
-            .into_any_element()
-    } else {
-        wrapper.into_any_element()
+        el.when_some(name, |el, name| el.aria_label(name))
+            .when_some(self.tooltip, |el, tip| {
+                el.tooltip(pink::text_tooltip(tip))
+                    .tooltip_show_delay(layout::TOOLTIP_DELAY)
+            })
+            .when_some(self.on_click.filter(|_| enabled), |el, handler| {
+                el.on_click(move |event, window, cx| handler(event, window, cx))
+            })
     }
 }
 
 // ---------------------------------------------------------------------------
-// Story: the showcase
+// Story: a settings page and a confirmation dialog
 // ---------------------------------------------------------------------------
+
+/// A release check against GitHub.
+const CHECK_MS: u64 = 1800;
+const DOWNLOAD_MS: u64 = 2600;
+/// Pink holds a "Copied" confirmation for 1.5 s (`settings/devices.rs`).
+const COPIED_MS: u64 = 1500;
+const DELETE_MS: u64 = 1600;
+/// The settings column holding the two cards.
+const PAGE_W: f32 = 500.;
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
-enum Upload {
+enum Check {
     #[default]
     Idle,
-    Loading,
+    Running,
     Done,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+enum Update {
+    #[default]
+    Ready,
+    Downloading,
+    Downloaded,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+enum Removal {
+    #[default]
+    Confirm,
+    Deleting,
+    Deleted,
 }
 
 #[derive(Default)]
 struct Demo {
+    check: Check,
+    update: Update,
     copied: bool,
-    copied_icon: bool,
-    upload: Upload,
+    removal: Removal,
     tasks: HashMap<&'static str, Task<()>>,
-    /// Each button's widest width so far, so a shrinking label never moves
-    /// its neighbors (the demo's `button-demo__slot`).
-    slots: HashMap<String, Pixels>,
 }
 
 impl Demo {
-    /// `useFlash(1600)`: on now, off 1.6s after the last click.
-    fn flash(&mut self, which: &'static str, cx: &mut Context<Self>) {
-        self.set_flag(which, true);
+    /// Runs `done` after `ms`, replacing any timer pending under `key`.
+    fn after(
+        &mut self,
+        key: &'static str,
+        ms: u64,
+        cx: &mut Context<Self>,
+        done: impl FnOnce(&mut Self) + 'static,
+    ) {
         let task = cx.spawn(async move |this, cx| {
             cx.background_executor()
-                .timer(Duration::from_millis(1600))
+                .timer(Duration::from_millis(ms))
                 .await;
             this.update(cx, |demo, cx| {
-                demo.set_flag(which, false);
+                done(demo);
                 cx.notify();
             })
             .ok();
         });
-        self.tasks.insert(which, task);
+        self.tasks.insert(key, task);
         cx.notify();
     }
 
-    fn set_flag(&mut self, which: &str, on: bool) {
-        match which {
-            "copy" => self.copied = on,
-            _ => self.copied_icon = on,
+    fn check(&mut self, cx: &mut Context<Self>) {
+        if self.check == Check::Running {
+            return;
+        }
+        self.check = Check::Running;
+        self.after("check", CHECK_MS, cx, |demo| demo.check = Check::Done);
+    }
+
+    fn apply(&mut self, cx: &mut Context<Self>) {
+        match self.update {
+            Update::Ready => {
+                self.update = Update::Downloading;
+                self.after("update", DOWNLOAD_MS, cx, |demo| {
+                    demo.update = Update::Downloaded
+                });
+            }
+            Update::Downloading => {}
+            // "Restarting" brings the demo back to the start.
+            Update::Downloaded => {
+                self.update = Update::Ready;
+                self.check = Check::Idle;
+                cx.notify();
+            }
         }
     }
 
-    fn upload(&mut self, cx: &mut Context<Self>) {
-        if self.upload == Upload::Loading {
+    fn copy(&mut self, cx: &mut Context<Self>) {
+        self.copied = true;
+        self.after("copy", COPIED_MS, cx, |demo| demo.copied = false);
+    }
+
+    fn delete(&mut self, cx: &mut Context<Self>) {
+        if self.removal != Removal::Confirm {
             return;
         }
-        self.upload = Upload::Loading;
-        let task = cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(1800))
-                .await;
-            this.update(cx, |demo, cx| {
-                demo.upload = Upload::Done;
-                cx.notify();
-            })
-            .ok();
+        self.removal = Removal::Deleting;
+        self.after("delete", DELETE_MS, cx, |demo| {
+            demo.removal = Removal::Deleted
         });
-        self.tasks.insert("upload", task);
+    }
+
+    fn reset_removal(&mut self, cx: &mut Context<Self>) {
+        self.removal = Removal::Confirm;
         cx.notify();
     }
 }
 
-fn slot(demo: &Entity<Demo>, button: Button, window: &mut Window, cx: &mut App) -> Div {
-    let width = button.measure(window, cx);
-    let key = format!("{}-{:?}", button.id, cx.look());
-    let min = demo.update(cx, |demo, _| {
-        let widest = demo.slots.entry(key).or_insert(width);
-        if width > *widest {
-            *widest = width;
-        }
-        *widest
-    });
-    div().flex().justify_center().min_w(min).child(button)
+/// A settings row: the title and description on the left, the buttons in
+/// pink's control column on the right.
+fn row(title: &'static str, description: &'static str, buttons: Vec<Button>, t: &Pink) -> Div {
+    pink::card_row(false, t)
+        .child(pink::row_text(title, Some(description.into()), t))
+        .child(pink::row_controls().children(buttons))
 }
 
 fn showcase(window: &mut Window, cx: &mut App) -> Div {
-    let look = cx.look();
-    let muted = if cx.is_dark() {
-        hex(0x8f8f8f)
-    } else {
-        hex(0x737373)
-    };
+    let t = Pink::get(cx);
     let demo = window.use_keyed_state("button-demo", cx, |_, _| Demo::default());
-    let (copied, copied_icon, upload) = {
+    let (check, update, copied, removal) = {
         let d = demo.read(cx);
-        (d.copied, d.copied_icon, d.upload)
+        (d.check, d.update, d.copied, d.removal)
     };
-    let i = |name: &str| icon(look, name);
+    let act = |action: fn(&mut Demo, &mut Context<Demo>)| {
+        let demo = demo.clone();
+        move |_: &ClickEvent, _: &mut Window, cx: &mut App| demo.update(cx, action)
+    };
+    let checking = check == Check::Running;
 
-    let styles = vec![
-        Button::new("save").label("Save changes"),
-        Button::new("secondary").secondary().label("Secondary"),
-        Button::new("ghost").ghost().label("Ghost"),
-        Button::new("delete")
-            .destructive()
-            .icon(i("trash"))
-            .label("Delete"),
-    ];
-    let sizes = vec![
-        Button::new("add")
-            .secondary()
-            .size(ButtonSize::Sm)
-            .icon(i("plus"))
-            .label("Add item"),
-        Button::new("continue")
-            .icon_right(i("arrow-right"))
-            .label("Continue"),
-        Button::new("more").ghost().icon(i("dots")),
-        Button::new("large")
-            .secondary()
-            .size(ButtonSize::Lg)
-            .label("Large"),
-    ];
-    let states = vec![
-        Button::new("copy-link")
-            .secondary()
-            .icon(i(if copied { "check" } else { "copy" }))
-            .label(if copied { "Copied" } else { "Copy link" })
-            .on_click({
-                let demo = demo.clone();
-                move |_, _, cx| demo.update(cx, |d, cx| d.flash("copy", cx))
-            }),
-        Button::new("copy")
-            .secondary()
-            .icon(i(if copied_icon { "check" } else { "copy" }))
-            .on_click({
-                let demo = demo.clone();
-                move |_, _, cx| demo.update(cx, |d, cx| d.flash("copy-icon", cx))
-            }),
-        Button::new("upload")
-            .secondary()
-            .icon(i(if upload == Upload::Done {
-                "check"
-            } else {
-                "upload"
-            }))
-            .loading(upload == Upload::Loading)
-            .label("Upload file")
-            .on_click({
-                let demo = demo.clone();
-                move |_, _, cx| demo.update(cx, |d, cx| d.upload(cx))
-            }),
-        Button::new("disabled")
-            .secondary()
-            .disabled(true)
-            .label("Disabled"),
-    ];
+    // Md: the settings control column (pink's Updates page).
+    let updates = pink::section_card(&t)
+        .child(pink::section_header(
+            "Updates",
+            Some("PINK looks for new releases on GitHub.".into()),
+            &t,
+        ))
+        .child(row(
+            "PINK 0.42.1",
+            match check {
+                Check::Idle => "Last checked 2 hours ago",
+                Check::Running => "Checking GitHub Releases…",
+                Check::Done => "Last checked just now",
+            },
+            vec![
+                Button::new("updates-check")
+                    .secondary()
+                    .icon(icon("refresh"))
+                    .label(if checking {
+                        "Checking…"
+                    } else {
+                        "Check for updates"
+                    })
+                    .loading(checking)
+                    .on_click(act(Demo::check)),
+            ],
+            &t,
+        ))
+        .child(row(
+            "PINK 0.43.0",
+            match update {
+                Update::Ready => "Faster board loading and quieter notifications.",
+                Update::Downloading => "Downloading 38 MB…",
+                Update::Downloaded => "Restart PINK to finish updating.",
+            },
+            vec![
+                // Stays in place, disabled, while a check runs.
+                Button::new("updates-apply")
+                    .label(match update {
+                        Update::Ready => "Update and restart",
+                        Update::Downloading => "Downloading…",
+                        Update::Downloaded => "Restart to update",
+                    })
+                    .loading(update == Update::Downloading)
+                    .disabled(checking)
+                    .on_click(act(Demo::apply)),
+            ],
+            &t,
+        ));
 
-    let mut row = |buttons: Vec<Button>| {
-        div()
-            .flex()
-            .flex_wrap()
-            .justify_center()
-            .items_center()
-            .gap(px(10.))
-            .children(
-                buttons
-                    .into_iter()
-                    .map(|button| slot(&demo, button, window, cx)),
-            )
+    // Sm: inline row actions.
+    let sm = ButtonSize::Sm;
+    let session = pink::section_card(&t)
+        .child(pink::section_header(
+            "Session",
+            Some("Fix flaky login test · 14 turns".into()),
+            &t,
+        ))
+        .child(row(
+            "Share link",
+            "Anyone with the link can read the transcript.",
+            vec![
+                Button::new("session-copy-link")
+                    .secondary()
+                    .size(sm)
+                    .icon(icon(if copied { "copy-check" } else { "copy" }))
+                    .label(if copied { "Copied" } else { "Copy link" })
+                    .on_click(act(Demo::copy)),
+                Button::new("session-share-more")
+                    .ghost()
+                    .size(sm)
+                    .icon(icon("more-horizontal"))
+                    .tooltip("More sharing options"),
+            ],
+            &t,
+        ))
+        .child(row(
+            "Linked issue",
+            "#214 · Login test times out on CI",
+            vec![
+                Button::new("session-open-issue")
+                    .ghost()
+                    .size(sm)
+                    .icon(icon("arrow-right-up"))
+                    .label("Open on GitHub"),
+            ],
+            &t,
+        ))
+        .child(row(
+            "Parent chat",
+            "Split from “Stabilize the CI pipeline”.",
+            vec![
+                Button::new("session-go-to-chat")
+                    .secondary()
+                    .size(sm)
+                    .label("Go to chat")
+                    .icon_right(icon("arrow-right-up")),
+            ],
+            &t,
+        ))
+        .child(row(
+            "Export transcript",
+            "Available once the session finishes.",
+            vec![
+                Button::new("session-export")
+                    .secondary()
+                    .size(sm)
+                    .label("Export")
+                    .disabled(true),
+            ],
+            &t,
+        ));
+
+    // Lg: a dialog's button row (pink `popover::btn_ghost` / `btn_danger`).
+    let lg = ButtonSize::Lg;
+    let (title, body, buttons) = match removal {
+        Removal::Confirm | Removal::Deleting => (
+            "Delete session?",
+            "“Fix flaky login test” and its PINK-owned local records will be permanently deleted. This can’t be undone.",
+            vec![
+                Button::new("dialog-cancel")
+                    .ghost()
+                    .size(lg)
+                    .label("Cancel")
+                    .disabled(removal == Removal::Deleting)
+                    .on_click(act(Demo::reset_removal)),
+                Button::new("dialog-delete")
+                    .destructive()
+                    .size(lg)
+                    .label(if removal == Removal::Deleting {
+                        "Deleting…"
+                    } else {
+                        "Delete"
+                    })
+                    .loading(removal == Removal::Deleting)
+                    .on_click(act(Demo::delete)),
+            ],
+        ),
+        Removal::Deleted => (
+            "Session deleted",
+            "“Fix flaky login test” was removed from this Mac.",
+            vec![
+                Button::new("dialog-done")
+                    .size(lg)
+                    .label("Done")
+                    .on_click(act(Demo::reset_removal)),
+            ],
+        ),
     };
-    let heading = |title: &'static str| {
-        div()
-            .text_size(px(13.))
-            .line_height(px(18.571))
-            .text_color(muted)
-            .child(title)
-    };
-    let section = |title: &'static str, row: Div| {
-        div()
-            .flex()
-            .flex_col()
-            .items_center()
-            .gap(px(10.))
-            .child(heading(title))
-            .child(row)
-    };
-    let status = match upload {
-        Upload::Idle => "",
-        Upload::Loading => "Uploading…",
-        Upload::Done => "Upload complete",
-    };
+    let dialog = pink::dialog_card(&t)
+        .child(pink::dialog_title(title, &t))
+        .child(div().mt(px(6.)).child(pink::dialog_body(body, &t)))
+        .child(
+            div()
+                .mt(px(16.))
+                .flex()
+                .flex_row()
+                .justify_end()
+                .gap(px(8.))
+                .children(buttons),
+        );
 
     div()
+        .font_family(pink::SANS)
+        .text_color(t.text)
         .flex()
-        .flex_col()
-        .items_center()
-        .gap(px(22.))
-        .child(section("Styles", row(styles)))
-        .child(section("Icons and sizes", row(sizes)))
+        .flex_row()
+        .items_start()
+        .gap(px(layout::SECTION_GAP))
         .child(
-            section("Feedback and states", row(states)).child(
-                div()
-                    .mt(px(4.))
-                    .min_h(px(18.571))
-                    .text_size(px(13.))
-                    .line_height(px(18.571))
-                    .text_color(muted)
-                    .child(status),
-            ),
+            div()
+                .w(px(PAGE_W))
+                .flex()
+                .flex_col()
+                .child(updates)
+                .child(session),
         )
+        .child(div().mt(px(layout::SECTION_GAP)).child(dialog))
 }
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
