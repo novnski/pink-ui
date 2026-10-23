@@ -1,50 +1,70 @@
-//! Segmented Control – switch between two to six options.
+//! Segmented Control – a pink component.
 //!
-//! Three variants:
-//! - **Buttons** (the Clean default): separate quiet chips with a hairline;
-//!   a light-gray fill slides to the active one.
-//! - **Tray** (the Classic default): a gray track with a white raised pill.
-//! - **Underline**: text tabs on a hairline with a sliding line.
+//! Pink's segmented control (pink: `button.rs` `segmented`): equal-width
+//! options on a quiet `fill(Quaternary)` track with a hairline edge, and one
+//! thumb that slides to the chosen option over `motion::QUICK` instead of each
+//! option swapping its own fill. The chosen label is medium `text`; the others
+//! rest in `readable_muted(0.9)` and brighten on hover. Three shapes share the
+//! builder:
 //!
-//! The indicator's left and right edges glide separately (`motion::follow`):
-//! the edge facing the target leads, the other trails, so it stretches a
-//! little and settles. Arrow keys, Home and End move and select; press an
-//! option and drag across the others to pick as you go (the pill gives a
-//! little while held). Options are sized to their content, so a changed
-//! label or count makes the control morph to its new size. Classic labels
-//! crossfade to semibold without the width jumping.
+//! - **Tray** (the default): the segmented control. Give it pink's `width`,
+//!   let it size every option to the widest one, or fill the container.
+//! - **Buttons**: a row of pink chips (pink: `button.rs` `chip`) for a choice
+//!   among more options; the chosen chip takes the accent wash and edge.
+//! - **Underline**: a tab strip on a hairline (pink: `pickers.rs` `model_tab`),
+//!   the viewed tab marked by a 2 px accent capsule (`tab_indicator`).
+//!
+//! Every option is a tab stop with pink's 2 px inset focus ring; arrow keys,
+//! Home and End move and select. Options can carry a glyph, a count or a small
+//! accent badge, and can be disabled.
 //!
 //! ```ignore
-//! SegmentedControl::new("section", vec![
-//!     SegmentOption::new("overview", "Overview"),
-//!     SegmentOption::new("inbox", "Inbox").count(3),
+//! SegmentedControl::new("usage-metric", vec![
+//!     SegmentOption::new("cost", "Cost"),
+//!     SegmentOption::new("tokens", "Tokens"),
+//!     SegmentOption::new("limits", "Limits"),
 //! ])
 //! .value(current)
+//! .width(216.)
 //! .on_change(|value, _, _| println!("{value}"))
 //! ```
 
 use std::{rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
-    AnyElement, AnyView, App, BoxShadow, DispatchPhase, Entity, FocusHandle, FontWeight,
-    HitboxBehavior, Hsla, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, SharedString, Task, TextRun, Window, canvas, div, font, prelude::*, px, svg,
+    AnyElement, AnyView, App, BoxShadow, Div, ElementId, FocusHandle, FontWeight, Hsla,
+    IntoElement, KeyDownEvent, MouseDownEvent, Role, SharedString, Stateful, Task, TextRun,
+    Toggled, Window, div, font, point, prelude::*, px, relative, svg,
 };
 
 use crate::{
-    ActiveTheme, Look,
-    motion::{self, CubicBezier, EASE, EASE_OUT_QUINT, MotionSpec},
-    primitives::{SANS, black_a, hex, hexa, ring, shadow, white_a},
+    HoverFill,
+    motion::{self, QUICK},
+    pink::{self, ControlSize, FillTier, Pink, layout, radius},
     story,
 };
 
 pub const NAME: &str = "Segmented Control";
-pub const DESCRIPTION: &str = "Switch between two to six options – a raised pill or underline that glides, stretches a little and can be dragged across, with icons, counts and badges";
+pub const DESCRIPTION: &str = "Switch between two to five options – a thumb that slides along a quiet track, accent chips or tabs on a hairline – with glyphs, counts, badges and arrow keys";
 
 type ChangeHandler = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
 
-/// `--ui-segc-ease`: short and crisp.
-const CLEAN_EASE: CubicBezier = CubicBezier::new(0.25, 0.9, 0.3, 1.0);
+/// Track inset around the thumb (pink `SEGMENT_INSET`).
+const INSET: f32 = 2.0;
+/// A track option's side padding and its glyph → label gap (pink `segmented`).
+const OPTION_PAD_X: f32 = 6.0;
+const OPTION_GAP: f32 = 5.0;
+/// Between chips (pink: automations.rs, the editor's choice rows).
+const CHIP_GAP: f32 = 6.0;
+/// Between tabs, and how much taller the strip is than a tab (pink: the model
+/// menu's 32 px tabs in a 40 px row).
+const TAB_GAP: f32 = 2.0;
+const TAB_STRIP_EXTRA: f32 = 8.0;
+/// The badge capsule (pink: pickers.rs `new_model_badge`).
+const BADGE_H: f32 = 16.0;
+const BADGE_PAD_X: f32 = 5.0;
+const BADGE_TEXT: f32 = 10.5;
+const BADGE_LINE: f32 = 14.0;
 
 /// One option of the control.
 #[derive(Clone)]
@@ -53,9 +73,9 @@ pub struct SegmentOption {
     pub label: Option<SharedString>,
     /// An SVG path under `assets/`, tinted like the label.
     pub icon: Option<SharedString>,
-    /// A small gray number after the label, e.g. unread items.
+    /// A quiet number after the label, e.g. how many items the tab holds.
     pub count: Option<SharedString>,
-    /// A small tinted tag after the label, e.g. "Save 20%".
+    /// A small accent capsule after the label, e.g. "New".
     pub badge: Option<SharedString>,
     pub disabled: bool,
 }
@@ -72,7 +92,7 @@ impl SegmentOption {
         }
     }
 
-    /// An option that only shows an icon.
+    /// An option that only shows an icon (announced by its value).
     pub fn icon_only(value: impl Into<SharedString>, icon: impl Into<SharedString>) -> Self {
         Self {
             label: None,
@@ -102,6 +122,7 @@ impl SegmentOption {
     }
 }
 
+/// Pink's control sizes: 24 / 28 / 32 tall, 11 / 12 / 13 type.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SegmentSize {
     Sm,
@@ -110,13 +131,24 @@ pub enum SegmentSize {
     Lg,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+impl SegmentSize {
+    fn control(self) -> ControlSize {
+        match self {
+            SegmentSize::Sm => ControlSize::Sm,
+            SegmentSize::Md => ControlSize::Md,
+            SegmentSize::Lg => ControlSize::Lg,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SegmentVariant {
-    /// Separate chips, the active one filled (Clean only; Classic draws a tray).
+    /// Separate chips, the chosen one in the accent wash (pink `chip`).
     Buttons,
-    /// A track with a raised pill.
+    /// A track with a sliding thumb (pink `segmented`).
+    #[default]
     Tray,
-    /// Text tabs with a sliding line.
+    /// Tabs on a hairline, the viewed one underlined (pink `model_tab`).
     Underline,
 }
 
@@ -128,308 +160,19 @@ pub enum SegmentKind {
     Tabs,
 }
 
-/// The `--ui-segc-*` / `--ui-seg-*` tokens.
-struct Palette {
-    ink: Hsla,
-    /// Option text at rest.
-    rest: Hsla,
-    /// Option text while hovered (buttons/tray).
-    hover: Hsla,
-    /// Option text while hovered (underline).
-    hover_line: Hsla,
-    /// Clean draws icons in their own gray; Classic icons follow the text.
-    icon: Option<Hsla>,
-    line: Hsla,
-    /// Hover wash behind an inactive chip (Clean only).
-    wash: Option<Hsla>,
-    /// The buttons variant's indicator.
-    fill: Hsla,
-    track: Hsla,
-    pill: Hsla,
-    pill_shadow: Vec<BoxShadow>,
-    accent: Hsla,
-    accent_soft: Hsla,
-    count_bg: Hsla,
-    count_fg: Hsla,
-    focus: Hsla,
-}
-
-impl Palette {
-    fn get(look: Look, cx: &App) -> Self {
-        match (look, cx.is_dark()) {
-            (Look::Clean, false) => Palette {
-                ink: black_a(0.88),
-                rest: black_a(0.61),
-                hover: black_a(0.61),
-                hover_line: black_a(0.75),
-                icon: Some(black_a(0.447)),
-                line: black_a(0.06),
-                wash: Some(black_a(0.03)),
-                fill: black_a(0.06),
-                track: black_a(0.04),
-                pill: hex(0xffffff),
-                pill_shadow: vec![
-                    ring(0.5, black_a(0.06)),
-                    shadow(0., 1., 1., -1., black_a(0.1)),
-                    shadow(0., 1., 2., 0., black_a(0.05)),
-                ],
-                accent: hexa(0x0060e2, 0.765),
-                accent_soft: hexa(0x0060e2, 0.08),
-                count_bg: black_a(0.06),
-                count_fg: black_a(0.61),
-                focus: hexa(0x0060e2, 0.35),
-            },
-            (Look::Clean, true) => Palette {
-                ink: white_a(0.9),
-                rest: white_a(0.62),
-                hover: white_a(0.62),
-                hover_line: white_a(0.78),
-                icon: Some(white_a(0.46)),
-                line: white_a(0.08),
-                wash: Some(white_a(0.04)),
-                fill: white_a(0.08),
-                track: white_a(0.05),
-                pill: hex(0x2c2c2f),
-                pill_shadow: vec![
-                    ring(0.5, white_a(0.1)),
-                    shadow(0., 1., 2., 0., black_a(0.4)),
-                ],
-                accent: hex(0x4d8dff),
-                accent_soft: hexa(0x4d8dff, 0.14),
-                count_bg: white_a(0.08),
-                count_fg: white_a(0.62),
-                focus: hexa(0x4d8dff, 0.45),
-            },
-            (Look::Classic, false) => Palette {
-                ink: hex(0x171717),
-                rest: hex(0x737373),
-                hover: hex(0x404040),
-                hover_line: hex(0x404040),
-                icon: None,
-                line: hex(0xececec),
-                wash: None,
-                fill: hex(0xffffff),
-                track: hex(0xf0f0f0),
-                pill: hex(0xffffff),
-                pill_shadow: vec![
-                    ring(0.5, black_a(0.08)),
-                    shadow(0., 1., 2., 0., black_a(0.08)),
-                    shadow(0., 2., 8., -2., black_a(0.06)),
-                ],
-                accent: hex(0x2f6bff),
-                accent_soft: hexa(0x2f6bff, 0.1),
-                count_bg: black_a(0.06),
-                count_fg: hex(0x404040),
-                focus: hexa(0x171717, 0.22),
-            },
-            (Look::Classic, true) => Palette {
-                ink: hex(0xededed),
-                rest: hex(0x8b8b92),
-                hover: hex(0xc8c8cc),
-                hover_line: hex(0xc8c8cc),
-                icon: None,
-                line: hex(0x2a2a2e),
-                wash: None,
-                fill: hex(0x26262a),
-                track: hex(0x111113),
-                pill: hex(0x26262a),
-                pill_shadow: vec![
-                    ring(1., white_a(0.06)),
-                    shadow(0., 1., 2., 0., black_a(0.4)),
-                ],
-                accent: hex(0x6d8bff),
-                accent_soft: hexa(0x6d8bff, 0.14),
-                count_bg: white_a(0.08),
-                count_fg: hex(0xc8c8cc),
-                focus: white_a(0.3),
-            },
-        }
-    }
-}
-
-/// Sizes per look × size, straight from the two stylesheets.
-#[derive(Clone, Copy)]
-struct Metrics {
-    /// `--h`: option height (tray options shrink by the padding in Clean).
-    h: f32,
-    /// Horizontal option padding.
-    pad_x: f32,
-    font: f32,
-    line: f32,
-    icon: f32,
-    /// Gap between buttons (Clean) or underline tabs (Classic).
-    gap: f32,
-    /// Tray padding.
-    pad: f32,
-    /// Tray corner radius (options use `radius - pad`).
-    radius: f32,
-    content_gap: f32,
-    label_weight: FontWeight,
-    count_min: f32,
-    count_pad: f32,
-    count_radius: f32,
-    count_font: f32,
-    count_line: f32,
-    count_weight: FontWeight,
-    badge_h: f32,
-    badge_pad: f32,
-    badge_radius: f32,
-    badge_font: f32,
-    /// Underline thickness and the hairline under the tabs.
-    underline: f32,
-    hairline: f32,
-    /// Indicator glide: leading and trailing edge durations.
-    lead: u64,
-    trail: u64,
-    press: u64,
-    color: u64,
-    curve: CubicBezier,
-    /// The count's entrance: duration and rise.
-    count_in: u64,
-    count_rise: f32,
-    /// Outline offset + width outside the option (`outline-offset` + 2px).
-    focus_out: f32,
-}
-
-impl Metrics {
-    fn get(look: Look, size: SegmentSize) -> Self {
-        let sm = size == SegmentSize::Sm;
-        match look {
-            Look::Clean => Metrics {
-                h: match size {
-                    SegmentSize::Sm => 24.,
-                    SegmentSize::Md => 28.,
-                    SegmentSize::Lg => 32.,
-                },
-                pad_x: match size {
-                    SegmentSize::Sm => 8.,
-                    SegmentSize::Md => 10.,
-                    SegmentSize::Lg => 12.,
-                },
-                font: if sm { 12. } else { 13. },
-                line: if sm { 16. } else { 20. },
-                icon: if sm { 14. } else { 16. },
-                gap: if sm { 6. } else { 8. },
-                pad: 2.,
-                radius: 8.,
-                content_gap: if sm { 5. } else { 6. },
-                label_weight: FontWeight::MEDIUM,
-                count_min: if sm { 14. } else { 16. },
-                count_pad: if sm { 3. } else { 4. },
-                count_radius: if sm { 4. } else { 5. },
-                count_font: if sm { 10. } else { 11. },
-                count_line: if sm { 14. } else { 16. },
-                count_weight: FontWeight::MEDIUM,
-                badge_h: if sm { 16. } else { 18. },
-                badge_pad: if sm { 5. } else { 6. },
-                badge_radius: 5.,
-                badge_font: if sm { 10. } else { 11. },
-                underline: 1.5,
-                hairline: 0.5,
-                lead: 160,
-                trail: 220,
-                press: 120,
-                color: 90,
-                curve: CLEAN_EASE,
-                count_in: 200,
-                count_rise: 2.,
-                focus_out: 3.,
-            },
-            Look::Classic => Metrics {
-                h: match size {
-                    SegmentSize::Sm => 26.,
-                    SegmentSize::Md => 30.,
-                    SegmentSize::Lg => 36.,
-                },
-                pad_x: match size {
-                    SegmentSize::Sm => 10.,
-                    SegmentSize::Md => 12.,
-                    SegmentSize::Lg => 16.,
-                },
-                font: match size {
-                    SegmentSize::Sm => 12.5,
-                    SegmentSize::Md => 13.5,
-                    SegmentSize::Lg => 14.,
-                },
-                line: match size {
-                    SegmentSize::Sm => 12.5,
-                    SegmentSize::Md => 13.5,
-                    SegmentSize::Lg => 14.,
-                },
-                icon: match size {
-                    SegmentSize::Sm => 14.,
-                    SegmentSize::Md => 15.,
-                    SegmentSize::Lg => 16.,
-                },
-                gap: match size {
-                    SegmentSize::Sm => 16.,
-                    SegmentSize::Md => 20.,
-                    SegmentSize::Lg => 24.,
-                },
-                pad: match size {
-                    SegmentSize::Sm => 2.,
-                    SegmentSize::Md => 3.,
-                    SegmentSize::Lg => 4.,
-                },
-                radius: match size {
-                    SegmentSize::Sm => 9.,
-                    SegmentSize::Md => 11.,
-                    SegmentSize::Lg => 13.,
-                },
-                content_gap: 6.,
-                label_weight: FontWeight::MEDIUM,
-                count_min: if sm { 16. } else { 18. },
-                count_pad: if sm { 4. } else { 5. },
-                count_radius: 9.,
-                count_font: if sm { 10.5 } else { 11. },
-                count_line: if sm { 16. } else { 18. },
-                count_weight: FontWeight::SEMIBOLD,
-                badge_h: 18.,
-                badge_pad: 6.,
-                badge_radius: 6.,
-                badge_font: 11.,
-                underline: 2.,
-                hairline: 1.,
-                lead: 270,
-                trail: 400,
-                press: 200,
-                color: 200,
-                curve: EASE_OUT_QUINT,
-                count_in: 260,
-                count_rise: 3.,
-                focus_out: 2.,
-            },
-        }
-    }
-}
-
-/// A press on the track: where it started and whether it has moved yet.
-#[derive(Clone, Copy)]
-struct Press {
-    x: f32,
-    moved: bool,
-}
-
 struct State {
     /// The value when uncontrolled.
     inner: Option<SharedString>,
-    /// The latest pick, ahead of the next render: dragging picks several
-    /// options between two frames.
+    /// The latest pick, ahead of the next render: keys can pick twice
+    /// between two frames.
     latest: Option<SharedString>,
-    /// Where the indicator was last placed, to know which edge leads.
-    placed: Option<usize>,
-    toward_right: bool,
-    press: Option<Press>,
-    /// Focus came from the keyboard, so the focus ring shows.
-    keyboard: bool,
+    /// One handle per option, so arrow keys can move focus along.
     focus: Vec<FocusHandle>,
-    /// The track's width, measured after layout (full-width controls only).
-    track_w: f32,
 }
 
-/// Picks options from clicks, keys and drags.
+/// Picks options from clicks and keys.
 struct Picker {
-    state: Entity<State>,
+    state: gpui::Entity<State>,
     values: Vec<SharedString>,
     enabled: Vec<bool>,
     controlled: bool,
@@ -454,22 +197,12 @@ impl Picker {
             cx.notify();
             true
         });
-        if !changed {
-            return;
-        }
-        // Focus follows the pick when it was inside the control
-        let handles = self.state.read(cx).focus.clone();
-        if handles.iter().any(|h| h.is_focused(window))
-            && let Some(handle) = handles.get(ix)
-        {
-            window.focus(handle, cx);
-        }
-        if let Some(on_change) = &self.on_change {
+        if changed && let Some(on_change) = &self.on_change {
             on_change(&value, window, cx);
         }
     }
 
-    /// Arrow keys, Home and End.
+    /// Arrow keys, Home and End: pick the next enabled option and focus it.
     fn key(&self, key: &str, kind: SegmentKind, window: &mut Window, cx: &mut App) -> bool {
         let enabled: Vec<usize> = (0..self.values.len())
             .filter(|&i| self.enabled[i])
@@ -484,11 +217,18 @@ impl Picker {
             .iter()
             .position(|&i| Some(&self.values[i]) == latest.as_ref())
             .map_or(-1, |i| i as i32);
+        // With nothing picked yet, Left starts from the end and Right from the start
+        let prev = enabled[if at < 0 {
+            len - 1
+        } else {
+            (at - 1 + len) % len
+        } as usize];
+        let next = enabled[((at + 1) % len) as usize];
         let target = match key {
-            "left" => enabled[((at - 1 + len) % len) as usize],
-            "up" if radio => enabled[((at - 1 + len) % len) as usize],
-            "right" => enabled[((at + 1) % len) as usize],
-            "down" if radio => enabled[((at + 1) % len) as usize],
+            "left" => prev,
+            "up" if radio => prev,
+            "right" => next,
+            "down" if radio => next,
             "home" => enabled[0],
             "end" => enabled[enabled.len() - 1],
             _ => return false,
@@ -502,25 +242,8 @@ impl Picker {
     }
 }
 
-/// The option under (or nearest to) `x`, in track coordinates.
-fn option_at(rects: &[(f32, f32)], x: f32) -> Option<usize> {
-    let mut best = None;
-    let mut dist = f32::INFINITY;
-    for (i, &(left, width)) in rects.iter().enumerate() {
-        let right = left + width;
-        let d = if x < left {
-            left - x
-        } else if x > right {
-            x - right
-        } else {
-            0.
-        };
-        if d < dist {
-            dist = d;
-            best = Some(i);
-        }
-    }
-    best
+fn toggled(on: bool) -> Toggled {
+    if on { Toggled::True } else { Toggled::False }
 }
 
 fn text_width(window: &Window, text: &SharedString, size: f32, weight: FontWeight) -> f32 {
@@ -528,7 +251,7 @@ fn text_width(window: &Window, text: &SharedString, size: f32, weight: FontWeigh
         len: text.len(),
         font: gpui::Font {
             weight,
-            ..font(SANS)
+            ..font(pink::SANS)
         },
         color: gpui::black(),
         background_color: None,
@@ -541,48 +264,357 @@ fn text_width(window: &Window, text: &SharedString, size: f32, weight: FontWeigh
     f32::from(line.width)
 }
 
-/// The content's width, rounded to whole pixels.
-fn content_width(window: &Window, o: &SegmentOption, look: Look, m: &Metrics) -> f32 {
+/// A track option's content at its widest: the label in the chosen (medium)
+/// weight, so picking never truncates it.
+fn content_width(window: &Window, o: &SegmentOption, size: ControlSize) -> f32 {
     let mut parts: Vec<f32> = Vec::new();
     if o.icon.is_some() {
-        parts.push(m.icon);
+        parts.push(ControlSize::Sm.glyph());
     }
     if let Some(label) = &o.label {
-        let w = text_width(window, label, m.font, m.label_weight);
-        parts.push(match look {
-            // The semibold copy reserves the width
-            Look::Classic => w.max(text_width(window, label, m.font, FontWeight::SEMIBOLD)),
-            Look::Clean => w,
-        });
+        parts.push(text_width(window, label, size.text(), FontWeight::MEDIUM));
     }
     if let Some(count) = &o.count {
-        let w = text_width(window, count, m.count_font, m.count_weight) + m.count_pad * 2.;
-        parts.push(w.max(m.count_min));
+        parts.push(text_width(window, count, size.text(), FontWeight::NORMAL));
     }
     if let Some(badge) = &o.badge {
-        parts.push(text_width(window, badge, m.badge_font, FontWeight::MEDIUM) + m.badge_pad * 2.);
+        parts.push(text_width(window, badge, BADGE_TEXT, FontWeight::SEMIBOLD) + BADGE_PAD_X * 2.);
     }
-    let gaps = parts.len().saturating_sub(1) as f32 * m.content_gap;
-    (parts.iter().sum::<f32>() + gaps).round()
+    parts.iter().sum::<f32>() + parts.len().saturating_sub(1) as f32 * OPTION_GAP
+}
+
+/// The track width when the caller gives none: every option as wide as the
+/// widest, plus the inset and the hairline edge.
+fn natural_width(window: &Window, options: &[SegmentOption], size: ControlSize) -> f32 {
+    let widest = options
+        .iter()
+        .map(|o| content_width(window, o, size))
+        .fold(0., f32::max);
+    let option = (widest + OPTION_PAD_X * 2. + 1.).ceil();
+    option * options.len().max(1) as f32 + (INSET + 1.) * 2.
+}
+
+/// A quiet count after the label, in tabular figures (pink: activity
+/// section headings, `readable_faint(0.7)`).
+fn count_text(count: SharedString, t: &Pink) -> Div {
+    div()
+        .flex_none()
+        .font_weight(FontWeight::NORMAL)
+        .font_features(pink::tabular_figures())
+        .text_color(t.readable_faint(0.7))
+        .child(count)
+}
+
+/// A small accent capsule (pink: pickers.rs `new_model_badge`).
+fn badge(label: SharedString, t: &Pink) -> Div {
+    div()
+        .flex_none()
+        .h(px(BADGE_H))
+        .px(px(BADGE_PAD_X))
+        .flex()
+        .items_center()
+        .rounded(px(radius::XS))
+        .bg(t.accent.opacity(0.14))
+        .text_size(px(BADGE_TEXT))
+        .line_height(px(BADGE_LINE))
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(t.readable_tone(t.accent, 1.0))
+        .child(label)
+}
+
+/// An option's glyph, label, count and badge, in order. Track labels
+/// truncate inside their equal share; chips and tabs size to their content.
+fn option_parts(
+    o: &SegmentOption,
+    glyph_size: f32,
+    glyph_tone: Hsla,
+    truncate: bool,
+    t: &Pink,
+) -> Vec<AnyElement> {
+    let mut parts = Vec::new();
+    if let Some(path) = o.icon.clone() {
+        parts.push(
+            svg()
+                .path(path)
+                .size(px(glyph_size))
+                .flex_none()
+                .text_color(glyph_tone)
+                .into_any_element(),
+        );
+    }
+    if let Some(label) = o.label.clone() {
+        parts.push(if truncate {
+            div().min_w_0().truncate().child(label).into_any_element()
+        } else {
+            label.into_any_element()
+        });
+    }
+    if let Some(count) = o.count.clone() {
+        parts.push(count_text(count, t).into_any_element());
+    }
+    if let Some(label) = o.badge.clone() {
+        parts.push(badge(label, t).into_any_element());
+    }
+    parts
+}
+
+/// The 2 px capsule under the viewed tab, sitting on the strip's hairline
+/// (pink: pickers.rs `tab_indicator`).
+fn tab_indicator(tint: Hsla) -> Div {
+    div()
+        .absolute()
+        .bottom(px(-4.))
+        .left(px(6.))
+        .right(px(6.))
+        .h(px(2.))
+        .rounded(px(1.))
+        .bg(tint)
+}
+
+/// What every shape needs to draw its options.
+struct Shape {
+    t: Pink,
+    size: ControlSize,
+    key: String,
+    radio: bool,
+    active: Option<usize>,
+    handles: Vec<FocusHandle>,
+    picker: Rc<Picker>,
+    /// The whole control is disabled: it dims as one, not per option.
+    disabled: bool,
+}
+
+impl Shape {
+    fn option_key(&self, o: &SegmentOption) -> String {
+        format!("{}-{}", self.key, o.value)
+    }
+
+    /// The option's id and its announced role and state.
+    fn option(&self, o: &SegmentOption, chosen: bool) -> Stateful<Div> {
+        let radio = self.radio;
+        div()
+            .id(SharedString::from(self.option_key(o)))
+            .role(if radio { Role::RadioButton } else { Role::Tab })
+            .aria_label(o.label.clone().unwrap_or_else(|| o.value.clone()))
+            .map(|el| {
+                if radio {
+                    el.aria_toggled(toggled(chosen))
+                } else {
+                    el.aria_selected(chosen)
+                }
+            })
+    }
+
+    /// Its focus handle and click.
+    fn wire(&self, el: Stateful<Div>, ix: usize) -> Stateful<Div> {
+        let picker = self.picker.clone();
+        el.track_focus(&self.handles[ix])
+            .on_click(move |_, window, cx| picker.pick(ix, window, cx))
+    }
+
+    /// Pointer, the inset focus ring, and Enter/Space reaching `on_click`
+    /// once (pink `segmented` / `model_tab`).
+    fn focusable(&self, el: Stateful<Div>) -> Stateful<Div> {
+        let ring = self.t.focus_ring();
+        el.cursor_pointer()
+            .focus_visible(move |style| pink::focus_ring(style, ring))
+            .on_key_down(pink::swallow_activation_key)
+    }
+
+    /// A disabled option inside an enabled control: pink's disabled controls
+    /// paint at 45%.
+    fn dim(&self, o: &SegmentOption) -> bool {
+        o.disabled && !self.disabled
+    }
+
+    /// pink: button.rs `segmented` – the track, one sliding thumb and
+    /// equal-width options. `width: None` fills the container.
+    fn tray(&self, options: &[SegmentOption], width: Option<f32>) -> Div {
+        let t = &self.t;
+        let n = options.len().max(1) as f32;
+        let thumb_radius = radius::inner(self.size.radius(), INSET);
+        let muted = t.readable_muted(0.9);
+        let items: Vec<AnyElement> = options
+            .iter()
+            .enumerate()
+            .map(|(ix, o)| {
+                let chosen = Some(ix) == self.active;
+                let tone = if chosen { t.text } else { muted };
+                self.option(o, chosen)
+                    .relative()
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
+                    .px(px(OPTION_PAD_X))
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .justify_center()
+                    .gap(px(OPTION_GAP))
+                    .rounded(px(thumb_radius))
+                    .font_weight(if chosen {
+                        FontWeight::MEDIUM
+                    } else {
+                        FontWeight::NORMAL
+                    })
+                    .map(|el| {
+                        if self.picker.enabled[ix] {
+                            self.focusable(self.wire(el, ix)).hover_fg(
+                                self.option_key(o),
+                                tone,
+                                t.text,
+                            )
+                        } else {
+                            el.text_color(tone)
+                        }
+                    })
+                    .when(self.dim(o), |el| el.opacity(0.45))
+                    .children(option_parts(o, ControlSize::Sm.glyph(), tone, true, t))
+                    .into_any_element()
+            })
+            .collect();
+        // Placed by fraction of the content box, so nothing is measured
+        let thumb = self.active.map(|ix| {
+            let position = motion::follow(&format!("{}-thumb", self.key), ix as f32, QUICK);
+            div()
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .left(relative(position / n))
+                .w(relative(1. / n))
+                .rounded(px(thumb_radius))
+                .bg(if t.dark {
+                    t.fill(FillTier::Primary)
+                } else {
+                    gpui::white()
+                })
+                .when(!t.dark, |el| {
+                    el.border_1()
+                        .border_color(t.separator(false))
+                        .shadow(vec![BoxShadow {
+                            color: gpui::hsla(0., 0., 0., 0.08),
+                            offset: point(px(0.), px(1.)),
+                            blur_radius: px(2.),
+                            spread_radius: px(0.),
+                            inset: false,
+                        }])
+                })
+        });
+        div()
+            .flex_none()
+            .map(|el| match width {
+                Some(w) => el.w(px(w)),
+                None => el.w_full(),
+            })
+            .h(px(self.size.height()))
+            .p(px(INSET))
+            .rounded(px(self.size.radius()))
+            .bg(t.fill(FillTier::Quaternary))
+            .border_1()
+            .border_color(t.separator(false))
+            .child(
+                // The content box the thumb's fractions are taken against
+                div().relative().size_full().children(thumb).child(
+                    div()
+                        .relative()
+                        .size_full()
+                        .flex()
+                        .flex_row()
+                        .children(items),
+                ),
+            )
+    }
+
+    /// pink: button.rs `chip` – one chip per option, gap 6; `full` shares
+    /// the row equally.
+    fn chips(&self, options: &[SegmentOption], full: bool) -> Div {
+        let t = &self.t;
+        let glyph = t.glyph_tone();
+        div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(CHIP_GAP))
+            .map(|el| if full { el.w_full() } else { el.flex_none() })
+            .children(options.iter().enumerate().map(|(ix, o)| {
+                let chosen = Some(ix) == self.active;
+                let enabled = self.picker.enabled[ix];
+                pink::chip_enabled(self.option_key(o), chosen, self.size, enabled, t)
+                    .role(if self.radio {
+                        Role::RadioButton
+                    } else {
+                        Role::Tab
+                    })
+                    .aria_label(o.label.clone().unwrap_or_else(|| o.value.clone()))
+                    .when(!self.radio, |el| el.aria_selected(chosen))
+                    .when(full, |el| el.flex_1().min_w_0())
+                    .when(enabled, |el| self.wire(el, ix))
+                    .children(option_parts(o, self.size.glyph(), glyph, false, t))
+            }))
+    }
+
+    /// pink: pickers.rs `model_tab` – tabs on a hairline strip, the viewed
+    /// one in `text` with the accent capsule, the others `text_muted` with
+    /// the quiet hover wash. Every tab is medium, so picking never reflows
+    /// the strip. `full` spans the container; tabs keep their size.
+    fn tabs(&self, options: &[SegmentOption], full: bool) -> Div {
+        let t = &self.t;
+        let size = self.size;
+        div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(TAB_GAP))
+            .px(px(layout::CARD_INSET))
+            .h(px(size.height() + TAB_STRIP_EXTRA))
+            .border_b_1()
+            .border_color(t.hairline(0.08))
+            .map(|el| if full { el.w_full() } else { el.flex_none() })
+            .children(options.iter().enumerate().map(|(ix, o)| {
+                let chosen = Some(ix) == self.active;
+                let enabled = self.picker.enabled[ix];
+                let tone = if chosen { t.text } else { t.text_muted };
+                self.option(o, chosen)
+                    .relative()
+                    .flex_none()
+                    .h(px(size.height()))
+                    .px(px(size.pad_x()))
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .justify_center()
+                    .gap(px(size.gap()))
+                    .rounded(px(size.radius()))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(tone)
+                    .when(enabled, |el| self.focusable(self.wire(el, ix)))
+                    .when(enabled && !chosen, |el| {
+                        el.hover_wash(self.option_key(o), t.fill(FillTier::Tertiary))
+                    })
+                    .when(self.dim(o), |el| el.opacity(0.45))
+                    .children(option_parts(o, size.glyph(), tone, false, t))
+                    .when(chosen, |el| el.child(tab_indicator(t.accent)))
+            }))
+    }
 }
 
 #[derive(IntoElement)]
 pub struct SegmentedControl {
-    id: gpui::ElementId,
+    id: ElementId,
     options: Vec<SegmentOption>,
     value: Option<SharedString>,
     default_value: Option<SharedString>,
     on_change: Option<ChangeHandler>,
     size: SegmentSize,
-    variant: Option<SegmentVariant>,
+    variant: SegmentVariant,
+    width: Option<f32>,
     full_width: bool,
     kind: SegmentKind,
     disabled: bool,
-    look: Option<Look>,
 }
 
 impl SegmentedControl {
-    pub fn new(id: impl Into<gpui::ElementId>, options: Vec<SegmentOption>) -> Self {
+    pub fn new(id: impl Into<ElementId>, options: Vec<SegmentOption>) -> Self {
         Self {
             id: id.into(),
             options,
@@ -590,11 +622,11 @@ impl SegmentedControl {
             default_value: None,
             on_change: None,
             size: SegmentSize::Md,
-            variant: None,
+            variant: SegmentVariant::Tray,
+            width: None,
             full_width: false,
             kind: SegmentKind::Radio,
             disabled: false,
-            look: None,
         }
     }
 
@@ -624,13 +656,21 @@ impl SegmentedControl {
         self
     }
 
-    /// Defaults to Buttons in the Clean look and Tray in the Classic one.
+    /// Tray (the default), Buttons or Underline.
     pub fn variant(mut self, variant: SegmentVariant) -> Self {
-        self.variant = Some(variant);
+        self.variant = variant;
         self
     }
 
-    /// Fill the container with equal segments.
+    /// The tray's whole width, shared equally by its options (pink's
+    /// `width`). Without it every option is as wide as the widest.
+    pub fn width(mut self, width: f32) -> Self {
+        self.width = Some(width);
+        self
+    }
+
+    /// Fill the container: tray options and chips share it equally; tabs
+    /// keep their size on a hairline that spans it.
     pub fn full_width(mut self, full_width: bool) -> Self {
         self.full_width = full_width;
         self
@@ -645,31 +685,15 @@ impl SegmentedControl {
         self.disabled = disabled;
         self
     }
-
-    /// Overrides the global Clean/Classic look for this control.
-    pub fn look(mut self, look: Look) -> Self {
-        self.look = Some(look);
-        self
-    }
 }
 
 impl RenderOnce for SegmentedControl {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let look = self.look.unwrap_or(cx.look());
-        let variant = match (look, self.variant) {
-            (Look::Clean, None) => SegmentVariant::Buttons,
-            (Look::Classic, None | Some(SegmentVariant::Buttons)) => SegmentVariant::Tray,
-            (_, Some(v)) => v,
-        };
-        let underline = variant == SegmentVariant::Underline;
-        let tray = variant == SegmentVariant::Tray;
-        let buttons = variant == SegmentVariant::Buttons;
-        let p = Palette::get(look, cx);
-        let m = Metrics::get(look, self.size);
-        let key = format!("seg-{}", self.id);
+        let t = Pink::get(cx);
+        let size = self.size.control();
         let options = self.options;
         let count = options.len();
-        let full = self.full_width;
+        let radio = self.kind == SegmentKind::Radio;
 
         let first_enabled = options
             .iter()
@@ -677,47 +701,26 @@ impl RenderOnce for SegmentedControl {
             .map(|o| o.value.clone());
         let initial = self.default_value.clone().or(first_enabled);
         let state = window.use_keyed_state(
-            gpui::ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, _| State {
                 inner: initial,
                 latest: None,
-                placed: None,
-                toward_right: true,
-                press: None,
-                keyboard: false,
                 focus: Vec::new(),
-                track_w: 0.,
             },
         );
-
         let controlled = self.value.is_some();
         let current = self.value.clone().or_else(|| state.read(cx).inner.clone());
         let active = options
             .iter()
             .position(|o| Some(&o.value) == current.as_ref());
-        // One focus handle per option; the latest value; which edge leads
-        let (toward_right, pressed, keyboard, handles, track_w) = state.update(cx, |s, cx| {
+        let handles = state.update(cx, |s, cx| {
             while s.focus.len() < count {
-                s.focus.push(cx.focus_handle());
+                s.focus.push(cx.focus_handle().tab_stop(true));
             }
             s.focus.truncate(count);
             s.latest = current.clone();
-            if s.placed != active {
-                if let (Some(from), Some(to)) = (s.placed, active)
-                    && from != to
-                {
-                    s.toward_right = to > from;
-                }
-                s.placed = active;
-            }
-            (
-                s.toward_right,
-                s.press.is_some(),
-                s.keyboard,
-                s.focus.clone(),
-                s.track_w,
-            )
+            s.focus.clone()
         });
 
         let picker = Rc::new(Picker {
@@ -730,471 +733,103 @@ impl RenderOnce for SegmentedControl {
             controlled,
             on_change: self.on_change.clone(),
         });
-
-        // Geometry: every option as wide as its content plus padding
-        let pad_x = match (underline, full) {
-            (true, false) => 2.,
-            (true, true) => 10.,
-            _ => m.pad_x,
+        let shape = Shape {
+            t: t.clone(),
+            size,
+            key: format!("seg-{}", self.id),
+            radio,
+            active,
+            handles,
+            picker: picker.clone(),
+            disabled: self.disabled,
         };
-        let gap = match variant {
-            SegmentVariant::Buttons => m.gap,
-            SegmentVariant::Underline if look == Look::Clean && !full => 20.,
-            SegmentVariant::Underline if !full => m.gap,
-            _ => 0.,
-        };
-        let opt_h = match variant {
-            SegmentVariant::Tray if look == Look::Clean => m.h - m.pad * 2.,
-            SegmentVariant::Underline => m.h + 6.,
-            _ => m.h,
-        };
-        let contents: Vec<f32> = options
-            .iter()
-            .map(|o| content_width(window, o, look, &m))
-            .collect();
-        let natural: Vec<f32> = contents.iter().map(|c| c + pad_x * 2.).collect();
-        let widths: Vec<f32> = if full {
-            let widest = natural.iter().copied().fold(0., f32::max);
-            let share = (track_w - gap * count.saturating_sub(1) as f32) / count.max(1) as f32;
-            vec![share.max(widest); count]
-        } else {
-            natural
-        };
-        let mut rects = Vec::with_capacity(count);
-        let mut x = 0.;
-        for w in &widths {
-            rects.push((x, *w));
-            x += w + gap;
-        }
-        let rects = Rc::new(rects);
-
-        // The indicator: both edges follow the active option, the one facing it leads
-        let measured = !full || track_w > 0.;
-        let pill = active.filter(|_| measured).map(|ix| {
-            let (mut left, mut width) = rects[ix];
-            if underline {
-                // The line sits under the content only
-                left += (width - contents[ix]) / 2.;
-                width = contents[ix];
+        let body = match self.variant {
+            SegmentVariant::Tray => {
+                let width = (!self.full_width).then(|| {
+                    self.width
+                        .unwrap_or_else(|| natural_width(window, &options, size))
+                });
+                shape.tray(&options, width)
             }
-            let (left_ms, right_ms) = if toward_right {
-                (m.trail, m.lead)
-            } else {
-                (m.lead, m.trail)
-            };
-            let l = motion::follow(
-                &format!("{key}-pill-l"),
-                left,
-                MotionSpec::new(left_ms, m.curve),
-            );
-            let r = motion::follow(
-                &format!("{key}-pill-r"),
-                left + width,
-                MotionSpec::new(right_ms, m.curve),
-            );
-            let press = motion::follow(
-                &format!("{key}-press"),
-                if pressed && !underline { 1. } else { 0. },
-                MotionSpec::new(m.press, m.curve),
-            );
-            // `scale: 0.97` while held, as an inset
-            let inset_x = (r - l) * 0.015 * press;
-            let inset_y = opt_h * 0.015 * press;
-            let base = div()
-                .absolute()
-                .left(px(l + inset_x))
-                .w(px((r - l - inset_x * 2.).max(0.)));
-            if underline {
-                base.bottom_0()
-                    .h(px(m.underline))
-                    .rounded_tl(px(m.underline))
-                    .rounded_tr(px(m.underline))
-                    .bg(p.ink)
-            } else {
-                let radius = match look {
-                    Look::Clean => 6.,
-                    Look::Classic => m.radius - m.pad,
-                };
-                base.top(px(inset_y))
-                    .bottom(px(inset_y))
-                    .rounded(px(radius))
-                    .when(buttons, |d| d.bg(p.fill))
-                    .when(tray, |d| d.bg(p.pill).shadow(p.pill_shadow.clone()))
-            }
-        });
-
-        let width_spec = MotionSpec::new(if look == Look::Clean { 200 } else { 320 }, m.curve);
-        let color_spec = MotionSpec::new(m.color, EASE);
-        let opt_radius = match (look, variant) {
-            (Look::Classic, SegmentVariant::Tray) => m.radius - m.pad,
-            _ => 6.,
-        };
-        let focus_out = if underline { 0. } else { m.focus_out };
-        // Options glide to a new width when their content changes
-        let shown: Vec<f32> = options
-            .iter()
-            .zip(&widths)
-            .map(|(o, &w)| {
-                if full {
-                    w
-                } else {
-                    motion::follow(&format!("{key}-w-{}", o.value), w, width_spec)
-                }
-            })
-            .collect();
-        // The focus ring sits on the track: options clip their content
-        let ring = handles
-            .iter()
-            .position(|h| h.is_focused(window))
-            .filter(|_| keyboard)
-            .map(|ix| {
-                let x = shown[..ix].iter().sum::<f32>() + gap * ix as f32;
-                div()
-                    .absolute()
-                    .left(px(x - focus_out))
-                    .top(px(-focus_out))
-                    .w(px(shown[ix] + focus_out * 2.))
-                    .h(px(opt_h + focus_out * 2.))
-                    .border(px(2.))
-                    .border_color(p.focus)
-                    .rounded(px(opt_radius + focus_out))
-            });
-
-        let rows: Vec<AnyElement> = options
-            .iter()
-            .enumerate()
-            .map(|(ix, o)| {
-                let is_active = Some(ix) == active;
-                let enabled = picker.enabled[ix];
-                let a = motion::follow(
-                    &format!("{key}-a-{}", o.value),
-                    if is_active { 1. } else { 0. },
-                    color_spec,
-                );
-                let hover_key = format!("{key}-h-{}", o.value);
-                let h = if enabled {
-                    motion::hover_t(&hover_key) * (1. - a)
-                } else {
-                    0.
-                };
-                let hover_fg = if underline { p.hover_line } else { p.hover };
-                let fg = motion::mix(motion::mix(p.rest, hover_fg, h), p.ink, a);
-                let icon_color = p.icon.map_or(fg, |icon| motion::mix(icon, p.ink, a));
-                let content = option_content(o, look, &m, &p, is_active, a, icon_color);
-                let picker = picker.clone();
-
-                div()
-                    .id(("opt", ix))
-                    .track_focus(&handles[ix])
-                    .relative()
-                    .flex()
-                    .flex_none()
-                    .items_center()
-                    .justify_center()
-                    .w(px(shown[ix]))
-                    .h(px(opt_h))
-                    .overflow_hidden()
-                    .px(px(pad_x))
-                    .rounded(px(opt_radius))
-                    .whitespace_nowrap()
-                    .text_color(fg)
-                    .when(buttons, |d| d.border(px(0.5)).border_color(p.line))
-                    .when_some(p.wash.filter(|_| !underline), |d, wash| {
-                        d.bg(motion::mix(wash.opacity(0.), wash, h))
-                    })
-                    .on_hover(motion::hover_listener(hover_key))
-                    .when(enabled, |d| {
-                        d.cursor_pointer()
-                            .on_click(move |_, window, cx| picker.pick(ix, window, cx))
-                    })
-                    .when(o.disabled, |d| d.opacity(0.4).cursor_not_allowed())
-                    .child(content)
-                    .into_any_element()
-            })
-            .collect();
-
-        // Pointer: press an option, then drag across the others to pick as you go
-        let hits = {
-            let picker = picker.clone();
-            let state = state.clone();
-            let rects = rects.clone();
-            let disabled = self.disabled;
-            canvas(
-                move |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
-                move |bounds, hitbox, window, cx| {
-                    if full {
-                        let w = f32::from(bounds.size.width);
-                        if (state.read(cx).track_w - w).abs() > 0.5 {
-                            state.update(cx, |s, _| s.track_w = w);
-                            window.request_animation_frame();
-                        }
-                    }
-                    if disabled {
-                        return;
-                    }
-                    let origin = f32::from(bounds.origin.x);
-                    {
-                        let (picker, state, rects) = (picker.clone(), state.clone(), rects.clone());
-                        window.on_mouse_event(move |e: &MouseDownEvent, phase, window, cx| {
-                            if phase != DispatchPhase::Bubble
-                                || e.button != MouseButton::Left
-                                || !hitbox.is_hovered(window)
-                            {
-                                return;
-                            }
-                            let x = f32::from(e.position.x) - origin;
-                            let Some(ix) = option_at(&rects, x).filter(|&i| picker.enabled[i])
-                            else {
-                                return;
-                            };
-                            state.update(cx, |s, cx| {
-                                s.press = Some(Press { x, moved: false });
-                                s.keyboard = false;
-                                cx.notify();
-                            });
-                            picker.pick(ix, window, cx);
-                        });
-                    }
-                    if !pressed {
-                        return;
-                    }
-                    {
-                        let (picker, state, rects) = (picker.clone(), state.clone(), rects.clone());
-                        window.on_mouse_event(move |e: &MouseMoveEvent, phase, window, cx| {
-                            if phase != DispatchPhase::Bubble {
-                                return;
-                            }
-                            let x = f32::from(e.position.x) - origin;
-                            let held = e.pressed_button == Some(MouseButton::Left);
-                            let drag = state.update(cx, |s, cx| {
-                                let Some(press) = s.press.as_mut() else {
-                                    return false;
-                                };
-                                if !held {
-                                    s.press = None;
-                                    cx.notify();
-                                    return false;
-                                }
-                                if !press.moved && (x - press.x).abs() < 3. {
-                                    return false;
-                                }
-                                press.moved = true;
-                                true
-                            });
-                            if drag && let Some(ix) = option_at(&rects, x) {
-                                picker.pick(ix, window, cx);
-                            }
-                        });
-                    }
-                    window.on_mouse_event(move |e: &MouseUpEvent, phase, _, cx| {
-                        if phase == DispatchPhase::Bubble && e.button == MouseButton::Left {
-                            state.update(cx, |s, cx| {
-                                s.press = None;
-                                cx.notify();
-                            });
-                        }
-                    });
-                },
-            )
-            .absolute()
-            .top_0()
-            .left_0()
-            .size_full()
+            SegmentVariant::Buttons => shape.chips(&options, self.full_width),
+            SegmentVariant::Underline => shape.tabs(&options, self.full_width),
         };
 
         let on_key = {
-            let picker = picker.clone();
-            let state = state.clone();
             let kind = self.kind;
             move |e: &KeyDownEvent, window: &mut Window, cx: &mut App| {
                 if e.keystroke.modifiers.modified() {
                     return;
                 }
                 if picker.key(e.keystroke.key.as_str(), kind, window, cx) {
-                    state.update(cx, |s, cx| {
-                        s.keyboard = true;
-                        cx.notify();
-                    });
                     cx.stop_propagation();
-                } else if e.keystroke.key == "tab" {
-                    state.update(cx, |s, _| s.keyboard = true);
                 }
             }
         };
 
-        let track = div()
-            .id("track")
-            .relative()
-            .flex()
-            .when(full, |d| d.w_full())
-            .gap(px(gap))
-            .children(pill)
-            .children(rows)
-            .children(ring)
-            .child(hits)
-            .on_key_down(on_key);
-
-        let root = div()
-            .id(self.id.clone())
-            .relative()
-            .flex()
-            .when(full, |d| d.w_full())
-            .when(!full, |d| d.flex_none())
-            .font_family(SANS)
-            .text_size(px(m.font))
-            .line_height(px(m.line))
-            .font_weight(m.label_weight)
-            .text_color(p.rest)
-            .when(tray, |d| d.p(px(m.pad)).rounded(px(m.radius)).bg(p.track))
-            .when(underline, |d| {
-                d.child(
-                    div()
-                        .absolute()
-                        .left_0()
-                        .right_0()
-                        .bottom_0()
-                        .h(px(m.hairline))
-                        .bg(p.line),
-                )
-            })
-            .when(self.disabled, |d| d.opacity(0.5))
-            .child(track);
-
         motion::keep_alive(window);
-        root
+        body.id(self.id)
+            .role(if radio {
+                Role::RadioGroup
+            } else {
+                Role::TabList
+            })
+            .font_family(pink::SANS)
+            .text_size(px(size.text()))
+            .line_height(px(size.line_height()))
+            .text_color(t.text)
+            .on_key_down(on_key)
+            // Chips dim one by one (pink `chip` with `enabled: false`)
+            .when(
+                self.disabled && self.variant != SegmentVariant::Buttons,
+                |el| el.opacity(0.45),
+            )
     }
-}
-
-/// Icon, label, count and badge.
-fn option_content(
-    o: &SegmentOption,
-    look: Look,
-    m: &Metrics,
-    p: &Palette,
-    active: bool,
-    a: f32,
-    icon_color: Hsla,
-) -> impl IntoElement {
-    let label = o.label.clone().map(|label| match look {
-        Look::Clean => div().child(label).into_any_element(),
-        // Regular and semibold copies crossfade; the semibold one reserves the width
-        Look::Classic => div()
-            .relative()
-            .flex_none()
-            .child(
-                div()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .opacity(a)
-                    .child(label.clone()),
-            )
-            .child(
-                div()
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .size_full()
-                    .flex()
-                    .justify_center()
-                    .opacity(1. - a)
-                    .child(label),
-            )
-            .into_any_element(),
-    });
-
-    let count = o.count.clone().map(|count| {
-        let clean_active = look == Look::Clean && active;
-        let chip = div()
-            .flex()
-            .flex_none()
-            .items_center()
-            .justify_center()
-            .min_w(px(m.count_min))
-            .h(px(m.count_min))
-            .px(px(m.count_pad))
-            .rounded(px(m.count_radius))
-            .text_size(px(m.count_font))
-            .line_height(px(m.count_line))
-            .font_weight(m.count_weight)
-            .bg(if clean_active { p.pill } else { p.count_bg })
-            .text_color(if clean_active { p.ink } else { p.count_fg })
-            .when(clean_active, |d| d.shadow(vec![ring(0.5, p.line)]))
-            .child(count.clone());
-        let spec = MotionSpec::new(m.count_in, m.curve);
-        // A new count replays the entrance
-        motion::rise_in(
-            gpui::ElementId::Name(format!("count-{count}").into()),
-            spec,
-            m.count_rise,
-            chip,
-        )
-    });
-
-    let badge = o.badge.clone().map(|badge| {
-        div()
-            .flex()
-            .flex_none()
-            .items_center()
-            .h(px(m.badge_h))
-            .px(px(m.badge_pad))
-            .rounded(px(m.badge_radius))
-            .bg(p.accent_soft)
-            .text_size(px(m.badge_font))
-            .line_height(px(16.))
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(p.accent)
-            .child(badge)
-    });
-
-    div()
-        .flex()
-        .flex_none()
-        .items_center()
-        .gap(px(m.content_gap))
-        .when_some(o.icon.clone(), |d, path| {
-            d.child(
-                svg()
-                    .path(path)
-                    .size(px(m.icon))
-                    .flex_none()
-                    .text_color(icon_color),
-            )
-        })
-        .children(label)
-        .children(count)
-        .children(badge)
 }
 
 // ---------------------------------------------------------------------------
 // Demo
 // ---------------------------------------------------------------------------
 
-fn demo_icon(look: Look, name: &str) -> SharedString {
-    match look {
-        Look::Clean => format!("icons/segmented-control/clean/{name}.svg").into(),
-        Look::Classic => format!("icons/segmented-control/{name}.svg").into(),
-    }
+const ICON_LAYERS: &str = "icons/segmented-control/layers-minimalistic.svg";
+const ICON_CALENDAR: &str = "icons/segmented-control/calendar.svg";
+
+/// One step of the tour the Usage card takes after load.
+#[derive(Clone, Copy)]
+enum Pick {
+    Metric(&'static str),
+    Period(&'static str),
 }
 
-/// The dashboard picks these in turn after load, until someone interacts.
-const CYCLE: [&str; 4] = ["analytics", "reports", "notifications", "overview"];
+/// Picked in turn after load, until someone interacts.
+const TOUR: [Pick; 4] = [
+    Pick::Metric("tokens"),
+    Pick::Period("30"),
+    Pick::Metric("cost"),
+    Pick::Period("7"),
+];
+/// Between two tour steps.
+const TOUR_STEP: Duration = Duration::from_millis(800);
 
 struct DemoState {
-    section: SharedString,
-    layout: SharedString,
-    billing: SharedString,
-    cycle: Option<Task<()>>,
+    tab: SharedString,
+    metric: SharedString,
+    period: SharedString,
+    breakdown: SharedString,
+    alert: SharedString,
+    tour: Option<Task<()>>,
 }
 
 impl DemoState {
     fn new(cx: &mut gpui::Context<Self>) -> Self {
-        let cycle = cx.spawn(async move |this, cx| {
-            for (n, value) in CYCLE.iter().enumerate() {
-                let wait = if n == 0 { 1000 } else { 1400 };
-                cx.background_executor()
-                    .timer(Duration::from_millis(wait))
-                    .await;
+        let tour = cx.spawn(async move |this, cx| {
+            for pick in TOUR {
+                cx.background_executor().timer(TOUR_STEP).await;
                 let updated = this.update(cx, |s, cx| {
-                    s.section = (*value).into();
+                    match pick {
+                        Pick::Metric(value) => s.metric = value.into(),
+                        Pick::Period(value) => s.period = value.into(),
+                    }
                     cx.notify();
                 });
                 if updated.is_err() {
@@ -1203,10 +838,12 @@ impl DemoState {
             }
         });
         Self {
-            section: "overview".into(),
-            layout: "board".into(),
-            billing: "yearly".into(),
-            cycle: Some(cycle),
+            tab: "overview".into(),
+            metric: "cost".into(),
+            period: "7".into(),
+            breakdown: "model".into(),
+            alert: "80".into(),
+            tour: Some(tour),
         }
     }
 }
@@ -1216,65 +853,32 @@ struct Demo;
 
 impl RenderOnce for Demo {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let look = cx.look();
-        let dark = cx.is_dark();
-        let clean = look == Look::Clean;
+        let t = Pink::get(cx);
         let state =
             window.use_keyed_state("segmented-control-demo", cx, |_, cx| DemoState::new(cx));
         let s = state.read(cx);
-        let (section, layout, billing) = (s.section.clone(), s.layout.clone(), s.billing.clone());
+        let (tab, metric, period, breakdown, alert) = (
+            s.tab.clone(),
+            s.metric.clone(),
+            s.period.clone(),
+            s.breakdown.clone(),
+            s.alert.clone(),
+        );
+        let hourly = period == "1";
 
-        let (card, shadows, line, label) = match (look, dark) {
-            (Look::Clean, false) => (
-                hex(0xffffff),
-                vec![
-                    ring(0.5, black_a(0.06)),
-                    shadow(0., 1., 1., -1., black_a(0.1)),
-                    shadow(0., 1., 2., 0., black_a(0.05)),
-                ],
-                black_a(0.06),
-                black_a(0.45),
-            ),
-            (Look::Clean, true) => (
-                hex(0x1c1c1e),
-                vec![
-                    ring(0.5, white_a(0.1)),
-                    shadow(0., 1., 2., 0., black_a(0.4)),
-                ],
-                white_a(0.08),
-                white_a(0.46),
-            ),
-            (Look::Classic, false) => (
-                hex(0xffffff),
-                vec![
-                    ring(1., hex(0xececec)),
-                    shadow(0., 1., 2., 0., black_a(0.04)),
-                ],
-                hex(0xececec),
-                hex(0x8f8f8f),
-            ),
-            (Look::Classic, true) => (
-                hex(0x19191b),
-                vec![ring(1., hex(0x2a2a2e))],
-                hex(0x2a2a2e),
-                hex(0x8f8f8f),
-            ),
-        };
-
-        // Any press or key stops the automatic tour
+        // Any press or key ends the tour
         let stop_mouse = {
             let state = state.clone();
             move |_: &MouseDownEvent, _: &mut Window, cx: &mut App| {
-                state.update(cx, |s, _| s.cycle = None);
+                state.update(cx, |s, _| s.tour = None);
             }
         };
         let stop_key = {
             let state = state.clone();
             move |_: &KeyDownEvent, _: &mut Window, cx: &mut App| {
-                state.update(cx, |s, _| s.cycle = None);
+                state.update(cx, |s, _| s.tour = None);
             }
         };
-
         let setter = |field: fn(&mut DemoState) -> &mut SharedString| {
             let state = state.clone();
             move |value: &SharedString, _: &mut Window, cx: &mut App| {
@@ -1285,83 +889,115 @@ impl RenderOnce for Demo {
                 });
             }
         };
-
-        let row = |ix: usize, title: &'static str, control: AnyElement| {
-            div()
-                .flex()
-                .flex_col()
-                .items_start()
-                .min_w_0()
-                .gap(px(if clean { 8. } else { 10. }))
-                .py(px(if clean { 16. } else { 18. }))
-                .when(ix > 0, |d| {
-                    d.border_t(px(if clean { 0.5 } else { 1. }))
-                        .border_color(line)
-                })
-                .child(
-                    div()
-                        .text_size(px(12.))
-                        .line_height(px(if clean { 16. } else { 18. }))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(label)
-                        .child(title),
-                )
+        // A settings row: its text, then the control (pink: settings/widgets.rs)
+        let row = |first: bool, title: &'static str, copy: &'static str, control: AnyElement| {
+            pink::card_row(first, &t)
+                .child(pink::row_text(title, Some(copy.into()), &t))
                 .child(control)
         };
 
-        let sections = vec![
+        let tabs = vec![
             SegmentOption::new("overview", "Overview"),
-            SegmentOption::new("analytics", "Analytics"),
-            SegmentOption::new("reports", "Reports"),
-            SegmentOption::new("notifications", "Notifications").count(3),
+            SegmentOption::new("models", "Models").count(6),
+            SegmentOption::new("machines", "Machines").count(2),
+            SegmentOption::new("budgets", "Budgets").badge("New"),
         ];
-        let layouts = vec![
-            SegmentOption::new("list", "List").icon(demo_icon(look, "list")),
-            SegmentOption::new("board", "Board").icon(demo_icon(look, "board")),
-            SegmentOption::new("calendar", "Calendar").icon(demo_icon(look, "calendar")),
+        let metrics = vec![
+            SegmentOption::new("cost", "Cost"),
+            SegmentOption::new("tokens", "Tokens"),
+            SegmentOption::new("limits", "Limits"),
         ];
-        let plans = vec![
-            SegmentOption::new("monthly", "Monthly"),
-            SegmentOption::new("yearly", "Yearly").badge("Save 20%"),
+        let periods = vec![
+            SegmentOption::new("1", "Past 24h"),
+            SegmentOption::new("7", "7 days"),
+            SegmentOption::new("30", "30 days"),
+            SegmentOption::new("90", "90 days"),
+        ];
+        let breakdowns = vec![
+            SegmentOption::new("model", "Model").icon(ICON_LAYERS),
+            SegmentOption::new("time", if hourly { "Hour" } else { "Day" }).icon(ICON_CALENDAR),
+        ];
+        let alerts = vec![
+            SegmentOption::new("off", "Off"),
+            SegmentOption::new("80", "At 80%"),
+            SegmentOption::new("95", "At 95%"),
+            SegmentOption::new("over", "Over budget").disabled(true),
         ];
 
-        div()
-            .id("seg-demo")
-            .flex()
-            .flex_col()
-            .w(px(440.))
-            .px(px(20.))
-            .py(px(4.))
-            .bg(card)
-            .rounded(px(if clean { 10. } else { 16. }))
-            .shadow(shadows)
+        pink::section_card(&t)
+            .mt_0()
+            .w(px(600.))
+            .font_family(pink::SANS)
             .capture_any_mouse_down(stop_mouse)
             .capture_key_down(stop_key)
-            .child(row(
-                0,
-                "Dashboard",
-                SegmentedControl::new("section", sections)
-                    .value(section)
-                    .on_change(setter(|s| &mut s.section))
-                    .into_any_element(),
+            .child(pink::section_header(
+                "Usage",
+                Some("What your providers report on this machine.".into()),
+                &t,
             ))
-            .child(row(
-                1,
-                "Layout",
-                SegmentedControl::new("layout", layouts)
-                    .value(layout)
-                    .size(SegmentSize::Sm)
-                    .variant(SegmentVariant::Tray)
-                    .on_change(setter(|s| &mut s.layout))
-                    .into_any_element(),
-            ))
-            .child(row(
-                2,
-                "Billing",
-                SegmentedControl::new("billing", plans)
-                    .value(billing)
+            .child(
+                SegmentedControl::new("usage-tab", tabs)
                     .variant(SegmentVariant::Underline)
-                    .on_change(setter(|s| &mut s.billing))
+                    .kind(SegmentKind::Tabs)
+                    .full_width(true)
+                    .value(tab)
+                    .on_change(setter(|s| &mut s.tab)),
+            )
+            .child(row(
+                true,
+                "Show",
+                "Estimated API cost, processed tokens, or the subscription limits your providers report.",
+                pink::row_controls()
+                    .child(
+                        SegmentedControl::new("usage-metric", metrics)
+                            .width(216.)
+                            .value(metric)
+                            .on_change(setter(|s| &mut s.metric)),
+                    )
+                    .into_any_element(),
+            ))
+            .child(row(
+                false,
+                "Period",
+                if hourly {
+                    "One point per hour."
+                } else {
+                    "One point per day."
+                },
+                pink::row_controls()
+                    .child(
+                        SegmentedControl::new("usage-days", periods)
+                            .width(300.)
+                            .value(period)
+                            .on_change(setter(|s| &mut s.period)),
+                    )
+                    .into_any_element(),
+            ))
+            .child(row(
+                false,
+                "Breakdown",
+                "Split the table by model or by period.",
+                pink::row_controls()
+                    .child(
+                        SegmentedControl::new("usage-breakdown", breakdowns)
+                            .width(150.)
+                            .value(breakdown)
+                            .on_change(setter(|s| &mut s.breakdown)),
+                    )
+                    .into_any_element(),
+            ))
+            .child(row(
+                false,
+                "Budget alerts",
+                "A notice as this month's spend nears the budget. Over budget needs a monthly budget.",
+                pink::row_block()
+                    .child(
+                        SegmentedControl::new("usage-alerts", alerts)
+                            .variant(SegmentVariant::Buttons)
+                            .size(SegmentSize::Sm)
+                            .value(alert)
+                            .on_change(setter(|s| &mut s.alert)),
+                    )
                     .into_any_element(),
             ))
     }
@@ -1369,20 +1005,4 @@ impl RenderOnce for Demo {
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |_, _| Demo)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn nearest_option() {
-        let rects = [(0., 50.), (58., 40.), (106., 60.)];
-        assert_eq!(option_at(&rects, -10.), Some(0));
-        assert_eq!(option_at(&rects, 20.), Some(0));
-        assert_eq!(option_at(&rects, 53.), Some(0));
-        assert_eq!(option_at(&rects, 56.), Some(1));
-        assert_eq!(option_at(&rects, 300.), Some(2));
-        assert_eq!(option_at(&[], 3.), None);
-    }
 }
