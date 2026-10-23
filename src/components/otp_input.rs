@@ -1022,9 +1022,9 @@ impl RenderOnce for OtpInput {
             .child(tracker);
 
         // ----- The line under the cells -----
-        // pink: the paste-code error, `mt 8`, 12px in red-300 at 90%
-        // (accounts.rs `render_login_dialog`); success mirrors it in green
-        // behind a check, one glyph and one word
+        // pink: the paste-code error, `mt 8`, 12px in `danger_muted` at 90%
+        // (accounts.rs `render_login_dialog`); success mirrors it in
+        // `success_muted` behind a check, one glyph and one word
         let note = f.note.map(|note| {
             let id = match &note {
                 Note::Error(text) => loaders::label_id(&format!("{key}-error"), text),
@@ -1037,11 +1037,9 @@ impl RenderOnce for OtpInput {
                 .when(center, |d| d.justify_center())
                 .type_style(TextStyle::Footnote);
             let line = match note {
-                Note::Error(text) => line
-                    .text_color(t.readable_tone(t.danger_muted, 0.9))
-                    .child(text),
+                Note::Error(text) => line.text_color(t.danger_muted.opacity(0.9)).child(text),
                 Note::Success(text) => line
-                    .text_color(t.readable_tone(t.success_muted, 0.9))
+                    .text_color(t.success_muted.opacity(0.9))
                     .child(
                         pink::line_glyph(
                             glyphs::CHECK,
