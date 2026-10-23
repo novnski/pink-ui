@@ -2,3 +2,5 @@
 **/*.rs.bk
 /shots
 /.claude/worktrees/
+/site/dist
+/node_modules

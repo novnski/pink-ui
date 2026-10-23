@@ -16,8 +16,15 @@ jobs:
             libvulkan-dev libx11-xcb-dev libxcb1-dev libfontconfig-dev libfreetype-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --check
+      - run: cargo fmt --all --check
       - run: cargo build --locked
       - run: cargo test --locked
+      # The browser build: the player crate compiles, and no component takes
+      # its clock from std (which panics on wasm32).
+      - run: cargo check --locked -p pink-ui-web --target wasm32-unknown-unknown
+      - run: >-
+          cargo clippy --locked --lib --target wasm32-unknown-unknown --
+          -A clippy::all -D clippy::disallowed_types -D clippy::disallowed_methods

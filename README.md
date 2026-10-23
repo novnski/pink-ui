@@ -204,8 +204,8 @@ sudo apt install libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-
 
 The library tracks [`gpui-pre`](https://crates.io/crates/gpui-pre), weekly
 snapshots of Zed's GPUI (the crates.io `gpui` release predates the web
-platform). Versions are pinned exactly; bump `gpui-pre`, `gpui-pre-platform`
-and `gpui-pre-web` together.
+platform). Versions are pinned exactly; bump `gpui-pre` and `gpui-pre-platform`
+together, in both `Cargo.toml` and `web/Cargo.toml`.
 
 `scripts/screenshot.sh <slug> [light|dark] [out.png] [WxH] [clean|classic]`
 renders a component headlessly (Xvfb, openbox, xdotool, ImageMagick). See
