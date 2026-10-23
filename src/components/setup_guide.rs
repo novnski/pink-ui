@@ -371,8 +371,6 @@ impl SetupGuide {
             let outline = outline.clone();
             state.update(cx, |s, _| {
                 s.seeded = true;
-                s.minimized = key == "tmp-min"; // TMP-REVIEW
-                s.dismissed = key == "tmp-dis"; // TMP-REVIEW
                 for task in groups.iter().flat_map(|g| g.tasks.iter()) {
                     if task.done {
                         s.done.insert(task.id.clone());
@@ -1203,19 +1201,5 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .gap(px(pink::space::S24))
             .child(launch)
             .child(finished)
-            .child(
-                SetupGuide::new("tmp-min", "Minimized guide").group(
-                    SetupGroup::new("g", "Make it yours", "icons/setup-guide/palette.svg")
-                        .task(SetupTask::new("a", "Upload a logo").done())
-                        .task(SetupTask::new("b", "Pick an accent color")),
-                ),
-            ) // TMP-REVIEW
-            .child(
-                SetupGuide::new("tmp-dis", "Workspace basics").group(
-                    SetupGroup::new("g2", "Make it yours", "icons/setup-guide/palette.svg")
-                        .task(SetupTask::new("a2", "Upload a logo").done())
-                        .task(SetupTask::new("b2", "Pick an accent color")),
-                ),
-            ) // TMP-REVIEW
     })
 }
