@@ -10,11 +10,18 @@
 //!
 //! ```ignore
 //! AgentCursors::new("doc", "Incidents", "INC-2291")
-//!     .agent(CursorAgent::new("Scribe", 290.0))
+//!     .agent(CursorAgent::new("Scribe"))
 //!     .block(DocBlock::Paragraph(vec![Run::text("Slow for "), Run::Edit(0), Run::text(".")]))
 //!     .edit(DocEdit::replace(0, "about 40 minutes", "47 minutes").at(0.5))
 //!     .on_review(|edit, accepted, _, _| println!("{edit}: {accepted}"))
 //! ```
+//!
+//! Pink has no multiplayer pointers, so the parts come from its nearest
+//! pieces: the page is its markdown preview (14/22 prose, the H1/H3 scale,
+//! the code surface), the margin cards are its review-note rows (pink:
+//! badges.rs `BadgeCard::row`), agents wear the project tints and monogram
+//! tiles (pink: sidebar_projects.rs `project_tile`), name tags are tooltip
+//! cards and the header is a surface toolbar with the titlebar's crumb.
 //!
 //! Pointers find their targets by measuring the laid-out text (each target
 //! records its bounds when painted) and move on a critically damped spring,
@@ -24,53 +31,81 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use web_time::{Duration, Instant};
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, AnyView, App, Bounds, Div, ElementId, FontWeight, Hsla,
-    IntoElement, PathBuilder, Pixels, Point, SharedString, Task, Window, canvas, div, point,
-    prelude::*, px, relative, svg,
+    AnyElement, AnyView, App, Bounds, Div, ElementId, FontWeight, Hsla, IntoElement, PathBuilder,
+    Pixels, Point, Role, SharedString, Stateful, Task, Window, canvas, div, point, prelude::*, px,
+    relative,
 };
 
 use crate::{
-    motion::{self, EASE_IN_OUT, GLIDE, MotionSpec},
-    pink::{self, ButtonKind, ControlSize, FillTier, Pink, radius, space, text},
-    primitives::ring,
+    HoverFill,
+    motion::{self, AnimationExt, EASE_IN_OUT},
+    pink::{
+        self, ButtonKind, ControlSize, FillTier, Pink, Syntax, TextStyle, TypeStyleExt, layout,
+        loaders, radius, space, text,
+    },
     story,
 };
 
 pub const NAME: &str = "Agent Cursors";
-pub const DESCRIPTION: &str = "Agents edit a shared document like teammates – named pointers glide to their spot, type suggestions letter by letter, resize a figure, fix a config and leave margin notes to accept or dismiss";
+pub const DESCRIPTION: &str = "Agents edit a shared document like teammates – tinted pointers glide to their spot, type suggestions letter by letter, resize a figure and fix a config, and every change waits in a margin note to accept or dismiss";
 
-const ICON_DOC: &str = "icons/agent-cursors/doc.svg";
-const ICON_CHECK: &str = "icons/agent-cursors/check.svg";
 const ICON_CLOSE: &str = "icons/agent-cursors/close.svg";
-const ICON_COMMENT: &str = "icons/agent-cursors/comment.svg";
-const ICON_RESIZE: &str = "icons/agent-cursors/resize.svg";
 const ICON_FOLLOW: &str = "icons/agent-cursors/follow.svg";
 
 const WIDTH: f32 = 800.0;
 const PAGE_W: f32 = 528.0;
-const PAGE_PAD: f32 = 36.0;
+const PAGE_PAD: f32 = space::S32;
 const FIGURE_RATIO: f32 = 0.36;
 /// Edit timeline: glide in, select, then work.
 const APPROACH: f32 = 1.15;
 const SELECT: f32 = 0.55;
 const LINGER: f32 = 0.8;
 const TYPE_EVERY: f32 = 0.085;
-const CARD_GAP: f32 = 8.0;
 
-/// One agent in the document.
+/// Pink's markdown prose, 14/22 (pink: markdown/render.rs `MD_TEXT_SIZE`).
+const PROSE_SIZE: f32 = 14.0;
+const PROSE_LINE: f32 = 22.0;
+/// Pink's gap between markdown blocks (`MD_BLOCK_GAP`).
+const BLOCK_GAP: f32 = 12.0;
+/// Markdown H1 and H3, and the extra air above an H3
+/// (pink: markdown/render.rs `heading_metrics`, `heading_top_extra`).
+const H1: (f32, f32) = (19.0, 27.0);
+const H3: (f32, f32) = (15.0, 22.0);
+const H3_TOP_EXTRA: f32 = 8.0;
+/// Code surface metrics (pink: markdown/render.rs `CODE_*`).
+const CODE_LINE: f32 = 18.0;
+const CODE_PAD_Y: f32 = 10.0;
+const CODE_HEADER: f32 = 28.0;
+/// The advance of a space in 14 px Geist: words are laid out one box each.
+const WORD_GAP: f32 = 3.8;
+/// The advance of a space in Geist Mono (0.6 em) at the code size.
+const MONO_GAP: f32 = text::CODE * 0.6;
+/// Margin cards (pink: badges.rs `BadgeCard::row`): `p 8`, radius 6, gap 8
+/// to a 2 px bar, a column with gap 4.
+const NOTE_PAD: f32 = 8.0;
+const NOTE_RADIUS: f32 = 6.0;
+const NOTE_BAR: f32 = 2.0;
+const NOTE_GAP: f32 = 4.0;
+/// The review row under a note: the column gap, 2 px of air and a small
+/// button. The column spaces its rows with top margins, not a gap, so this
+/// row can fold open from nothing (a negative margin would make GPUI measure
+/// the column as empty).
+const NOTE_ACTIONS: f32 = NOTE_GAP + space::S2 + ControlSize::Sm.height();
+/// The note header row holds an 18 px tile (pink's sidebar tile size).
+const NOTE_TILE: f32 = 18.0;
+/// Header agent buttons hold a 20 px tile in a 28 px chrome control.
+const AGENT_TILE: f32 = 20.0;
+
+/// One agent in the document. Agents take pink's project tints in the order
+/// they are added.
 #[derive(Clone, Debug)]
 pub struct CursorAgent {
     pub name: SharedString,
-    /// OKLCH hue in degrees for its pointer, marks and cards.
-    pub hue: f32,
 }
 
 impl CursorAgent {
-    pub fn new(name: impl Into<SharedString>, hue: f32) -> Self {
-        Self {
-            name: name.into(),
-            hue,
-        }
+    pub fn new(name: impl Into<SharedString>) -> Self {
+        Self { name: name.into() }
     }
 }
 
@@ -388,8 +423,8 @@ impl Stage {
         !matches!(self, Stage::Waiting | Stage::Approach)
     }
 
-    fn working_or_later(self) -> bool {
-        matches!(self, Stage::Work(_) | Stage::Review | Stage::Accepted)
+    fn busy(self) -> bool {
+        matches!(self, Stage::Select(_) | Stage::Work(_))
     }
 }
 
@@ -397,11 +432,23 @@ impl Stage {
 // Rendering helpers
 // ---------------------------------------------------------------------------
 
-fn agent_color(hue: f32, t: &Pink) -> Hsla {
-    if t.dark {
-        pink::oklch(0.72, 0.15, hue)
-    } else {
-        pink::oklch(0.57, 0.19, hue)
+/// An agent's colors: pink's project tint in order, as authored for washes
+/// and floored for glyphs (pointer, caret, bar) and for text.
+#[derive(Clone, Copy)]
+struct Tint {
+    raw: Hsla,
+    glyph: Hsla,
+    text: Hsla,
+}
+
+impl Tint {
+    fn of(ix: usize, t: &Pink) -> Self {
+        let raw = pink::project_tint(ix);
+        Tint {
+            raw,
+            glyph: t.readable_icon(raw),
+            text: t.readable_tone(raw, 1.0),
+        }
     }
 }
 
@@ -488,13 +535,89 @@ impl Flow {
         self.glue = true;
     }
 
-    fn render(self, gap: f32) -> Div {
-        div().flex().flex_wrap().gap_x(px(gap)).children(
+    fn render(self) -> Div {
+        div().flex().flex_wrap().gap_x(px(WORD_GAP)).children(
             self.groups
                 .into_iter()
                 .map(|group| div().flex().flex_none().children(group)),
         )
     }
+}
+
+/// Pink's code colors for a TOML line: table headers as types, keys as
+/// properties, `=` as punctuation, numbers and strings by kind.
+fn code_tokens(text: &str, syntax: &Syntax, plain: Hsla) -> Vec<(String, Hsla)> {
+    fn value(v: &str, syntax: &Syntax, plain: Hsla) -> Hsla {
+        let v = v.trim();
+        if !v.is_empty()
+            && v.chars()
+                .all(|c| c.is_ascii_digit() || c == '.' || c == '_')
+        {
+            syntax.number
+        } else if v.starts_with('"') {
+            syntax.string
+        } else {
+            plain
+        }
+    }
+    if text.trim_start().starts_with('[') {
+        return vec![(text.to_string(), syntax.type_name)];
+    }
+    match text.split_once('=') {
+        Some((key, rest)) => {
+            let mut out = vec![
+                (key.to_string(), syntax.property),
+                ("=".to_string(), syntax.punctuation),
+            ];
+            if !rest.is_empty() {
+                out.push((rest.to_string(), value(rest, syntax, plain)));
+            }
+            out
+        }
+        None => vec![(text.to_string(), value(text, syntax, plain))],
+    }
+}
+
+/// Where each edit sits, for its card: "¶ 2", "Figure 1", "gateway.toml:2"
+/// (pink's review notes name their spot in mono, pink: comment_ui.rs).
+fn locations(blocks: &[DocBlock], count: usize) -> Vec<SharedString> {
+    let mut out = vec![SharedString::default(); count];
+    let mut set = |ix: usize, label: String| {
+        if let Some(slot) = out.get_mut(ix) {
+            *slot = label.into();
+        }
+    };
+    let (mut paragraphs, mut figures) = (0, 0);
+    for block in blocks {
+        match block {
+            DocBlock::Paragraph(runs) => {
+                paragraphs += 1;
+                for run in runs {
+                    if let Run::Edit(ix) = run {
+                        set(*ix, format!("¶ {paragraphs}"));
+                    }
+                }
+            }
+            DocBlock::Figure { edit, .. } => {
+                figures += 1;
+                if let Some(ix) = edit {
+                    set(*ix, format!("Figure {figures}"));
+                }
+            }
+            DocBlock::Code { file, lines } => {
+                let name = file.rsplit('/').next().unwrap_or_default();
+                for (line_ix, line) in lines.iter().enumerate() {
+                    for run in line {
+                        if let Run::Edit(ix) = run {
+                            set(*ix, format!("{name}:{}", line_ix + 1));
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 /// p95 latency, with the slowdown as a spike over the target line.
@@ -543,7 +666,7 @@ fn chart(line: Hsla, fill: Hsla, target: Hsla, grid: Hsla) -> impl IntoElement {
             if let Ok(path) = slo.build() {
                 window.paint_path(path, target);
             }
-            let mut stroke = PathBuilder::stroke(px(1.75));
+            let mut stroke = PathBuilder::stroke(px(1.5));
             stroke.add_polygon(&points, false);
             if let Ok(path) = stroke.build() {
                 window.paint_path(path, line);
@@ -553,49 +676,63 @@ fn chart(line: Hsla, fill: Hsla, target: Hsla, grid: Hsla) -> impl IntoElement {
     .size_full()
 }
 
-fn blink(id: impl Into<ElementId>, color: Hsla, height: f32) -> impl IntoElement {
+/// The typing caret: pink's 2 px caret, solid while typing
+/// (pink: composer.rs `CARET_WIDTH`, `caret_visible`).
+fn caret(color: Hsla, height: f32) -> Div {
     div()
-        .w(px(2.))
+        .w(px(layout::CARET_WIDTH))
         .h(px(height))
         .flex_none()
-        .rounded_full()
         .bg(color)
-        .with_animation(
-            id,
-            Animation::new(Duration::from_millis(1000)).repeat(),
-            |el, t| el.opacity(if t < 0.55 { 1.0 } else { 0.15 }),
-        )
 }
 
-fn pulse(id: impl Into<ElementId>, color: Hsla) -> impl IntoElement {
+/// A header button for one agent: its monogram tile in a 28 px chrome
+/// control, `hover_wash` at rest and `fill(Primary)` while followed
+/// (pink: chrome rows' hover and selected fills).
+fn agent_button(
+    key: String,
+    agent: &CursorAgent,
+    tint: Tint,
+    following: bool,
+    faded: bool,
+    t: &Pink,
+) -> Stateful<Div> {
+    let ring = t.focus_ring();
+    let hover = t.fill(FillTier::Tertiary);
+    let (rest, hover) = if following {
+        (t.fill(FillTier::Primary), t.fill(FillTier::Primary))
+    } else {
+        (hover.opacity(0.0), hover)
+    };
+    let label: SharedString = if following {
+        format!("Stop following {}", agent.name).into()
+    } else {
+        format!("Follow {}", agent.name).into()
+    };
     div()
-        .size(px(5.))
-        .flex_none()
-        .rounded_full()
-        .bg(color)
-        .with_animation(
-            id,
-            Animation::new(Duration::from_millis(1200))
-                .repeat()
-                .with_easing(EASE_IN_OUT.easing()),
-            |el, t| el.opacity(0.3 + 0.7 * (1.0 - (t * 2.0 - 1.0).abs())),
-        )
-}
-
-/// A round monogram in the agent's color.
-fn face(name: &str, color: Hsla, size: f32, t: &Pink) -> Div {
-    div()
-        .size(px(size))
+        .id(ElementId::Name(key.clone().into()))
+        .role(Role::Button)
+        .aria_label(label.clone())
+        .size(px(pink::chrome::CONTROL_M))
         .flex_none()
         .flex()
         .items_center()
         .justify_center()
-        .rounded_full()
-        .bg(color)
-        .text_size(px(size * 0.46))
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(if t.dark { t.on_solid } else { t.on_accent })
-        .child(name.chars().next().unwrap_or('?').to_string())
+        .rounded(px(pink::chrome::RADIUS_M))
+        .tab_index(0)
+        .cursor_pointer()
+        .focus_visible(move |s| pink::focus_ring(s, ring))
+        .on_key_down(pink::swallow_activation_key)
+        .hover_fill(key, rest, hover)
+        .tooltip(pink::text_tooltip(label))
+        .tooltip_show_delay(layout::TOOLTIP_DELAY)
+        .child(
+            pink::monogram_tile(tint.raw, &agent.name, AGENT_TILE, t).opacity(if faded {
+                0.5
+            } else {
+                1.0
+            }),
+        )
 }
 
 // ---------------------------------------------------------------------------
@@ -625,15 +762,21 @@ impl RenderOnce for AgentCursors {
             .enumerate()
             .map(|(ix, e)| Stage::of(e, clock, decisions.get(ix).copied().flatten()))
             .collect();
-        let colors: Vec<Hsla> = self.agents.iter().map(|a| agent_color(a.hue, &t)).collect();
-        let color_of = |edit: &DocEdit| colors.get(edit.agent).copied().unwrap_or(t.accent);
+        let tints: Vec<Tint> = (0..self.agents.len()).map(|ix| Tint::of(ix, &t)).collect();
+        let tint_of = |agent: usize| tints.get(agent).copied().unwrap_or_else(|| Tint::of(0, &t));
         let dim_of = |agent: usize| match following {
-            Some(f) if f != agent => 0.28,
+            Some(f) if f != agent => 0.3,
             _ => 1.0,
         };
+        let locations = locations(&self.blocks, self.edits.len());
+        let syntax = t.syntax();
+        // Agent washes share pink's own alphas: a drag selection at the
+        // selection token's, a suggestion's underlay at the inline-code
+        // plate's (pink: popover.rs match highlight).
+        let select_alpha = t.selection.a;
+        let underlay_alpha = t.code_wash.a;
 
         // -- Document ----------------------------------------------------------
-        let body_size = 14.0;
         let word = |w: String| {
             div()
                 .flex_none()
@@ -646,14 +789,14 @@ impl RenderOnce for AgentCursors {
                 return div().into_any_element();
             };
             let stage = stages[ix];
-            let color = color_of(edit);
-            let wash = color.opacity(if t.dark { 0.22 } else { 0.14 });
-            let span_key = format!("{key}-span-{ix}-{generation}");
+            let tint = tint_of(edit.agent);
+            let underlay = tint.raw.opacity(underlay_alpha);
             let base = div()
                 .relative()
                 .flex()
                 .flex_none()
                 .items_center()
+                .gap_x(px(if mono { MONO_GAP } else { WORD_GAP }))
                 .whitespace_nowrap()
                 .child(anchor(&anchors, format!("edit-{ix}")));
             let selection = |p: f32| {
@@ -663,8 +806,8 @@ impl RenderOnce for AgentCursors {
                     .bottom(px(1.))
                     .left_0()
                     .w(relative(p))
-                    .rounded(px(2.))
-                    .bg(wash)
+                    .rounded(px(3.))
+                    .bg(tint.raw.opacity(select_alpha))
             };
             match &edit.kind {
                 EditKind::Replace { old, new } => {
@@ -672,10 +815,9 @@ impl RenderOnce for AgentCursors {
                         Stage::Work(p) => {
                             let n = new.chars().count();
                             let shown = ((p * n as f32) as usize + 1).min(n);
-                            Some(new.chars().take(shown).collect::<String>())
+                            new.chars().take(shown).collect::<String>()
                         }
-                        Stage::Review => Some(new.to_string()),
-                        _ => None,
+                        _ => new.to_string(),
                     };
                     match stage {
                         Stage::Accepted => base.child(new.clone()).into_any_element(),
@@ -686,32 +828,28 @@ impl RenderOnce for AgentCursors {
                             .child(selection(p))
                             .child(div().relative().child(old.clone()))
                             .into_any_element(),
-                        _ => base
+                        // The suggestion: the old words struck in the faint
+                        // tone, the new ones in the agent's tint on its
+                        // underlay, the caret riding the end while it types.
+                        Stage::Work(_) | Stage::Review => base
                             .child(
                                 div()
-                                    .text_color(t.text_faint)
+                                    .text_color(t.readable_faint(0.9))
                                     .line_through()
-                                    .text_decoration_color(color.opacity(0.7))
+                                    .text_decoration_color(t.content_faint)
                                     .child(old.clone()),
                             )
-                            .child(div().w(px(if mono { 0.0 } else { 3.5 })))
                             .child(
                                 div()
                                     .flex()
                                     .items_center()
                                     .px(px(1.))
-                                    .rounded(px(2.))
-                                    .bg(wash)
-                                    .text_color(t.text)
-                                    .border_b_1()
-                                    .border_color(color)
-                                    .child(typed.unwrap_or_default())
+                                    .rounded(px(3.))
+                                    .bg(underlay)
+                                    .text_color(tint.text)
+                                    .child(typed)
                                     .when(matches!(stage, Stage::Work(_)), |el| {
-                                        el.child(blink(
-                                            ElementId::Name(format!("{span_key}-caret").into()),
-                                            color,
-                                            if mono { 15.0 } else { 17.0 },
-                                        ))
+                                        el.child(caret(tint.glyph, if mono { 14.0 } else { 17.0 }))
                                     }),
                             )
                             .into_any_element(),
@@ -725,11 +863,19 @@ impl RenderOnce for AgentCursors {
                     Stage::Work(_) | Stage::Review => base
                         .child(
                             div()
-                                .rounded(px(2.))
-                                .bg(wash)
-                                .border_b_2()
-                                .border_color(color)
-                                .child(quoted.clone()),
+                                .relative()
+                                .rounded(px(3.))
+                                .bg(underlay)
+                                .child(quoted.clone())
+                                .child(
+                                    div()
+                                        .absolute()
+                                        .left_0()
+                                        .right_0()
+                                        .bottom(px(1.))
+                                        .h(px(NOTE_BAR))
+                                        .bg(tint.glyph),
+                                ),
                         )
                         .into_any_element(),
                     _ => base.child(quoted.clone()).into_any_element(),
@@ -743,26 +889,24 @@ impl RenderOnce for AgentCursors {
         for (bix, block) in self.blocks.iter().enumerate() {
             let el: AnyElement = match block {
                 DocBlock::Title(title) => div()
-                    .text_size(px(text::LARGE))
-                    .line_height(px(28.))
+                    .relative()
+                    .text_size(px(H1.0))
+                    .line_height(px(H1.1))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(t.text)
                     .child(anchor(&anchors, "title".into()))
-                    .relative()
                     .child(title.clone())
                     .into_any_element(),
                 DocBlock::Meta(meta) => div()
-                    .mt(px(2.))
-                    .mb(px(space::S8))
-                    .text_size(px(text::FOOTNOTE))
-                    .text_color(t.text_faint)
+                    .mt(px(space::S4))
+                    .type_style(TextStyle::Footnote)
+                    .text_color(t.content_faint)
                     .child(meta.clone())
                     .into_any_element(),
                 DocBlock::Heading(heading) => div()
-                    .mt(px(space::S16))
-                    .mb(px(space::S4))
-                    .text_size(px(15.))
-                    .line_height(px(22.))
+                    .mt(px(BLOCK_GAP + H3_TOP_EXTRA))
+                    .text_size(px(H3.0))
+                    .line_height(px(H3.1))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(t.text)
                     .child(heading.clone())
@@ -775,12 +919,12 @@ impl RenderOnce for AgentCursors {
                             Run::Edit(ix) => flow.span(span_for(*ix, false)),
                         }
                     }
-                    flow.render(3.8)
+                    flow.render()
                         .relative()
-                        .mt(px(space::S6))
-                        .text_size(px(body_size))
-                        .line_height(px(23.))
-                        .text_color(t.text_muted)
+                        .mt(px(BLOCK_GAP))
+                        .text_size(px(PROSE_SIZE))
+                        .line_height(px(PROSE_LINE))
+                        .text_color(t.text)
                         .child(anchor(&anchors, format!("block-{bix}")))
                         .into_any_element()
                 }
@@ -791,26 +935,32 @@ impl RenderOnce for AgentCursors {
                 } => {
                     let resize = edit.and_then(|ix| {
                         self.edits.get(ix).and_then(|e| match e.kind {
-                            EditKind::Resize { from, to } => Some((ix, from, to, color_of(e))),
+                            EditKind::Resize { from, to } => {
+                                Some((stages[ix], from, to, tint_of(e.agent)))
+                            }
                             _ => None,
                         })
                     });
-                    let (target, active, color) = match resize {
-                        Some((ix, from, to, color)) => {
-                            let stage = stages[ix];
-                            let target = if stage.working_or_later() { to } else { from };
-                            let active = matches!(stage, Stage::Select(_) | Stage::Work(_));
-                            (target, active, color)
+                    let (target, active, tint) = match resize {
+                        Some((stage, from, to, tint)) => {
+                            // The corner follows the drag; a dismissed resize
+                            // springs back, an accepted one stays.
+                            let target = match stage {
+                                Stage::Work(p) => from + (to - from) * EASE_IN_OUT.eval(p),
+                                Stage::Review | Stage::Accepted => to,
+                                _ => from,
+                            };
+                            (target, stage.busy(), Some(tint))
                         }
-                        None => (*width, false, t.accent),
+                        None => (*width, false, None),
                     };
-                    let spec = MotionSpec::new(1350, EASE_IN_OUT);
                     // A figure exactly as wide as the column sends GPUI's layout
                     // into a runaway height: keep it a hair narrower.
-                    let w = motion::follow(&format!("{key}-fig-w"), target, spec)
+                    let w = motion::follow(&format!("{key}-fig-w"), target, motion::RESIZE)
                         .min(PAGE_W - PAGE_PAD * 2.0 - 2.0);
                     let h = w * FIGURE_RATIO;
                     figure_box = Some((w, h));
+                    let handle_color = tint.map(|c| c.glyph).unwrap_or(t.focus_ring());
                     let handle = |left: bool, top: bool| {
                         div()
                             .absolute()
@@ -820,37 +970,46 @@ impl RenderOnce for AgentCursors {
                             .when(top, |el| el.top(px(-4.)))
                             .when(!top, |el| el.bottom(px(-4.)))
                             .rounded(px(2.))
-                            .bg(t.surface_card)
+                            .bg(t.bg)
                             .border_1()
-                            .border_color(color)
+                            .border_color(handle_color)
                     };
                     div()
-                        .mt(px(space::S12))
+                        .mt(px(BLOCK_GAP))
                         .flex()
                         .flex_col()
-                        .gap(px(space::S6))
+                        .gap(px(space::S8))
                         .child(
-                            div()
+                            // The figure plate is pink's code surface; the
+                            // grab reads as pink's selection ring, 2 px wide
+                            // and 2 px outside, in the agent's tint.
+                            pink::code_surface(&t)
                                 .relative()
                                 .w(px(w))
                                 .h(px(h))
-                                .rounded(px(radius::MD))
-                                .bg(t.fill(FillTier::Quaternary))
-                                .border_1()
-                                .border_color(t.border)
-                                .when(active, |el| el.shadow(vec![ring(1.5, color)]))
                                 .child(anchor(&anchors, "figure".into()))
                                 .child(chart(
-                                    t.accent,
-                                    t.accent.opacity(if t.dark { 0.16 } else { 0.09 }),
-                                    t.warning.opacity(0.8),
-                                    t.border,
+                                    t.content_muted,
+                                    t.ink(0.05),
+                                    t.readable_icon(t.warning),
+                                    t.separator(false),
                                 ))
                                 .when(active, |el| {
-                                    el.child(handle(true, true))
-                                        .child(handle(false, true))
-                                        .child(handle(true, false))
-                                        .child(handle(false, false))
+                                    el.child(
+                                        div()
+                                            .absolute()
+                                            .top(px(-4.))
+                                            .left(px(-4.))
+                                            .right(px(-4.))
+                                            .bottom(px(-4.))
+                                            .rounded(px(radius::PANEL + 4.0))
+                                            .border_2()
+                                            .border_color(handle_color),
+                                    )
+                                    .child(handle(true, true))
+                                    .child(handle(false, true))
+                                    .child(handle(true, false))
+                                    .child(handle(false, false))
                                 }),
                         )
                         .child(
@@ -858,16 +1017,18 @@ impl RenderOnce for AgentCursors {
                                 .flex()
                                 .items_center()
                                 .gap(px(space::S6))
-                                .text_size(px(text::FOOTNOTE))
-                                .text_color(t.text_faint)
+                                .type_style(TextStyle::Footnote)
+                                .text_color(t.content_faint)
                                 // A bare string in a flex row can be measured at zero
                                 // width and wrap per letter: keep it in its own box.
                                 .child(div().flex_none().whitespace_nowrap().child(caption.clone()))
-                                .when(active, |el| {
+                                .when_some(tint.filter(|_| active), |el, tint| {
                                     el.child(
                                         div()
+                                            .flex_none()
                                             .font_family(pink::MONO)
-                                            .text_color(color)
+                                            .text_size(px(text::CAPTION))
+                                            .text_color(tint.text)
                                             .child(format!("{:.0} px", w)),
                                     )
                                 }),
@@ -876,43 +1037,52 @@ impl RenderOnce for AgentCursors {
                 }
                 DocBlock::Code { file, lines } => {
                     let rows = lines.iter().map(|line| {
-                        let mut row = div().flex().items_center().h(px(20.)).whitespace_nowrap();
+                        let mut row = div()
+                            .flex()
+                            .items_center()
+                            .h(px(CODE_LINE))
+                            .whitespace_nowrap();
                         for run in line {
                             row = match run {
-                                Run::Text(text) => row.child(text.clone()),
+                                Run::Text(text) => row.children(
+                                    code_tokens(text, &syntax, t.text)
+                                        .into_iter()
+                                        .map(|(part, color)| div().text_color(color).child(part)),
+                                ),
                                 Run::Edit(ix) => row.child(span_for(*ix, true)),
                             };
                         }
                         row
                     });
-                    div()
+                    // pink: markdown/render.rs `code_block_frame` + `code_block_header`.
+                    pink::code_surface(&t)
                         .relative()
-                        .mt(px(space::S10))
-                        .rounded(px(radius::MD))
-                        .bg(t.fill(FillTier::Quaternary))
-                        .border_1()
-                        .border_color(t.border)
+                        .mt(px(BLOCK_GAP))
+                        .overflow_hidden()
                         .child(anchor(&anchors, format!("block-{bix}")))
                         .child(
                             div()
-                                .px(px(space::S12))
-                                .h(px(28.))
+                                .h(px(CODE_HEADER))
+                                .pl(px(pink::chrome::CONTENT_INSET))
+                                .pr(px(5.))
                                 .flex()
                                 .items_center()
                                 .border_b_1()
                                 .border_color(t.border)
+                                .bg(t.ink(0.02))
                                 .font_family(pink::MONO)
                                 .text_size(px(text::CAPTION))
-                                .text_color(t.text_faint)
+                                .text_color(t.content_muted)
                                 .child(file.clone()),
                         )
                         .child(
                             div()
-                                .px(px(space::S12))
-                                .py(px(space::S8))
+                                .px(px(pink::chrome::CONTENT_INSET))
+                                .py(px(CODE_PAD_Y))
                                 .font_family(pink::MONO)
-                                .text_size(px(12.5))
-                                .text_color(t.text_muted)
+                                .text_size(px(text::CODE))
+                                .line_height(px(CODE_LINE))
+                                .text_color(t.text)
                                 .children(rows),
                         )
                         .into_any_element()
@@ -1049,12 +1219,13 @@ impl RenderOnce for AgentCursors {
             .map(|(ix, agent)| {
                 let (x, y) = pointers[ix].pos;
                 let pressed = targets.get(ix).is_some_and(|target| target.2);
-                let color = colors[ix];
-                let edge = if t.dark { t.bg } else { t.surface_card };
+                let tint = tints[ix];
+                let edge = t.bg;
+                // A press settles the arrow over pink's micro step.
                 let scale = motion::follow(
                     &format!("{key}-press-{ix}"),
                     if pressed { 0.86 } else { 1.0 },
-                    MotionSpec::new(140, motion::EASE),
+                    motion::MICRO,
                 );
                 div()
                     .absolute()
@@ -1065,35 +1236,38 @@ impl RenderOnce for AgentCursors {
                         canvas(
                             |_, _, _| {},
                             move |bounds, _, window, _| {
-                                paint_arrow(window, bounds.origin, scale, color, edge)
+                                paint_arrow(window, bounds.origin, scale, tint.glyph, edge)
                             },
                         )
                         .w(px(14.))
                         .h(px(19.)),
                     )
                     .child(
-                        div()
+                        // The name tag is pink's text tooltip (pink:
+                        // popover.rs `TextTooltip`), led by a 6 px dot in the
+                        // agent's tint.
+                        pink::tooltip_card(&t)
                             .absolute()
-                            .left(px(11.))
-                            .top(px(17.))
-                            .h(px(20.))
-                            .px(px(7.))
+                            .left(px(10.))
+                            .top(px(18.))
+                            .px(px(space::S8))
+                            .py(px(5.))
                             .flex()
                             .items_center()
-                            .rounded(px(radius::SM))
-                            .bg(color)
-                            .shadow(t.tooltip_shadow())
-                            .text_size(px(text::CAPTION))
-                            .font_weight(FontWeight::SEMIBOLD)
+                            .gap(px(space::S6))
                             .whitespace_nowrap()
-                            .text_color(if t.dark { t.on_solid } else { t.on_accent })
+                            .type_style(TextStyle::Caption)
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(t.text)
+                            .child(div().size(px(6.)).flex_none().rounded_full().bg(tint.glyph))
                             .child(agent.name.clone()),
                     )
             })
             .collect::<Vec<_>>();
 
         // -- Margin cards -----------------------------------------------------
-        let mut cards: Vec<(f32, usize, f32)> = Vec::new();
+        // (wanted top, edit, height, how far its review row is open)
+        let mut cards: Vec<(f32, usize, f32, f32)> = Vec::new();
         for (ix, edit) in self.edits.iter().enumerate() {
             let stage = stages[ix];
             if !stage.started() || matches!(stage, Stage::Accepted | Stage::Dismissed) {
@@ -1107,35 +1281,70 @@ impl RenderOnce for AgentCursors {
             let Some(b) = s.anchor(&anchor_key) else {
                 continue;
             };
-            let height = match edit.kind {
-                EditKind::Comment { .. } => 86.0,
-                _ => 68.0,
-            };
-            cards.push((f32::from(b.origin.y) - 10.0, ix, height));
+            // The review row folds open over pink's `DISCLOSURE`, so the
+            // card grows as smoothly as the notes below it restack.
+            let reveal = motion::follow(
+                &format!("{key}-card-{ix}-actions-{generation}"),
+                if stage == Stage::Review { 1.0 } else { 0.0 },
+                motion::DISCLOSURE,
+            );
+            // A card's head (agent line and body) measures itself when
+            // painted, before that a one-line guess; the folding review row
+            // is added by arithmetic, so the stack never waits a frame on it.
+            let head = s
+                .anchors
+                .borrow()
+                .get(&format!("card-head-{ix}"))
+                .map(|b| f32::from(b.size.height))
+                .unwrap_or(NOTE_TILE + NOTE_GAP + 16.0);
+            let height = head + NOTE_PAD * 2.0 + NOTE_ACTIONS * reveal;
+            cards.push((f32::from(b.origin.y) - 2.0, ix, height, reveal));
         }
         cards.sort_by(|a, b| a.0.total_cmp(&b.0));
-        let mut floor = 12.0f32;
+        // Stack the notes: each as close to its line as it can sit, pushed
+        // down past the one above, then lifted back off the column's bottom
+        // edge, and finally kept below the top inset.
+        let inset = pink::chrome::CONTENT_INSET;
+        let mut floor = inset;
+        for card in cards.iter_mut() {
+            card.0 = card.0.max(floor);
+            floor = card.0 + card.2 + space::S8;
+        }
+        let mut ceiling = body_h - inset;
+        for card in cards.iter_mut().rev() {
+            card.0 = card.0.min(ceiling - card.2);
+            ceiling = card.0 - space::S8;
+        }
+        let mut floor = inset;
+        for card in cards.iter_mut() {
+            card.0 = card.0.max(floor);
+            floor = card.0 + card.2 + space::S8;
+        }
         let mut card_els = Vec::new();
         let mut to_review = 0;
-        for (want, ix, height) in cards {
+        let mut shown_floor = 0.0f32;
+        for (y, ix, height, reveal) in cards {
             let edit = &self.edits[ix];
             let stage = stages[ix];
-            let y = want.max(floor);
-            floor = y + height + CARD_GAP;
-            let y = motion::follow(&format!("{key}-card-y-{ix}"), y, GLIDE);
-            let color = color_of(edit);
+            // Cards restack like a re-sorted list (pink's `RESORT`), but a
+            // card the one above grows into steps down at once: notes never
+            // overlap mid-glide.
+            let y =
+                motion::follow(&format!("{key}-card-y-{ix}"), y, motion::RESORT).max(shown_floor);
+            shown_floor = y + height + space::S8;
+            let tint = tint_of(edit.agent);
             let agent = self
                 .agents
                 .get(edit.agent)
                 .map(|a| a.name.clone())
                 .unwrap_or_default();
             let card_key = format!("{key}-card-{ix}");
-            let busy = matches!(stage, Stage::Select(_) | Stage::Work(_));
+            let busy = stage.busy();
             if stage == Stage::Review {
                 to_review += 1;
             }
             let is_comment = matches!(edit.kind, EditKind::Comment { .. });
-            let review_buttons = (stage == Stage::Review).then(|| {
+            let actions = (reveal > 0.001).then(|| {
                 let act = |accept: bool| {
                     let state = state.clone();
                     move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
@@ -1149,83 +1358,82 @@ impl RenderOnce for AgentCursors {
                         }
                     }
                 };
-                div()
+                let row = div()
                     .flex()
-                    .gap(px(2.))
-                    .child(
-                        pink::icon_button(
-                            format!("{card_key}-ok"),
-                            ICON_CHECK,
-                            ControlSize::Sm,
-                            &t,
-                        )
-                        .on_click(act(true)),
-                    )
+                    .justify_end()
+                    .gap(px(space::S6))
+                    .pt(px(NOTE_GAP + space::S2))
                     .when(!is_comment, |el| {
                         el.child(
-                            pink::icon_button(
-                                format!("{card_key}-no"),
-                                ICON_CLOSE,
+                            pink::button(
+                                format!("{card_key}-dismiss"),
+                                ButtonKind::Ghost,
                                 ControlSize::Sm,
                                 &t,
                             )
+                            .child("Dismiss")
                             .on_click(act(false)),
                         )
                     })
-            });
-            let status = busy.then(|| {
-                let label = match edit.kind {
-                    EditKind::Replace { .. } => "typing",
-                    EditKind::Resize { .. } => "resizing",
-                    EditKind::Comment { .. } => "writing",
-                };
+                    .child(
+                        pink::button(
+                            format!("{card_key}-accept"),
+                            ButtonKind::Secondary,
+                            ControlSize::Sm,
+                            &t,
+                        )
+                        .child(if is_comment { "Resolve" } else { "Accept" })
+                        .on_click(act(true)),
+                    );
                 div()
-                    .flex()
-                    .items_center()
-                    .gap(px(5.))
-                    .text_size(px(text::CAPTION))
-                    .text_color(t.text_faint)
-                    .child(pulse(
-                        ElementId::Name(format!("{card_key}-busy").into()),
-                        color,
-                    ))
-                    .child(label)
+                    .flex_none()
+                    .h(px(NOTE_ACTIONS * reveal))
+                    .overflow_hidden()
+                    .opacity(reveal)
+                    .child(row)
+            });
+            // While the agent works, its verb shimmers like pink's live
+            // status line (pink: transcript.rs working trailer).
+            let status = busy.then(|| {
+                let verb = match (&edit.kind, stage) {
+                    (EditKind::Resize { .. }, _) => "Resizing",
+                    (_, Stage::Select(_)) => "Selecting",
+                    (EditKind::Replace { .. }, _) => "Typing",
+                    (EditKind::Comment { .. }, _) => "Writing",
+                };
+                loaders::shimmer_text(verb, text::CAPTION, 14.0, t.content_muted, t.text)
+                    .flex_none()
             });
             let content: AnyElement = match &edit.kind {
                 EditKind::Replace { old, new } => div()
                     .flex()
                     .flex_wrap()
                     .items_center()
-                    .gap_x(px(5.))
-                    .child(div().text_color(t.text_faint).child("Replace"))
+                    .gap_x(px(space::S4))
                     .child(
                         div()
-                            .text_color(t.text_muted)
+                            .whitespace_nowrap()
+                            .text_color(t.readable_faint(0.9))
                             .line_through()
+                            .text_decoration_color(t.content_faint)
                             .child(old.clone()),
                     )
-                    .child(div().text_color(t.text_faint).child("with"))
+                    .child(div().text_color(t.decorative_muted(0.6)).child("→"))
                     .child(
                         div()
+                            .whitespace_nowrap()
                             .font_weight(FontWeight::MEDIUM)
-                            .text_color(color)
+                            .text_color(t.text)
                             .child(new.clone()),
                     )
                     .into_any_element(),
                 EditKind::Resize { .. } => div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .child(svg().path(ICON_RESIZE).size(px(13.)).text_color(color))
-                    .child(
-                        div()
-                            .text_color(t.text_muted)
-                            .child(if edit.summary.is_empty() {
-                                SharedString::from("Resized the figure")
-                            } else {
-                                edit.summary.clone()
-                            }),
-                    )
+                    .text_color(t.text)
+                    .child(if edit.summary.is_empty() {
+                        SharedString::from("Resized the figure")
+                    } else {
+                        edit.summary.clone()
+                    })
                     .into_any_element(),
                 EditKind::Comment { note, .. } => {
                     let shown = match stage {
@@ -1238,105 +1446,120 @@ impl RenderOnce for AgentCursors {
                         Stage::Select(_) => String::new(),
                         _ => note.to_string(),
                     };
-                    div()
-                        .text_color(t.text)
-                        .line_height(px(18.))
-                        .child(shown)
-                        .into_any_element()
+                    div().text_color(t.text).child(shown).into_any_element()
                 }
             };
+            let rise = motion::TRANSCRIPT_IN_RISE;
+            // Notes from agents you aren't following fade back with them.
+            let dim = dim_of(edit.agent).max(0.5);
             card_els.push(
                 div()
                     .absolute()
-                    .left(px(space::S12))
-                    .right(px(space::S12))
+                    .left(px(pink::chrome::CONTENT_INSET))
+                    .right(px(pink::chrome::CONTENT_INSET))
                     .top(px(y))
-                    .h(px(height))
-                    .opacity(dim_of(edit.agent).max(0.5))
                     .child(
+                        // pink: badges.rs `BadgeCard::row`, the bar in the
+                        // agent's tint – strong while it works, as pink's
+                        // draft note is, quiet once it waits (a saved note).
                         div()
-                            .size_full()
                             .flex()
-                            .flex_col()
-                            .gap(px(space::S6))
-                            .pl(px(space::S10))
-                            .pr(px(space::S6))
-                            .py(px(space::S8))
-                            .rounded(px(radius::LG))
-                            .bg(t.surface_card)
-                            .border_1()
-                            .border_color(if busy { color.opacity(0.55) } else { t.border })
-                            .shadow(t.card_shadow())
-                            .text_size(px(text::FOOTNOTE))
-                            .line_height(px(17.))
+                            .flex_row()
+                            .gap(px(space::S8))
+                            .p(px(NOTE_PAD))
+                            .rounded(px(NOTE_RADIUS))
+                            .bg(t.ink(0.05))
                             .child(
                                 div()
+                                    .flex_none()
+                                    .w(px(NOTE_BAR))
+                                    .rounded(px(1.))
+                                    .bg(tint.glyph.opacity(if busy { 0.7 } else { 0.35 })),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
                                     .flex()
-                                    .items_center()
-                                    .gap(px(space::S6))
-                                    .h(px(20.))
-                                    .child(face(&agent, color, 18.0, &t))
+                                    .flex_col()
                                     .child(
                                         div()
-                                            .font_weight(FontWeight::MEDIUM)
-                                            .text_color(t.text)
-                                            .child(agent.clone()),
+                                            .relative()
+                                            .flex()
+                                            .flex_col()
+                                            .child(anchor(&anchors, format!("card-head-{ix}")))
+                                            .child(
+                                                div()
+                                                    .h(px(NOTE_TILE))
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap(px(space::S6))
+                                                    .child(pink::monogram_tile(
+                                                        tint.raw, &agent, NOTE_TILE, &t,
+                                                    ))
+                                                    .child(
+                                                        div()
+                                                            .flex_none()
+                                                            .type_style(TextStyle::Footnote)
+                                                            .font_weight(FontWeight::MEDIUM)
+                                                            .text_color(t.text)
+                                                            .child(agent.clone()),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .flex_1()
+                                                            .min_w_0()
+                                                            .truncate()
+                                                            .font_family(pink::MONO)
+                                                            .text_size(px(text::CAPTION))
+                                                            .text_color(t.text_faint)
+                                                            .child(locations[ix].clone()),
+                                                    )
+                                                    .children(status),
+                                            )
+                                            .child(
+                                                div()
+                                                    .mt(px(NOTE_GAP))
+                                                    .type_style(TextStyle::Footnote)
+                                                    .child(content),
+                                            ),
                                     )
-                                    .when(is_comment, |el| {
-                                        el.child(
-                                            svg()
-                                                .path(ICON_COMMENT)
-                                                .size(px(12.))
-                                                .text_color(t.text_faint),
-                                        )
-                                    })
-                                    .child(div().flex_1())
-                                    .children(status)
-                                    .children(review_buttons),
-                            )
-                            .child(content),
+                                    .children(actions),
+                            ),
                     )
+                    // New notes arrive like pink's tool rows: 360 ms expo, 4 px rise.
                     .with_animation(
                         ElementId::Name(format!("{card_key}-in-{generation}").into()),
-                        motion::MENU_IN.animation(),
-                        |el, p| el.opacity(p),
+                        motion::TOOL_ROW_REVEAL.animation(),
+                        move |el, p| el.top(px(y + rise * (1.0 - p))).opacity(p * dim),
                     ),
             );
         }
 
         // -- Header --------------------------------------------------------------
-        let faces = self.agents.iter().enumerate().map(|(ix, agent)| {
-            let color = colors[ix];
-            let face_key = format!("{key}-face-{ix}");
+        let agent_buttons = self.agents.iter().enumerate().map(|(ix, agent)| {
             let on = following == Some(ix);
-            let lift = motion::hover_t(&face_key);
-            div()
-                .id(ElementId::Name(face_key.clone().into()))
-                .relative()
-                .ml(px(if ix == 0 { 0.0 } else { -6.0 }))
-                .top(px(-2.0 * lift))
-                .cursor_pointer()
-                .on_hover(motion::hover_listener(face_key))
-                .on_click({
-                    let state = state.clone();
-                    move |_, _, cx| {
-                        state.update(cx, |s, cx| {
-                            s.following = if s.following == Some(ix) {
-                                None
-                            } else {
-                                Some(ix)
-                            };
-                            cx.notify();
-                        })
-                    }
-                })
-                .child(
-                    div()
-                        .rounded_full()
-                        .border_2()
-                        .border_color(if on { color } else { t.surface_card })
-                        .child(face(&agent.name, color, 24.0, &t).opacity(dim_of(ix).max(0.5))),
-                )
+            agent_button(
+                format!("{key}-agent-{ix}"),
+                agent,
+                tints[ix],
+                on,
+                following.is_some() && !on,
+                &t,
+            )
+            .on_click({
+                let state = state.clone();
+                move |_, _, cx| {
+                    state.update(cx, |s, cx| {
+                        s.following = if s.following == Some(ix) {
+                            None
+                        } else {
+                            Some(ix)
+                        };
+                        cx.notify();
+                    })
+                }
+            })
         });
         let follow_chip = following.and_then(|ix| self.agents.get(ix)).map(|agent| {
             pink::button(
@@ -1345,9 +1568,10 @@ impl RenderOnce for AgentCursors {
                 ControlSize::Sm,
                 &t,
             )
-            .child(pink::glyph(ICON_FOLLOW, ControlSize::Sm).text_color(t.text_muted))
+            .aria_label(SharedString::from(format!("Stop following {}", agent.name)))
+            .child(pink::glyph(ICON_FOLLOW, ControlSize::Sm))
             .child(format!("Following {}", agent.name))
-            .child(pink::glyph(ICON_CLOSE, ControlSize::Sm).text_color(t.text_faint))
+            .child(pink::glyph(ICON_CLOSE, ControlSize::Sm))
             .on_click({
                 let state = state.clone();
                 move |_, _, cx| {
@@ -1358,13 +1582,13 @@ impl RenderOnce for AgentCursors {
                 }
             })
         });
-        let accept_all = pink::button(
+        let accept_all = pink::button_enabled(
             format!("{key}-accept-all"),
             ButtonKind::Primary,
             ControlSize::Md,
+            to_review > 0,
             &t,
         )
-        .when(to_review == 0, |el| el.opacity(0.4))
         .child("Accept all")
         .on_click({
             let state = state.clone();
@@ -1375,6 +1599,9 @@ impl RenderOnce for AgentCursors {
                 .map(|(ix, _)| ix)
                 .collect();
             move |_, window, cx| {
+                if reviewable.is_empty() {
+                    return;
+                }
                 let handler = state.update(cx, |s, cx| {
                     for ix in &reviewable {
                         s.review(*ix, true);
@@ -1389,37 +1616,61 @@ impl RenderOnce for AgentCursors {
                 }
             }
         });
+        // A surface toolbar (pink: surface_chrome.rs `toolbar`) with the
+        // titlebar's crumb (pink: shell/tabs.rs `render_title_crumb`).
         let header = div()
             .flex()
             .items_center()
-            .gap(px(space::S10))
-            .h(px(52.))
-            .px(px(space::S16))
+            .gap(px(space::S8))
+            .h(px(layout::TITLEBAR_HEIGHT))
+            .pl(px(pink::chrome::CONTENT_INSET))
+            .pr(px(pink::chrome::EDGE_INSET))
             .border_b_1()
-            .border_color(t.border)
-            .child(svg().path(ICON_DOC).size(px(16.)).text_color(t.text_muted))
+            .border_color(t.separator(false))
             .child(
                 div()
+                    .flex_1()
+                    .min_w_0()
                     .flex()
                     .items_center()
                     .gap(px(space::S6))
                     .text_size(px(text::BODY))
-                    .child(div().text_color(t.text_muted).child(self.folder.clone()))
-                    .child(div().text_color(t.text_faint).child("/"))
                     .child(
                         div()
+                            .flex_none()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(t.text.opacity(0.9))
+                            .child(self.folder.clone()),
+                    )
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_color(t.decorative_muted(0.4))
+                            .child("›"),
+                    )
+                    .child(
+                        div()
+                            .min_w_0()
+                            .truncate()
                             .font_weight(FontWeight::MEDIUM)
-                            .text_color(t.text)
+                            .text_color(t.text.opacity(0.85))
                             .child(self.title.clone()),
                     ),
             )
-            .child(div().flex_1())
             .children(follow_chip)
-            .child(div().flex().items_center().pl(px(4.)).children(faces))
             .child(
                 div()
-                    .text_size(px(text::FOOTNOTE))
-                    .text_color(t.text_muted)
+                    .flex()
+                    .items_center()
+                    .gap(px(pink::chrome::CONTROL_GAP / 2.0))
+                    .children(agent_buttons),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .type_style(TextStyle::Footnote)
+                    .font_features(pink::tabular_figures())
+                    .text_color(t.readable_muted(0.7))
                     .child(match to_review {
                         0 => "Nothing to review".to_string(),
                         1 => "1 to review".to_string(),
@@ -1440,15 +1691,18 @@ impl RenderOnce for AgentCursors {
             .children(doc)
             .with_animation(
                 ElementId::Name(format!("{key}-page-{generation}").into()),
-                motion::VIEW_IN.animation(),
+                motion::TRANSCRIPT_IN.animation(),
                 |el, p| el.opacity(if p >= 1.0 { 1.0 } else { 0.4 + 0.6 * p }),
             );
+        // GPUI clips children to the card's rectangle, not its rounded
+        // corner: the margin's fill rounds itself inside the 1 px edge.
         let margin = div()
             .relative()
             .flex_1()
+            .rounded_br(px(radius::inner(radius::SECTION_CARD, 1.0)))
             .bg(t.surface)
             .border_l_1()
-            .border_color(t.border)
+            .border_color(t.separator(false))
             .children(card_els);
         let body = div()
             .relative()
@@ -1469,8 +1723,14 @@ impl RenderOnce for AgentCursors {
             window.request_animation_frame();
         }
         motion::keep_alive(window);
-        pink::card(&t)
+        div()
             .w(px(WIDTH))
+            .flex()
+            .flex_col()
+            .rounded(px(radius::SECTION_CARD))
+            .border_1()
+            .border_color(t.border)
+            .bg(t.bg)
             .overflow_hidden()
             .font_family(pink::SANS)
             .text_color(t.text)
@@ -1482,10 +1742,10 @@ impl RenderOnce for AgentCursors {
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |_, _| {
         AgentCursors::new("agent-cursors", "Incidents", "INC-2291 postmortem")
-            .agent(CursorAgent::new("Scribe", 292.0))
-            .agent(CursorAgent::new("Analyst", 222.0))
-            .agent(CursorAgent::new("Fixer", 150.0))
-            .agent(CursorAgent::new("Reviewer", 28.0))
+            .agent(CursorAgent::new("Scribe"))
+            .agent(CursorAgent::new("Analyst"))
+            .agent(CursorAgent::new("Fixer"))
+            .agent(CursorAgent::new("Reviewer"))
             .block(DocBlock::Title("Checkout slowdown, October 14".into()))
             .block(DocBlock::Meta("Postmortem · Payments · Draft".into()))
             .block(DocBlock::Paragraph(vec![
