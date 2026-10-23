@@ -1,62 +1,93 @@
-//! Agent Plan – the steps an agent proposes, shaped by you before it runs.
+//! Agent Plan – the steps an agent proposes, shaped by you, then followed
+//! as they run. The plan rides on the composer, the way pink stacks its own
+//! pieces there (`composer.rs`: checklist, notices and the queue tray sit in
+//! the column above the pill).
 //!
-//! In **draft** the plan is a list you edit: double-click a title to rename
-//! it, drag the grip to reorder, remove a step or add your own. **Run** turns
-//! the same list into a live run: a segmented bar fills step by step, the
-//! active step spins and counts up, and a failed step unfolds with its error,
-//! a "Retry from here" and a "Skip".
+//! In **draft** the plan is a tray emerging from behind the composer, drawn
+//! like pink's message queue (`queue.rs`) under the goal card's header bar
+//! (`composer/goals.rs`): drag a row to reorder it, rename a
+//! step with the pen (or a double-click), remove one, add your own, then
+//! **Run plan**. The run is pink's provider checklist
+//! (`composer/checklist.rs`): one quiet "2/5 · In progress: …" line that
+//! unfolds into a "Status · step" line per step. A failed step raises pink's
+//! composer notice (`notice.rs`) with "Retry from here" and "Skip step"; the
+//! checklist's close button ends the run and hands the plan back to you.
 //!
 //! ```ignore
 //! AgentPlan::new("rotate", "Rotate staging database credentials")
 //!     .step(PlanStep::new("Snapshot the staging database").tool("db.snapshot").estimate(3.0))
 //!     .step(PlanStep::new("Restart services one by one").tool("deploy.rollout").estimate(4.0))
+//!     .composer(my_composer)
 //!     .on_run(|steps, _, _| println!("running {} steps", steps.len()))
 //! ```
 //!
 //! The run is simulated from each step's estimate (use [`AgentPlan::fail_once`]
 //! to rehearse a failure), so the component works on its own in a demo.
 
-use std::{
-    f32::consts::{PI, TAU},
-    rc::Rc,
-    sync::Arc,
-};
+use std::{ops::Range, rc::Rc, sync::Arc};
 use web_time::{Duration, Instant};
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, AnyView, App, ClickEvent, ElementId, Entity, FontWeight,
-    Hsla, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, PathBuilder, Pixels,
-    SharedString, Subscription, Task, Window, canvas, div, point, prelude::*, px, relative, svg,
+    AnimationExt, AnyElement, AnyView, App, ClickEvent, ClipboardItem, Div, DragMoveEvent,
+    ElementId, EmptyView, Entity, FontWeight, HighlightStyle, IntoElement, MouseButton,
+    MouseDownEvent, Role, SharedString, Stateful, StyledText, Subscription, Task, Window, div, phi,
+    prelude::*, px, svg,
 };
 
 use crate::{
     HoverFill,
-    motion::{self, EASE_OUT_BACK, GLIDE, LINEAR, MotionSpec, ROW_IN},
-    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, radius, space, text},
+    motion::{self, TAB_SLIDE},
+    pink::{
+        self, ButtonKind, ControlSize, FillTier, Pink, layout, loaders::format_elapsed, radius,
+        tabular_figures,
+    },
     primitives::{InputEvent, TextInput},
     story,
 };
 
 pub const NAME: &str = "Agent Plan";
-pub const DESCRIPTION: &str = "Shape an agent's plan before it starts – rename, reorder, drop or add steps – then follow the run step by step and pick it up again from a failed step";
+pub const DESCRIPTION: &str = "An agent's plan stacked on the composer – reorder, rename, drop or add steps in a tray tucked behind the pill, then follow the run as a quiet 2/5 · In progress line that unfolds into one status per step, with a notice to retry or skip a step that fails";
 
-const ICON_PLAN: &str = "icons/agent-plan/plan.svg";
-const ICON_GRIP: &str = "icons/agent-plan/grip.svg";
-const ICON_PLUS: &str = "icons/agent-plan/plus.svg";
+const ICON_ARROW_DOWN: &str = "icons/agent-plan/alt-arrow-down.svg";
+const ICON_ARROW_RIGHT: &str = "icons/agent-plan/alt-arrow-right.svg";
+const ICON_ARROW_UP: &str = "icons/agent-plan/arrow-up.svg";
+const ICON_CHECKLIST: &str = "icons/agent-plan/checklist.svg";
 const ICON_CLOSE: &str = "icons/agent-plan/close.svg";
-const ICON_CHECK: &str = "icons/agent-plan/check.svg";
+const ICON_COPY: &str = "icons/agent-plan/copy.svg";
+const ICON_DANGER: &str = "icons/agent-plan/danger-triangle.svg";
+const ICON_DRAG: &str = "icons/agent-plan/queue-drag-handle.svg";
+const ICON_EDIT: &str = "icons/agent-plan/pen.svg";
 const ICON_PLAY: &str = "icons/agent-plan/play.svg";
-const ICON_RETRY: &str = "icons/agent-plan/retry.svg";
-const ICON_ALERT: &str = "icons/agent-plan/alert.svg";
-const ICON_TOOL: &str = "icons/agent-plan/tool.svg";
-const ICON_SKIP: &str = "icons/agent-plan/skip.svg";
-const ICON_STOP: &str = "icons/agent-plan/stop.svg";
+const ICON_PLUS: &str = "icons/agent-plan/plus.svg";
+const ICON_REMOVE: &str = "icons/agent-plan/trash-bin-minimalistic.svg";
+const ICON_SAVE: &str = "icons/agent-plan/queue-check.svg";
+const ICON_CANCEL: &str = "icons/agent-plan/queue-close.svg";
 
-/// Height of a step row; a failed row unfolds by [`FAIL_EXTRA`].
-const ROW_H: f32 = 56.0;
-const FAIL_EXTRA: f32 = 36.0;
-/// Width of the plan card.
-const WIDTH: f32 = 560.0;
+/// Width of the composer column the plan stacks in.
+const WIDTH: f32 = 600.0;
+/// The composer stack's column gap (pink `Theme::SPACE_SM`).
+const STACK_GAP: f32 = 8.0;
+/// The tray is inset from the column and tucked behind the composer (pink
+/// `QUEUE_SIDE_INSET`, `QUEUE_COMPOSER_OVERLAP`).
+const TRAY_INSET: f32 = 16.0;
+const TRAY_OVERLAP: f32 = 18.0;
+/// The tray's header bar and its glyph (pink goals.rs `HEADER_HEIGHT`,
+/// `GLYPH`).
+const TRAY_HEADER_H: f32 = 38.0;
+const TRAY_GLYPH: f32 = 14.0;
+/// Tray rows (pink `queue.rs`: `ROW_HEIGHT`, `QUEUE_TEXT_SIZE`, `ROW_PAD_X`,
+/// `ROW_RADIUS`, `QUEUE_ICON_SIZE`).
+const ROW_H: f32 = 36.0;
+const ROW_TEXT: f32 = 12.5;
+const ROW_PAD_X: f32 = 8.0;
+const ROW_RADIUS: f32 = radius::MD;
+const TRAY_ICON: f32 = 13.0;
+/// The checklist (pink `render_checklist`): 11.5 text, a 28 disclosure row,
+/// a 24 close button, at most 144 of step lines.
+const CHECKLIST_TEXT: f32 = 11.5;
+const CHECKLIST_ROW_H: f32 = 28.0;
+const CHECKLIST_CLOSE: f32 = 24.0;
+const CHECKLIST_MAX_H: f32 = 144.0;
 /// How long the demo waits before it acts on its own.
 const AUTO_RUN: Duration = Duration::from_millis(2600);
 const AUTO_RETRY: Duration = Duration::from_millis(3400);
@@ -68,7 +99,7 @@ type StepsHandler = Rc<dyn Fn(&[PlanStep], &mut Window, &mut App)>;
 #[derive(Clone, Debug)]
 pub struct PlanStep {
     pub title: SharedString,
-    /// The tool the agent will call, shown in monospace under the title.
+    /// The tool the agent will call, shown under the title in the draft.
     pub tool: SharedString,
     /// Expected run time in seconds.
     pub estimate: f32,
@@ -104,13 +135,29 @@ pub enum StepStatus {
     Skipped,
 }
 
+impl StepStatus {
+    /// The checklist's status word (pink `render_checklist`; "Failed" and
+    /// "Skipped" are the plan's own).
+    fn word(self) -> &'static str {
+        match self {
+            Self::Pending => "Pending",
+            Self::Running => "In progress",
+            Self::Done => "Completed",
+            Self::Failed => "Failed",
+            Self::Skipped => "Skipped",
+        }
+    }
+}
+
 #[derive(IntoElement)]
 pub struct AgentPlan {
     id: ElementId,
     title: SharedString,
     steps: Vec<PlanStep>,
     autoplay: bool,
+    expanded: bool,
     failure: Option<(usize, SharedString)>,
+    composer: Option<AnyElement>,
     on_run: Option<StepsHandler>,
     on_change: Option<StepsHandler>,
 }
@@ -122,7 +169,9 @@ impl AgentPlan {
             title: title.into(),
             steps: Vec::new(),
             autoplay: false,
+            expanded: false,
             failure: None,
+            composer: None,
             on_run: None,
             on_change: None,
         }
@@ -136,6 +185,19 @@ impl AgentPlan {
 
     pub fn steps(mut self, steps: impl IntoIterator<Item = PlanStep>) -> Self {
         self.steps.extend(steps);
+        self
+    }
+
+    /// The composer the plan stacks on: the draft tray tucks behind it, the
+    /// checklist and notices sit above it.
+    pub fn composer(mut self, composer: impl IntoElement) -> Self {
+        self.composer = Some(composer.into_any_element());
+        self
+    }
+
+    /// Opens the run's checklist unfolded (pink starts it folded).
+    pub fn expanded(mut self, expanded: bool) -> Self {
+        self.expanded = expanded;
         self
     }
 
@@ -183,7 +245,7 @@ enum Phase {
 }
 
 struct Step {
-    /// Stable key for element ids and followers.
+    /// Stable key for element ids.
     key: usize,
     plan: PlanStep,
     status: StepStatus,
@@ -197,29 +259,51 @@ impl Step {
     fn duration(&self) -> f32 {
         self.plan.estimate * (0.82 + ((self.key * 37) % 29) as f32 / 100.0)
     }
+
+    fn reset(&mut self) {
+        self.status = StepStatus::Pending;
+        self.started = None;
+        self.elapsed = 0.0;
+        self.error = None;
+    }
 }
 
-struct Drag {
-    key: usize,
-    start_mouse: Pixels,
-    start_top: f32,
-    top: f32,
+/// A tray row being dragged (pink `QueueDragPayload`), scoped to its plan.
+struct StepDrag {
+    plan: SharedString,
+    from: usize,
+}
+
+/// Where the dragged row would land (pink `QueueDragState`).
+struct DragState {
+    from: usize,
+    over: usize,
+    prev_over: usize,
+    epoch: usize,
 }
 
 struct PlanState {
     steps: Vec<Step>,
     phase: Phase,
     phase_since: Instant,
-    run_started: Option<Instant>,
-    run_elapsed: f32,
+    /// Run time banked while paused, plus the running stretch.
+    run_clock: f32,
+    run_resumed: Option<Instant>,
+    /// Bumped when the plan swaps between the tray and the checklist, so
+    /// the arriving piece fades in.
+    epoch: usize,
+    /// Bumped on every failure, so each notice fades in.
+    failures: usize,
+    expanded: bool,
     editing: Option<usize>,
     rename: Entity<TextInput>,
     adding: bool,
     add: Entity<TextInput>,
-    drag: Option<Drag>,
+    drag: Option<DragState>,
     next_key: usize,
-    /// (step key, message): fails once, then clears.
+    /// (step key, message): fails once, then clears; autoplay re-arms it.
     failure: Option<(usize, SharedString)>,
+    rehearsal: Option<(usize, SharedString)>,
     autoplay: bool,
     on_run: Option<StepsHandler>,
     on_change: Option<StepsHandler>,
@@ -232,6 +316,7 @@ impl PlanState {
         steps: Vec<PlanStep>,
         failure: Option<(usize, SharedString)>,
         autoplay: bool,
+        expanded: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -243,10 +328,7 @@ impl PlanState {
                 window,
                 |this, _, event: &InputEvent, window, cx| match event {
                     InputEvent::Submit(_) | InputEvent::Blur => this.commit_rename(window, cx),
-                    InputEvent::Escape => {
-                        this.editing = None;
-                        cx.notify();
-                    }
+                    InputEvent::Escape => this.cancel_rename(cx),
                     _ => {}
                 },
             ),
@@ -254,17 +336,12 @@ impl PlanState {
                 &add,
                 window,
                 |this, _, event: &InputEvent, window, cx| match event {
-                    InputEvent::Submit(text) => {
-                        this.add_step(text.clone(), window, cx);
-                    }
-                    InputEvent::Escape => {
-                        this.adding = false;
-                        this.add.update(cx, |input, cx| input.clear(cx));
-                        cx.notify();
-                    }
-                    InputEvent::Blur if this.add.read(cx).is_empty() => {
-                        this.adding = false;
-                        cx.notify();
+                    InputEvent::Submit(text) => this.add_step(text.clone(), window, cx),
+                    InputEvent::Escape => this.cancel_add(cx),
+                    InputEvent::Blur if this.adding => {
+                        let text = this.add.read(cx).text();
+                        this.add_step(text, window, cx);
+                        this.cancel_add(cx);
                     }
                     _ => {}
                 },
@@ -296,14 +373,18 @@ impl PlanState {
                 .collect(),
             phase: Phase::Draft,
             phase_since: Instant::now(),
-            run_started: None,
-            run_elapsed: 0.0,
+            run_clock: 0.0,
+            run_resumed: None,
+            epoch: 0,
+            failures: 0,
+            expanded,
             editing: None,
             rename,
             adding: false,
             add,
             drag: None,
             next_key: count,
+            rehearsal: failure.clone(),
             failure,
             autoplay,
             on_run: None,
@@ -324,6 +405,9 @@ impl PlanState {
     }
 
     fn set_phase(&mut self, phase: Phase) {
+        if (self.phase == Phase::Draft) != (phase == Phase::Draft) {
+            self.epoch += 1;
+        }
         self.phase = phase;
         self.phase_since = Instant::now();
     }
@@ -331,6 +415,21 @@ impl PlanState {
     /// Any manual input hands the demo over to the person.
     fn take_over(&mut self) {
         self.autoplay = false;
+    }
+
+    fn run_elapsed(&self) -> f32 {
+        self.run_clock + self.run_resumed.map_or(0.0, |r| r.elapsed().as_secs_f32())
+    }
+
+    fn pause_clock(&mut self) {
+        self.run_clock = self.run_elapsed();
+        self.run_resumed = None;
+    }
+
+    fn resume_clock(&mut self) {
+        if self.run_resumed.is_none() {
+            self.run_resumed = Some(Instant::now());
+        }
     }
 
     fn start_step(&mut self, ix: usize) {
@@ -348,24 +447,17 @@ impl PlanState {
         self.editing = None;
         self.adding = false;
         self.drag = None;
-        for step in &mut self.steps {
-            step.status = StepStatus::Pending;
-            step.elapsed = 0.0;
-            step.error = None;
-        }
-        self.run_started = Some(Instant::now());
-        self.run_elapsed = 0.0;
+        self.steps.iter_mut().for_each(Step::reset);
+        self.run_clock = 0.0;
+        self.run_resumed = Some(Instant::now());
         self.set_phase(Phase::Running);
         self.start_step(0);
     }
 
     /// Resets every step from `ix` on and runs again from there.
     fn retry_from(&mut self, ix: usize) {
-        for step in &mut self.steps[ix..] {
-            step.status = StepStatus::Pending;
-            step.elapsed = 0.0;
-            step.error = None;
-        }
+        self.steps[ix..].iter_mut().for_each(Step::reset);
+        self.resume_clock();
         self.set_phase(Phase::Running);
         self.start_step(ix);
     }
@@ -378,25 +470,19 @@ impl PlanState {
 
     fn advance_from(&mut self, ix: usize) {
         if ix < self.steps.len() {
+            self.resume_clock();
             self.set_phase(Phase::Running);
             self.start_step(ix);
         } else {
-            self.run_elapsed = self
-                .run_started
-                .map(|s| s.elapsed().as_secs_f32())
-                .unwrap_or(0.0);
+            self.pause_clock();
             self.set_phase(Phase::Done);
         }
     }
 
     fn back_to_draft(&mut self) {
-        for step in &mut self.steps {
-            step.status = StepStatus::Pending;
-            step.elapsed = 0.0;
-            step.started = None;
-            step.error = None;
-        }
-        self.run_started = None;
+        self.steps.iter_mut().for_each(Step::reset);
+        self.run_clock = 0.0;
+        self.run_resumed = None;
         self.set_phase(Phase::Draft);
     }
 
@@ -405,7 +491,8 @@ impl PlanState {
         let since = now.saturating_duration_since(self.phase_since);
         match self.phase {
             Phase::Draft => {
-                if self.autoplay && since >= AUTO_RUN && self.editing.is_none() {
+                let idle = self.editing.is_none() && !self.adding && self.drag.is_none();
+                if self.autoplay && idle && since >= AUTO_RUN {
                     self.start_run();
                     cx.notify();
                 }
@@ -429,6 +516,8 @@ impl PlanState {
                         let step = &mut self.steps[ix];
                         step.status = StepStatus::Failed;
                         step.error = Some(message);
+                        self.failures += 1;
+                        self.pause_clock();
                         self.set_phase(Phase::Failed);
                     } else if step.elapsed >= duration {
                         step.elapsed = duration;
@@ -440,11 +529,7 @@ impl PlanState {
             }
             Phase::Failed => {
                 if self.autoplay && since >= AUTO_RETRY {
-                    if let Some(ix) = self
-                        .steps
-                        .iter()
-                        .position(|s| s.status == StepStatus::Failed)
-                    {
+                    if let Some(ix) = self.failed_ix() {
                         self.retry_from(ix);
                     }
                     cx.notify();
@@ -452,6 +537,8 @@ impl PlanState {
             }
             Phase::Done => {
                 if self.autoplay && since >= AUTO_RESET {
+                    // The loop rehearses its failure again on the next run.
+                    self.failure = self.rehearsal.clone();
                     self.back_to_draft();
                     cx.notify();
                 }
@@ -459,11 +546,18 @@ impl PlanState {
         }
     }
 
+    fn failed_ix(&self) -> Option<usize> {
+        self.steps
+            .iter()
+            .position(|s| s.status == StepStatus::Failed)
+    }
+
     fn begin_rename(&mut self, key: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(step) = self.steps.iter().find(|s| s.key == key) else {
             return;
         };
         let title = step.plan.title.clone();
+        self.adding = false;
         self.editing = Some(key);
         self.rename
             .update(cx, |input, cx| input.set_text(title, cx));
@@ -487,6 +581,19 @@ impl PlanState {
         cx.notify();
     }
 
+    fn cancel_rename(&mut self, cx: &mut Context<Self>) {
+        if self.editing.take().is_some() {
+            cx.notify();
+        }
+    }
+
+    fn begin_add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.editing = None;
+        self.adding = true;
+        TextInput::focus(&self.add, window, cx);
+        cx.notify();
+    }
+
     fn add_step(&mut self, text: SharedString, window: &mut Window, cx: &mut Context<Self>) {
         let text = text.trim();
         if text.is_empty() {
@@ -496,9 +603,7 @@ impl PlanState {
         self.next_key += 1;
         self.steps.push(Step {
             key,
-            plan: PlanStep::new(text.to_string())
-                .tool("you.note")
-                .estimate(2.4),
+            plan: PlanStep::new(text.to_string()).estimate(2.4),
             status: StepStatus::Pending,
             started: None,
             elapsed: 0.0,
@@ -509,72 +614,97 @@ impl PlanState {
         cx.notify();
     }
 
+    fn cancel_add(&mut self, cx: &mut Context<Self>) {
+        self.adding = false;
+        self.add.update(cx, |input, cx| input.clear(cx));
+        cx.notify();
+    }
+
     fn remove(&mut self, key: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.steps.retain(|s| s.key != key);
+        if self.editing == Some(key) {
+            self.editing = None;
+        }
         self.changed(window, cx);
         cx.notify();
     }
 
-    /// Row tops and heights in the current order.
-    fn layout(&self) -> Vec<(usize, f32, f32)> {
-        let mut top = 0.0;
-        self.steps
-            .iter()
-            .map(|step| {
-                let h = row_height(step);
-                let entry = (step.key, top, h);
-                top += h;
-                entry
-            })
-            .collect()
+    /// Tracks the drop slot while a row is dragged (pink
+    /// `update_queue_drag_over`).
+    fn drag_over(&mut self, from: usize, over: usize, cx: &mut Context<Self>) {
+        match &mut self.drag {
+            Some(drag) if drag.from == from => {
+                if drag.over != over {
+                    drag.prev_over = drag.over;
+                    drag.over = over;
+                    drag.epoch = drag.epoch.wrapping_add(1);
+                    cx.notify();
+                }
+            }
+            _ => {
+                self.drag = Some(DragState {
+                    from,
+                    over,
+                    prev_over: from,
+                    epoch: 0,
+                });
+                cx.notify();
+            }
+        }
     }
 
-    /// Moves the dragged row to follow the pointer and reorders around it.
-    fn drag_to(&mut self, mouse_y: Pixels, cx: &mut Context<Self>) {
-        let Some(drag) = self.drag.as_mut() else {
-            return;
-        };
-        let total: f32 = self.steps.iter().map(row_height).sum();
-        let top = (drag.start_top + f32::from(mouse_y - drag.start_mouse))
-            .clamp(-ROW_H * 0.4, total - ROW_H * 0.6);
-        drag.top = top;
-        let key = drag.key;
-        let Some(from) = self.steps.iter().position(|s| s.key == key) else {
-            return;
-        };
-        let center = top + ROW_H / 2.0;
-        let mut acc = 0.0;
-        let mut to = 0;
-        for step in self.steps.iter().filter(|s| s.key != key) {
-            let h = row_height(step);
-            if acc + h / 2.0 < center {
-                to += 1;
-            }
-            acc += h;
-        }
-        if to != from {
-            let step = self.steps.remove(from);
-            self.steps.insert(to, step);
-        }
-        cx.notify();
-    }
-
-    fn drop_drag(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(drag) = self.drag.take() {
-            let moved = drag.top != drag.start_top;
-            if moved {
-                self.changed(window, cx);
-            }
+    fn cancel_drag(&mut self, cx: &mut Context<Self>) {
+        if self.drag.take().is_some() {
             cx.notify();
         }
     }
+
+    /// Moves the row at `from` to `to` (pink `move_queued`).
+    fn move_step(&mut self, from: usize, to: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if from != to && from < self.steps.len() {
+            let step = self.steps.remove(from);
+            self.steps.insert(to.min(self.steps.len()), step);
+            self.changed(window, cx);
+        }
+        cx.notify();
+    }
 }
 
-fn row_height(step: &Step) -> f32 {
-    if step.status == StepStatus::Failed {
-        ROW_H + FAIL_EXTRA
+/// A pointer inside the step list as a row slot (pink `terminal/panel.rs`
+/// `drop_index`).
+fn drop_index(rel_y: f32, slot: f32, count: usize) -> usize {
+    if count == 0 || slot <= 0.0 {
+        return 0;
+    }
+    ((rel_y / slot).floor().max(0.0) as usize).min(count - 1)
+}
+
+/// Rows between the dragged one and its target shift one slot toward the
+/// gap it leaves (pink `terminal/panel.rs` `slide_offset`).
+fn slide_offset(ix: usize, from: usize, over: usize) -> f32 {
+    if from < over && ix > from && ix <= over {
+        -1.0
+    } else if over < from && ix >= over && ix < from {
+        1.0
     } else {
-        ROW_H
+        0.0
+    }
+}
+
+/// Start and target offsets of a row's slide (pink `queue_drag_offsets`):
+/// the dragged row travels to the hovered slot, the rows in its path slide
+/// into the space it left.
+fn drag_offsets(ix: usize, from: usize, prev_over: usize, over: usize) -> (f32, f32) {
+    if ix == from {
+        (
+            (prev_over as f32 - from as f32) * ROW_H,
+            (over as f32 - from as f32) * ROW_H,
+        )
+    } else {
+        (
+            slide_offset(ix, from, prev_over) * ROW_H,
+            slide_offset(ix, from, over) * ROW_H,
+        )
     }
 }
 
@@ -582,110 +712,856 @@ fn row_height(step: &Step) -> f32 {
 // Rendering
 // ---------------------------------------------------------------------------
 
-fn seconds(value: f32) -> String {
-    if value < 60.0 {
-        format!("{value:.1}s")
-    } else {
-        format!("{}m {:02}s", (value / 60.0) as u32, (value % 60.0) as u32)
+/// Plain checklist copy with the plan's one red word, when a step failed.
+fn status_text(text: String, red: Option<Range<usize>>, t: &Pink) -> StyledText {
+    let styled = StyledText::new(text);
+    match red {
+        Some(range) => styled.with_highlights([(
+            range,
+            HighlightStyle {
+                color: Some(t.readable_tone(t.danger, 0.9)),
+                ..Default::default()
+            },
+        )]),
+        None => styled,
     }
 }
 
-/// A ring with a sweeping arc: the running step's node.
-fn spinner(id: impl Into<ElementId>, size: f32, color: Hsla, track: Hsla) -> impl IntoElement {
-    div().size(px(size)).flex_none().with_animation(
-        id,
-        Animation::new(Duration::from_millis(900)).repeat(),
-        move |el, t| {
-            el.child(
-                canvas(
-                    |_, _, _| {},
-                    move |bounds, _, window, _| {
-                        let c = bounds.center();
-                        let r = f32::from(bounds.size.width) / 2.0 - 1.25;
-                        let at = |a: f32| point(c.x + px(r * a.cos()), c.y + px(r * a.sin()));
-                        let mut ring = PathBuilder::stroke(px(1.5));
-                        ring.move_to(at(0.0));
-                        ring.arc_to(point(px(r), px(r)), px(0.), false, true, at(PI));
-                        ring.arc_to(point(px(r), px(r)), px(0.), false, true, at(TAU));
-                        if let Ok(path) = ring.build() {
-                            window.paint_path(path, track);
-                        }
-                        let start = t * TAU - PI / 2.0;
-                        let mut arc = PathBuilder::stroke(px(1.75));
-                        arc.move_to(at(start));
-                        arc.arc_to(
-                            point(px(r), px(r)),
-                            px(0.),
-                            false,
-                            true,
-                            at(start + PI * 0.6),
-                        );
-                        if let Ok(path) = arc.build() {
-                            window.paint_path(path, color);
-                        }
-                    },
+/// The run as pink's provider checklist (pink: composer/checklist.rs
+/// `Composer::render_checklist`): a 28 disclosure row reading
+/// "done/total · detail" beside a 24 close button, unfolding into one
+/// "Status · step" line per step and a closing note, all 11.5 `text_muted`.
+fn checklist(key: &str, s: &PlanState, state: &Entity<PlanState>, t: &Pink) -> Stateful<Div> {
+    let ring = t.focus_ring();
+    let hover = t.element_hover;
+    let total = s.steps.len();
+    let done = s
+        .steps
+        .iter()
+        .filter(|st| st.status == StepStatus::Done)
+        .count();
+    let find = |status| s.steps.iter().find(|st| st.status == status);
+    let (detail, failed) = if let Some(step) = find(StepStatus::Running) {
+        (format!("In progress: {}", step.plan.title), false)
+    } else if let Some(step) = find(StepStatus::Failed) {
+        (format!("Failed: {}", step.plan.title), true)
+    } else if let Some(step) = find(StepStatus::Pending) {
+        (format!("Next: {}", step.plan.title), false)
+    } else if done == total {
+        ("Plan complete".into(), false)
+    } else {
+        ("Plan finished".into(), false)
+    };
+    let prefix = format!("{done}/{total} · ");
+    let red = failed.then(|| prefix.len()..prefix.len() + "Failed".len());
+    let label = format!("{prefix}{detail}");
+    let expanded = s.expanded;
+    let close_label = if s.phase == Phase::Running {
+        "Stop the run and edit the plan"
+    } else {
+        "Close the run and edit the plan"
+    };
+
+    let row = div()
+        .flex()
+        .items_center()
+        .gap(px(4.))
+        .min_w_0()
+        .child(
+            div()
+                .id(format!("{key}-expand"))
+                .role(Role::Button)
+                .tab_index(0)
+                .tab_stop(true)
+                .aria_label(format!(
+                    "{} plan checklist: {label}",
+                    if expanded { "Collapse" } else { "Expand" }
+                ))
+                .aria_expanded(expanded)
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .px(px(8.))
+                .h(px(CHECKLIST_ROW_H))
+                .rounded(px(radius::SM))
+                .cursor_pointer()
+                .hover(move |style| style.bg(hover))
+                .focus_visible(move |style| pink::focus_ring(style, ring))
+                .on_key_down(pink::swallow_activation_key)
+                .child(
+                    svg()
+                        .path(if expanded {
+                            ICON_ARROW_DOWN
+                        } else {
+                            ICON_ARROW_RIGHT
+                        })
+                        .flex_none()
+                        .size(px(12.))
+                        .text_color(t.text_muted),
                 )
-                .size_full(),
+                .child(
+                    div()
+                        .min_w_0()
+                        .text_ellipsis()
+                        .child(status_text(label.clone(), red, t)),
+                )
+                .on_click({
+                    let state = state.clone();
+                    move |_, _, cx| {
+                        state.update(cx, |s, cx| {
+                            s.take_over();
+                            s.expanded = !s.expanded;
+                            cx.notify();
+                        })
+                    }
+                }),
+        )
+        .child(
+            div()
+                .id(format!("{key}-close"))
+                .role(Role::Button)
+                .tab_index(0)
+                .tab_stop(true)
+                .aria_label(close_label)
+                .flex_none()
+                .size(px(CHECKLIST_CLOSE))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(radius::SM))
+                .cursor_pointer()
+                .hover(move |style| style.bg(hover))
+                .focus_visible(move |style| pink::focus_ring(style, ring))
+                .on_key_down(pink::swallow_activation_key)
+                .child(
+                    svg()
+                        .path(ICON_CLOSE)
+                        .flex_none()
+                        .size(px(12.))
+                        .text_color(t.text_muted),
+                )
+                .on_click({
+                    let state = state.clone();
+                    move |_, _, cx| {
+                        state.update(cx, |s, cx| {
+                            s.take_over();
+                            s.back_to_draft();
+                            cx.notify();
+                        })
+                    }
+                }),
+        );
+
+    let panel = div()
+        .id(format!("{key}-checklist"))
+        .flex()
+        .flex_col()
+        .min_w_0()
+        .text_size(px(CHECKLIST_TEXT))
+        .line_height(phi())
+        .text_color(t.text_muted)
+        .child(row);
+    if !expanded {
+        return panel;
+    }
+    let lines = s.steps.iter().enumerate().map(|(index, step)| {
+        let word = step.status.word();
+        let line = format!("{word} · {}", step.plan.title);
+        let red = (step.status == StepStatus::Failed).then(|| 0..word.len());
+        div()
+            .id(format!("{key}-checklist-step-{index}"))
+            .role(Role::ListItem)
+            .aria_label(line.clone())
+            .child(status_text(line, red, t))
+    });
+    let note = match s.phase {
+        Phase::Failed => format!(
+            "Agent plan · paused at step {} of {total}",
+            s.failed_ix().map_or(0, |ix| ix + 1)
+        ),
+        Phase::Done => format!(
+            "Agent plan · finished in {}",
+            format_elapsed(s.run_elapsed().round() as i64)
+        ),
+        _ => format!(
+            "Agent plan · running for {}",
+            format_elapsed(s.run_elapsed().floor() as i64)
+        ),
+    };
+    panel
+        .child(
+            div()
+                .id(format!("{key}-checklist-rows"))
+                .role(Role::List)
+                .aria_label("Plan steps")
+                .max_h(px(CHECKLIST_MAX_H))
+                .overflow_y_scroll()
+                .flex()
+                .flex_col()
+                .px(px(12.))
+                .gap(px(4.))
+                .children(lines),
+        )
+        .child(
+            div()
+                .px(px(12.))
+                .py(px(4.))
+                .font_features(tabular_figures())
+                .child(note),
+        )
+}
+
+/// A failed step's notice above the composer (pink: notice.rs `notice_chip`,
+/// the danger variant, docked `mx 4` like the composer's failure notice):
+/// an opaque tint, the triangle, a medium title, capsule actions and a copy
+/// button on the title row, the error under it.
+fn failure_notice(key: &str, s: &PlanState, state: &Entity<PlanState>, t: &Pink) -> Option<Div> {
+    let ix = s.failed_ix()?;
+    let message = s.steps[ix].error.clone().unwrap_or_default();
+    let tone = t.danger;
+    let copy = t.readable_tone(t.danger_muted, 0.9);
+    let plate = pink::flatten(tone.opacity(0.08), t.canvas());
+    let copy_key = format!("{key}-notice-copy");
+    let copied = message.clone();
+    Some(
+        div()
+            .mx(px(4.))
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .rounded(px(radius::STACK_NOTICE))
+            .border_1()
+            .border_color(tone.opacity(0.22))
+            .bg(plate)
+            .px(px(10.))
+            .py(px(8.))
+            .text_size(px(12.))
+            .line_height(px(16.))
+            .text_color(copy)
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap(px(8.))
+                    .child(
+                        svg()
+                            .path(ICON_DANGER)
+                            .flex_none()
+                            .size(px(14.))
+                            .text_color(copy),
+                    )
+                    .child(
+                        div()
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(format!("Step {} failed", ix + 1)),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        pink::notice_action(format!("{key}-retry"), t)
+                            .aria_label("Retry the plan from this step")
+                            .child("Retry from here")
+                            .on_click({
+                                let state = state.clone();
+                                move |_, _, cx| {
+                                    state.update(cx, |s, cx| {
+                                        s.take_over();
+                                        s.retry_from(ix);
+                                        cx.notify();
+                                    })
+                                }
+                            }),
+                    )
+                    .child(
+                        pink::notice_action(format!("{key}-skip"), t)
+                            .aria_label("Skip this step")
+                            .child("Skip step")
+                            .on_click({
+                                let state = state.clone();
+                                move |_, _, cx| {
+                                    state.update(cx, |s, cx| {
+                                        s.take_over();
+                                        s.skip(ix);
+                                        cx.notify();
+                                    })
+                                }
+                            }),
+                    )
+                    .child(
+                        div()
+                            .id(copy_key.clone())
+                            .role(Role::Button)
+                            .aria_label("Copy the error")
+                            .flex_none()
+                            .size(px(20.))
+                            .rounded(px(radius::SM))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .cursor_pointer()
+                            .hover_fill(copy_key, tone.opacity(0.0), tone.opacity(0.12))
+                            .on_click(move |_, _, cx| {
+                                cx.stop_propagation();
+                                cx.write_to_clipboard(ClipboardItem::new_string(
+                                    copied.to_string(),
+                                ));
+                            })
+                            .child(
+                                svg()
+                                    .path(ICON_COPY)
+                                    .flex_none()
+                                    .size(px(12.))
+                                    .text_color(t.readable_tone(t.danger_muted, 0.8)),
+                            ),
+                    ),
             )
-        },
+            .child(div().min_w_0().w_full().child(message)),
     )
 }
 
-/// The status node in front of each step.
-fn node(step: &Step, index: usize, phase: Phase, key: &str, t: &Pink) -> impl IntoElement {
-    let size = 20.0;
-    let frame = || {
+/// A tray row's glyph action (pink: queue.rs `queue_action`): a 28 circle,
+/// transparent → `fill(Tertiary)`, the 13 glyph brightening to `text` with
+/// it, a tooltip after the usual delay. Callers add the handlers.
+fn tray_action(
+    row_key: &str,
+    slot: &str,
+    label: &'static str,
+    glyph: &'static str,
+    t: &Pink,
+) -> Stateful<Div> {
+    let key = format!("{row_key}-{slot}");
+    let group = format!("{key}-grp");
+    let ring = t.focus_ring();
+    let wash = t.fill(FillTier::Tertiary);
+    let text = t.text;
+    div()
+        .id(key.clone())
+        .group(group.clone())
+        .role(Role::Button)
+        .aria_label(label)
+        .size(px(28.))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded_full()
+        .cursor_pointer()
+        .hover_fill_fg(key, wash.opacity(0.0), wash, t.content_muted, t.text)
+        .tab_index(0)
+        .focus_visible(move |style| pink::focus_ring(style, ring))
+        .on_key_down(pink::swallow_activation_key)
+        .tooltip(pink::text_tooltip(label))
+        .tooltip_show_delay(layout::TOOLTIP_DELAY)
+        .child(
+            svg()
+                .path(glyph)
+                .flex_none()
+                .size(px(TRAY_ICON))
+                .text_color(t.readable_muted(0.8))
+                .group_hover(group, move |style| style.text_color(text)),
+        )
+}
+
+/// The 20 × 28 leading slot of a tray row (pink `queue_row`'s marker).
+fn row_slot(glyph: &'static str, size: f32, color: gpui::Hsla) -> Div {
+    div()
+        .w(px(20.))
+        .h(px(28.))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(radius::XS))
+        .child(
+            svg()
+                .path(glyph)
+                .flex_none()
+                .size(px(size))
+                .text_color(color),
+        )
+}
+
+/// A row frame shared by the tray's step and add rows (pink `queue_row`):
+/// 36 tall, `px 8`, gap 8, radius 8.
+fn row_frame(id: String) -> Stateful<Div> {
+    div()
+        .id(id)
+        .h(px(ROW_H))
+        .flex_none()
+        .px(px(ROW_PAD_X))
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(8.))
+        .rounded(px(ROW_RADIUS))
+}
+
+/// Save and cancel for a row being typed into (pink's queue edit actions).
+/// They act on mouse-down, before the field's blur commits the text.
+fn edit_actions(
+    row_key: &str,
+    save_label: &'static str,
+    state: &Entity<PlanState>,
+    adding: bool,
+    t: &Pink,
+) -> Div {
+    let save = move |s: &mut PlanState, window: &mut Window, cx: &mut Context<PlanState>| {
+        if adding {
+            let text = s.add.read(cx).text();
+            s.add_step(text, window, cx);
+            s.cancel_add(cx);
+        } else {
+            s.commit_rename(window, cx);
+        }
+    };
+    let cancel = move |s: &mut PlanState, cx: &mut Context<PlanState>| {
+        if adding {
+            s.cancel_add(cx);
+        } else {
+            s.cancel_rename(cx);
+        }
+    };
+    div()
+        .flex_none()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(3.))
+        .child(
+            tray_action(row_key, "save", save_label, ICON_SAVE, t)
+                .on_mouse_down(MouseButton::Left, {
+                    let state = state.clone();
+                    move |_: &MouseDownEvent, window, cx| {
+                        cx.stop_propagation();
+                        state.update(cx, |s, cx| save(s, window, cx));
+                    }
+                })
+                .on_click({
+                    let state = state.clone();
+                    move |event: &ClickEvent, window, cx| {
+                        if event.is_keyboard() {
+                            state.update(cx, |s, cx| save(s, window, cx));
+                        }
+                    }
+                }),
+        )
+        .child(
+            tray_action(row_key, "cancel", "Cancel", ICON_CANCEL, t)
+                .on_mouse_down(MouseButton::Left, {
+                    let state = state.clone();
+                    move |_: &MouseDownEvent, _, cx| {
+                        cx.stop_propagation();
+                        state.update(cx, |s, cx| cancel(s, cx));
+                    }
+                })
+                .on_click({
+                    let state = state.clone();
+                    move |event: &ClickEvent, _, cx| {
+                        if event.is_keyboard() {
+                            state.update(cx, |s, cx| cancel(s, cx));
+                        }
+                    }
+                }),
+        )
+}
+
+/// One step of the draft (pink: queue.rs `queue_row`): the drag marker, the
+/// title over its tool and estimate, remove and edit always present. The
+/// whole row drags; the row being renamed takes the Tertiary fill and the
+/// field in place of its title.
+fn step_row(
+    key: &str,
+    ix: usize,
+    step: &Step,
+    s: &PlanState,
+    state: &Entity<PlanState>,
+    t: &Pink,
+) -> AnyElement {
+    let row_key = format!("{key}-row-{}", step.key);
+    let editing = s.editing == Some(step.key);
+    let step_key = step.key;
+    let stop = |_: &MouseDownEvent, _: &mut Window, cx: &mut App| cx.stop_propagation();
+
+    let content = if editing {
         div()
-            .size(px(size))
+            .flex_1()
+            .min_w_0()
+            .text_size(px(ROW_TEXT))
+            .line_height(px(16.))
+            .text_color(t.text)
+            .child(s.rename.clone())
+            .into_any_element()
+    } else {
+        div()
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .gap(px(1.))
+            .child(
+                div()
+                    .id(format!("{row_key}-title"))
+                    .truncate()
+                    .text_size(px(ROW_TEXT))
+                    .line_height(px(16.))
+                    .text_color(t.text.opacity(0.9))
+                    .child(step.plan.title.clone())
+                    .on_click({
+                        let state = state.clone();
+                        move |event: &ClickEvent, window, cx| {
+                            if event.click_count() >= 2 {
+                                state.update(cx, |s, cx| {
+                                    s.take_over();
+                                    s.begin_rename(step_key, window, cx)
+                                });
+                            }
+                        }
+                    }),
+            )
+            .child(
+                div()
+                    .truncate()
+                    .text_size(px(11.))
+                    .line_height(px(13.))
+                    .text_color(t.text_muted)
+                    .child(format!(
+                        "{} · ~{}",
+                        step.plan.tool,
+                        format_elapsed(step.plan.estimate.round() as i64)
+                    )),
+            )
+            .into_any_element()
+    };
+
+    let actions = if editing {
+        edit_actions(&row_key, "Save step", state, false, t)
+    } else {
+        div()
             .flex_none()
             .flex()
+            .flex_row()
             .items_center()
-            .justify_center()
-            .rounded_full()
-    };
-    match step.status {
-        StepStatus::Running => spinner(
-            ElementId::Name(format!("{key}-spin-{}", step.key).into()),
-            size,
-            t.accent,
-            t.fill(FillTier::Primary),
-        )
-        .into_any_element(),
-        StepStatus::Done => frame()
-            .bg(t.accent)
-            .child(svg().path(ICON_CHECK).size(px(14.)).text_color(t.on_accent))
-            .with_animation(
-                ElementId::Name(format!("{key}-done-{}", step.key).into()),
-                MotionSpec::new(320, EASE_OUT_BACK).animation(),
-                |el, p| el.opacity(p.min(1.0)),
+            .gap(px(3.))
+            .child(
+                tray_action(&row_key, "remove", "Remove step", ICON_REMOVE, t)
+                    .on_mouse_down(MouseButton::Left, stop)
+                    .on_click({
+                        let state = state.clone();
+                        move |_, window, cx| {
+                            cx.stop_propagation();
+                            state.update(cx, |s, cx| {
+                                s.take_over();
+                                s.remove(step_key, window, cx)
+                            })
+                        }
+                    }),
             )
-            .into_any_element(),
-        StepStatus::Failed => frame()
-            .bg(t.danger_strong)
-            .child(svg().path(ICON_ALERT).size(px(16.)).text_color(t.on_accent))
-            .into_any_element(),
-        StepStatus::Skipped => frame()
-            .border_1()
-            .border_color(t.border_strong)
-            .child(svg().path(ICON_SKIP).size(px(12.)).text_color(t.text_faint))
-            .into_any_element(),
-        StepStatus::Pending => frame()
-            .border_1()
-            .border_color(if phase == Phase::Draft {
-                t.border_strong
-            } else {
-                t.border
-            })
-            .text_size(px(text::CAPTION))
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(if phase == Phase::Draft {
-                t.text_muted
-            } else {
-                t.text_faint
-            })
-            .child(format!("{}", index + 1))
-            .into_any_element(),
+            .child(
+                tray_action(&row_key, "edit", "Rename step", ICON_EDIT, t)
+                    .on_mouse_down(MouseButton::Left, stop)
+                    .on_click({
+                        let state = state.clone();
+                        move |_, window, cx| {
+                            cx.stop_propagation();
+                            state.update(cx, |s, cx| {
+                                s.take_over();
+                                s.begin_rename(step_key, window, cx)
+                            })
+                        }
+                    }),
+            )
+    };
+
+    let row = row_frame(row_key.clone())
+        .when(editing, |el| el.bg(t.fill(FillTier::Tertiary)))
+        .when(!editing, |el| {
+            el.hover_wash(row_key.clone(), t.fill(FillTier::Tertiary))
+                .on_drag(
+                    StepDrag {
+                        plan: key.to_string().into(),
+                        from: ix,
+                    },
+                    |_, _, _, cx| {
+                        cx.stop_propagation();
+                        cx.new(|_| EmptyView)
+                    },
+                )
+        })
+        // Keep the title on its column while the field replaces it.
+        .child(if editing {
+            div().w(px(20.)).flex_none()
+        } else {
+            row_slot(ICON_DRAG, TRAY_ICON, t.readable_muted(0.5)).cursor_pointer()
+        })
+        .child(content)
+        .child(actions);
+
+    let Some(drag) = s.drag.as_ref() else {
+        return row.into_any_element();
+    };
+    let (start, target) = drag_offsets(ix, drag.from, drag.prev_over, drag.over);
+    div()
+        .flex_none()
+        .child(row)
+        .with_animation(
+            ElementId::Name(format!("{row_key}-slide-{}", drag.epoch).into()),
+            TAB_SLIDE.animation(),
+            move |el, p| el.relative().top(px(motion::lerp(start, target, p))),
+        )
+        .into_any_element()
+}
+
+/// The row that adds a step: a quiet "Add a step" until clicked, then the
+/// field with save and cancel, in the tray's row anatomy.
+fn add_row(key: &str, s: &PlanState, state: &Entity<PlanState>, t: &Pink) -> Stateful<Div> {
+    let add_key = format!("{key}-add");
+    if s.adding {
+        return row_frame(add_key.clone())
+            .bg(t.fill(FillTier::Tertiary))
+            .child(row_slot(ICON_PLUS, TRAY_ICON, t.readable_muted(0.8)))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_size(px(ROW_TEXT))
+                    .line_height(px(16.))
+                    .text_color(t.text)
+                    .child(s.add.clone()),
+            )
+            .child(edit_actions(&add_key, "Add step", state, true, t));
     }
+    let ring = t.focus_ring();
+    let tone = motion::hover_blend(&add_key, t.text_muted, t.text);
+    row_frame(add_key.clone())
+        .role(Role::Button)
+        .aria_label("Add a step")
+        .tab_index(0)
+        .focus_visible(move |style| pink::focus_ring(style, ring))
+        .on_key_down(pink::swallow_activation_key)
+        .cursor_pointer()
+        .hover_wash(add_key, t.fill(FillTier::Tertiary))
+        .child(row_slot(ICON_PLUS, TRAY_ICON, t.readable_muted(0.8)))
+        .child(
+            div()
+                .text_size(px(ROW_TEXT))
+                .line_height(px(16.))
+                .text_color(tone)
+                .child("Add a step"),
+        )
+        .on_click({
+            let state = state.clone();
+            move |_, window, cx| {
+                state.update(cx, |s, cx| {
+                    s.take_over();
+                    s.begin_add(window, cx);
+                })
+            }
+        })
+}
+
+/// The tray's header bar (pink: composer/goals.rs `render_goal_card`, the
+/// goal bar on the same stack tray): a 38 strip reading "Plan · objective",
+/// the step count and estimate trailing in 12 tabular figures, then the
+/// controls; here the one Primary button.
+fn tray_header(
+    key: &str,
+    title: &SharedString,
+    s: &PlanState,
+    state: &Entity<PlanState>,
+    t: &Pink,
+) -> Div {
+    let count = s.steps.len();
+    let estimate: f32 = s.steps.iter().map(|st| st.plan.estimate).sum();
+    let steps = format!("{count} {}", if count == 1 { "step" } else { "steps" });
+    let dot = || {
+        div()
+            .flex_none()
+            .text_color(t.readable_faint(0.8))
+            .child("·")
+    };
+    let summary = div()
+        .id(format!("{key}-summary"))
+        .role(Role::Status)
+        .aria_label(format!(
+            "Plan, {title}, {steps}, about {}",
+            format_elapsed(estimate.round() as i64)
+        ))
+        .flex_1()
+        .min_w_0()
+        .h_full()
+        .pl(px(14.))
+        .pr(px(6.))
+        .flex()
+        .items_center()
+        .gap(px(7.))
+        .text_size(px(13.))
+        .child(
+            svg()
+                .path(ICON_CHECKLIST)
+                .flex_none()
+                .size(px(TRAY_GLYPH))
+                .text_color(t.readable_muted(0.85)),
+        )
+        .child(
+            div()
+                .flex_none()
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(t.text)
+                .child("Plan"),
+        )
+        .child(dot())
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_color(t.readable_muted(0.8))
+                .child(title.clone()),
+        )
+        .child(
+            div()
+                .flex_none()
+                .flex()
+                .items_center()
+                .gap(px(7.))
+                .text_size(px(12.))
+                .font_features(tabular_figures())
+                .text_color(t.readable_muted(0.75))
+                .child(steps)
+                .child(dot())
+                .child(format!("~{}", format_elapsed(estimate.round() as i64))),
+        );
+    let run = pink::button_enabled(
+        format!("{key}-run"),
+        ButtonKind::Primary,
+        ControlSize::Sm,
+        count > 0,
+        t,
+    )
+    .aria_label("Run the plan")
+    .child(pink::glyph(ICON_PLAY, ControlSize::Sm).text_color(t.on_solid))
+    .child("Run plan")
+    .on_click({
+        let state = state.clone();
+        move |_, window, cx| {
+            let handler = state.update(cx, |s, cx| {
+                s.take_over();
+                s.commit_rename(window, cx);
+                s.start_run();
+                cx.notify();
+                s.on_run.clone().map(|h| (h, s.plan()))
+            });
+            if let Some((handler, plan)) = handler {
+                handler(&plan, window, cx);
+            }
+        }
+    });
+    div()
+        .h(px(TRAY_HEADER_H))
+        .flex_none()
+        .flex()
+        .items_center()
+        .child(summary)
+        .child(
+            div()
+                .flex_none()
+                .h_full()
+                .pr(px(8.))
+                .flex()
+                .items_center()
+                .gap(px(2.))
+                .child(run),
+        )
+}
+
+/// The draft as a tray above the composer (pink: queue.rs
+/// `render_queue_panel` / `queue_panel_surface`): one opaque plate with a
+/// hairline edge, the goal bar's header and borderless rows. Docked on a
+/// composer it takes only top corners and tucks its last 18 px behind the
+/// pill.
+fn plan_tray(
+    key: &str,
+    title: &SharedString,
+    s: &PlanState,
+    state: &Entity<PlanState>,
+    docked: bool,
+    t: &Pink,
+) -> Stateful<Div> {
+    let count = s.steps.len();
+    let rows = s
+        .steps
+        .iter()
+        .enumerate()
+        .map(|(ix, step)| step_row(key, ix, step, s, state, t));
+    let plan_key: SharedString = key.to_string().into();
+    let list = div()
+        .id(format!("{key}-steps"))
+        .flex()
+        .flex_col()
+        .on_drag_move::<StepDrag>({
+            let state = state.clone();
+            let plan_key = plan_key.clone();
+            move |event: &DragMoveEvent<StepDrag>, _, cx| {
+                let (plan, from) = {
+                    let drag = event.drag(cx);
+                    (drag.plan.clone(), drag.from)
+                };
+                if plan != plan_key {
+                    return;
+                }
+                let rel_y = f32::from(event.event.position.y - event.bounds.top());
+                let over = drop_index(rel_y, ROW_H, count);
+                state.update(cx, |s, cx| {
+                    s.take_over();
+                    s.drag_over(from, over, cx)
+                });
+            }
+        })
+        .children(rows);
+
+    let edge = t.border;
+    div()
+        .id(format!("{key}-tray"))
+        .flex()
+        .flex_col()
+        .overflow_hidden()
+        .bg(t.surface_bg())
+        .border_1()
+        .border_color(edge)
+        // Docked, the tray floats over the transcript with the composer and
+        // takes pink's opaque-treatment `menu_shadows`; on its own it lies flat.
+        .when(docked, |el| {
+            el.mx(px(TRAY_INSET))
+                .mb(px(-(STACK_GAP + TRAY_OVERLAP)))
+                .rounded_t(px(radius::STACK_TRAY))
+                .pb(px(TRAY_OVERLAP))
+                .shadow(t.menu_shadows())
+        })
+        .when(!docked, |el| el.rounded(px(radius::STACK_TRAY)))
+        // The whole plate is the drop target (pink: its padding included).
+        .on_drop::<StepDrag>({
+            let state = state.clone();
+            move |payload: &StepDrag, window, cx| {
+                state.update(cx, |s, cx| {
+                    let to = s.drag.take().map_or(payload.from, |d| d.over);
+                    if payload.plan == plan_key {
+                        s.take_over();
+                        s.move_step(payload.from, to, window, cx);
+                    } else {
+                        cx.notify();
+                    }
+                })
+            }
+        })
+        .on_mouse_up_out(MouseButton::Left, {
+            let state = state.clone();
+            move |_, _, cx| state.update(cx, |s, cx| s.cancel_drag(cx))
+        })
+        .child(tray_header(key, title, s, state, t))
+        .child(list)
+        .child(add_row(key, s, state, t))
 }
 
 impl RenderOnce for AgentPlan {
@@ -694,699 +1570,149 @@ impl RenderOnce for AgentPlan {
         let key = self.id.to_string();
         let initial = self.steps.clone();
         let failure = self.failure.clone();
-        let autoplay = self.autoplay;
+        let (autoplay, expanded) = (self.autoplay, self.expanded);
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "plan".into()),
             cx,
-            move |window, cx| PlanState::new(initial, failure, autoplay, window, cx),
+            move |window, cx| PlanState::new(initial, failure, autoplay, expanded, window, cx),
         );
+        // A drop outside the tray ends GPUI's drag without our `on_drop`:
+        // never leave a row parked in a stale slot.
+        let drag_live = cx.has_active_drag();
         let (on_run, on_change) = (self.on_run.clone(), self.on_change.clone());
-        state.update(cx, |s, _| {
+        state.update(cx, |s, cx| {
             s.on_run = on_run;
             s.on_change = on_change;
+            if !drag_live {
+                s.drag = None;
+            }
+            for input in [s.rename.clone(), s.add.clone()] {
+                input.update(cx, |input, _| {
+                    input.set_colors(Some(t.placeholder), Some(t.caret), Some(t.selection))
+                });
+            }
         });
 
         let s = state.read(cx);
-        let phase = s.phase;
-        let draft = phase == Phase::Draft;
-        let total = s.steps.len();
-        let done_count = s
-            .steps
-            .iter()
-            .filter(|st| matches!(st.status, StepStatus::Done | StepStatus::Skipped))
-            .count();
-        let estimate: f32 = s.steps.iter().map(|st| st.plan.estimate).sum();
-        let run_elapsed = match phase {
-            Phase::Done => s.run_elapsed,
-            _ => s
-                .run_started
-                .map(|r| r.elapsed().as_secs_f32())
-                .unwrap_or(0.0),
-        };
-        let running_ix = s
-            .steps
-            .iter()
-            .position(|st| st.status == StepStatus::Running);
-        let failed_ix = s
-            .steps
-            .iter()
-            .position(|st| st.status == StepStatus::Failed);
-
-        // -- Header ---------------------------------------------------------
-        let (badge_label, badge_tone) = match phase {
-            Phase::Draft => ("Draft", Tone::Neutral),
-            Phase::Running => ("Running", Tone::Accent),
-            Phase::Failed => ("Needs attention", Tone::Danger),
-            Phase::Done => ("Completed", Tone::Success),
-        };
-        let header = div()
-            .flex()
-            .items_center()
-            .gap(px(space::S12))
-            .px(px(space::S16))
-            .pt(px(space::S16))
-            .pb(px(space::S12))
-            .child(
-                div()
-                    .size(px(32.))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(radius::MD))
-                    .bg(t.accent_wash)
-                    .child(svg().path(ICON_PLAN).size(px(16.)).text_color(if t.dark {
-                        t.text
-                    } else {
-                        t.accent
-                    })),
+        let docked = self.composer.is_some();
+        let (epoch, failures) = (s.epoch, s.failures);
+        let strip = (s.phase != Phase::Draft).then(|| {
+            motion::fade_quick(
+                ElementId::Name(format!("{key}-checklist-in-{epoch}").into()),
+                checklist(&key, s, &state, &t),
             )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_w_0()
-                    .child(
-                        div()
-                            .truncate()
-                            .text_size(px(text::CALLOUT))
-                            .line_height(px(20.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(t.text)
-                            .child(self.title.clone()),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(text::FOOTNOTE))
-                            .line_height(px(16.))
-                            .text_color(t.text_muted)
-                            .child(format!(
-                                "{total} {} · est. {}",
-                                if total == 1 { "step" } else { "steps" },
-                                seconds(estimate)
-                            )),
-                    ),
-            )
-            .child(pink::badge(badge_label, badge_tone, &t));
-
-        // -- Segmented progress --------------------------------------------
-        let complete = motion::follow(
-            &format!("{key}-complete"),
-            if phase == Phase::Done { 1.0 } else { 0.0 },
-            GLIDE,
-        );
-        let segment_color = motion::mix(t.accent, t.success, complete);
-        let segments = s.steps.iter().map(|st| {
-            let target = match st.status {
-                StepStatus::Done | StepStatus::Failed | StepStatus::Skipped => 1.0,
-                StepStatus::Running => (st.elapsed / st.duration()).clamp(0.0, 1.0),
-                StepStatus::Pending => 0.0,
-            };
-            let spec = if st.status == StepStatus::Running {
-                MotionSpec::new(120, LINEAR)
-            } else {
-                MotionSpec::new(260, motion::EASE_OUT)
-            };
-            let frac = motion::follow(&format!("{key}-seg-{}", st.key), target, spec);
-            let color = match st.status {
-                StepStatus::Failed => t.danger,
-                StepStatus::Skipped => t.text_faint,
-                _ => segment_color,
-            };
-            div()
-                .flex_1()
-                .h(px(4.))
-                .rounded(px(2.))
-                .overflow_hidden()
-                .bg(t.fill(FillTier::Secondary))
-                .child(div().h_full().w(relative(frac)).rounded(px(2.)).bg(color))
         });
-        let progress = div()
-            .flex()
-            .gap(px(3.))
-            .px(px(space::S16))
-            .pb(px(space::S12))
-            .children(segments);
-
-        // -- Steps ------------------------------------------------------------
-        let layout = s.layout();
-        let list_h: f32 = layout.iter().map(|(_, _, h)| h).sum();
-        let list_h = motion::follow(&format!("{key}-list-h"), list_h, GLIDE);
-        let drag_key = s.drag.as_ref().map(|d| d.key);
-        let drag_top = s.drag.as_ref().map(|d| d.top).unwrap_or(0.0);
-        let editing = s.editing;
-        let rename_input = s.rename.clone();
-
-        let mut rows = Vec::new();
-        let mut dragged_row = None;
-        for (index, (step, (_, top, height))) in s.steps.iter().zip(layout).enumerate() {
-            let row_key = format!("{key}-row-{}", step.key);
-            let dragging = drag_key == Some(step.key);
-            let y = if dragging {
-                motion::follow(
-                    &format!("{row_key}-y"),
-                    drag_top,
-                    MotionSpec::new(0, LINEAR),
-                )
-            } else {
-                motion::follow(&format!("{row_key}-y"), top, GLIDE)
-            };
-            let h = motion::follow(&format!("{row_key}-h"), height, GLIDE);
-            let hover = motion::hover_t(&row_key);
-            let is_last = index + 1 == total;
-            let step_key = step.key;
-
-            // Grip: only while drafting, brightening with the row.
-            let grip = div()
-                .id(ElementId::Name(format!("{row_key}-grip").into()))
-                .w(px(14.))
-                .h(px(20.))
-                .flex_none()
-                .flex()
-                .items_center()
-                .justify_center()
-                .when(draft, |el| {
-                    el.cursor_grab()
-                        .opacity(if dragging { 1.0 } else { hover })
-                        .on_mouse_down(MouseButton::Left, {
-                            let state = state.clone();
-                            move |event: &MouseDownEvent, _, cx| {
-                                cx.stop_propagation();
-                                state.update(cx, |s, cx| {
-                                    s.take_over();
-                                    s.editing = None;
-                                    s.drag = Some(Drag {
-                                        key: step_key,
-                                        start_mouse: event.position.y,
-                                        start_top: top,
-                                        top,
-                                    });
-                                    cx.notify();
-                                });
-                            }
-                        })
-                })
-                .when(!draft, |el| el.opacity(0.))
-                .child(svg().path(ICON_GRIP).size(px(14.)).text_color(t.text_faint));
-
-            let title_color = match step.status {
-                StepStatus::Pending if !draft => t.text_muted,
-                StepStatus::Skipped => t.text_faint,
-                _ => t.text,
-            };
-            let title: AnyElement = if editing == Some(step.key) {
-                div()
-                    .flex_1()
-                    .h(px(24.))
-                    .mt(px(-2.))
-                    .mb(px(-2.))
-                    .ml(px(-6.))
-                    .px(px(6.))
-                    .flex()
-                    .items_center()
-                    .rounded(px(radius::SM))
-                    .bg(t.input_bg)
-                    .border_1()
-                    .border_color(t.focus_ring())
-                    .text_size(px(text::BODY))
-                    .text_color(t.text)
-                    .child(rename_input.clone())
-                    .into_any_element()
-            } else {
-                div()
-                    .id(ElementId::Name(format!("{row_key}-title").into()))
-                    .w_full()
-                    .truncate()
-                    .text_size(px(text::BODY))
-                    .line_height(px(20.))
-                    .font_weight(if step.status == StepStatus::Running {
-                        FontWeight::MEDIUM
-                    } else {
-                        FontWeight::NORMAL
-                    })
-                    .text_color(title_color)
-                    .when(step.status == StepStatus::Skipped, |el| el.line_through())
-                    .child(step.plan.title.clone())
-                    .when(draft, |el| {
-                        el.cursor_text().on_click({
-                            let state = state.clone();
-                            move |event: &ClickEvent, window, cx| {
-                                if event.click_count() >= 2 {
-                                    state.update(cx, |s, cx| {
-                                        s.take_over();
-                                        s.begin_rename(step_key, window, cx)
-                                    });
-                                }
-                            }
-                        })
-                    })
-                    .into_any_element()
-            };
-
-            let subline = match (&step.error, step.status) {
-                (Some(error), StepStatus::Failed) => div()
-                    .flex()
-                    .items_center()
-                    .gap(px(space::S6))
-                    .text_size(px(text::FOOTNOTE))
-                    .line_height(px(16.))
-                    .text_color(t.danger)
-                    .child(div().truncate().child(error.clone())),
-                _ => div()
-                    .flex()
-                    .items_center()
-                    .gap(px(5.))
-                    .text_size(px(text::CAPTION))
-                    .line_height(px(16.))
-                    .text_color(t.text_faint)
-                    .child(svg().path(ICON_TOOL).size(px(12.)).text_color(t.text_faint))
-                    .child(div().font_family(pink::MONO).child(step.plan.tool.clone())),
-            };
-
-            let actions = (step.status == StepStatus::Failed).then(|| {
-                let ix = index;
-                div()
-                    .flex()
-                    .gap(px(space::S6))
-                    .mt(px(space::S10))
-                    .child(
-                        pink::button(
-                            format!("{row_key}-retry"),
-                            ButtonKind::Secondary,
-                            ControlSize::Sm,
-                            &t,
-                        )
-                        .child(pink::glyph(ICON_RETRY, ControlSize::Sm).text_color(t.text))
-                        .child("Retry from here")
-                        .on_click({
-                            let state = state.clone();
-                            move |_, _, cx| {
-                                state.update(cx, |s, cx| {
-                                    s.take_over();
-                                    s.retry_from(ix);
-                                    cx.notify();
-                                })
-                            }
-                        }),
-                    )
-                    .child(
-                        pink::button(
-                            format!("{row_key}-skip"),
-                            ButtonKind::Ghost,
-                            ControlSize::Sm,
-                            &t,
-                        )
-                        .child("Skip step")
-                        .on_click({
-                            let state = state.clone();
-                            move |_, _, cx| {
-                                state.update(cx, |s, cx| {
-                                    s.take_over();
-                                    s.skip(ix);
-                                    cx.notify();
-                                })
-                            }
-                        }),
-                    )
-            });
-
-            let time_label = match step.status {
-                StepStatus::Running | StepStatus::Done | StepStatus::Failed => {
-                    Some((seconds(step.elapsed), step.status == StepStatus::Running))
-                }
-                StepStatus::Pending => Some((format!("~{:.0}s", step.plan.estimate), false)),
-                StepStatus::Skipped => None,
-            };
-            let right = div()
-                .flex()
-                .items_center()
-                .gap(px(space::S2))
-                .h(px(20.))
-                .when_some(time_label, |el, (label, live)| {
-                    el.child(
-                        div()
-                            .font_family(pink::MONO)
-                            .text_size(px(text::FOOTNOTE))
-                            .text_color(if live { t.text } else { t.text_faint })
-                            .child(label),
-                    )
-                })
-                .when(draft, |el| {
-                    el.child(
-                        div().opacity(hover).child(
-                            pink::icon_button(
-                                format!("{row_key}-remove"),
-                                ICON_CLOSE,
-                                ControlSize::Sm,
-                                &t,
-                            )
-                            .on_click({
-                                let state = state.clone();
-                                move |_, window, cx| {
-                                    state.update(cx, |s, cx| {
-                                        s.take_over();
-                                        s.remove(step_key, window, cx)
-                                    })
-                                }
-                            }),
-                        ),
-                    )
-                });
-
-            let content = div()
-                .flex()
-                .items_start()
-                .gap(px(space::S10))
-                .px(px(space::S8))
-                .pt(px(space::S10))
-                .child(grip)
-                .child(node(step, index, phase, &key, &t))
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .flex_1()
-                        .min_w_0()
-                        .gap(px(space::S2))
-                        .child(title)
-                        .child(subline)
-                        .children(actions),
-                )
-                .child(right);
-
-            let row = div()
-                .id(ElementId::Name(row_key.clone().into()))
-                .absolute()
-                .left_0()
-                .right_0()
-                .top(px(y))
-                .h(px(h))
-                .overflow_hidden()
-                .rounded(px(radius::MD))
-                .when(dragging, |el| {
-                    el.bg(t.surface_overlay)
-                        .border_1()
-                        .border_color(t.border)
-                        .shadow(t.menu_shadow())
-                })
-                .when(!dragging && draft, |el| {
-                    el.hover_fill(
-                        row_key.clone(),
-                        t.fill(FillTier::Quaternary).opacity(0.),
-                        t.fill(FillTier::Quaternary),
-                    )
-                })
-                .when(step.status == StepStatus::Failed, |el| {
-                    el.bg(t.danger.opacity(if t.dark { 0.08 } else { 0.05 }))
-                })
-                .child(motion::rise_in(
-                    ElementId::Name(format!("{row_key}-in").into()),
-                    ROW_IN.with_delay(40 * index.min(8) as u64),
-                    6.0,
-                    content,
-                ))
-                // Hairline between rows, from the title column to the edge.
-                .when(!is_last && !dragging, |el| {
-                    el.child(
-                        div()
-                            .absolute()
-                            .bottom_0()
-                            .left(px(62.))
-                            .right(px(8.))
-                            .h(px(1.))
-                            .bg(t.border),
-                    )
-                });
-            if dragging {
-                dragged_row = Some(row);
-            } else {
-                rows.push(row);
-            }
-        }
-
-        let list = div()
-            .relative()
-            .mx(px(space::S8))
-            .h(px(list_h))
-            .children(rows)
-            .children(dragged_row);
-
-        // -- Add a step -------------------------------------------------------
-        let add_row = draft.then(|| {
-            let add_key = format!("{key}-add");
-            if s.adding {
-                div()
-                    .id(ElementId::Name(add_key.into()))
-                    .mx(px(space::S8))
-                    .mt(px(space::S4))
-                    .h(px(36.))
-                    .px(px(space::S8))
-                    .flex()
-                    .items_center()
-                    .gap(px(space::S10))
-                    .rounded(px(radius::MD))
-                    .bg(t.input_bg)
-                    .border_1()
-                    .border_color(t.focus_ring())
-                    .child(div().w(px(14.)).flex_none())
-                    .child(
-                        div()
-                            .size(px(20.))
-                            .flex_none()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(svg().path(ICON_PLUS).size(px(14.)).text_color(t.accent)),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .text_size(px(text::BODY))
-                            .text_color(t.text)
-                            .child(s.add.clone()),
-                    )
-                    .child(pink::kbd("↵", &t))
-            } else {
-                let tone = motion::hover_blend(&add_key, t.text_muted, t.text);
-                div()
-                    .id(ElementId::Name(add_key.clone().into()))
-                    .mx(px(space::S8))
-                    .mt(px(space::S4))
-                    .h(px(36.))
-                    .px(px(space::S8))
-                    .flex()
-                    .items_center()
-                    .gap(px(space::S10))
-                    .rounded(px(radius::MD))
-                    .cursor_pointer()
-                    .text_size(px(text::BODY))
-                    .text_color(tone)
-                    .hover_fill(
-                        add_key,
-                        t.fill(FillTier::Quaternary).opacity(0.),
-                        t.fill(FillTier::Quaternary),
-                    )
-                    .on_click({
-                        let state = state.clone();
-                        move |_, window, cx| {
-                            state.update(cx, |s, cx| {
-                                s.take_over();
-                                s.adding = true;
-                                TextInput::focus(&s.add, window, cx);
-                                cx.notify();
-                            })
-                        }
-                    })
-                    .child(div().w(px(14.)).flex_none())
-                    .child(
-                        div()
-                            .size(px(20.))
-                            .flex_none()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded_full()
-                            .border_1()
-                            .border_color(t.border)
-                            .child(svg().path(ICON_PLUS).size(px(12.)).text_color(tone)),
-                    )
-                    .child("Add a step")
-            }
+        let notice = failure_notice(&key, s, &state, &t).map(|notice| {
+            motion::fade_quick(
+                ElementId::Name(format!("{key}-notice-in-{failures}").into()),
+                notice,
+            )
+        });
+        let tray = (s.phase == Phase::Draft).then(|| {
+            motion::fade_quick(
+                ElementId::Name(format!("{key}-tray-in-{epoch}").into()),
+                plan_tray(&key, &self.title, s, &state, docked, &t),
+            )
         });
 
-        // -- Footer -----------------------------------------------------------
-        let status_line: SharedString = match phase {
-            Phase::Draft => "Double-click a step to rename it, drag the grip to reorder".into(),
-            Phase::Running => format!(
-                "Step {} of {total} · {}",
-                running_ix.map_or(done_count, |i| i + 1),
-                seconds(run_elapsed)
-            )
-            .into(),
-            Phase::Failed => format!(
-                "Stopped at step {} of {total}",
-                failed_ix.map_or(0, |i| i + 1)
-            )
-            .into(),
-            Phase::Done => format!("All {total} steps finished in {}", seconds(run_elapsed)).into(),
-        };
-        let footer_actions = match phase {
-            Phase::Draft => vec![
-                pink::button(
-                    format!("{key}-run"),
-                    ButtonKind::Accent,
-                    ControlSize::Md,
-                    &t,
-                )
-                .child(pink::glyph(ICON_PLAY, ControlSize::Md).text_color(t.on_accent))
-                .child("Run plan")
-                .on_click({
-                    let state = state.clone();
-                    move |_, window, cx| {
-                        let handler = state.update(cx, |s, cx| {
-                            s.take_over();
-                            s.start_run();
-                            cx.notify();
-                            s.on_run.clone().map(|h| (h, s.plan()))
-                        });
-                        if let Some((handler, plan)) = handler {
-                            handler(&plan, window, cx);
-                        }
-                    }
-                }),
-            ],
-            Phase::Running => vec![
-                pink::button(
-                    format!("{key}-stop"),
-                    ButtonKind::Secondary,
-                    ControlSize::Md,
-                    &t,
-                )
-                .child(pink::glyph(ICON_STOP, ControlSize::Md).text_color(t.text))
-                .child("Stop")
-                .on_click({
-                    let state = state.clone();
-                    move |_, _, cx| {
-                        state.update(cx, |s, cx| {
-                            s.take_over();
-                            s.back_to_draft();
-                            cx.notify();
-                        })
-                    }
-                }),
-            ],
-            Phase::Failed | Phase::Done => vec![
-                pink::button(
-                    format!("{key}-edit"),
-                    ButtonKind::Secondary,
-                    ControlSize::Md,
-                    &t,
-                )
-                .child("Edit plan")
-                .on_click({
-                    let state = state.clone();
-                    move |_, _, cx| {
-                        state.update(cx, |s, cx| {
-                            s.take_over();
-                            s.back_to_draft();
-                            cx.notify();
-                        })
-                    }
-                }),
-            ],
-        };
-        let footer = div()
-            .flex()
-            .items_center()
-            .gap(px(space::S12))
-            .mt(px(space::S8))
-            .px(px(space::S16))
-            .py(px(space::S12))
-            .border_t_1()
-            .border_color(t.border)
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_size(px(text::FOOTNOTE))
-                    .text_color(t.text_muted)
-                    .child(status_line),
-            )
-            .children(footer_actions);
-
-        let dragging = s.drag.is_some();
-        // Followers started above need frames of their own: this render runs
-        // after the story's `keep_alive`.
-        motion::keep_alive(window);
-        pink::card(&t)
-            .id(self.id.clone())
+        div()
+            .id(self.id)
             .w(px(WIDTH))
+            .flex()
+            .flex_col()
+            .gap(px(STACK_GAP))
             .font_family(pink::SANS)
             .text_color(t.text)
-            .when(dragging, |el| el.cursor_grabbing())
-            .on_mouse_move({
-                let state = state.clone();
-                move |event: &MouseMoveEvent, window, cx| {
-                    state.update(cx, |s, cx| {
-                        if s.drag.is_some() {
-                            if event.pressed_button == Some(MouseButton::Left) {
-                                s.drag_to(event.position.y, cx);
-                            } else {
-                                s.drop_drag(window, cx);
-                            }
-                        }
-                    })
-                }
-            })
-            .on_mouse_up(MouseButton::Left, {
-                let state = state.clone();
-                move |_, window, cx| state.update(cx, |s, cx| s.drop_drag(window, cx))
-            })
-            .on_mouse_up_out(MouseButton::Left, {
-                let state = state.clone();
-                move |_, window, cx| state.update(cx, |s, cx| s.drop_drag(window, cx))
-            })
-            .child(header)
-            .child(progress)
-            .child(pink::divider(&t))
-            .child(div().pt(px(space::S6)).child(list))
-            .children(add_row)
-            .child(footer)
+            .children(notice)
+            .children(strip)
+            .children(tray)
+            .children(self.composer)
     }
 }
 
+/// The composer the demo stacks the plan on (pink: composer.rs
+/// `composer_surface` in the opaque treatment, holding an empty session
+/// draft and the recessed Send disc of `render_send_button`).
+fn demo_composer(t: &Pink) -> Div {
+    div()
+        .w_full()
+        .flex()
+        .flex_col()
+        .rounded(px(radius::COMPOSER))
+        .border_1()
+        .border_color(t.border)
+        .bg(t.input_glass_bg())
+        .shadow(pink::shadow_lg())
+        .child(
+            div()
+                .min_h(px(60.))
+                .pt(px(16.))
+                .pb(px(4.))
+                .px(px(16.))
+                .text_size(px(14.))
+                .line_height(px(22.75))
+                .text_color(t.placeholder)
+                .child("Ask for changes to the plan"),
+        )
+        .child(
+            div()
+                .h(px(46.))
+                .px(px(10.))
+                .pt(px(2.))
+                .pb(px(12.))
+                .flex()
+                .items_center()
+                .justify_end()
+                .child(
+                    div()
+                        .size(px(28.))
+                        .rounded_full()
+                        .bg(t.ink(0.08))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            svg()
+                                .path(ICON_ARROW_UP)
+                                .size(px(14.))
+                                .text_color(t.text.opacity(0.35)),
+                        ),
+                ),
+        )
+}
+
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
-    story::view(cx, |_, _| {
+    story::view(cx, |_, cx| {
+        let t = Pink::get(cx);
         AgentPlan::new("agent-plan", "Rotate staging database credentials")
             .step(
                 PlanStep::new("Snapshot the staging database")
                     .tool("db.snapshot")
-                    .estimate(3.0),
+                    .estimate(2.2),
             )
             .step(
                 PlanStep::new("Mint new credentials in the vault")
                     .tool("vault.write")
-                    .estimate(2.0),
+                    .estimate(1.6),
             )
             .step(
                 PlanStep::new("Point six service configs at the new secret")
                     .tool("repo.edit")
-                    .estimate(3.4),
+                    .estimate(2.4),
             )
             .step(
                 PlanStep::new("Restart services one at a time")
                     .tool("deploy.rollout")
-                    .estimate(3.8),
+                    .estimate(3.0),
             )
             .step(
                 PlanStep::new("Verify connections and revoke the old keys")
                     .tool("db.query")
-                    .estimate(2.6),
+                    .estimate(2.0),
             )
             .fail_once(3, "billing-api missed its health check after the restart")
+            .expanded(true)
             .autoplay(true)
+            .composer(demo_composer(&t))
     })
 }
