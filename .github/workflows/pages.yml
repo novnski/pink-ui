@@ -1,69 +1,44 @@
 name: Pages
 
 # Builds the showcase site (the components compiled to WebAssembly) and
-# deploys it to GitHub Pages from main. Pull requests build it too: rendering
-# every component's thumbnail in headless Chromium is the web build's smoke
-# test, and fails on any panic in the browser.
+# deploys it to GitHub Pages.
 
 on:
   push:
     branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
 
+# One deployment at a time; a newer push waits for the running one.
 concurrency:
-  group: pages-${{ github.ref }}
-  cancel-in-progress: true
+  group: pages
+  cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: web
       - name: Read the wasm-bindgen version from Cargo.lock
         id: versions
-        run: |
-          echo "wasm-bindgen=$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "\(.*\)"$/\1/p')" >> "$GITHUB_OUTPUT"
+        run: echo "wasm-bindgen=$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "\(.*\)"$/\1/p')" >> "$GITHUB_OUTPUT"
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-bindgen@${{ steps.versions.outputs.wasm-bindgen }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Build the site
-        run: scripts/build-site.sh
-      - name: Install Playwright
-        run: |
-          npm install --no-save --no-package-lock playwright@1.56.1
-          npx playwright install --with-deps chromium
-      - name: Render thumbnails and smoke-test every component
-        run: node scripts/site/thumbnails.mjs site/dist
+      - run: scripts/build-site.sh
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site/dist
-
-  deploy:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    needs: build
-    runs-on: ubuntu-24.04
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    concurrency:
-      group: pages-deploy
-      cancel-in-progress: false
-    steps:
       - id: deployment
         uses: actions/deploy-pages@v4

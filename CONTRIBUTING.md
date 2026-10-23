@@ -190,7 +190,8 @@ switches for light/dark and Clean/Classic.
 A new component shows up on the showcase site by itself: add it to
 `components::COMPONENTS` and the catalog, the player and the site pick it up.
 Check it in the browser with `scripts/build-site.sh` and
-`python3 -m http.server -d site/dist`.
+`python3 -m http.server -d site/dist`, then give it a catalog card picture
+with `node scripts/site/thumbnails.mjs site/dist` and commit `site/thumbs/`.
 
 ## Luna components
 
