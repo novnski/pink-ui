@@ -1,71 +1,72 @@
-//! Filter Menu – grouped filters with removable chips, collapsible checkbox
-//! groups, Clear all and full keyboard control.
+//! Filter Menu – the Board toolbar's Filters pop-up (pink
+//! `shell/board/filters.rs` `render_filters_select` + `page.rs`
+//! `render_menu_card`).
 //!
-//! Active filters sit on top as removable chips; below, collapsible groups
-//! list their options as checkboxes with a count of what's picked. Clean: one
-//! flat card with hairline shadows, the chips on one line ("+N" for the rest)
-//! and the keyboard hints as its last row. Classic: a white card on a gray
-//! tray, chips that wrap, and the hints on the tray.
+//! A Secondary pop-up button reads "Filters", or "Filters · N" while N
+//! filters are set, and drops a 240 pt menu card below itself. The card lists
+//! each group under an uppercase heading after a full-bleed hairline: a
+//! single-choice group starts with its "Any …" row, a multiple group lists
+//! independent switches, and the current choices carry a trailing check.
+//! "Clear all filters" closes the list, dimmed while nothing is set.
 //!
-//! Arrow keys move through groups and options, Enter or Space picks, ← and →
-//! fold a group, Home and End jump to the ends. Heights glide when groups open
-//! or chips come and go, chevrons turn and checks draw themselves in.
+//! The pointer and the arrow keys share one highlight. ↑ and ↓ move it
+//! (wrapping, skipping dimmed rows), Enter or Space applies the row under
+//! it, Esc closes; every pick closes the menu, the way pink's Board does. The
+//! card drops 6 pt into place over 180 ms and fades out over 120 ms.
 //!
 //! ```ignore
 //! FilterMenu::new(
-//!     "filters",
-//!     vec![FilterGroup::new("stage", "Stage").option("new", "New lead").option("won", "Won")],
+//!     "board-filters",
+//!     vec![
+//!         FilterGroup::new("source", "Source")
+//!             .option("chat", "From a chat")
+//!             .option("github", "GitHub issue"),
+//!         FilterGroup::new("archive", "Archive")
+//!             .multiple()
+//!             .option("archived", "Show archived tickets"),
+//!     ],
 //! )
-//! .default_value(FilterValue::from([("stage".into(), vec!["won".into()])]))
 //! .on_change(|value, _, _| println!("{value:?}"))
 //! ```
 
-use std::{
-    collections::{BTreeMap, HashMap, HashSet},
-    f32::consts::FRAC_PI_2,
-    rc::Rc,
-    sync::Arc,
-};
+use std::{collections::BTreeMap, rc::Rc, sync::Arc};
+use web_time::Instant;
 
 use gpui::{
-    AnyView, App, BoxShadow, Div, ElementId, FocusHandle, FontWeight, Hsla, IntoElement,
-    KeyDownEvent, MouseButton, Pixels, SharedString, TextRun, Transformation, Window, canvas, div,
-    font, prelude::*, px, radians, svg,
+    Anchor, AnyView, App, ClickEvent, Context, DispatchPhase, ElementId, Entity, FocusHandle,
+    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, Role, SharedString, Task, Window,
+    anchored, canvas, deferred, div, prelude::*, px, svg,
 };
 
 use crate::{
-    ActiveTheme, HoverFill, Look,
-    motion::{self, AnimationExt, EASE, EASE_OUT_QUINT, MotionSpec},
-    primitives::{SANS, black_a, hex, hexa, ring, shadow, white_a},
+    motion::{self, MENU_OUT, MENU_RISE_DOWN},
+    pink::{self, ButtonKind, ControlSize, Pink, TextStyle, TypeStyleExt, icon_size, layout},
     story,
 };
 
 pub const NAME: &str = "Filter Menu";
-pub const DESCRIPTION: &str = "Grouped filters with removable chips, collapsible checkbox groups, Clear all and full keyboard control";
+pub const DESCRIPTION: &str = "A Filters pop-up button with an active count that drops a menu of headed filter groups, Any rows, trailing checks and Clear all filters, driven by pointer or keyboard";
 
-/// Picked option ids per group id.
+const ICON_FILTER: &str = "icons/filter-menu/filter.svg";
+const ICON_ATTENTION: &str = "icons/filter-menu/danger-triangle.svg";
+
+/// The Board menu card's height budget before it scrolls (pink
+/// `render_menu_card` `max_h 420`).
+const MENU_MAX_H: f32 = 420.0;
+
+/// Picked option ids per group id. A single-choice group holds at most one;
+/// a group that is absent (or empty) reads as "Any".
 pub type FilterValue = BTreeMap<SharedString, Vec<SharedString>>;
 
 type ChangeHandler = Rc<dyn Fn(&FilterValue, &mut Window, &mut App)>;
-
-/// Gap between chips on the Clean line, in px – matches the CSS.
-const CHIP_GAP: f32 = 4.;
-
-/// `grid-template-rows` 0fr ↔ 1fr and the padding: `320ms` springy ease-out.
-const PANEL: MotionSpec = MotionSpec::new(320, EASE_OUT_QUINT);
-/// The options fading in and out: `opacity 220ms ease`.
-const PANEL_FADE: MotionSpec = MotionSpec::new(220, EASE);
-/// The chevron turning: `transform 260ms`.
-const CHEVRON: MotionSpec = MotionSpec::new(260, EASE_OUT_QUINT);
-/// `ui-*-chip-in`: `260ms` (scale 0.9 → 1 becomes a fade).
-const CHIP_IN: MotionSpec = MotionSpec::new(260, EASE_OUT_QUINT);
-/// `ui-fmc-roll`: a count rolling up into place, `300ms`.
-const ROLL: MotionSpec = MotionSpec::new(300, EASE_OUT_QUINT);
 
 #[derive(Clone, Debug)]
 pub struct FilterOption {
     pub id: SharedString,
     pub label: SharedString,
+    /// A 14 pt leading glyph (pink's provider marks), tinted
+    /// `readable_muted(0.9)`.
+    pub glyph: Option<SharedString>,
 }
 
 impl FilterOption {
@@ -73,26 +74,42 @@ impl FilterOption {
         Self {
             id: id.into(),
             label: label.into(),
+            glyph: None,
         }
+    }
+
+    pub fn glyph(mut self, path: impl Into<SharedString>) -> Self {
+        self.glyph = Some(path.into());
+        self
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct FilterGroup {
     pub id: SharedString,
+    /// The group's menu heading ("Source").
     pub label: SharedString,
     pub options: Vec<FilterOption>,
-    /// Put in front of the option on its chip, e.g. "Score: " → "Score: 80–90".
-    pub chip_prefix: Option<SharedString>,
+    /// Independent switches (pink's Attention and Archive rows) instead of
+    /// one choice with an "Any …" row (pink's Provider and Source).
+    pub multiple: bool,
+    /// The single-choice group's first row; "Any <label>" when unset.
+    pub any_label: Option<SharedString>,
+    /// Whether this group adds to the trigger's "Filters · N" (pink leaves
+    /// out Attention, which has its own toolbar chip).
+    pub counted: bool,
 }
 
 impl FilterGroup {
+    /// A single-choice group: an "Any …" row, then its options.
     pub fn new(id: impl Into<SharedString>, label: impl Into<SharedString>) -> Self {
         Self {
             id: id.into(),
             label: label.into(),
             options: Vec::new(),
-            chip_prefix: None,
+            multiple: false,
+            any_label: None,
+            counted: true,
         }
     }
 
@@ -107,320 +124,251 @@ impl FilterGroup {
         self
     }
 
-    pub fn chip_prefix(mut self, prefix: impl Into<SharedString>) -> Self {
-        self.chip_prefix = Some(prefix.into());
+    /// Each option switches on and off by itself; no "Any …" row.
+    pub fn multiple(mut self) -> Self {
+        self.multiple = true;
         self
     }
-}
 
-/// The `--ui-fmc-*` / `--ui-fm-*` tokens, by role.
-struct Palette {
-    tray: Option<Hsla>,
-    card: Hsla,
-    card_border: Option<Hsla>,
-    card_shadow: Vec<BoxShadow>,
-    /// Clean's hairlines between the sections.
-    line: Hsla,
-    title: Hsla,
-    ink: Hsla,
-    clear: Hsla,
-    clear_hover_bg: Hsla,
-    clear_off: Hsla,
-    chip: Hsla,
-    chip_fg: Hsla,
-    chip_x: Hsla,
-    chip_x_hover_bg: Hsla,
-    more: Hsla,
-    row_hover: Hsla,
-    chevron: Hsla,
-    count: Hsla,
-    picked: Hsla,
-    option: Hsla,
-    box_bg: Hsla,
-    box_edge: Hsla,
-    box_on: Hsla,
-    box_edge_on: Hsla,
-    /// Clean lifts the empty box with `0 1px 1px rgba(0, 0, 0, .04)`.
-    box_lift: Option<Hsla>,
-    check: Hsla,
-    hint: Hsla,
-    kbd: Hsla,
-    kbd_fg: Hsla,
-    kbd_shadow: Vec<BoxShadow>,
-    focus: Hsla,
-}
+    pub fn any_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.any_label = Some(label.into());
+        self
+    }
 
-impl Palette {
-    fn get(look: Look, cx: &App) -> Self {
-        match (look, cx.is_dark()) {
-            (Look::Clean, false) => {
-                let shadow = vec![
-                    ring(0.5, black_a(0.06)),
-                    shadow(0., 1., 1., -1., black_a(0.1)),
-                    shadow(0., 1., 2., 0., black_a(0.05)),
-                ];
-                let accent = hexa(0x0060e2, 0.765);
-                Palette {
-                    tray: None,
-                    card: hex(0xffffff),
-                    card_border: None,
-                    card_shadow: shadow.clone(),
-                    line: black_a(0.06),
-                    title: hex(0x000000),
-                    ink: black_a(0.88),
-                    clear: black_a(0.61),
-                    clear_hover_bg: black_a(0.03),
-                    clear_off: black_a(0.27),
-                    chip: black_a(0.06),
-                    chip_fg: black_a(0.88),
-                    chip_x: black_a(0.447),
-                    chip_x_hover_bg: black_a(0.06),
-                    more: black_a(0.61),
-                    row_hover: black_a(0.03),
-                    chevron: black_a(0.447),
-                    count: black_a(0.27),
-                    picked: black_a(0.45),
-                    option: black_a(0.88),
-                    box_bg: hex(0xffffff),
-                    box_edge: black_a(0.22),
-                    box_on: accent,
-                    box_edge_on: accent.opacity(0.),
-                    box_lift: Some(black_a(0.04)),
-                    check: hex(0xffffff),
-                    hint: black_a(0.45),
-                    kbd: hex(0xffffff),
-                    kbd_fg: black_a(0.61),
-                    kbd_shadow: shadow,
-                    focus: hexa(0x0060e2, 0.35),
-                }
-            }
-            (Look::Clean, true) => {
-                let shadow = vec![
-                    ring(0.5, white_a(0.1)),
-                    shadow(0., 1., 2., 0., black_a(0.4)),
-                ];
-                let accent = hex(0x4d8dff);
-                Palette {
-                    tray: None,
-                    card: hex(0x1c1c1e),
-                    card_border: None,
-                    card_shadow: shadow.clone(),
-                    line: white_a(0.08),
-                    title: hex(0xffffff),
-                    ink: white_a(0.9),
-                    clear: white_a(0.62),
-                    clear_hover_bg: white_a(0.04),
-                    clear_off: white_a(0.3),
-                    chip: white_a(0.08),
-                    chip_fg: white_a(0.9),
-                    chip_x: white_a(0.5),
-                    chip_x_hover_bg: white_a(0.08),
-                    more: white_a(0.62),
-                    row_hover: white_a(0.04),
-                    chevron: white_a(0.5),
-                    count: white_a(0.3),
-                    picked: white_a(0.46),
-                    option: white_a(0.9),
-                    box_bg: hex(0x1c1c1e),
-                    box_edge: white_a(0.28),
-                    box_on: accent,
-                    box_edge_on: accent.opacity(0.),
-                    box_lift: Some(black_a(0.04)),
-                    check: hex(0xffffff),
-                    hint: white_a(0.46),
-                    kbd: hex(0x1c1c1e),
-                    kbd_fg: white_a(0.62),
-                    kbd_shadow: shadow,
-                    focus: hexa(0x4d8dff, 0.5),
-                }
-            }
-            (Look::Classic, false) => Palette {
-                tray: Some(hex(0xf0f0f0)),
-                card: hex(0xffffff),
-                card_border: Some(hex(0xe5e5e5)),
-                card_shadow: vec![shadow(0., 1., 2., 0., black_a(0.06))],
-                line: hex(0xe5e5e5),
-                title: hex(0x171717),
-                ink: hex(0x171717),
-                clear: hex(0x8f8f8f),
-                clear_hover_bg: hex(0xf7f7f7),
-                clear_off: hexa(0x8f8f8f, 0.45),
-                chip: hex(0xf3f3f3),
-                chip_fg: hex(0x404040),
-                chip_x: hex(0x8f8f8f),
-                chip_x_hover_bg: hex(0xebebeb),
-                more: hex(0x404040),
-                row_hover: hex(0xf7f7f7),
-                chevron: hex(0x404040),
-                count: hex(0x8f8f8f),
-                picked: hex(0x8f8f8f),
-                option: hex(0x404040),
-                box_bg: hex(0xf0f0f0),
-                box_edge: hex(0xe3e3e3),
-                box_on: hex(0x171717),
-                box_edge_on: hex(0x171717),
-                box_lift: None,
-                check: hex(0xffffff),
-                hint: hex(0x404040),
-                kbd: hex(0xffffff),
-                kbd_fg: hex(0x404040),
-                kbd_shadow: vec![
-                    ring(1., hex(0xe5e5e5)),
-                    shadow(0., 1., 1., 0., black_a(0.04)),
-                ],
-                focus: hex(0x2f6bff),
-            },
-            (Look::Classic, true) => Palette {
-                tray: Some(hex(0x161618)),
-                card: hex(0x232326),
-                card_border: Some(white_a(0.08)),
-                card_shadow: vec![shadow(0., 1., 2., 0., black_a(0.4))],
-                line: white_a(0.08),
-                title: hex(0xededed),
-                ink: hex(0xededed),
-                clear: hex(0x8f8f8f),
-                clear_hover_bg: white_a(0.05),
-                clear_off: hexa(0x8f8f8f, 0.45),
-                chip: hex(0x2a2a2d),
-                chip_fg: hex(0xc4c4c4),
-                chip_x: hex(0x8f8f8f),
-                chip_x_hover_bg: hex(0x313135),
-                more: hex(0xc4c4c4),
-                row_hover: white_a(0.05),
-                chevron: hex(0xc4c4c4),
-                count: hex(0x8f8f8f),
-                picked: hex(0x8f8f8f),
-                option: hex(0xc4c4c4),
-                box_bg: hex(0x2a2a2d),
-                box_edge: white_a(0.1),
-                box_on: hex(0xededed),
-                box_edge_on: hex(0xededed),
-                box_lift: None,
-                check: hex(0x121213),
-                hint: hex(0xc4c4c4),
-                kbd: hex(0x232326),
-                kbd_fg: hex(0xc4c4c4),
-                kbd_shadow: vec![
-                    ring(1., white_a(0.08)),
-                    shadow(0., 1., 1., 0., black_a(0.04)),
-                ],
-                focus: hex(0x6b95ff),
-            },
-        }
+    pub fn counted(mut self, counted: bool) -> Self {
+        self.counted = counted;
+        self
+    }
+
+    fn any_row_label(&self) -> SharedString {
+        self.any_label
+            .clone()
+            .unwrap_or_else(|| format!("Any {}", self.label.to_lowercase()).into())
     }
 }
 
-/// Icon paths for a look: Clean draws on a 16 grid with thinner strokes.
-fn icon(look: Look, name: &str) -> SharedString {
-    match look {
-        Look::Clean => format!("icons/filter-menu/clean/{name}.svg").into(),
-        Look::Classic => format!("icons/filter-menu/{name}.svg").into(),
-    }
+/// What a menu row does (pink `MenuAction`), by group and option index.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Action {
+    Any(usize),
+    Pick(usize, usize),
+    Clear,
 }
 
-/// The check's polyline in its viewBox, the dash length and the box it's drawn in.
-struct CheckGeometry {
-    points: [(f32, f32); 3],
-    dash: f32,
-    cap: f32,
-    view_box: f32,
-    size: f32,
-}
-
-impl CheckGeometry {
-    fn get(look: Look) -> Self {
-        match look {
-            Look::Clean => CheckGeometry {
-                points: [(4.25, 8.25), (6.75, 10.75), (11.75, 5.25)],
-                dash: 12.,
-                cap: 0.8,
-                view_box: 16.,
-                size: 12.,
-            },
-            Look::Classic => CheckGeometry {
-                points: [(6., 12.5), (10., 16.5), (18., 7.5)],
-                dash: 20.,
-                cap: 1.1,
-                view_box: 24.,
-                size: 14.,
-            },
-        }
-    }
-
-    /// How far the stroke reaches to the right (in px of the icon) once `t`
-    /// of the dash is drawn. The check runs left to right, so revealing the
-    /// icon up to here stands in for the `stroke-dashoffset` draw-in.
-    fn reach(&self, t: f32) -> f32 {
-        let mut left = self.dash * t;
-        if left <= 0. {
-            return 0.;
-        }
-        let mut x = self.points[0].0;
-        for w in self.points.windows(2) {
-            let (a, b) = (w[0], w[1]);
-            let seg = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
-            if left <= seg {
-                x = a.0 + (b.0 - a.0) * left / seg;
-                break;
-            }
-            left -= seg;
-            x = b.0;
-        }
-        ((x + self.cap) / self.view_box).min(1.) * self.size
-    }
-}
-
-/// UI state that lives across renders.
-struct FilterState {
-    picked: FilterValue,
-    open: HashSet<SharedString>,
-    /// One focus handle per row the arrow keys can reach, by row key.
-    handles: HashMap<SharedString, FocusHandle>,
-    /// The group list itself, so it can take the keys before a row has focus.
-    list: FocusHandle,
-    /// Focus came from the keyboard: show the focus ring (`:focus-visible`).
-    keyboard: bool,
-    /// The menu's width from the last frame, to fit the chips.
-    width: Option<Pixels>,
-}
-
-/// A row the arrow keys can reach: a group head or one of its options.
-#[derive(Clone)]
-struct Row {
+/// One row of the menu (pink `MenuEntry`).
+#[derive(Clone, Debug)]
+struct Entry {
     key: SharedString,
-    group: SharedString,
+    label: SharedString,
+    glyph: Option<SharedString>,
+    checked: bool,
+    enabled: bool,
+    heading: Option<SharedString>,
+    action: Action,
 }
 
-fn group_key(group: &str) -> SharedString {
-    format!("g:{group}").into()
+fn picked<'a>(value: &'a FilterValue, group: &str) -> &'a [SharedString] {
+    value.get(group).map_or(&[], |list| list.as_slice())
 }
 
-fn option_key(group: &str, option: &str) -> SharedString {
-    format!("o:{group}:{option}").into()
+/// The rows, top to bottom (pink `filter_menu_entries`): per group a heading
+/// on its first row, the "Any …" row for single-choice groups, the options,
+/// and "Clear all filters" last.
+fn entries(groups: &[FilterGroup], value: &FilterValue) -> Vec<Entry> {
+    let mut rows = Vec::new();
+    for (g, group) in groups.iter().enumerate() {
+        let chosen = picked(value, &group.id);
+        let mut heading = Some(group.label.clone());
+        if !group.multiple {
+            rows.push(Entry {
+                key: format!("{}-any", group.id).into(),
+                label: group.any_row_label(),
+                glyph: None,
+                checked: chosen.is_empty(),
+                enabled: true,
+                heading: heading.take(),
+                action: Action::Any(g),
+            });
+        }
+        for (o, option) in group.options.iter().enumerate() {
+            rows.push(Entry {
+                key: format!("{}-{}", group.id, option.id).into(),
+                label: option.label.clone(),
+                glyph: option.glyph.clone(),
+                checked: chosen.contains(&option.id),
+                enabled: true,
+                heading: heading.take(),
+                action: Action::Pick(g, o),
+            });
+        }
+    }
+    rows.push(Entry {
+        key: "clear".into(),
+        label: "Clear all filters".into(),
+        glyph: None,
+        checked: false,
+        enabled: any_filter(value),
+        heading: None,
+        action: Action::Clear,
+    });
+    rows
 }
 
-fn is_on(picked: &FilterValue, group: &str, option: &str) -> bool {
-    picked
-        .get(group)
-        .is_some_and(|list| list.iter().any(|o| o == option))
+/// The value after a row runs (pink `run_menu_action`).
+fn apply(groups: &[FilterGroup], action: Action, mut value: FilterValue) -> FilterValue {
+    match action {
+        Action::Clear => FilterValue::new(),
+        Action::Any(g) => {
+            value.remove(&groups[g].id);
+            value
+        }
+        Action::Pick(g, o) => {
+            let group = &groups[g];
+            let option = group.options[o].id.clone();
+            if group.multiple {
+                let list = value.entry(group.id.clone()).or_default();
+                match list.iter().position(|id| *id == option) {
+                    Some(ix) => {
+                        list.remove(ix);
+                    }
+                    None => list.push(option),
+                }
+                let empty = list.is_empty();
+                if empty {
+                    value.remove(&group.id);
+                }
+            } else {
+                value.insert(group.id.clone(), vec![option]);
+            }
+            value
+        }
+    }
 }
 
-/// Width of one line of Inter at `size` and `weight`.
-fn text_width(window: &Window, text: &str, size: f32, weight: FontWeight) -> f32 {
-    let mut f = font(SANS);
-    f.weight = weight;
-    let run = TextRun {
-        len: text.len(),
-        font: f,
-        color: Hsla::default(),
-        background_color: None,
-        underline: None,
-        strikethrough: None,
+/// The trigger's N (pink `active_filter_count`): one per set single-choice
+/// group, one per switched-on option, counted groups only.
+fn active_count(groups: &[FilterGroup], value: &FilterValue) -> usize {
+    groups
+        .iter()
+        .filter(|g| g.counted)
+        .map(|g| {
+            let chosen = picked(value, &g.id);
+            if g.multiple {
+                chosen.len()
+            } else {
+                usize::from(!chosen.is_empty())
+            }
+        })
+        .sum()
+}
+
+/// Whether "Clear all filters" has anything to clear (pink `any_filter`).
+fn any_filter(value: &FilterValue) -> bool {
+    value.values().any(|list| !list.is_empty())
+}
+
+/// Steps the cursor, wrapping at both ends; `None` enters at the edge
+/// matching the direction (pink `popover::menu_step`).
+fn menu_step(active: Option<usize>, count: usize, delta: isize) -> Option<usize> {
+    if count == 0 {
+        return None;
+    }
+    let count = count as isize;
+    let next = match active {
+        None if delta >= 0 => 0,
+        None => count - 1,
+        Some(at) => (at as isize + delta).rem_euclid(count),
     };
-    let line = window
-        .text_system()
-        .shape_line(text.to_string().into(), px(size), &[run], None);
-    f32::from(line.width)
+    Some(next as usize)
+}
+
+/// [`menu_step`] that skips rows `enabled` rejects (pink
+/// `popover::menu_step_where`).
+fn menu_step_where(
+    active: Option<usize>,
+    count: usize,
+    delta: isize,
+    enabled: impl Fn(usize) -> bool,
+) -> Option<usize> {
+    let mut at = active;
+    for _ in 0..count {
+        let next = menu_step(at, count, delta)?;
+        if enabled(next) {
+            return Some(next);
+        }
+        at = Some(next);
+    }
+    None
+}
+
+/// The menu's lifecycle (pink `Popup` + the Board page's `menu_cursor`).
+struct MenuState {
+    picked: FilterValue,
+    open: bool,
+    /// When the exit fade began; the card stays mounted until it ends.
+    closing: Option<Instant>,
+    /// The trigger press found the menu mounted, so its click leaves it
+    /// closed (pink `note_trigger_press`).
+    pressed_while_open: bool,
+    /// The one highlight that the arrows and the pointer share.
+    cursor: Option<usize>,
+    /// Focus the card on the next frame (pink `pending_menu_focus`).
+    pending_focus: bool,
+    trigger: FocusHandle,
+    menu: FocusHandle,
+    /// Unmounts the card once the exit fade has run (pink `reap_popup`).
+    reap: Option<Task<()>>,
+}
+
+impl MenuState {
+    fn mounted(&self) -> bool {
+        self.open || self.closing.is_some()
+    }
+
+    fn open_menu(&mut self, cursor: Option<usize>) {
+        self.open = true;
+        self.closing = None;
+        self.reap = None;
+        self.cursor = cursor;
+        self.pending_focus = true;
+    }
+
+    /// Starts the exit; `false` when the menu wasn't open.
+    fn begin_close(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.open {
+            return false;
+        }
+        self.open = false;
+        self.cursor = None;
+        self.pending_focus = false;
+        let since = Instant::now();
+        self.closing = Some(since);
+        let exit = MENU_OUT.total().mul_f32(motion::speed_scale());
+        self.reap = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(exit).await;
+            this.update(cx, |s, cx| {
+                if s.closing == Some(since) {
+                    s.closing = None;
+                    cx.notify();
+                }
+            })
+            .ok();
+        }));
+        true
+    }
+}
+
+/// Closes the menu; `refocus` hands focus back to the trigger (a pick or
+/// Esc), a press elsewhere leaves it where the press put it.
+fn close(state: &Entity<MenuState>, refocus: bool, window: &mut Window, cx: &mut App) {
+    let trigger = state.update(cx, |s, cx| {
+        let closed = s.begin_close(cx);
+        cx.notify();
+        closed.then(|| s.trigger.clone())
+    });
+    if refocus && let Some(handle) = trigger {
+        window.focus(&handle, cx);
+    }
 }
 
 #[derive(IntoElement)]
@@ -429,11 +377,9 @@ pub struct FilterMenu {
     groups: Vec<FilterGroup>,
     value: Option<FilterValue>,
     default_value: FilterValue,
-    default_open: Option<Vec<SharedString>>,
+    default_open: bool,
     title: SharedString,
-    hints: bool,
     on_change: Option<ChangeHandler>,
-    look: Option<Look>,
 }
 
 impl FilterMenu {
@@ -443,11 +389,9 @@ impl FilterMenu {
             groups,
             value: None,
             default_value: FilterValue::new(),
-            default_open: None,
+            default_open: false,
             title: "Filters".into(),
-            hints: true,
             on_change: None,
-            look: None,
         }
     }
 
@@ -464,20 +408,15 @@ impl FilterMenu {
         self
     }
 
-    /// Groups that start open – by default the first one.
-    pub fn default_open(mut self, groups: Vec<SharedString>) -> Self {
-        self.default_open = Some(groups);
+    /// Mount with the menu already open (and focused).
+    pub fn default_open(mut self, open: bool) -> Self {
+        self.default_open = open;
         self
     }
 
+    /// The trigger's label (default "Filters").
     pub fn title(mut self, title: impl Into<SharedString>) -> Self {
         self.title = title.into();
-        self
-    }
-
-    /// Show the keyboard hints (default on).
-    pub fn hints(mut self, hints: bool) -> Self {
-        self.hints = hints;
         self
     }
 
@@ -488,87 +427,74 @@ impl FilterMenu {
         self.on_change = Some(Rc::new(handler));
         self
     }
-
-    /// Overrides the global Clean/Classic look for this menu.
-    pub fn look(mut self, look: Look) -> Self {
-        self.look = Some(look);
-        self
-    }
 }
 
-/// A chip on the active line.
-struct Chip {
-    group: SharedString,
-    option: SharedString,
-    label: SharedString,
-}
-
-type Toggle = Rc<dyn Fn(&SharedString, &SharedString, &mut Window, &mut App)>;
-type ToggleGroup = Rc<dyn Fn(&SharedString, &mut App)>;
+type Run = Rc<dyn Fn(Action, &mut Window, &mut App)>;
 
 impl RenderOnce for FilterMenu {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let look = self.look.unwrap_or(cx.look());
-        let clean = look == Look::Clean;
-        let p = Palette::get(look, cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let groups = Rc::new(self.groups);
 
         let state = {
             let default_value = self.default_value.clone();
-            let default_open: HashSet<SharedString> = match &self.default_open {
-                Some(open) => open.iter().cloned().collect(),
-                None => groups.iter().take(1).map(|g| g.id.clone()).collect(),
-            };
+            let default_open = self.default_open;
             window.use_keyed_state(
                 ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
                 cx,
-                move |_, cx| FilterState {
+                move |_, cx| MenuState {
                     picked: default_value,
                     open: default_open,
-                    handles: HashMap::new(),
-                    list: cx.focus_handle(),
-                    keyboard: false,
-                    width: None,
+                    closing: None,
+                    pressed_while_open: false,
+                    cursor: None,
+                    pending_focus: default_open,
+                    trigger: cx.focus_handle().tab_stop(true),
+                    menu: cx.focus_handle(),
+                    reap: None,
                 },
             )
         };
 
-        // One focus handle per group head and option, kept across frames.
-        state.update(cx, |s, cx| {
-            for g in groups.iter() {
-                s.handles
-                    .entry(group_key(&g.id))
-                    .or_insert_with(|| cx.focus_handle());
-                for o in &g.options {
-                    s.handles
-                        .entry(option_key(&g.id, &o.id))
-                        .or_insert_with(|| cx.focus_handle());
-                }
+        // pink `render`: focus the card once it has opened.
+        let focus_menu = state.update(cx, |s, _| {
+            let due = s.pending_focus && s.open;
+            if due {
+                s.pending_focus = false;
             }
+            due.then(|| s.menu.clone())
         });
+        if let Some(handle) = focus_menu {
+            window.focus(&handle, cx);
+        }
 
-        let (picked, open, handles, list_handle, keyboard, width) = {
+        let (value, open, closing, cursor, trigger_focus, menu_focus) = {
             let s = state.read(cx);
             (
                 self.value.clone().unwrap_or_else(|| s.picked.clone()),
-                s.open.clone(),
-                s.handles.clone(),
-                s.list.clone(),
-                s.keyboard,
-                s.width,
+                s.open,
+                s.closing,
+                s.cursor,
+                s.trigger.clone(),
+                s.menu.clone(),
             )
         };
-        let width = width.map_or(if clean { 400. } else { 420. }, f32::from);
 
         // Changes go through here: kept inside when uncontrolled, always reported.
         let controlled = self.value.clone();
-        let commit: Rc<dyn Fn(FilterValue, &mut Window, &mut App)> = {
+        let run: Run = {
             let state = state.clone();
-            let is_controlled = controlled.is_some();
+            let groups = groups.clone();
             let on_change = self.on_change.clone();
-            Rc::new(move |next, window, cx| {
-                if !is_controlled {
+            Rc::new(move |action, window, cx| {
+                // pink `run_menu_action`: close first, then apply.
+                close(&state, true, window, cx);
+                let current = controlled
+                    .clone()
+                    .unwrap_or_else(|| state.read(cx).picked.clone());
+                let next = apply(&groups, action, current);
+                if controlled.is_none() {
                     state.update(cx, |s, cx| {
                         s.picked = next.clone();
                         cx.notify();
@@ -579,893 +505,663 @@ impl RenderOnce for FilterMenu {
                 }
             })
         };
-        let toggle: Toggle = {
-            let state = state.clone();
-            let commit = commit.clone();
-            Rc::new(move |group, option, window, cx| {
-                let mut next = controlled
-                    .clone()
-                    .unwrap_or_else(|| state.read(cx).picked.clone());
-                let list = next.entry(group.clone()).or_default();
-                match list.iter().position(|o| o == option) {
-                    Some(ix) => {
-                        list.remove(ix);
-                    }
-                    None => list.push(option.clone()),
-                }
-                commit(next, window, cx);
-            })
-        };
-        let toggle_group: ToggleGroup = {
-            let state = state.clone();
-            Rc::new(move |group, cx| {
-                state.update(cx, |s, cx| {
-                    if !s.open.remove(group) {
-                        s.open.insert(group.clone());
-                    }
-                    cx.notify();
-                })
-            })
-        };
 
-        // Chips in the order of the groups and their options
-        let chips: Vec<Chip> = groups
-            .iter()
-            .flat_map(|g| {
-                let picked = &picked;
-                g.options
-                    .iter()
-                    .filter(move |o| is_on(picked, &g.id, &o.id))
-                    .map(move |o| Chip {
-                        group: g.id.clone(),
-                        option: o.id.clone(),
-                        label: format!("{}{}", g.chip_prefix.clone().unwrap_or_default(), o.label)
-                            .into(),
-                    })
-            })
-            .collect();
+        let rows = Rc::new(entries(&groups, &value));
+        let first_enabled = rows.iter().position(|e| e.enabled);
 
-        // Everything the arrow keys can reach, top to bottom
-        let rows: Rc<Vec<Row>> = Rc::new(
-            groups
-                .iter()
-                .flat_map(|g| {
-                    let head = Row {
-                        key: group_key(&g.id),
-                        group: g.id.clone(),
-                    };
-                    let options = open
-                        .contains(&g.id)
-                        .then(|| {
-                            g.options.iter().map(|o| Row {
-                                key: option_key(&g.id, &o.id),
-                                group: g.id.clone(),
-                            })
-                        })
-                        .into_iter()
-                        .flatten();
-                    std::iter::once(head).chain(options)
-                })
-                .collect(),
-        );
-
-        let on_key = {
-            let rows = rows.clone();
-            let handles = handles.clone();
-            let state = state.clone();
-            let toggle_group = toggle_group.clone();
-            move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {
-                let len = rows.len();
-                if len == 0 {
-                    return;
-                }
-                let current = rows
-                    .iter()
-                    .position(|r| handles.get(&r.key).is_some_and(|h| h.is_focused(window)));
-                let focus_row = |key: &SharedString, window: &mut Window, cx: &mut App| {
-                    if let Some(handle) = handles.get(key) {
-                        window.focus(handle, cx);
-                    }
-                };
-                match event.keystroke.key.as_str() {
-                    "down" | "up" => {
-                        let next = match current {
-                            Some(i) if event.keystroke.key == "down" => (i + 1).min(len - 1),
-                            Some(i) => i.saturating_sub(1),
-                            None => 0,
-                        };
-                        focus_row(&rows[next].key, window, cx);
-                    }
-                    "home" => focus_row(&rows[0].key, window, cx),
-                    "end" => focus_row(&rows[len - 1].key, window, cx),
-                    "right" | "left" => {
-                        let Some(i) = current else { return };
-                        let group = rows[i].group.clone();
-                        let is_open = state.read(cx).open.contains(&group);
-                        if event.keystroke.key == "right" {
-                            if !is_open {
-                                toggle_group(&group, cx);
-                            }
-                        } else {
-                            if is_open {
-                                toggle_group(&group, cx);
-                            }
-                            focus_row(&group_key(&group), window, cx);
-                        }
-                    }
-                    // GPUI clicks the focused row when Enter or Space comes
-                    // back up, which picks the option or folds the group
-                    "enter" | "space" if current.is_some() => {}
-                    _ => return,
-                }
-                state.update(cx, |s, cx| {
-                    s.keyboard = true;
-                    cx.notify();
-                });
-                cx.stop_propagation();
-            }
-        };
-
-        let ctx = Ctx {
-            key: key.clone(),
-            look,
-            clean,
-            keyboard,
-        };
-
-        // ---------- Header ----------
-        let enabled = !chips.is_empty();
-        let clear_key = format!("{key}-clear");
-        let on = motion::follow(
-            &format!("{clear_key}-on"),
-            if enabled { 1. } else { 0. },
-            MotionSpec::new(if clean { 160 } else { 200 }, EASE),
-        );
-        let hover = if enabled {
-            motion::hover_t(&clear_key)
+        // ---------- Trigger (pink `render_filters_select`) ----------
+        let active = active_count(&groups, &value);
+        let label: SharedString = if active == 0 {
+            self.title.clone()
         } else {
-            0.
+            format!("{} · {active}", self.title).into()
         };
-        let clear_fg = motion::mix(motion::mix(p.clear_off, p.clear, on), p.ink, hover);
-        let clear = div()
-            .id("clear")
-            .flex()
-            .items_center()
-            .text_size(px(13.))
-            .text_color(clear_fg)
-            .bg(motion::mix(
-                p.clear_hover_bg.opacity(0.),
-                p.clear_hover_bg,
-                hover,
-            ))
-            .on_hover(motion::hover_listener(clear_key))
-            .when(clean, |d| {
-                d.h(px(28.))
-                    .px(px(8.))
-                    .rounded(px(6.))
-                    .font_weight(FontWeight::MEDIUM)
-            })
-            .when(!clean, |d| {
-                d.py(px(4.)).px(px(6.)).mr(px(-6.)).rounded(px(8.))
-            })
-            .when(enabled, |d| {
-                let commit = commit.clone();
-                d.cursor_pointer()
-                    .on_click(move |_, window, cx| commit(FilterValue::new(), window, cx))
-            })
-            .child("Clear all");
-        let title = div()
-            .text_size(px(15.))
-            .text_color(p.title)
-            .when(clean, |d| {
-                d.line_height(px(24.)).font_weight(FontWeight::MEDIUM)
-            })
-            .when(!clean, |d| d.font_weight(FontWeight::SEMIBOLD))
-            .child(self.title.clone());
-        let head = div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap(px(12.))
-            .when(clean, |d| d.pt(px(12.)).pr(px(10.)).pb(px(8.)).pl(px(16.)))
-            .when(!clean, |d| d.px(px(2.)))
-            .child(title)
-            .child(clear);
-
-        // ---------- Chips ----------
-        let chips_row = chip_line(&ctx, &p, window, &chips, width, toggle.clone());
-
-        // ---------- Groups ----------
-        let sections: Vec<_> = groups
-            .iter()
-            .map(|g| {
-                group_section(
-                    &ctx,
-                    &p,
-                    g,
-                    &picked,
-                    open.contains(&g.id),
-                    &handles,
-                    window,
-                    toggle.clone(),
-                    toggle_group.clone(),
-                )
-            })
-            .collect();
-        let list = div()
-            .id("groups")
-            .track_focus(&list_handle)
-            .flex()
-            .flex_col()
-            .when(clean, |d| {
-                d.p(px(4.)).border_t(px(0.5)).border_color(p.line)
-            })
-            .when(!clean, |d| d.pt(px(6.)))
-            .on_key_down(on_key)
-            .children(sections);
-
-        // Records the menu's width for the next frame's chip fitting.
-        let measure = {
-            let state = state.clone();
-            canvas(
-                move |bounds, window, cx| {
-                    let w = bounds.size.width;
-                    let changed = state.update(cx, |s, _| {
-                        let changed = s
-                            .width
-                            .is_none_or(|old| (f32::from(old) - f32::from(w)).abs() > 0.5);
-                        if changed {
-                            s.width = Some(w);
-                        }
-                        changed
-                    });
-                    if changed {
-                        window.request_animation_frame();
+        let aria: SharedString = if active == 0 {
+            self.title.clone()
+        } else {
+            format!("{}: {active} active", self.title).into()
+        };
+        let mut trigger =
+            pink::select_frame(format!("{key}-trigger"), ControlSize::Md, open, true, &t)
+                .track_focus(&trigger_focus)
+                .aria_label(aria)
+                .relative()
+                .font_family(pink::SANS)
+                .on_mouse_down(MouseButton::Left, {
+                    let state = state.clone();
+                    move |_, _, cx| {
+                        state.update(cx, |s, _| s.pressed_while_open = s.mounted());
                     }
-                },
-                |_, _, _, _| {},
-            )
-            .absolute()
-            .top_0()
-            .left_0()
-            .size_full()
-        };
+                })
+                .on_click({
+                    let state = state.clone();
+                    move |event: &ClickEvent, _, cx| {
+                        let was_open =
+                            state.update(cx, |s, _| std::mem::take(&mut s.pressed_while_open));
+                        if was_open {
+                            return;
+                        }
+                        // pink `open_menu`: the keyboard lands on the first live
+                        // row, the pointer on none.
+                        let cursor = if event.is_keyboard() {
+                            first_enabled
+                        } else {
+                            None
+                        };
+                        state.update(cx, |s, cx| {
+                            s.open_menu(cursor);
+                            cx.notify();
+                        });
+                    }
+                })
+                .child(pink::glyph(ICON_FILTER, ControlSize::Md))
+                .child(div().flex_none().child(label))
+                .child(pink::select_chevron(&t));
 
-        let on_pointer = {
-            let state = state.clone();
-            move |_: &gpui::MouseDownEvent, _: &mut Window, cx: &mut App| {
-                if state.read(cx).keyboard {
-                    state.update(cx, |s, cx| {
-                        s.keyboard = false;
-                        cx.notify();
-                    });
+        if open || closing.is_some() {
+            let card = menu_card(&key, &t, &rows, cursor, &state, &menu_focus, run);
+            // Reduced motion drops the fade; the card still unmounts on the
+            // exit's clock, so a press on the trigger keeps it closed.
+            let reduced = motion::reduced_motion(cx);
+            let exit = closing.map(|since| {
+                if reduced {
+                    1.0
+                } else {
+                    motion::menu_exit_progress(since)
                 }
-            }
-        };
+            });
+            trigger = trigger.child(anchored_menu_below(
+                format!("{key}-menu").into(),
+                exit,
+                card,
+            ));
+        }
 
-        let hints = self.hints.then(|| hint_row(&ctx, &p));
-        let root = div()
-            .id(self.id.clone())
-            .relative()
-            .w_full()
-            .font_family(SANS)
-            .text_size(px(13.))
-            .text_color(p.ink)
-            .on_mouse_down(MouseButton::Left, on_pointer)
-            .child(measure);
-        let root = match look {
-            Look::Clean => root
-                .max_w(px(400.))
-                .overflow_hidden()
-                .rounded(px(10.))
-                .bg(p.card)
-                .shadow(p.card_shadow.clone())
-                .line_height(px(20.))
-                .child(head)
-                .child(chips_row)
-                .child(list)
-                .children(hints),
-            Look::Classic => root
-                .max_w(px(420.))
-                .p(px(6.))
-                .rounded(px(24.))
-                .when_some(p.tray, |d, tray| d.bg(tray))
-                // The site's body line height, which the classic CSS inherits
-                .line_height(px(18.571))
+        motion::keep_alive(window);
+        trigger
+    }
+}
+
+/// The menu card: headed groups of rows with one shared keyboard/pointer
+/// highlight (pink `page.rs` `render_menu_card`).
+fn menu_card(
+    key: &str,
+    t: &Pink,
+    rows: &Rc<Vec<Entry>>,
+    cursor: Option<usize>,
+    state: &Entity<MenuState>,
+    focus: &FocusHandle,
+    run: Run,
+) -> impl IntoElement {
+    let glyph_tone = t.readable_muted(0.9);
+    let mut children = Vec::new();
+    for (ix, entry) in rows.iter().enumerate() {
+        if let Some(heading) = &entry.heading {
+            if ix > 0 {
+                children.push(pink::menu_separator(t).into_any_element());
+            }
+            children.push(pink::menu_heading(heading, t).into_any_element());
+        }
+        let enabled = entry.enabled;
+        let action = entry.action;
+        let run = run.clone();
+        children.push(
+            pink::menu_row_nav(entry.checked, cursor == Some(ix), t)
+                .id(SharedString::from(format!("{key}-row-{}", entry.key)))
+                .role(Role::MenuItem)
+                .aria_label(entry.label.clone())
+                .when(!enabled, |row| row.opacity(0.45).cursor_default())
+                .on_mouse_move({
+                    let state = state.clone();
+                    move |_, _, cx| {
+                        state.update(cx, |s, cx| {
+                            if s.open && s.cursor != Some(ix) {
+                                s.cursor = Some(ix);
+                                cx.notify();
+                            }
+                        })
+                    }
+                })
+                .when(enabled, |row| {
+                    row.on_click(move |_, window, cx| run(action, window, cx))
+                })
+                .when_some(entry.glyph.clone(), |row, glyph| {
+                    row.child(
+                        svg()
+                            .path(glyph)
+                            .size(px(icon_size::SM))
+                            .flex_none()
+                            .text_color(glyph_tone),
+                    )
+                })
                 .child(
                     div()
-                        .pt(px(16.))
-                        .px(px(16.))
-                        .pb(px(10.))
-                        .rounded(px(20.))
-                        .bg(p.card)
-                        .shadow(p.card_shadow.clone())
-                        .when_some(p.card_border, |d, c| d.border_1().border_color(c))
-                        .child(head)
-                        .child(chips_row)
-                        .child(list),
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .child(entry.label.clone()),
                 )
-                .children(hints),
-        };
-        motion::keep_alive(window);
-        root
-    }
-}
-
-/// What the pieces below need to know about the menu.
-struct Ctx {
-    key: String,
-    look: Look,
-    clean: bool,
-    keyboard: bool,
-}
-
-/// The active chips. Clean keeps them on one line and folds the rest into
-/// "+N"; Classic wraps them. The box glides to its new height.
-fn chip_line(
-    ctx: &Ctx,
-    p: &Palette,
-    window: &Window,
-    chips: &[Chip],
-    width: f32,
-    toggle: Toggle,
-) -> impl IntoElement {
-    let clean = ctx.clean;
-    let (fit, target) = if clean {
-        // As many chips as fit, leaving room for a "+N" if any are left over
-        let widths: Vec<f32> = chips
-            .iter()
-            .map(|c| {
-                8. + text_width(window, &c.label, 12., FontWeight::MEDIUM).min(180.)
-                    + 2.
-                    + 18.
-                    + 3.
-                    + CHIP_GAP
-            })
-            .collect();
-        let more = 16. + text_width(window, "+99", 12., FontWeight::MEDIUM) + CHIP_GAP;
-        let room = width - 32. + CHIP_GAP;
-        let mut used = 0.;
-        let mut n = 0;
-        while n < widths.len() {
-            let rest = if n + 1 < widths.len() { more } else { 0. };
-            if used + widths[n] + rest > room {
-                break;
-            }
-            used += widths[n];
-            n += 1;
-        }
-        (n, if chips.is_empty() { 0. } else { 36. })
-    } else {
-        // Lines the wrapping chips take inside the card
-        let room = width - 12. - 2. - 32.;
-        let mut lines = 0;
-        let mut x = 0.;
-        for c in chips {
-            let w = 11. + text_width(window, &c.label, 13., FontWeight::NORMAL) + 2. + 22. + 4.;
-            if lines == 0 || x + 6. + w > room {
-                lines += 1;
-                x = w;
-            } else {
-                x += 6. + w;
-            }
-        }
-        let height = if lines == 0 {
-            0.
-        } else {
-            12. + lines as f32 * 30. + (lines - 1) as f32 * 6.
-        };
-        (chips.len(), height)
-    };
-    let height = motion::follow(&format!("{}-chips-h", ctx.key), target, PANEL);
-
-    let shown = chips[..fit].iter().map(|c| {
-        let toggle = toggle.clone();
-        let (group, option) = (c.group.clone(), c.option.clone());
-        let chip_key = format!("{}-chip-{}:{}", ctx.key, c.group, c.option);
-        chip(ctx, p, &chip_key, c.label.clone(), move |window, cx| {
-            toggle(&group, &option, window, cx)
-        })
-        .with_animation(
-            SharedString::from(chip_key.clone()),
-            CHIP_IN.animation(),
-            |el, t| el.opacity(t),
-        )
-    });
-    let hidden = &chips[fit..];
-    let more = (!hidden.is_empty()).then(|| {
-        let count = hidden.len();
-        div()
-            .flex()
-            .flex_none()
-            .items_center()
-            .h(px(24.))
-            .px(px(8.))
-            .rounded(px(6.))
-            .overflow_hidden()
-            .bg(p.chip)
-            .text_size(px(12.))
-            .line_height(px(16.))
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(p.more)
-            .child(roll(
-                SharedString::from(format!("{}-more-{count}", ctx.key)),
-                format!("+{count}"),
-            ))
-    });
-
-    let inner = div()
-        .flex()
-        .gap(px(if clean { CHIP_GAP } else { 6. }))
-        .when(clean, |d| {
-            d.flex_nowrap()
-                .overflow_hidden()
-                .px(px(16.))
-                .when(!chips.is_empty(), |d| d.pb(px(12.)))
-        })
-        .when(!clean, |d| {
-            d.flex_wrap().when(!chips.is_empty(), |d| d.pt(px(12.)))
-        })
-        .children(shown)
-        .children(more);
-    div()
-        .flex_none()
-        .h(px(height))
-        .overflow_hidden()
-        .child(inner)
-}
-
-/// One removable chip.
-fn chip(
-    ctx: &Ctx,
-    p: &Palette,
-    chip_key: &str,
-    label: SharedString,
-    on_remove: impl Fn(&mut Window, &mut App) + 'static,
-) -> Div {
-    let clean = ctx.clean;
-    let x_key = format!("{chip_key}-x");
-    let x = div()
-        .id("x")
-        .flex()
-        .flex_none()
-        .items_center()
-        .justify_center()
-        .size(px(if clean { 18. } else { 22. }))
-        .rounded(px(if clean { 4. } else { 6. }))
-        .cursor_pointer()
-        .hover_fill(
-            x_key.clone(),
-            p.chip_x_hover_bg.opacity(0.),
-            p.chip_x_hover_bg,
-        )
-        .on_click(move |_, window, cx| on_remove(window, cx))
-        .child(
-            svg()
-                .path(icon(ctx.look, "x"))
-                .size(px(if clean { 12. } else { 14. }))
-                .flex_none()
-                .text_color(motion::hover_blend(&x_key, p.chip_x, p.ink)),
+                .into_any_element(),
         );
-    let base = div()
-        .flex()
-        .flex_none()
-        .items_center()
-        .gap(px(2.))
-        .bg(p.chip)
-        .text_color(p.chip_fg)
-        .whitespace_nowrap();
-    if clean {
-        base.h(px(24.))
-            .pl(px(8.))
-            .pr(px(3.))
-            .rounded(px(6.))
-            .text_size(px(12.))
-            .line_height(px(16.))
-            .font_weight(FontWeight::MEDIUM)
-            .child(div().max_w(px(180.)).truncate().child(label))
-            .child(x)
-    } else {
-        base.h(px(30.))
-            .pl(px(11.))
-            .pr(px(4.))
-            .rounded(px(10.))
-            .text_size(px(13.))
-            .child(label)
-            .child(x)
     }
-}
 
-/// Text that rolls up into place whenever `id` changes (`ui-fmc-roll`).
-fn roll(id: SharedString, text: String) -> impl IntoElement {
-    div()
-        .child(text)
-        .with_animation(id, ROLL.animation(), |el, t| {
-            el.relative().top(px(16. * 0.6 * (1. - t))).opacity(t)
-        })
-}
-
-/// A group: its head, and the options that fold out beneath it.
-#[allow(clippy::too_many_arguments)]
-fn group_section(
-    ctx: &Ctx,
-    p: &Palette,
-    g: &FilterGroup,
-    picked: &FilterValue,
-    is_open: bool,
-    handles: &HashMap<SharedString, FocusHandle>,
-    window: &Window,
-    toggle: Toggle,
-    toggle_group: ToggleGroup,
-) -> impl IntoElement {
-    let clean = ctx.clean;
-    let key = &ctx.key;
-    let target = if is_open { 1. } else { 0. };
-    let turn = motion::follow(&format!("{key}-chevron-{}", g.id), target, CHEVRON);
-    let reveal = motion::follow(&format!("{key}-panel-{}", g.id), target, PANEL);
-    let fade = motion::follow(&format!("{key}-fade-{}", g.id), target, PANEL_FADE);
-    let count = picked.get(&g.id).map_or(0, |list| list.len());
-
-    let head_key = group_key(&g.id);
-    let head_handle = &handles[&head_key];
-    let head_ring = ctx.keyboard && head_handle.is_focused(window);
-    let picked_label =
-        (count > 0).then(|| format!("{count} filter{}", if count == 1 { "" } else { "s" }));
-    let head = div()
-        .id(head_key.clone())
-        .track_focus(head_handle)
-        .relative()
-        .flex()
-        .flex_none()
-        .items_center()
-        .cursor_pointer()
-        .hover_fill(
-            format!("{key}-head-{}", g.id),
-            p.row_hover.opacity(0.),
-            p.row_hover,
-        )
-        .when(clean, |d| {
-            d.gap(px(8.)).h(px(32.)).px(px(8.)).rounded(px(6.))
-        })
-        .when(!clean, |d| {
-            d.gap(px(7.))
-                .h(px(36.))
-                .mt(px(2.))
-                .mx(px(-6.))
-                .pl(px(6.))
-                .pr(px(8.))
-                .rounded(px(10.))
-        })
-        .on_click({
-            let group = g.id.clone();
-            move |_, _, cx| toggle_group(&group, cx)
-        })
-        .child(
-            svg()
-                .path(icon(ctx.look, "chevron"))
-                .size(px(16.))
-                .flex_none()
-                .text_color(p.chevron)
-                .with_transformation(Transformation::rotate(radians(-FRAC_PI_2 * (1. - turn)))),
-        )
-        .child(
-            div()
-                .whitespace_nowrap()
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(p.ink)
-                .when(!clean, |d| d.text_size(px(14.)))
-                .child(g.label.clone()),
-        )
-        .child(
-            div()
-                .text_color(p.count)
-                .when(clean, |d| d.text_size(px(12.)).line_height(px(16.)))
-                .when(!clean, |d| d.text_size(px(12.5)))
-                .child(g.options.len().to_string()),
-        )
-        .child(
-            // `margin-left: auto`: takes the free space and sits on the right
-            div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .justify_end()
-                .whitespace_nowrap()
-                .text_color(p.picked)
-                .when(clean, |d| {
-                    d.overflow_hidden()
-                        .text_size(px(12.))
-                        .line_height(px(16.))
-                        .children(picked_label.clone().map(|label| {
-                            roll(
-                                SharedString::from(format!("{key}-picked-{}-{count}", g.id)),
-                                label,
-                            )
-                        }))
-                })
-                .when(!clean, |d| d.text_size(px(12.5)).children(picked_label)),
-        )
-        .when(head_ring, |d| {
-            d.child(focus_ring(p, if clean { 6. } else { 10. }, clean))
-        });
-
-    // Opens and closes by gliding its height from 0 to the options' height
-    let n = g.options.len() as f32;
-    let full = if clean {
-        n * 32. + 4.
-    } else {
-        2. + n * 34. + (n - 1.).max(0.) + 6.
+    // pink `on_menu_key`: Up/Down/Enter/Space/Escape inside the open menu;
+    // Tab closes it and moves on.
+    let on_key = {
+        let state = state.clone();
+        let rows = rows.clone();
+        move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {
+            if !state.read(cx).open {
+                return;
+            }
+            let handled = match event.keystroke.key.as_str() {
+                "up" | "down" => {
+                    let delta = if event.keystroke.key == "up" { -1 } else { 1 };
+                    state.update(cx, |s, cx| {
+                        s.cursor =
+                            menu_step_where(s.cursor, rows.len(), delta, |ix| rows[ix].enabled);
+                        cx.notify();
+                    });
+                    true
+                }
+                "enter" | "space" => {
+                    let cursor = state.read(cx).cursor;
+                    if let Some(entry) = cursor.and_then(|ix| rows.get(ix))
+                        && entry.enabled
+                    {
+                        run(entry.action, window, cx);
+                    }
+                    true
+                }
+                "escape" => {
+                    close(&state, true, window, cx);
+                    true
+                }
+                "tab" => {
+                    close(&state, false, window, cx);
+                    false
+                }
+                _ => false,
+            };
+            if handled {
+                cx.stop_propagation();
+            }
+        }
     };
-    let panel = (is_open || reveal > 0.001).then(|| {
-        let options = g.options.iter().map(|o| {
-            let row_key = option_key(&g.id, &o.id);
-            let handle = &handles[&row_key];
-            let ring = ctx.keyboard && handle.is_focused(window);
-            let on = is_on(picked, &g.id, &o.id);
-            let toggle = toggle.clone();
-            let (group, option) = (g.id.clone(), o.id.clone());
-            div()
-                .id(row_key.clone())
-                .track_focus(handle)
-                .relative()
-                .flex()
-                .flex_none()
-                .items_center()
-                .cursor_pointer()
-                .hover_fill(
-                    format!("{key}-option-{}-{}", g.id, o.id),
-                    p.row_hover.opacity(0.),
-                    p.row_hover,
-                )
-                .text_color(p.option)
-                .when(clean, |d| {
-                    d.gap(px(8.))
-                        .h(px(32.))
-                        .pl(px(32.))
-                        .pr(px(8.))
-                        .rounded(px(6.))
-                })
-                .when(!clean, |d| {
-                    d.gap(px(12.))
-                        .h(px(34.))
-                        .mx(px(-6.))
-                        .px(px(6.))
-                        .rounded(px(10.))
-                })
-                .on_click(move |_, window, cx| toggle(&group, &option, window, cx))
-                .child(checkbox(
-                    ctx,
-                    p,
-                    &format!("{key}-box-{}-{}", g.id, o.id),
-                    on,
-                ))
-                .child(div().min_w_0().truncate().child(o.label.clone()))
-                .when(ring, |d| {
-                    d.child(focus_ring(p, if clean { 6. } else { 10. }, true))
-                })
-        });
-        div()
-            .flex_none()
-            .h(px(full * reveal))
-            .overflow_hidden()
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .opacity(fade)
-                    .when(!clean, |d| d.gap(px(1.)).pt(px(2. * reveal)))
-                    .children(options),
-            )
-    });
 
-    div().flex().flex_col().child(head).children(panel)
-}
-
-/// `outline: 2px solid` for keyboard focus – drawn inside the row (offset
-/// -2px), or around it for Classic's group heads.
-fn focus_ring(p: &Palette, radius: f32, inside: bool) -> impl IntoElement {
-    let ring = div().absolute().border_2().border_color(p.focus);
-    if inside {
-        ring.inset_0().rounded(px(radius))
-    } else {
-        ring.top(px(-4.))
-            .left(px(-4.))
-            .right(px(-4.))
-            .bottom(px(-4.))
-            .rounded(px(radius + 4.))
-    }
-}
-
-/// The checkbox: fills with the accent and draws its check in.
-fn checkbox(ctx: &Ctx, p: &Palette, box_key: &str, on: bool) -> impl IntoElement {
-    let clean = ctx.clean;
-    let target = if on { 1. } else { 0. };
-    let fill = motion::follow(
-        &format!("{box_key}-fill"),
-        target,
-        MotionSpec::new(if clean { 160 } else { 180 }, EASE),
-    );
-    let draw = motion::follow(
-        &format!("{box_key}-draw"),
-        target,
-        MotionSpec::new(if clean { 240 } else { 260 }, EASE_OUT_QUINT),
-    );
-    let geometry = CheckGeometry::get(ctx.look);
-    let reach = geometry.reach(draw);
-    let size = geometry.size;
-    div()
+    pink::popover_card(t)
+        .id(SharedString::from(format!("{key}-card")))
+        .role(Role::Menu)
+        .track_focus(focus)
+        .w(px(layout::MENU_W_S))
+        .max_h(px(MENU_MAX_H))
+        .overflow_y_scroll()
         .flex()
-        .flex_none()
-        .items_center()
-        .justify_center()
-        .size(px(if clean { 14. } else { 20. }))
-        .rounded(px(if clean { 4. } else { 6. }))
-        .bg(motion::mix(p.box_bg, p.box_on, fill))
-        .border(px(if clean { 0.5 } else { 1. }))
-        .border_color(motion::mix(p.box_edge, p.box_edge_on, fill))
-        .when_some(p.box_lift, |d, lift| {
-            d.shadow(vec![shadow(0., 1., 1., 0., lift.opacity(1. - fill))])
+        .flex_col()
+        .on_mouse_down_out({
+            let state = state.clone();
+            move |_, window, cx| close(&state, false, window, cx)
         })
-        .child(
-            div().size(px(size)).flex_none().child(
-                div().w(px(reach)).h(px(size)).overflow_hidden().child(
-                    svg()
-                        .path(icon(ctx.look, "check"))
-                        .size(px(size))
-                        .flex_none()
-                        .text_color(p.check),
-                ),
-            ),
+        .on_key_down(on_key)
+        .children(children)
+}
+
+/// A dropdown hung from the trigger's bottom-left corner, 6 pt below it,
+/// kept 8 pt inside the window (pink `popover::anchored_menu_below`). It
+/// drops 6 pt into place on [`motion::MENU_IN`]; while `exit` runs it fades
+/// on [`MENU_OUT`] under an occluder so the dying rows take no clicks
+/// (pink `menu_motion_from`).
+fn anchored_menu_below(
+    id: SharedString,
+    exit: Option<f32>,
+    card: impl IntoElement,
+) -> impl IntoElement {
+    let inner = div()
+        .occlude()
+        .pt(px(layout::POPOVER_GAP))
+        .child(div().relative().child(press_guard()).child(card));
+    let layer = match exit {
+        Some(t) => motion::menu_out(
+            SharedString::from(format!("{id}-out")),
+            t,
+            inner.relative().child(div().absolute().inset_0().occlude()),
         )
+        .into_any_element(),
+        None => motion::menu_in_from(id, MENU_RISE_DOWN, inner).into_any_element(),
+    };
+    div().absolute().bottom_0().left_0().size_0().child(
+        deferred(
+            anchored()
+                .anchor(Anchor::TopLeft)
+                .snap_to_window_with_margin(px(layout::WINDOW_MARGIN))
+                .child(layer),
+        )
+        .priority(1),
+    )
 }
 
-/// The keyboard hints: the card's last row (Clean) or a line on the tray.
-fn hint_row(ctx: &Ctx, p: &Palette) -> impl IntoElement {
-    if ctx.clean {
-        let kbd = |glyph: &'static str| {
-            div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .min_w(px(16.))
-                .h(px(16.))
-                .px(px(4.))
-                .rounded(px(4.))
-                .bg(p.kbd)
-                .shadow(p.kbd_shadow.clone())
-                .text_size(px(10.))
-                .line_height(px(16.))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(p.kbd_fg)
-                .child(glyph)
-        };
-        let hint = |keys: Vec<Div>, text: &'static str| {
-            div()
-                .flex()
-                .items_center()
-                .gap(px(2.))
-                .whitespace_nowrap()
-                .children(keys)
-                .child(div().ml(px(4.)).child(text))
-        };
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap(px(12.))
-            .h(px(32.))
-            .px(px(12.))
-            .border_t(px(0.5))
-            .border_color(p.line)
-            .text_size(px(12.))
-            .line_height(px(16.))
-            .text_color(p.hint)
-            .child(hint(vec![kbd("↑"), kbd("↓")], "to navigate"))
-            .child(hint(vec![kbd("↵")], "to select"))
-    } else {
-        let kbd = |name: &str| {
-            div()
-                .flex()
-                .flex_none()
-                .items_center()
-                .justify_center()
-                .size(px(22.))
-                .rounded(px(6.))
-                .bg(p.kbd)
-                .shadow(p.kbd_shadow.clone())
-                .child(
-                    svg()
-                        .path(icon(ctx.look, name))
-                        .size(px(13.))
-                        .flex_none()
-                        .text_color(p.kbd_fg),
-                )
-        };
-        let hint = |keys: Vec<Div>, text: &'static str| {
-            div()
-                .flex()
-                .items_center()
-                .gap(px(5.))
-                .children(keys)
-                .child(div().ml(px(4.)).child(text))
-        };
-        div()
-            .flex()
-            .justify_between()
-            .gap(px(12.))
-            .pt(px(10.))
-            .px(px(8.))
-            .pb(px(4.))
-            .text_size(px(12.5))
-            .text_color(p.hint)
-            .child(hint(
-                vec![kbd("arrow-down"), kbd("arrow-up")],
-                "To navigate",
-            ))
-            .child(hint(vec![kbd("enter")], "To select"))
-    }
+/// Swallows the press that dismisses the menu: the card closes on it during
+/// capture, and this stops it in the bubble phase so nothing behind the menu
+/// (the trigger included) acts on it too (pink `frosted_menu_rounded`'s
+/// guard).
+fn press_guard() -> impl IntoElement {
+    canvas(
+        |_, _, _| (),
+        |bounds, _, window, _| {
+            window.on_mouse_event(move |event: &MouseDownEvent, phase, _, cx| {
+                if phase == DispatchPhase::Bubble && !bounds.contains(&event.position) {
+                    cx.stop_propagation();
+                }
+            });
+        },
+    )
+    .absolute()
+    .inset_0()
 }
 
-/// Stage, Deal size and Region – the demo's CRM filters.
+/// The Board's filters (pink `filter_menu_entries`): Attention, Source and
+/// Archive.
 pub fn demo_groups() -> Vec<FilterGroup> {
     vec![
-        FilterGroup::new("stage", "Stage")
-            .option("new", "New lead")
-            .option("qualified", "Qualified")
-            .option("proposal", "Proposal sent")
-            .option("negotiation", "Negotiation"),
-        FilterGroup::new("value", "Deal size")
-            .chip_prefix("Deal: ")
-            .option("s", "Under $5k")
-            .option("m", "$5k–20k")
-            .option("l", "$20k–50k")
-            .option("xl", "Over $50k"),
-        FilterGroup::new("region", "Region")
-            .option("dach", "DACH")
-            .option("nordics", "Nordics")
-            .option("uk", "UK & Ireland")
-            .option("na", "North America")
-            .option("apac", "APAC"),
+        FilterGroup::new("attention", "Attention")
+            .multiple()
+            .counted(false)
+            .option("needs-attention", "Needs attention only"),
+        FilterGroup::new("source", "Source")
+            .option("local", "Written manually")
+            .option("chat", "From a chat")
+            .option("authoring", "Discuss with AI")
+            .option("github", "GitHub issue"),
+        FilterGroup::new("archive", "Archive")
+            .multiple()
+            .option("archived", "Show archived tickets"),
     ]
 }
 
+/// The demo's tickets: (source, needs attention, archived).
+const TICKETS: [(&str, bool, bool); 12] = [
+    ("local", false, false),
+    ("chat", true, false),
+    ("github", false, false),
+    ("chat", false, false),
+    ("authoring", false, false),
+    ("github", true, false),
+    ("local", false, true),
+    ("chat", true, false),
+    ("github", false, true),
+    ("local", true, false),
+    ("chat", false, true),
+    ("github", false, false),
+];
+
+fn matching(value: &FilterValue) -> usize {
+    let attention = !picked(value, "attention").is_empty();
+    let source = picked(value, "source").first();
+    let archived = !picked(value, "archive").is_empty();
+    TICKETS
+        .iter()
+        .filter(|(s, a, arch)| {
+            (!attention || *a) && source.is_none_or(|x| x.as_ref() == *s) && (archived || !arch)
+        })
+        .count()
+}
+
+/// The Board header and toolbar around the Filters pop-up (pink
+/// `render_header` / `render_toolbar`): the "Needs attention" chip drives
+/// the same Attention filter, and nothing matching shows pink's
+/// `render_no_matches`.
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
-    story::view(cx, |_, _| {
-        let value = FilterValue::from([
-            ("stage".into(), vec!["qualified".into()]),
-            ("value".into(), vec!["m".into()]),
-            ("region".into(), vec!["dach".into()]),
-        ]);
-        FilterMenu::new("filter-menu", demo_groups()).default_value(value)
+    story::view(cx, |window, cx| {
+        let value = window.use_keyed_state("filter-menu-demo", cx, |_, _| {
+            FilterValue::from([
+                ("attention".into(), vec!["needs-attention".into()]),
+                ("source".into(), vec!["chat".into()]),
+            ])
+        });
+        let t = Pink::get(cx);
+        let current = value.read(cx).clone();
+        let count = matching(&current);
+        let attention = !picked(&current, "attention").is_empty();
+        let set = {
+            let value = value.clone();
+            Rc::new(move |next: FilterValue, cx: &mut App| {
+                value.update(cx, |v, cx| {
+                    *v = next;
+                    cx.notify();
+                })
+            })
+        };
+
+        let header = div()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_baseline()
+                    .gap(px(10.))
+                    .child(
+                        div()
+                            .type_style(TextStyle::Title1)
+                            .text_color(t.text)
+                            .child("Board"),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(13.))
+                            .text_color(t.readable_muted(0.7))
+                            .child(count.to_string()),
+                    ),
+            )
+            .child(subtitle(
+                "Move a ticket to Ready to start it; move it back to Backlog to stop it. \
+                 Done is set when checks and the review pass.",
+                &t,
+            ));
+
+        let chip = pink::chip("filter-menu-attention", attention, ControlSize::Md, &t)
+            .aria_label("Needs attention only")
+            .gap(px(6.))
+            .child(pink::glyph(ICON_ATTENTION, ControlSize::Md))
+            .child("Needs attention")
+            .on_click({
+                let set = set.clone();
+                let current = current.clone();
+                move |_, _, cx| {
+                    let mut next = current.clone();
+                    if attention {
+                        next.remove("attention");
+                    } else {
+                        next.insert("attention".into(), vec!["needs-attention".into()]);
+                    }
+                    set(next, cx);
+                }
+            });
+        let menu = FilterMenu::new("filter-menu", demo_groups())
+            .value(current)
+            .default_open(true)
+            .on_change({
+                let set = set.clone();
+                move |next, _, cx| set(next.clone(), cx)
+            });
+        let toolbar = div()
+            .flex()
+            .flex_row()
+            .flex_wrap()
+            .items_center()
+            .gap(px(8.))
+            .child(chip)
+            .child(menu);
+        let no_matches = (count == 0).then(|| {
+            div()
+                .flex()
+                .flex_col()
+                .items_start()
+                .gap(px(8.))
+                .py(px(24.))
+                .child(subtitle("No tickets match these filters.", &t))
+                .child(
+                    pink::button(
+                        "filter-menu-clear",
+                        ButtonKind::Secondary,
+                        ControlSize::Md,
+                        &t,
+                    )
+                    .aria_label("Clear filters")
+                    .child("Clear filters")
+                    .on_click(move |_, _, cx| set(FilterValue::new(), cx)),
+                )
+        });
+
+        div()
+            .w(px(560.))
+            .h(px(480.))
+            .flex()
+            .flex_col()
+            .gap(px(12.))
+            .font_family(pink::SANS)
+            .child(header)
+            .child(toolbar)
+            .children(no_matches)
     })
+}
+
+/// pink `widgets::page_subtitle`: body copy in the secondary tone.
+fn subtitle(copy: &'static str, t: &Pink) -> gpui::Div {
+    div()
+        .mt(px(6.))
+        .max_w(px(600.))
+        .text_size(px(13.))
+        .line_height(px(19.))
+        .text_color(t.readable_muted(0.9))
+        .child(copy)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn check_reach_grows_to_the_box() {
-        for look in [Look::Clean, Look::Classic] {
-            let g = CheckGeometry::get(look);
-            assert_eq!(g.reach(0.), 0.);
-            let mut last = 0.;
-            for i in 1..=20 {
-                let r = g.reach(i as f32 / 20.);
-                assert!(r >= last);
-                last = r;
-            }
-            assert!(last <= g.size && last > g.size * 0.7);
-        }
+    fn value(pairs: &[(&str, &[&str])]) -> FilterValue {
+        pairs
+            .iter()
+            .map(|(g, ids)| {
+                (
+                    SharedString::from(g.to_string()),
+                    ids.iter()
+                        .map(|id| SharedString::from(id.to_string()))
+                        .collect(),
+                )
+            })
+            .collect()
     }
 
     #[test]
-    fn row_keys() {
-        assert_eq!(group_key("stage").as_ref(), "g:stage");
-        assert_eq!(option_key("stage", "new").as_ref(), "o:stage:new");
-        let value = FilterValue::from([("stage".into(), vec!["new".into()])]);
-        assert!(is_on(&value, "stage", "new"));
-        assert!(!is_on(&value, "stage", "won"));
-        assert!(!is_on(&value, "region", "new"));
+    fn rows_follow_pinks_board_menu() {
+        let groups = demo_groups();
+        let rows = entries(&groups, &FilterValue::new());
+        let labels: Vec<&str> = rows.iter().map(|r| r.label.as_ref()).collect();
+        assert_eq!(
+            labels,
+            [
+                "Needs attention only",
+                "Any source",
+                "Written manually",
+                "From a chat",
+                "Discuss with AI",
+                "GitHub issue",
+                "Show archived tickets",
+                "Clear all filters",
+            ]
+        );
+        let headings: Vec<Option<&str>> = rows.iter().map(|r| r.heading.as_deref()).collect();
+        assert_eq!(headings[0], Some("Attention"));
+        assert_eq!(headings[1], Some("Source"));
+        assert_eq!(headings[2], None);
+        assert_eq!(headings[6], Some("Archive"));
+        assert_eq!(headings[7], None);
+        // Nothing set: Any is checked and Clear all is dimmed.
+        assert!(rows[1].checked);
+        assert!(!rows[7].enabled);
+    }
+
+    #[test]
+    fn picks_set_switch_and_clear() {
+        let groups = demo_groups();
+        let v = apply(&groups, Action::Pick(1, 1), FilterValue::new());
+        assert_eq!(v, value(&[("source", &["chat"])]));
+        let v = apply(&groups, Action::Pick(1, 3), v);
+        assert_eq!(v, value(&[("source", &["github"])]));
+        let v = apply(&groups, Action::Pick(2, 0), v);
+        let v = apply(&groups, Action::Pick(0, 0), v);
+        assert_eq!(active_count(&groups, &v), 2, "Attention isn't counted");
+        let v = apply(&groups, Action::Pick(2, 0), v);
+        assert!(!v.contains_key("archive"));
+        let v = apply(&groups, Action::Any(1), v);
+        assert_eq!(v, value(&[("attention", &["needs-attention"])]));
+        assert!(entries(&groups, &v).last().unwrap().enabled);
+        assert!(apply(&groups, Action::Clear, v).is_empty());
+    }
+
+    #[test]
+    fn cursor_wraps_and_skips_dimmed_rows() {
+        assert_eq!(menu_step(None, 3, 1), Some(0));
+        assert_eq!(menu_step(None, 3, -1), Some(2));
+        assert_eq!(menu_step(Some(2), 3, 1), Some(0));
+        assert_eq!(menu_step(None, 0, 1), None);
+        let enabled = [true, false, true];
+        assert_eq!(menu_step_where(Some(0), 3, 1, |ix| enabled[ix]), Some(2));
+        assert_eq!(menu_step_where(Some(2), 3, -1, |ix| enabled[ix]), Some(0));
+        assert_eq!(menu_step_where(None, 3, 1, |_| false), None);
+    }
+
+    /// Hosts a controlled menu, opened on mount, and records its changes.
+    #[derive(Default)]
+    struct Host {
+        value: FilterValue,
+        changes: usize,
+    }
+
+    impl gpui::Render for Host {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let host = cx.entity().downgrade();
+            div().size_full().child(
+                FilterMenu::new("fm", demo_groups())
+                    .value(self.value.clone())
+                    .default_open(true)
+                    .on_change(move |next, _, cx| {
+                        host.update(cx, |h, cx| {
+                            h.value = next.clone();
+                            h.changes += 1;
+                            cx.notify();
+                        })
+                        .ok();
+                    }),
+            )
+        }
+    }
+
+    #[gpui::test]
+    fn keyboard_drives_the_menu(cx: &mut gpui::TestAppContext) {
+        use gpui::{KeyUpEvent, Keystroke};
+        cx.update(crate::init);
+        let (host, cx) = cx.add_window_view(|_, _| Host::default());
+        let settle = |cx: &mut gpui::VisualTestContext| {
+            cx.executor()
+                .advance_clock(std::time::Duration::from_millis(200));
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+        };
+        // Enter on the focused trigger: GPUI clicks on the key coming back up.
+        let press_trigger = |cx: &mut gpui::VisualTestContext| {
+            cx.simulate_keystrokes("enter");
+            cx.simulate_event(KeyUpEvent {
+                keystroke: Keystroke::parse("enter").unwrap(),
+            });
+            settle(cx);
+        };
+        settle(cx);
+
+        // Open on mount and focused: the pointer cursor is unset, so Down
+        // enters at the top; the third row is "Written manually".
+        cx.simulate_keystrokes("down down down enter");
+        settle(cx);
+        host.read_with(cx, |h, _| {
+            assert_eq!(h.changes, 1);
+            assert_eq!(h.value, value(&[("source", &["local"])]));
+        });
+
+        // The pick closed the menu and handed focus back to the trigger,
+        // whose keyboard click opens it on the first row.
+        press_trigger(cx);
+        cx.simulate_keystrokes("enter");
+        settle(cx);
+        host.read_with(cx, |h, _| {
+            assert_eq!(h.changes, 2);
+            assert_eq!(
+                h.value,
+                value(&[("attention", &["needs-attention"]), ("source", &["local"])])
+            );
+        });
+
+        // Esc closes without a change; arrows on the trigger do nothing.
+        press_trigger(cx);
+        cx.simulate_keystrokes("escape");
+        settle(cx);
+        cx.simulate_keystrokes("down enter");
+        settle(cx);
+        host.read_with(cx, |h, _| assert_eq!(h.changes, 2));
+
+        // Up from the first row wraps to "Clear all filters".
+        press_trigger(cx);
+        cx.simulate_keystrokes("up enter");
+        settle(cx);
+        host.read_with(cx, |h, _| {
+            assert_eq!(h.changes, 3);
+            assert!(h.value.is_empty());
+        });
+    }
+
+    #[gpui::test]
+    fn pointer_picks_and_dismisses(cx: &mut gpui::TestAppContext) {
+        use gpui::{Modifiers, point};
+        cx.update(crate::init);
+        let (host, cx) = cx.add_window_view(|_, _| Host::default());
+        let settle = |cx: &mut gpui::VisualTestContext| {
+            cx.executor()
+                .advance_clock(std::time::Duration::from_millis(200));
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+        };
+        let click = |cx: &mut gpui::VisualTestContext, x: f32, y: f32| {
+            cx.simulate_mouse_move(point(px(x), px(y)), None, Modifiers::none());
+            settle(cx);
+            cx.simulate_click(point(px(x), px(y)), Modifiers::none());
+            settle(cx);
+        };
+        // The trigger sits at the window's corner; the card hangs 6 pt below
+        // its 28 pt, and its first row follows the Attention heading.
+        let (trigger, row) = ((20.0, 14.0), (60.0, 34.0 + 1.0 + 4.0 + 26.0 + 14.0));
+        settle(cx);
+
+        click(cx, row.0, row.1);
+        host.read_with(cx, |h, _| {
+            assert_eq!(h.changes, 1);
+            assert_eq!(h.value, value(&[("attention", &["needs-attention"])]));
+        });
+
+        // Open, then press the trigger again: the press only dismisses.
+        click(cx, trigger.0, trigger.1);
+        click(cx, trigger.0, trigger.1);
+        // Nothing is under the row's spot any more.
+        click(cx, row.0, row.1);
+        host.read_with(cx, |h, _| assert_eq!(h.changes, 1));
+
+        // Reopened, the same row switches Attention back off.
+        click(cx, trigger.0, trigger.1);
+        click(cx, row.0, row.1);
+        host.read_with(cx, |h, _| {
+            assert_eq!(h.changes, 2);
+            assert!(h.value.is_empty());
+        });
+    }
+
+    #[test]
+    fn demo_count_follows_the_filters() {
+        assert_eq!(matching(&FilterValue::new()), 9);
+        assert_eq!(
+            matching(&value(&[
+                ("attention", &["needs-attention"]),
+                ("source", &["chat"])
+            ])),
+            2
+        );
+        assert_eq!(
+            matching(&value(&[
+                ("attention", &["needs-attention"]),
+                ("source", &["authoring"])
+            ])),
+            0
+        );
     }
 }
