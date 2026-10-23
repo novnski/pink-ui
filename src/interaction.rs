@@ -1,4 +1,4 @@
-//! Eased hover feedback, adapted from luna-ui's `interaction` module.
+//! Eased hover feedback, adapted from the Pink app's `interaction` module.
 //!
 //! GPUI's `.hover(|s| s.bg(..))` applies on the frame the pointer enters, so
 //! it snaps. Controls here transition their colors over 160ms instead, like a

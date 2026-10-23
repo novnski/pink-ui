@@ -33,8 +33,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, Tone, radius, space, text},
     motion::{self, AnimationExt, GLIDE, MotionSpec},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, radius, space, text},
     story,
 };
 
@@ -306,7 +306,7 @@ impl RenderOnce for SetupGuide {
 
 impl SetupGuide {
     fn build(self, window: &mut Window, cx: &mut App) -> gpui::AnyElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
@@ -437,7 +437,7 @@ impl SetupGuide {
                     .child({
                         let state = state.clone();
                         let id: SharedString = format!("{key}-minimize").into();
-                        let hover = format!("luna-icon-{id}");
+                        let hover = format!("pink-icon-{id}");
                         div()
                             .id(id.clone())
                             .size(px(28.))
@@ -470,7 +470,7 @@ impl SetupGuide {
                     .child({
                         let state = state.clone();
                         let on_dismiss = self.on_dismiss.clone();
-                        luna::icon_button(format!("{key}-dismiss"), ICON_CLOSE, ControlSize::Md, &t)
+                        pink::icon_button(format!("{key}-dismiss"), ICON_CLOSE, ControlSize::Md, &t)
                             .on_click(move |_, window, cx| {
                                 state.update(cx, |s, cx| {
                                     s.dismissed = true;
@@ -506,7 +506,7 @@ impl SetupGuide {
         let body = div()
             .flex()
             .flex_col()
-            .child(luna::divider(&t))
+            .child(pink::divider(&t))
             .child(
                 div()
                     .flex()
@@ -551,10 +551,10 @@ impl SetupGuide {
                 ))
             });
 
-        luna::card(&t)
+        pink::card(&t)
             .id(self.id.clone())
             .w(self.width)
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .overflow_hidden()
             .child(header)
@@ -577,7 +577,7 @@ fn group_view(
     outline: &Rc<Outline>,
     on_toggle: Option<ToggleHandler>,
     on_action: Option<TaskHandler>,
-    t: &Luna,
+    t: &Pink,
     cx: &mut App,
 ) -> AnyElement {
     let gkey = format!("{key}-group-{}", group.id);
@@ -663,11 +663,11 @@ fn group_view(
                     .child(group.title.clone()),
             )
             .child(if complete {
-                luna::badge("Done", Tone::Success, t).into_any_element()
+                pink::badge("Done", Tone::Success, t).into_any_element()
             } else {
                 div()
                     .text_size(px(text::FOOTNOTE))
-                    .font_family(luna::MONO)
+                    .font_family(pink::MONO)
                     .text_color(t.text_faint)
                     .child(format!("{done}/{}", group.tasks.len()))
                     .into_any_element()
@@ -737,7 +737,7 @@ fn task_row(
     outline: &Rc<Outline>,
     on_toggle: Option<ToggleHandler>,
     on_action: Option<TaskHandler>,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let tkey = format!("{key}-task-{}", task.id);
     let strike = motion::follow(
@@ -837,14 +837,14 @@ fn task_row(
                 })
                 .when_some(task.action.clone(), |d, label| {
                     let action_key = format!("{tkey}-action");
-                    let shift = motion::hover_t(&format!("luna-btn-{action_key}")) * 2.;
+                    let shift = motion::hover_t(&format!("pink-btn-{action_key}")) * 2.;
                     d.child(
                         div().flex().child(
-                            luna::button(action_key, ButtonKind::Secondary, ControlSize::Sm, t)
+                            pink::button(action_key, ButtonKind::Secondary, ControlSize::Sm, t)
                                 .child(label)
                                 .child(
                                     div().w(px(14.)).pl(px(shift)).child(
-                                        luna::glyph(ICON_ARROW, ControlSize::Sm)
+                                        pink::glyph(ICON_ARROW, ControlSize::Sm)
                                             .text_color(t.text_muted),
                                     ),
                                 )
@@ -910,7 +910,7 @@ fn resume_pill(
     state: &gpui::Entity<GuideState>,
     done: usize,
     total: usize,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let state = state.clone();
     let ratio = if total == 0 {
@@ -920,13 +920,13 @@ fn resume_pill(
     };
     motion::pop_in(
         SharedString::from(format!("{key}-resume")),
-        luna::button(
+        pink::button(
             format!("{key}-resume-btn"),
             ButtonKind::Secondary,
             ControlSize::Lg,
             t,
         )
-        .font_family(luna::SANS)
+        .font_family(pink::SANS)
         .gap(px(space::S8))
         .child(progress_ring(
             ratio,
@@ -939,7 +939,7 @@ fn resume_pill(
         .child(
             div()
                 .text_color(t.text_faint)
-                .font_family(luna::MONO)
+                .font_family(pink::MONO)
                 .child(format!("{done}/{total}")),
         )
         .on_click(move |_, _, cx| {

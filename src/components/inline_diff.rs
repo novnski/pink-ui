@@ -26,8 +26,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, radius, space, text},
     motion::{self, AnimationExt, EASE_OUT, GLIDE, HOVER_FADE, MENU_IN, MotionSpec},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, radius, space, text},
     primitives::ring,
     story,
 };
@@ -205,7 +205,7 @@ fn tokenize(code: &str) -> Vec<(String, Token)> {
     out
 }
 
-fn token_color(kind: Token, t: &Luna) -> Hsla {
+fn token_color(kind: Token, t: &Pink) -> Hsla {
     match kind {
         Token::Plain => t.text,
         Token::Keyword => t.accent,
@@ -457,7 +457,7 @@ fn run(
 
 impl RenderOnce for InlineDiff {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let n = self.edits.len();
         let autofocus = self.autofocus;
@@ -494,7 +494,7 @@ impl RenderOnce for InlineDiff {
         let focused = focus.is_focused(window);
 
         // Geist Mono advance, for folding marked spans to zero width.
-        let font_id = window.text_system().resolve_font(&font(luna::MONO));
+        let font_id = window.text_system().resolve_font(&font(pink::MONO));
         let advance = window
             .text_system()
             .em_advance(font_id, px(CODE_SIZE))
@@ -680,7 +680,7 @@ impl RenderOnce for InlineDiff {
             .bg(t.fill(FillTier::Quaternary))
             .border_y_1()
             .border_color(t.border)
-            .font_family(luna::MONO)
+            .font_family(pink::MONO)
             .text_size(px(CODE_SIZE))
             .line_height(px(LINE_H))
             .child(
@@ -756,7 +756,7 @@ impl RenderOnce for InlineDiff {
                 }));
         let undo = {
             let act = act.clone();
-            luna::icon_button(format!("{key}-undo"), ICON_UNDO, ControlSize::Md, &t)
+            pink::icon_button(format!("{key}-undo"), ICON_UNDO, ControlSize::Md, &t)
                 .when(!can_undo, |b| b.opacity(0.35).cursor_default())
                 .when(can_undo, |b| {
                     b.on_click(move |_, window, cx| act(Command::Undo, window, cx))
@@ -855,7 +855,7 @@ impl RenderOnce for InlineDiff {
             };
             let apply = {
                 let act = act.clone();
-                luna::button(
+                pink::button(
                     format!("{key}-apply"),
                     ButtonKind::Primary,
                     ControlSize::Md,
@@ -901,12 +901,12 @@ impl RenderOnce for InlineDiff {
                 .unwrap_or_else(|| "Suggested edit".into());
             let nav = |id: &str, icon: &'static str, delta: isize| {
                 let act = act.clone();
-                luna::icon_button(format!("{key}-{id}"), icon, ControlSize::Md, &t)
+                pink::icon_button(format!("{key}-{id}"), icon, ControlSize::Md, &t)
                     .on_click(move |_, window, cx| act(Command::Step(delta), window, cx))
             };
             let all = |id: &str, kind: ButtonKind, label: &'static str, d: Decision| {
                 let act = act.clone();
-                luna::button(format!("{key}-{id}"), kind, ControlSize::Md, &t)
+                pink::button(format!("{key}-{id}"), kind, ControlSize::Md, &t)
                     .child(label)
                     .on_click(move |_, window, cx| act(Command::DecideAll(d), window, cx))
             };
@@ -917,7 +917,7 @@ impl RenderOnce for InlineDiff {
                 .child(
                     div()
                         .flex_none()
-                        .font_family(luna::MONO)
+                        .font_family(pink::MONO)
                         .text_size(px(text::CAPTION))
                         .text_color(t.text_faint)
                         .child(format!("{}/{n}", current + 1)),
@@ -985,7 +985,7 @@ impl RenderOnce for InlineDiff {
             if focused { 1. } else { 0. },
             HOVER_FADE,
         );
-        luna::card(&t)
+        pink::card(&t)
             .id(self.id.clone())
             .track_focus(&focus)
             .on_key_down(on_key)
@@ -995,7 +995,7 @@ impl RenderOnce for InlineDiff {
             })
             .w(px(self.width))
             .overflow_hidden()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .border_color(motion::mix(t.border, t.border_strong, focus_ring))
             .child(header)
@@ -1043,7 +1043,7 @@ fn line_width(pieces: &[Piece], edits: &[DiffEdit], decisions: &[Decision], adva
 
 /// Plain code as syntax-tinted spans. `tint` pulls every token toward
 /// `diff` (a marked span's color) by that amount.
-fn code_tokens(code: &str, opacity: f32, tint: Option<(Hsla, f32)>, t: &Luna) -> Vec<Div> {
+fn code_tokens(code: &str, opacity: f32, tint: Option<(Hsla, f32)>, t: &Pink) -> Vec<Div> {
     tokenize(code)
         .into_iter()
         .map(|(s, kind)| {
@@ -1071,7 +1071,7 @@ fn edit_mark(
     current: bool,
     advance: f32,
     act: Rc<dyn Fn(Command, &mut Window, &mut App)>,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let hover_key = format!("{key}-mark-{ix}");
     let hover = motion::hover_t(&hover_key);
@@ -1152,7 +1152,7 @@ fn edit_mark(
 }
 
 /// The floating Keep / Drop rail beside the edit in focus.
-fn rail(key: &str, act: Rc<dyn Fn(Command, &mut Window, &mut App)>, t: &Luna) -> impl IntoElement {
+fn rail(key: &str, act: Rc<dyn Fn(Command, &mut Window, &mut App)>, t: &Pink) -> impl IntoElement {
     let action = |id: &str,
                   icon: &'static str,
                   label: &'static str,
@@ -1172,7 +1172,7 @@ fn rail(key: &str, act: Rc<dyn Fn(Command, &mut Window, &mut App)>, t: &Luna) ->
             .pr(px(space::S4))
             .rounded(px(radius::XS))
             .cursor_pointer()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_size(px(text::FOOTNOTE))
             .font_weight(FontWeight::MEDIUM)
             .hover_fill(
@@ -1192,13 +1192,13 @@ fn rail(key: &str, act: Rc<dyn Fn(Command, &mut Window, &mut App)>, t: &Luna) ->
                     .items_center()
                     .rounded(px(3.))
                     .bg(t.fill(FillTier::Tertiary))
-                    .font_family(luna::MONO)
+                    .font_family(pink::MONO)
                     .text_size(px(10.))
                     .text_color(t.text_faint)
                     .child(hint),
             )
     };
-    luna::overlay(t)
+    pink::overlay(t)
         .flex()
         .items_center()
         .gap(px(1.))

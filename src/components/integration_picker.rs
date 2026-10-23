@@ -1,6 +1,6 @@
 //! Integration Picker – the integrations page of a command menu.
 //!
-//! A luna component. A searchable sidebar splits the
+//! A pink component. A searchable sidebar splits the
 //! services into Connected and Available; the picked one fills the detail
 //! pane, where your workspace and the service sit on two tiles joined by a
 //! dotted link. Connecting runs a short handshake – the link pulses, the
@@ -25,8 +25,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, Tone, radius, text},
     motion::{self, EASE, EASE_OUT_QUINT, MotionSpec, ROW_IN, VIEW_IN},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, radius, text},
     primitives::{InputEvent, TextInput},
     story,
 };
@@ -435,7 +435,7 @@ impl IntegrationPicker {
 
 impl RenderOnce for IntegrationPicker {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let total = self.integrations.len();
         let initial_connected: Vec<SharedString> = self
@@ -551,7 +551,7 @@ impl RenderOnce for IntegrationPicker {
         div()
             .id(self.id)
             .w(px(WIDTH))
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .bg(t.surface_overlay)
             .border_1()
@@ -591,7 +591,7 @@ fn sidebar(
     state: &Entity<PickerState>,
     scroll: &ScrollHandle,
     on_back: Option<Rc<dyn Fn(&mut Window, &mut App)>>,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     // Plate position from the fixed row and header heights.
     let mut y = LIST_PAD;
@@ -732,7 +732,7 @@ fn sidebar(
         );
     }
 
-    let back = luna::icon_button("ip-back", ICON_BACK, ControlSize::Md, t)
+    let back = pink::icon_button("ip-back", ICON_BACK, ControlSize::Md, t)
         .when_some(on_back, |el, f| {
             el.on_click(move |_, window, cx| f(window, cx))
         });
@@ -759,7 +759,7 @@ fn sidebar(
                         .font_weight(FontWeight::SEMIBOLD)
                         .child("Integrations"),
                 )
-                .child(luna::kbd("Esc", t)),
+                .child(pink::kbd("Esc", t)),
         )
         .child(
             div().px(px(12.)).pb(px(4.)).child(
@@ -794,7 +794,7 @@ fn sidebar(
 }
 
 /// A neutral lettered tile standing in for a service's logo.
-fn monogram(letter: &SharedString, size: f32, lit: f32, t: &Luna) -> impl IntoElement {
+fn monogram(letter: &SharedString, size: f32, lit: f32, t: &Pink) -> impl IntoElement {
     let rest = if t.dark {
         t.surface_raised
     } else {
@@ -839,22 +839,22 @@ fn detail(
     grants: &HashMap<(SharedString, usize), bool>,
     state: &Entity<PickerState>,
     reduced: bool,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let id = service.id.clone();
     let toggler = state.clone();
     let action = match link {
-        Link::Available => luna::button("ip-connect", ButtonKind::Accent, ControlSize::Md, t)
+        Link::Available => pink::button("ip-connect", ButtonKind::Accent, ControlSize::Md, t)
             .child("Connect")
             .on_click(move |_, window, cx| {
                 toggler.update(cx, |s, cx| s.toggle(id.clone(), window, cx))
             }),
-        Link::Connecting => luna::button("ip-connect", ButtonKind::Accent, ControlSize::Md, t)
+        Link::Connecting => pink::button("ip-connect", ButtonKind::Accent, ControlSize::Md, t)
             .opacity(0.8)
             .cursor_default()
             .child(spinner("button-spinner", 14., t.on_accent))
             .child("Connecting…"),
-        Link::Connected => luna::button("ip-connect", ButtonKind::Secondary, ControlSize::Md, t)
+        Link::Connected => pink::button("ip-connect", ButtonKind::Secondary, ControlSize::Md, t)
             .child("Disconnect")
             .on_click(move |_, window, cx| {
                 toggler.update(cx, |s, cx| s.toggle(id.clone(), window, cx))
@@ -866,7 +866,7 @@ fn detail(
         Link::Connected => ("Connected", Tone::Success),
     };
     let badge = div()
-        .child(luna::badge(badge_label, tone, t))
+        .child(pink::badge(badge_label, tone, t))
         .with_animation(
             SharedString::from(format!("{key}-badge-{}-{badge_label}", service.id)),
             MotionSpec::new(300, EASE_OUT_QUINT).animation(),
@@ -1038,7 +1038,7 @@ fn hero(
     link: Link,
     joined: u32,
     reduced: bool,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let live = link == Link::Connected;
     let busy = link == Link::Connecting;
@@ -1181,7 +1181,7 @@ fn hero(
         )
 }
 
-fn footer(key: &str, connected: usize, total: usize, t: &Luna) -> impl IntoElement {
+fn footer(key: &str, connected: usize, total: usize, t: &Pink) -> impl IntoElement {
     let ticks = (0..total).map(|i| {
         let on = motion::follow(
             &format!("{key}-tick-{i}"),
@@ -1203,7 +1203,7 @@ fn footer(key: &str, connected: usize, total: usize, t: &Luna) -> impl IntoEleme
                 div()
                     .flex()
                     .gap(px(2.))
-                    .children(keys.iter().map(|k| luna::kbd(*k, t))),
+                    .children(keys.iter().map(|k| pink::kbd(*k, t))),
             )
             .child(label)
     };

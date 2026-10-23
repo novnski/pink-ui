@@ -26,8 +26,8 @@ use gpui::{
 };
 
 use crate::{
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, Tone, oklch, radius, text},
     motion::{self, EASE_OUT_QUINT, GLIDE, MotionSpec},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, oklch, radius, text},
     story,
 };
 
@@ -80,10 +80,10 @@ impl Part {
         }
     }
 
-    fn color(self, t: &Luna) -> Hsla {
+    fn color(self, t: &Pink) -> Hsla {
         let l = if t.dark { 0.70 } else { 0.64 };
         match self {
-            Part::System => luna::neutral(if t.dark { 0.6 } else { 0.66 }),
+            Part::System => pink::neutral(if t.dark { 0.6 } else { 0.66 }),
             Part::Tools => oklch(l, 0.10, 232.),
             Part::Files => oklch(l, 0.11, 185.),
             Part::Conversation => t.accent,
@@ -391,7 +391,7 @@ impl ContextWindow {
 
 impl RenderOnce for ContextWindow {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let initial = self.usage.clone();
         let state = window.use_keyed_state(
@@ -493,7 +493,7 @@ impl RenderOnce for ContextWindow {
                             .text_color(t.text_faint)
                             .child(format!("of {} tokens", k(usage.capacity))),
                     )
-                    .child(luna::badge(
+                    .child(pink::badge(
                         format!("{:.0}%", (shown_used / usage.capacity as f32) * 100.),
                         tone,
                         &t,
@@ -535,7 +535,7 @@ impl RenderOnce for ContextWindow {
                     .when(compacting.is_none(), |d| {
                         d.child(
                             div()
-                                .font_family(luna::MONO)
+                                .font_family(pink::MONO)
                                 .text_color(t.text)
                                 .child(k(free)),
                         )
@@ -546,14 +546,14 @@ impl RenderOnce for ContextWindow {
                     }),
             )
             .child(
-                luna::button(
+                pink::button(
                     format!("{key}-compact"),
                     ButtonKind::Secondary,
                     ControlSize::Md,
                     &t,
                 )
                 .when(!can_compact, |b| b.opacity(0.5).cursor_default())
-                .child(luna::glyph(ICON_COMPACT, ControlSize::Md).text_color(t.text_muted))
+                .child(pink::glyph(ICON_COMPACT, ControlSize::Md).text_color(t.text_muted))
                 .child(if usage.summarized {
                     "Summarized"
                 } else {
@@ -586,9 +586,9 @@ impl RenderOnce for ContextWindow {
                 }),
             );
 
-        let el = luna::card(&t)
+        let el = pink::card(&t)
             .id(self.id.clone())
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_size(px(text::BODY))
             .text_color(t.text)
             .overflow_hidden()
@@ -618,7 +618,7 @@ fn field_view(
     hover: Option<Spot>,
     compacting: Option<Instant>,
     window: &mut Window,
-    t: &Luna,
+    t: &Pink,
     cx: &App,
 ) -> impl IntoElement {
     let cells = usage.cells();
@@ -757,7 +757,7 @@ fn field_view(
                 .child(div().text_color(t.text).child(label))
                 .child(
                     div()
-                        .font_family(luna::MONO)
+                        .font_family(pink::MONO)
                         .text_color(t.text_muted)
                         .child(k(tokens)),
                 )
@@ -800,7 +800,7 @@ fn legend_view(
     state: &Entity<WindowState>,
     hover: Option<Spot>,
     on_remove: Option<IdHandler>,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let row = |spot: Spot, swatch: Option<Hsla>, label: SharedString, meta: Option<String>| {
         let row_key = format!("{key}-row-{spot:?}");
@@ -858,7 +858,7 @@ fn legend_view(
             .child(
                 div()
                     .flex_none()
-                    .font_family(luna::MONO)
+                    .font_family(pink::MONO)
                     .text_size(px(text::FOOTNOTE))
                     .text_color(t.text_muted)
                     .child(k(shown.round() as u32)),
@@ -924,7 +924,7 @@ fn legend_view(
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .font_family(luna::MONO)
+                        .font_family(pink::MONO)
                         .text_size(px(text::FOOTNOTE))
                         .text_color(t.text_muted)
                         .child(entry.file.name.clone()),
@@ -932,13 +932,13 @@ fn legend_view(
                 .child(
                     div()
                         .flex_none()
-                        .font_family(luna::MONO)
+                        .font_family(pink::MONO)
                         .text_size(px(text::FOOTNOTE))
                         .text_color(t.text_faint)
                         .child(k(entry.file.tokens)),
                 )
                 .child(
-                    luna::icon_button(format!("{file_key}-x"), ICON_REMOVE, ControlSize::Sm, t)
+                    pink::icon_button(format!("{file_key}-x"), ICON_REMOVE, ControlSize::Sm, t)
                         .on_click(move |_, window, cx| {
                             cx.stop_propagation();
                             let removed = remove_state.update(cx, |s, cx| {

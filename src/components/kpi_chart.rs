@@ -24,8 +24,8 @@ use gpui::{
 };
 
 use crate::{
-    luna::{self, ControlSize, FillTier, Luna, Tone, radius, space, text},
     motion::{self, CubicBezier, MotionSpec},
+    pink::{self, ControlSize, FillTier, Pink, Tone, radius, space, text},
     story,
 };
 
@@ -172,20 +172,20 @@ struct State {
     focus: FocusHandle,
 }
 
-/// The series palette, derived from luna's accent and status colors.
-fn palette(t: &Luna) -> [Hsla; 5] {
-    // luna's light-mode warning is a deep orange for text; lines read better a step lighter.
+/// The series palette, derived from Pink's accent and status colors.
+fn palette(t: &Pink) -> [Hsla; 5] {
+    // Pink's light-mode warning is a deep orange for text; lines read better a step lighter.
     let amber = if t.dark {
         t.warning
     } else {
-        luna::oklch(0.70, 0.165, 62.)
+        pink::oklch(0.70, 0.165, 62.)
     };
-    [t.accent, t.success, amber, luna::neutral(0.62), t.danger]
+    [t.accent, t.success, amber, pink::neutral(0.62), t.danger]
 }
 
 impl RenderOnce for KpiChart {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let default_range = self.default_range;
         let state = window.use_keyed_state(
@@ -302,13 +302,13 @@ impl RenderOnce for KpiChart {
         let chips = self.ranges.iter().enumerate().map(|(ix, r)| {
             let state = state.clone();
             let handler = self.on_range_change.clone();
-            luna::chip(
+            pink::chip(
                 format!("{key}-range-{ix}"),
                 ix == range_ix,
                 ControlSize::Sm,
                 &t,
             )
-            .font_family(luna::MONO)
+            .font_family(pink::MONO)
             .child(r.label.clone())
             .on_click(move |_, window, cx| {
                 state.update(cx, |s, cx| {
@@ -367,7 +367,7 @@ impl RenderOnce for KpiChart {
                                     .child((self.format)(headline)),
                             )
                             .child(
-                                luna::badge(
+                                pink::badge(
                                     format!(
                                         "{} {:.1}%",
                                         if change >= 0. { "▲" } else { "▼" },
@@ -376,7 +376,7 @@ impl RenderOnce for KpiChart {
                                     delta_tone,
                                     &t,
                                 )
-                                .font_family(luna::MONO),
+                                .font_family(pink::MONO),
                             ),
                     )
                     .child(
@@ -472,7 +472,7 @@ impl RenderOnce for KpiChart {
                     )
                     .child(
                         div()
-                            .font_family(luna::MONO)
+                            .font_family(pink::MONO)
                             .text_size(px(text::FOOTNOTE))
                             .text_color(t.text_faint)
                             .child(if off {
@@ -585,7 +585,7 @@ impl RenderOnce for KpiChart {
                     .top(px(y - 8.))
                     .text_size(px(text::CAPTION))
                     .line_height(px(16.))
-                    .font_family(luna::MONO)
+                    .font_family(pink::MONO)
                     .text_color(t.text_faint)
                     .child((self.axis_format)(v))
             }));
@@ -654,7 +654,7 @@ impl RenderOnce for KpiChart {
                         .child(range.points.get(h).cloned().unwrap_or_default())
                         .child(
                             div()
-                                .font_family(luna::MONO)
+                                .font_family(pink::MONO)
                                 .text_color(t.text_muted)
                                 .child((self.format)(total_at(h))),
                         ),
@@ -679,7 +679,7 @@ impl RenderOnce for KpiChart {
                         )
                         .child(
                             div()
-                                .font_family(luna::MONO)
+                                .font_family(pink::MONO)
                                 .text_color(t.text)
                                 .child((self.format)(v)),
                         )
@@ -762,14 +762,14 @@ impl RenderOnce for KpiChart {
 
         // Followers started above need frames even when nothing else animates.
         motion::keep_alive(window);
-        luna::card(&t)
+        pink::card(&t)
             .id(self.id.clone())
             .w(px(620.))
             .flex()
             .flex_col()
             .gap(px(space::S16))
             .p(px(space::S20))
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .child(header)
             .child(legend)
             .child(

@@ -25,8 +25,8 @@ use gpui::{
 };
 
 use crate::{
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, Tone, radius, space, text},
     motion::{self, AnimationExt, MotionSpec},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, radius, space, text},
     primitives::shadow,
     story,
 };
@@ -217,19 +217,19 @@ struct State {
     chart: Rc<Cell<Bounds<Pixels>>>,
 }
 
-fn palette(t: &Luna) -> [Hsla; 5] {
+fn palette(t: &Pink) -> [Hsla; 5] {
     let amber = if t.dark {
         t.warning
     } else {
-        luna::oklch(0.70, 0.165, 62.)
+        pink::oklch(0.70, 0.165, 62.)
     };
     // A lighter accent for the second slot keeps the meter in one family.
     let lilac = if t.dark {
-        luna::oklch(0.80, 0.10, 285.)
+        pink::oklch(0.80, 0.10, 285.)
     } else {
-        luna::oklch(0.70, 0.15, 290.)
+        pink::oklch(0.70, 0.15, 290.)
     };
-    [t.accent, lilac, t.success, amber, luna::neutral(0.62)]
+    [t.accent, lilac, t.success, amber, pink::neutral(0.62)]
 }
 
 /// The numbers a cycle's footer, meter and chart share.
@@ -275,7 +275,7 @@ fn outlook(cycle: &UsageCycle, allowance: f32) -> Outlook {
 
 impl RenderOnce for UsageMeter {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
@@ -288,7 +288,7 @@ impl RenderOnce for UsageMeter {
             },
         );
         if self.cycles.is_empty() {
-            return luna::card(&t).id(self.id.clone());
+            return pink::card(&t).id(self.id.clone());
         }
         let (cycle_ix, day, category, chart_cell) = {
             let s = state.read(cx);
@@ -315,7 +315,7 @@ impl RenderOnce for UsageMeter {
         // --- Header ---------------------------------------------------
         let tabs = self.cycles.iter().enumerate().map(|(ix, c)| {
             let state = state.clone();
-            luna::chip(
+            pink::chip(
                 SharedString::from(format!("{key}-cycle-{ix}")),
                 ix == cycle_ix,
                 ControlSize::Sm,
@@ -386,7 +386,7 @@ impl RenderOnce for UsageMeter {
                                             .text_color(t.text)
                                             .child(self.workspace.clone()),
                                     )
-                                    .child(luna::badge(self.plan.clone(), Tone::Accent, &t)),
+                                    .child(pink::badge(self.plan.clone(), Tone::Accent, &t)),
                             )
                             .child(
                                 div()
@@ -462,15 +462,15 @@ impl RenderOnce for UsageMeter {
                                 .child("Projected")
                                 .child(
                                     div()
-                                        .font_family(luna::MONO)
+                                        .font_family(pink::MONO)
                                         .text_color(if over { t.warning } else { t.text })
                                         .child(compact(o.projected)),
                                 ),
                         )
                     })
                     .child(
-                        luna::badge(format!("{:.0}%", share * 100.), share_tone, &t)
-                            .font_family(luna::MONO),
+                        pink::badge(format!("{:.0}%", share * 100.), share_tone, &t)
+                            .font_family(pink::MONO),
                     ),
             );
 
@@ -617,7 +617,7 @@ impl RenderOnce for UsageMeter {
                     .child(div().text_color(t.text_muted).child(c.name.clone()))
                     .child(
                         div()
-                            .font_family(luna::MONO)
+                            .font_family(pink::MONO)
                             .text_color(t.text)
                             .child(grouped(shown)),
                     )
@@ -1004,13 +1004,13 @@ impl RenderOnce for UsageMeter {
         let action = if speak_up {
             let handler = self.on_raise_limit.clone();
             let glow = t.accent;
-            luna::button(
+            pink::button(
                 SharedString::from(format!("{key}-raise")),
                 ButtonKind::Accent,
                 ControlSize::Md,
                 &t,
             )
-            .child(luna::glyph(ICON_ARROW, ControlSize::Md).text_color(t.on_accent))
+            .child(pink::glyph(ICON_ARROW, ControlSize::Md).text_color(t.on_accent))
             .child("Raise limit")
             .when_some(handler, |b, f| {
                 b.on_click(move |_, window, cx| f(window, cx))
@@ -1028,7 +1028,7 @@ impl RenderOnce for UsageMeter {
             .into_any_element()
         } else {
             let handler = self.on_manage.clone();
-            luna::button(
+            pink::button(
                 SharedString::from(format!("{key}-manage")),
                 ButtonKind::Secondary,
                 ControlSize::Md,
@@ -1068,11 +1068,11 @@ impl RenderOnce for UsageMeter {
             .child(action);
 
         motion::keep_alive(window);
-        luna::card(&t)
+        pink::card(&t)
             .id(self.id.clone())
             .w(px(600.))
             .overflow_hidden()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .child(
                 div()
                     .flex()
@@ -1092,7 +1092,7 @@ impl RenderOnce for UsageMeter {
                     .child(chart)
                     .when(!self.limits.is_empty(), |d| d.child(limits)),
             )
-            .child(luna::divider(&t))
+            .child(pink::divider(&t))
             .child(footer)
     }
 }

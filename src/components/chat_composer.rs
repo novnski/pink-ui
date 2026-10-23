@@ -1,4 +1,4 @@
-//! Chat Composer – a luna component.
+//! Chat Composer – a pink component.
 //!
 //! A prompt box for an assistant. Attachments sit above the text as small
 //! file cards, the empty field cycles through example prompts, and the
@@ -27,8 +27,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ControlSize, FillTier, Luna, radius, space, text},
     motion::{self, AnimationExt, GLIDE, MENU_IN, ROW_IN, VIEW_IN},
+    pink::{self, ControlSize, FillTier, Pink, radius, space, text},
     primitives::{InputEvent, TextInput},
     story,
 };
@@ -317,7 +317,7 @@ impl ChatComposer {
     }
 }
 
-fn tool(id: impl Into<SharedString>, icon: &'static str, t: &Luna) -> gpui::Stateful<gpui::Div> {
+fn tool(id: impl Into<SharedString>, icon: &'static str, t: &Pink) -> gpui::Stateful<gpui::Div> {
     let id: SharedString = id.into();
     let key = format!("cc-tool-{id}");
     div()
@@ -348,14 +348,14 @@ fn toggle(
     icon: &'static str,
     label: &'static str,
     on: bool,
-    t: &Luna,
+    t: &Pink,
 ) -> gpui::Stateful<gpui::Div> {
     let color = if on {
         if t.dark { t.text } else { t.accent }
     } else {
         t.text_muted
     };
-    luna::chip(id, on, ControlSize::Md, t)
+    pink::chip(id, on, ControlSize::Md, t)
         .px(px(space::S8))
         .child(svg().path(icon).size(px(14.)).text_color(color))
         .child(label)
@@ -408,7 +408,7 @@ fn menu_popover(
     corner: Anchor,
     focus: &FocusHandle,
     state: &Entity<State>,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let count = rows.len();
     let key_state = state.clone();
@@ -493,7 +493,7 @@ fn menu_popover(
                     },
                 ))
         });
-    let card = luna::overlay(t)
+    let card = pink::overlay(t)
         .id(ElementId::NamedInteger("cc-menu".into(), kind as u64))
         .track_focus(focus)
         .w(px(width))
@@ -501,7 +501,7 @@ fn menu_popover(
         .flex()
         .flex_col()
         .gap(px(2.))
-        .font_family(luna::SANS)
+        .font_family(pink::SANS)
         .on_key_down(move |ev: &KeyDownEvent, window, cx| {
             let key = ev.keystroke.key.as_str();
             let mut chosen = None;
@@ -606,7 +606,7 @@ fn open_menu(state: &Entity<State>, kind: Menu, window: &mut Window, cx: &mut Ap
 
 impl RenderOnce for ChatComposer {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
@@ -792,7 +792,7 @@ impl RenderOnce for ChatComposer {
                 .child(
                     div()
                         .text_size(px(text::FOOTNOTE))
-                        .font_family(luna::MONO)
+                        .font_family(pink::MONO)
                         .text_color(t.text_faint)
                         .child(format!("{}:{:02}", secs / 60, secs % 60)),
                 )
@@ -1121,10 +1121,10 @@ impl RenderOnce for ChatComposer {
                         }),
                 )
                 .child(div().flex_1())
-                .child(luna::kbd("↵", &t))
+                .child(pink::kbd("↵", &t))
                 .child(div().text_color(t.text_faint).child("send"))
                 .child(div().w(px(space::S4)))
-                .child(luna::kbd("⇧↵", &t))
+                .child(pink::kbd("⇧↵", &t))
                 .child(
                     div()
                         .pr(px(space::S4))
@@ -1139,9 +1139,9 @@ impl RenderOnce for ChatComposer {
             .id(self.id.clone())
             .w(px(self.width))
             .max_w_full()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .child(
-                luna::card(&t)
+                pink::card(&t)
                     .id("cc-card")
                     .flex()
                     .flex_col()
@@ -1220,7 +1220,7 @@ impl Demo {
     }
 }
 
-fn bubble(ix: usize, message: &Message, t: &Luna) -> impl IntoElement {
+fn bubble(ix: usize, message: &Message, t: &Pink) -> impl IntoElement {
     let mut meta = vec![message.model.to_string()];
     if message.web_search {
         meta.push("web".into());
@@ -1290,7 +1290,7 @@ fn bubble(ix: usize, message: &Message, t: &Luna) -> impl IntoElement {
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |window, cx| {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let demo = window.use_keyed_state("chat-composer-demo", cx, |_, cx| Demo::new(cx));
         let d = demo.read(cx);
         let sent: Vec<_> = d

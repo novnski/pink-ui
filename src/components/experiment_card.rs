@@ -28,8 +28,8 @@ use gpui::{
 };
 
 use crate::{
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, Tone, radius, space, text},
     motion::{self, AnimationExt, MotionSpec},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, radius, space, text},
     story,
 };
 
@@ -250,14 +250,14 @@ struct State {
 }
 
 /// Variant colors: the control stays neutral, challengers take the accent family.
-fn variant_color(ix: usize, t: &Luna) -> Hsla {
+fn variant_color(ix: usize, t: &Pink) -> Hsla {
     let amber = if t.dark {
         t.warning
     } else {
-        luna::oklch(0.70, 0.165, 62.)
+        pink::oklch(0.70, 0.165, 62.)
     };
     match ix {
-        0 => luna::neutral(0.62),
+        0 => pink::neutral(0.62),
         1 => t.accent,
         2 => t.success,
         3 => amber,
@@ -267,7 +267,7 @@ fn variant_color(ix: usize, t: &Luna) -> Hsla {
 
 impl RenderOnce for ExperimentCard {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let (expanded, shipped) = (self.expanded, self.shipped);
         let state = window.use_keyed_state(
@@ -284,7 +284,7 @@ impl RenderOnce for ExperimentCard {
             },
         );
         if self.metrics.is_empty() || self.variants.len() < 2 {
-            return luna::card(&t).id(self.id.clone());
+            return pink::card(&t).id(self.id.clone());
         }
         let (hovered, pinned, metric_ix, hot, candidate, shipped, focus) = {
             let s = state.read(cx);
@@ -378,7 +378,7 @@ impl RenderOnce for ExperimentCard {
                         &t,
                     )
                 }
-                None => luna::badge("–", Tone::Neutral, &t).into_any_element(),
+                None => pink::badge("–", Tone::Neutral, &t).into_any_element(),
             },
         };
         let head = {
@@ -492,7 +492,7 @@ impl RenderOnce for ExperimentCard {
 
             let tabs = self.metrics.iter().enumerate().map(|(ix, m)| {
                 let state = state.clone();
-                luna::chip(
+                pink::chip(
                     SharedString::from(format!("{key}-metric-{ix}")),
                     ix == metric_ix,
                     ControlSize::Sm,
@@ -749,7 +749,7 @@ impl RenderOnce for ExperimentCard {
                             .flex()
                             .justify_end()
                             .overflow_hidden()
-                            .font_family(luna::MONO)
+                            .font_family(pink::MONO)
                             .text_size(px(text::FOOTNOTE))
                             .text_color(t.text)
                             .child(motion::rise_in(
@@ -767,7 +767,7 @@ impl RenderOnce for ExperimentCard {
                             .w(px(52.))
                             .flex()
                             .justify_end()
-                            .font_family(luna::MONO)
+                            .font_family(pink::MONO)
                             .text_size(px(text::FOOTNOTE))
                             .text_color(lift_color)
                             .child(if i == 0 {
@@ -802,7 +802,7 @@ impl RenderOnce for ExperimentCard {
                                 )),
                         )
                         .child(
-                            luna::button(
+                            pink::button(
                                 SharedString::from(format!("{key}-undo")),
                                 ButtonKind::Ghost,
                                 ControlSize::Sm,
@@ -847,7 +847,7 @@ impl RenderOnce for ExperimentCard {
                                 .flex()
                                 .gap(px(space::S6))
                                 .child(
-                                    luna::button(
+                                    pink::button(
                                         SharedString::from(format!("{key}-cancel")),
                                         ButtonKind::Ghost,
                                         ControlSize::Sm,
@@ -864,14 +864,14 @@ impl RenderOnce for ExperimentCard {
                                     ),
                                 )
                                 .child(
-                                    luna::button(
+                                    pink::button(
                                         SharedString::from(format!("{key}-ship")),
                                         ButtonKind::Accent,
                                         ControlSize::Sm,
                                         &t,
                                     )
                                     .child(
-                                        luna::glyph(ICON_ROCKET, ControlSize::Sm)
+                                        pink::glyph(ICON_ROCKET, ControlSize::Sm)
                                             .text_color(t.on_accent),
                                     )
                                     .child(format!("Ship {}", self.variants[i].key))
@@ -900,7 +900,7 @@ impl RenderOnce for ExperimentCard {
                             .gap(px(space::S4))
                             .child(
                                 div()
-                                    .font_family(luna::MONO)
+                                    .font_family(pink::MONO)
                                     .text_color(color)
                                     .child(format!("{:.0}%", r.win_chance * 100.)),
                             )
@@ -934,7 +934,7 @@ impl RenderOnce for ExperimentCard {
                             .child(div().h(px(CHART_H)).mb(px(8.)).child(chart))
                             .children(rows),
                     )
-                    .child(luna::divider(&t))
+                    .child(pink::divider(&t))
                     .child(motion::rise_in(
                         SharedString::from(format!(
                             "{key}-foot-{}-{}",
@@ -954,12 +954,12 @@ impl RenderOnce for ExperimentCard {
         let handler = self.on_ship.clone();
         let metric_count = self.metrics.len();
         motion::keep_alive(window);
-        luna::card(&t)
+        pink::card(&t)
             .id(self.id.clone())
             .w(px(560.))
             .flex_none()
             .overflow_hidden()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .track_focus(&focus)
             .when(open, |d| d.border_color(t.border_strong))
             .on_hover(move |h, _, cx| {
@@ -1030,7 +1030,7 @@ fn ship(state: &gpui::Entity<State>, ix: usize, cx: &mut App) {
     })
 }
 
-fn footer_row(t: &Luna) -> gpui::Div {
+fn footer_row(t: &Pink) -> gpui::Div {
     div()
         .h(px(FOOT_H))
         .flex()
@@ -1043,7 +1043,7 @@ fn footer_row(t: &Luna) -> gpui::Div {
 }
 
 /// A radio dot: hollow at rest, accent-filled when chosen.
-fn radio(chosen: bool, enabled: bool, t: &Luna) -> gpui::Div {
+fn radio(chosen: bool, enabled: bool, t: &Pink) -> gpui::Div {
     div()
         .flex_none()
         .size(px(16.))
@@ -1068,11 +1068,11 @@ fn badge_with_icon(
     icon: &'static str,
     label: impl Into<SharedString>,
     tone: Tone,
-    t: &Luna,
+    t: &Pink,
 ) -> gpui::AnyElement {
-    luna::badge(label, tone, t)
+    pink::badge(label, tone, t)
         .gap(px(space::S4))
-        .font_family(luna::MONO)
+        .font_family(pink::MONO)
         .child(svg().path(icon).size(px(12.)).text_color(tone.color(t)))
         .flex_row_reverse()
         .into_any_element()

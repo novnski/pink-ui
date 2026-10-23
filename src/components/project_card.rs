@@ -23,8 +23,8 @@ use gpui::{
 };
 
 use crate::{
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, Tone, oklch, radius, space, text},
     motion::{self, GLIDE, HOVER_FADE, MENU_IN},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, oklch, radius, space, text},
     story,
 };
 
@@ -109,7 +109,7 @@ impl ProjectPerson {
             .into()
     }
 
-    fn colors(&self, t: &Luna) -> (Hsla, Hsla) {
+    fn colors(&self, t: &Pink) -> (Hsla, Hsla) {
         if t.dark {
             (oklch(0.36, 0.07, self.hue), oklch(0.9, 0.07, self.hue))
         } else {
@@ -277,7 +277,7 @@ fn segment_at(bounds: Bounds<Pixels>, pos: gpui::Point<Pixels>, n: usize) -> Opt
 
 impl RenderOnce for ProjectCard {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let initial_done: Vec<bool> = self.subtasks.iter().map(|s| s.done).collect();
         let (initial_status, default_open) = (self.status, self.default_open);
@@ -610,7 +610,7 @@ impl RenderOnce for ProjectCard {
                         .count();
                     let (s_click, s_hover) = (state.clone(), state.clone());
                     let id = format!("{key}-who-{ix}");
-                    // luna's chip eases its own hover wash, so the linked hover
+                    // Pink's chip eases its own hover wash, so the linked hover
                     // lives on a wrapper.
                     div()
                         .id(SharedString::from(format!("{id}-hover")))
@@ -625,7 +625,7 @@ impl RenderOnce for ProjectCard {
                             });
                         })
                         .child(
-                            luna::chip(id, picked, ControlSize::Sm, &t)
+                            pink::chip(id, picked, ControlSize::Sm, &t)
                                 .pl(px(3.))
                                 .gap(px(space::S4))
                                 .on_click(move |_, _, cx| {
@@ -639,7 +639,7 @@ impl RenderOnce for ProjectCard {
                                 .child(p.first_name())
                                 .child(
                                     div()
-                                        .font_family(luna::MONO)
+                                        .font_family(pink::MONO)
                                         .text_size(px(10.))
                                         .opacity(0.65)
                                         .child(open_count.to_string()),
@@ -740,7 +740,7 @@ impl RenderOnce for ProjectCard {
             .map(|(_, task)| task.title.clone());
         let left = n - done_count;
         let open_key = format!("{key}-open-btn");
-        let nudge = motion::hover_t(&format!("luna-btn-{open_key}")) * 2.;
+        let nudge = motion::hover_t(&format!("pink-btn-{open_key}")) * 2.;
         let on_open = self.on_open.clone();
         let footer =
             div()
@@ -763,10 +763,10 @@ impl RenderOnce for ProjectCard {
                         }),
                 )
                 .child(
-                    luna::button(open_key, ButtonKind::Secondary, ControlSize::Sm, &t)
+                    pink::button(open_key, ButtonKind::Secondary, ControlSize::Sm, &t)
                         .child("Open")
                         .child(div().w(px(14.)).pl(px(nudge)).child(
-                            luna::glyph(ICON_ARROW, ControlSize::Sm).text_color(t.text_muted),
+                            pink::glyph(ICON_ARROW, ControlSize::Sm).text_color(t.text_muted),
                         ))
                         .when_some(on_open, |b, f| {
                             b.on_click(move |_, window, cx| f(window, cx))
@@ -807,11 +807,11 @@ impl RenderOnce for ProjectCard {
 
         motion::keep_alive(window);
         let hover_state = state.clone();
-        luna::card(&t)
+        pink::card(&t)
             .id(self.id.clone())
             .w(px(self.width))
             .overflow_hidden()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .border_color(motion::mix(t.border, t.border_strong, open))
             .shadow(if open > 0.5 {
@@ -836,7 +836,7 @@ impl RenderOnce for ProjectCard {
 }
 
 /// A round monogram in the person's hue.
-fn avatar(p: &ProjectPerson, size: f32, t: &Luna) -> gpui::Div {
+fn avatar(p: &ProjectPerson, size: f32, t: &Pink) -> gpui::Div {
     let (bg, fg) = p.colors(t);
     div()
         .size(px(size))

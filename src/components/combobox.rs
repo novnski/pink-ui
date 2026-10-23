@@ -1,6 +1,6 @@
 //! Combobox – pick one or many from a searchable, grouped list.
 //!
-//! A luna component. Picks sit in the field as chips
+//! A pink component. Picks sit in the field as chips
 //! with a small avatar; the list below groups the options, lights up the
 //! letters that match what you typed and offers to create the entry when
 //! nothing fits. A plate glides to the active row, checks pop in as rows are
@@ -28,8 +28,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, oklch, radius, text},
     motion::{self, EASE, EASE_OUT_BACK, EASE_OUT_QUINT, MENU_IN, MotionSpec},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, oklch, radius, text},
     primitives::{InputEvent, TextInput, ring},
     story,
 };
@@ -481,7 +481,7 @@ impl Combobox {
 
 impl RenderOnce for Combobox {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let placeholder = self.placeholder.clone();
         let initial = self.selected.clone();
@@ -623,7 +623,7 @@ impl RenderOnce for Combobox {
                     div()
                         .flex_none()
                         .text_size(px(text::CAPTION))
-                        .font_family(luna::MONO)
+                        .font_family(pink::MONO)
                         .text_color(t.text_faint)
                         .child(roll(&key, selected.len())),
                 )
@@ -668,7 +668,7 @@ impl RenderOnce for Combobox {
                     })
                 })
                 .child(
-                    luna::overlay(&t).overflow_hidden().child(list).child(
+                    pink::overlay(&t).overflow_hidden().child(list).child(
                         div()
                             .h(px(34.))
                             .px(px(12.))
@@ -727,14 +727,14 @@ impl RenderOnce for Combobox {
             .id(self.id)
             .relative()
             .w_full()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .child(field)
             .children(popover)
     }
 }
 
-fn hint(keys: &[&'static str], label: &'static str, t: &Luna) -> impl IntoElement {
+fn hint(keys: &[&'static str], label: &'static str, t: &Pink) -> impl IntoElement {
     div()
         .flex()
         .items_center()
@@ -743,7 +743,7 @@ fn hint(keys: &[&'static str], label: &'static str, t: &Luna) -> impl IntoElemen
             div()
                 .flex()
                 .gap(px(2.))
-                .children(keys.iter().map(|k| luna::kbd(*k, t))),
+                .children(keys.iter().map(|k| pink::kbd(*k, t))),
         )
         .child(label)
 }
@@ -761,7 +761,7 @@ fn roll(key: &str, count: usize) -> impl IntoElement {
 }
 
 /// The tint behind an option's initials, and the ink on it.
-fn tint(option: &ComboOption, t: &Luna) -> (Hsla, Hsla) {
+fn tint(option: &ComboOption, t: &Pink) -> (Hsla, Hsla) {
     let hue = option.hue();
     if t.dark {
         (oklch(0.36, 0.06, hue), oklch(0.88, 0.07, hue))
@@ -770,7 +770,7 @@ fn tint(option: &ComboOption, t: &Luna) -> (Hsla, Hsla) {
     }
 }
 
-fn avatar(option: &ComboOption, size: f32, t: &Luna) -> impl IntoElement {
+fn avatar(option: &ComboOption, size: f32, t: &Pink) -> impl IntoElement {
     match &option.avatar {
         Avatar::Initials => {
             let (bg, ink) = tint(option, t);
@@ -809,7 +809,7 @@ fn chip(
     option: &ComboOption,
     marked: bool,
     state: &Entity<ComboState>,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement + use<> {
     let remover = state.clone();
     let id = option.id.clone();
@@ -894,7 +894,7 @@ fn list(
     multiple: bool,
     state: &Entity<ComboState>,
     scroll: &ScrollHandle,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     // Lay out the rows with their group headers, tracking the active row's top.
     let mut y = LIST_PAD;
@@ -987,7 +987,7 @@ fn list_row(
     multiple: bool,
     verb: &SharedString,
     state: &Entity<ComboState>,
-    t: &Luna,
+    t: &Pink,
 ) -> gpui::AnyElement {
     let pointer = state.clone();
     let picker = state.clone();
@@ -1133,15 +1133,15 @@ fn list_row(
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |_, cx| {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         div()
             .h(px(430.))
             .w(px(480.))
             .flex()
             .flex_col()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .child(
-                luna::card(&t)
+                pink::card(&t)
                     .w_full()
                     .rounded(px(radius::XL))
                     .p(px(20.))
@@ -1194,15 +1194,15 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                                     .child("Anyone at Northwind with the link can view"),
                             )
                             .child(
-                                luna::button("cb-copy", ButtonKind::Ghost, ControlSize::Md, &t)
+                                pink::button("cb-copy", ButtonKind::Ghost, ControlSize::Md, &t)
                                     .child(
-                                        luna::glyph(ICON_LINK, ControlSize::Md)
+                                        pink::glyph(ICON_LINK, ControlSize::Md)
                                             .text_color(t.text_muted),
                                     )
                                     .child("Copy link"),
                             )
                             .child(
-                                luna::button("cb-share", ButtonKind::Primary, ControlSize::Md, &t)
+                                pink::button("cb-share", ButtonKind::Primary, ControlSize::Md, &t)
                                     .child("Share"),
                             ),
                     ),

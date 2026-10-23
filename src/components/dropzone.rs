@@ -32,8 +32,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, radius, space, text},
     motion::{self, AnimationExt, GLIDE, MotionSpec},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, radius, space, text},
     story,
 };
 
@@ -49,7 +49,7 @@ const ICON_RETRY: &str = "icons/dropzone/refresh.svg";
 const ICON_ALERT: &str = "icons/dropzone/alert.svg";
 
 const TICK: Duration = Duration::from_millis(50);
-const GROUP: &str = "luna-dropzone";
+const GROUP: &str = "pink-dropzone";
 
 type FilesHandler = Rc<dyn Fn(&[PathBuf], &mut Window, &mut App)>;
 
@@ -329,7 +329,7 @@ impl RenderOnce for Dropzone {
 
 impl Dropzone {
     fn build(self, window: &mut Window, cx: &mut App) -> gpui::AnyElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
@@ -437,7 +437,7 @@ impl Dropzone {
                         )
                         .when(finished, |d| {
                             d.child(
-                                luna::button(
+                                pink::button(
                                     format!("{key}-clear"),
                                     ButtonKind::Ghost,
                                     ControlSize::Sm,
@@ -480,10 +480,10 @@ impl Dropzone {
             window.request_animation_frame();
         }
 
-        luna::card(&t)
+        pink::card(&t)
             .id(self.id.clone())
             .w(self.width)
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .overflow_hidden()
             .child(
@@ -515,9 +515,9 @@ impl Dropzone {
                             ),
                     )
                     .when(counted > 0, |d| {
-                        d.child(luna::badge(
+                        d.child(pink::badge(
                             format!("{counted} file{}", if counted == 1 { "" } else { "s" }),
-                            luna::Tone::Neutral,
+                            pink::Tone::Neutral,
                             &t,
                         ))
                     }),
@@ -539,7 +539,7 @@ fn drop_target(
     state: &Entity<DropState>,
     rules: &Rules,
     on_files: Option<FilesHandler>,
-    t: &Luna,
+    t: &Pink,
     cx: &App,
 ) -> impl IntoElement {
     let drops = state.read(cx).drops;
@@ -729,7 +729,7 @@ fn drop_target(
         )
 }
 
-fn file_row(key: &str, upload: &Upload, state: &Entity<DropState>, t: &Luna) -> impl IntoElement {
+fn file_row(key: &str, upload: &Upload, state: &Entity<DropState>, t: &Pink) -> impl IntoElement {
     let rkey = format!("{key}-file-{}", upload.key);
     let hover = motion::hover_t(&rkey);
     let ext = extension(&upload.file.name);
@@ -771,7 +771,7 @@ fn file_row(key: &str, upload: &Upload, state: &Entity<DropState>, t: &Luna) -> 
         .rounded(px(radius::MD))
         .bg(tone.opacity(if t.dark { 0.16 } else { 0.10 }))
         .text_size(px(9.5))
-        .font_family(luna::MONO)
+        .font_family(pink::MONO)
         .font_weight(FontWeight::BOLD)
         .text_color(tone)
         .child(if ext.is_empty() {
@@ -806,13 +806,13 @@ fn file_row(key: &str, upload: &Upload, state: &Entity<DropState>, t: &Luna) -> 
         Status::Failed(_) => {
             let state = state.clone();
             let id = upload.key;
-            luna::button(
+            pink::button(
                 format!("{rkey}-retry"),
                 ButtonKind::Secondary,
                 ControlSize::Sm,
                 t,
             )
-            .child(luna::glyph(ICON_RETRY, ControlSize::Sm).text_color(t.text_muted))
+            .child(pink::glyph(ICON_RETRY, ControlSize::Sm).text_color(t.text_muted))
             .child("Retry")
             .on_click(move |_, _, cx| state.update(cx, |s, cx| s.retry(id, cx)))
             .into_any_element()
@@ -827,7 +827,7 @@ fn file_row(key: &str, upload: &Upload, state: &Entity<DropState>, t: &Luna) -> 
     let remove = {
         let state = state.clone();
         let id = upload.key;
-        luna::icon_button(format!("{rkey}-remove"), ICON_REMOVE, ControlSize::Sm, t)
+        pink::icon_button(format!("{rkey}-remove"), ICON_REMOVE, ControlSize::Sm, t)
             .opacity(0.3 + 0.7 * hover)
             .on_click(move |_, _, cx| state.update(cx, |s, cx| s.remove(id, cx)))
     };
@@ -891,7 +891,7 @@ fn extension(name: &str) -> String {
 }
 
 /// One hue per family of file types.
-fn type_color(ext: &str, t: &Luna) -> Hsla {
+fn type_color(ext: &str, t: &Pink) -> Hsla {
     match ext {
         "pdf" | "doc" | "docx" | "key" | "ppt" | "pptx" => t.danger,
         "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp" | "heic" => t.accent,

@@ -1,6 +1,6 @@
 //! Command Menu – one field to search and run everything.
 //!
-//! A luna component. App actions sit on a strip of
+//! A pink component. App actions sit on a strip of
 //! tiles you can fire with Ctrl/⌘ 1–5; everyday commands follow in groups
 //! with their own shortcuts. Typing folds the strip away and filters every
 //! command at once, lighting up the matched letters. Scope chips narrow the
@@ -24,8 +24,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ControlSize, FillTier, Luna, radius, text},
     motion::{self, EASE_OUT_QUINT, MotionSpec, ROW_IN},
+    pink::{self, ControlSize, FillTier, Pink, radius, text},
     primitives::{InputEvent, TextInput},
     story,
 };
@@ -583,7 +583,7 @@ impl CommandMenu {
 
 impl RenderOnce for CommandMenu {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let placeholder = self.placeholder.clone();
         let autofocus = self.autofocus;
@@ -751,7 +751,7 @@ impl RenderOnce for CommandMenu {
             .gap(px(4.))
             .children(scopes.iter().enumerate().map(|(ix, name)| {
                 let picker = state.clone();
-                luna::chip(
+                pink::chip(
                     SharedString::from(format!("{key}-scope-{name}")),
                     ix == scope,
                     ControlSize::Sm,
@@ -774,7 +774,7 @@ impl RenderOnce for CommandMenu {
                     .gap(px(6.))
                     .text_size(px(text::CAPTION))
                     .text_color(t.text_faint)
-                    .child(luna::kbd("Tab", &t))
+                    .child(pink::kbd("Tab", &t))
                     .child("next scope"),
             );
 
@@ -801,7 +801,7 @@ impl RenderOnce for CommandMenu {
         div()
             .id(self.id)
             .w(px(WIDTH))
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .bg(t.surface_overlay)
             .border_1()
@@ -812,7 +812,7 @@ impl RenderOnce for CommandMenu {
             .on_key_down(on_key)
             .child(search_row)
             .child(scope_row)
-            .child(luna::divider(&t))
+            .child(pink::divider(&t))
             .child(strip)
             .child(body)
             .child(footer)
@@ -828,7 +828,7 @@ fn quick_strip(
     quick: &Rc<Vec<Command>>,
     state: &Entity<MenuState>,
     ran: Option<&(SharedString, SharedString, u32)>,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let tiles = quick.iter().take(9).enumerate().map(|(slot, command)| {
         let hover_key = format!("{key}-tile-{}", command.id);
@@ -871,7 +871,7 @@ fn quick_strip(
                     .child(
                         div()
                             .text_size(px(10.))
-                            .font_family(luna::MONO)
+                            .font_family(pink::MONO)
                             .text_color(t.text_faint)
                             .child(chord(slot + 1)),
                     ),
@@ -910,7 +910,7 @@ fn quick_strip(
         .child(div().flex().gap(px(8.)).children(tiles))
 }
 
-fn check_tile(t: &Luna) -> impl IntoElement {
+fn check_tile(t: &Pink) -> impl IntoElement {
     div()
         .size(px(24.))
         .flex()
@@ -936,7 +936,7 @@ fn chord(digit: usize) -> String {
 }
 
 /// A command's leading glyph, or a neutral lettered tile for an app.
-fn monogram(icon: &CommandIcon, size: f32, t: &Luna) -> gpui::Div {
+fn monogram(icon: &CommandIcon, size: f32, t: &Pink) -> gpui::Div {
     match icon {
         CommandIcon::Glyph(path) => div()
             .size(px(size))
@@ -971,7 +971,7 @@ fn monogram(icon: &CommandIcon, size: f32, t: &Luna) -> gpui::Div {
     }
 }
 
-fn section_label(label: impl Into<SharedString>, t: &Luna) -> gpui::Div {
+fn section_label(label: impl Into<SharedString>, t: &Pink) -> gpui::Div {
     div()
         .flex()
         .items_center()
@@ -990,7 +990,7 @@ fn results(
     state: &Entity<MenuState>,
     scroll: &ScrollHandle,
     ran: Option<&(SharedString, SharedString, u32)>,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let groups = grouped(hits);
 
@@ -1067,7 +1067,7 @@ fn row(
     active: bool,
     state: &Entity<MenuState>,
     ran: Option<&(SharedString, SharedString, u32)>,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let command = &hit.command;
     let lit = motion::follow(
@@ -1122,7 +1122,7 @@ fn row(
             .flex()
             .items_center()
             .gap(px(3.))
-            .children(keys.into_iter().map(|k| luna::kbd(k, t)))
+            .children(keys.into_iter().map(|k| pink::kbd(k, t)))
             .into_any_element(),
     };
 
@@ -1200,7 +1200,7 @@ fn row(
         )
 }
 
-fn empty_state(query: &SharedString, t: &Luna) -> impl IntoElement {
+fn empty_state(query: &SharedString, t: &Pink) -> impl IntoElement {
     div()
         .h(px(EMPTY_H - 2. * LIST_PAD))
         .flex()
@@ -1242,7 +1242,7 @@ fn footer(
     ran: Option<&(SharedString, SharedString, u32)>,
     count: usize,
     query: &SharedString,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let hint = |keys: &[&'static str], label: &'static str| {
         div()
@@ -1253,7 +1253,7 @@ fn footer(
                 div()
                     .flex()
                     .gap(px(2.))
-                    .children(keys.iter().map(|k| luna::kbd(*k, t))),
+                    .children(keys.iter().map(|k| pink::kbd(*k, t))),
             )
             .child(label)
     };

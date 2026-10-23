@@ -24,8 +24,8 @@ use gpui::{
 };
 
 use crate::{
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, radius, space, text},
     motion::{self, EASE_IN_OUT, EASE_OUT_QUINT, MotionSpec, ROW_IN},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, radius, space, text},
     primitives::{InputEvent, TextInput},
     story,
 };
@@ -557,7 +557,7 @@ fn pulse(id: impl Into<ElementId>, color: Hsla, live: bool) -> AnyElement {
 
 impl RenderOnce for AgentSteering {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "steer".into()),
@@ -657,10 +657,10 @@ impl RenderOnce for AgentSteering {
                         working,
                     ))
                     .child(div().text_color(t.text).child(status))
-                    .child(div().font_family(luna::MONO).child(clock_label(s.clock))),
+                    .child(div().font_family(pink::MONO).child(clock_label(s.clock))),
             )
             .child(
-                luna::icon_button(format!("{key}-pause"), pause_label, ControlSize::Md, &t)
+                pink::icon_button(format!("{key}-pause"), pause_label, ControlSize::Md, &t)
                     .when(finished, |el| el.opacity(0.4))
                     .on_click({
                         let state = state.clone();
@@ -772,7 +772,7 @@ impl RenderOnce for AgentSteering {
                         .when_some(elapsed_here, |el, elapsed| {
                             el.child(
                                 div()
-                                    .font_family(luna::MONO)
+                                    .font_family(pink::MONO)
                                     .font_weight(FontWeight::NORMAL)
                                     .text_color(t.text_faint)
                                     .child(elapsed),
@@ -816,7 +816,7 @@ impl RenderOnce for AgentSteering {
                                 div()
                                     .w(px(34.))
                                     .flex_none()
-                                    .font_family(luna::MONO)
+                                    .font_family(pink::MONO)
                                     .text_size(px(text::CAPTION))
                                     .text_color(t.text_faint)
                                     .child(clock_label(*at)),
@@ -937,14 +937,14 @@ impl RenderOnce for AgentSteering {
                                     .child(q.text.clone()),
                             )
                             .child(
-                                luna::button(
+                                pink::button(
                                     format!("{note_key}-now"),
                                     ButtonKind::Ghost,
                                     ControlSize::Sm,
                                     &t,
                                 )
                                 .child(
-                                    luna::glyph(ICON_BOLT, ControlSize::Sm).text_color(t.warning),
+                                    pink::glyph(ICON_BOLT, ControlSize::Sm).text_color(t.warning),
                                 )
                                 .child("Send now")
                                 .on_click({
@@ -955,7 +955,7 @@ impl RenderOnce for AgentSteering {
                                 }),
                             )
                             .child(
-                                luna::icon_button(
+                                pink::icon_button(
                                     format!("{note_key}-drop"),
                                     ICON_CLOSE,
                                     ControlSize::Sm,
@@ -1113,7 +1113,7 @@ impl RenderOnce for AgentSteering {
                                     .child(hint),
                             )
                             .child(
-                                luna::button(
+                                pink::button(
                                     format!("{key}-interrupt"),
                                     ButtonKind::Ghost,
                                     ControlSize::Sm,
@@ -1121,7 +1121,7 @@ impl RenderOnce for AgentSteering {
                                 )
                                 .when(!ready, |el| el.opacity(0.5))
                                 .child(
-                                    luna::glyph(ICON_BOLT, ControlSize::Sm).text_color(t.warning),
+                                    pink::glyph(ICON_BOLT, ControlSize::Sm).text_color(t.warning),
                                 )
                                 .child("Interrupt")
                                 .child(
@@ -1138,7 +1138,7 @@ impl RenderOnce for AgentSteering {
                                 }),
                             )
                             .child(
-                                luna::button(
+                                pink::button(
                                     format!("{key}-queue"),
                                     if ready {
                                         ButtonKind::Accent
@@ -1149,7 +1149,7 @@ impl RenderOnce for AgentSteering {
                                     &t,
                                 )
                                 .child(
-                                    luna::glyph(ICON_QUEUE, ControlSize::Sm).text_color(if ready {
+                                    pink::glyph(ICON_QUEUE, ControlSize::Sm).text_color(if ready {
                                         t.on_accent
                                     } else {
                                         t.text_muted
@@ -1168,13 +1168,13 @@ impl RenderOnce for AgentSteering {
             );
 
         motion::keep_alive(window);
-        luna::card(&t)
+        pink::card(&t)
             .w(px(WIDTH))
             .overflow_hidden()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .child(header)
-            .child(luna::divider(&t))
+            .child(pink::divider(&t))
             .child(track)
             .child(composer)
     }

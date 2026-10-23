@@ -40,15 +40,16 @@ GitHub, Slack, Stripe). Those marks belong to their owners.
 ([zed-industries/zed](https://github.com/zed-industries/zed)), licensed under the
 Apache License 2.0.
 
-## luna-ui
+## Pink app UI crate
 
-`src/motion.rs` and `src/interaction.rs` are adapted from luna-ui's `motion` and
-`interaction` modules (MIT).
+`src/motion.rs` and `src/interaction.rs` are adapted from the `motion` and
+`interaction` modules of the UI crate in the
+[Pink app](https://github.com/novnski/pink) (MIT), by the same author.
 
 ## Fonts
 
 - `assets/fonts/Geist*.ttf` – [Geist](https://github.com/vercel/geist-font),
-  SIL Open Font License 1.1 (`assets/fonts/Geist-OFL.txt`), as used by luna.
+  SIL Open Font License 1.1 (`assets/fonts/Geist-OFL.txt`), as used by the Pink app.
 - `assets/fonts/Inter-*.ttf` – [Inter](https://rsms.me/inter/) by Rasmus Andersson,
   SIL Open Font License 1.1 (`assets/fonts/Inter-OFL.txt`).
 - `assets/fonts/JetBrainsMono-*.ttf` – [JetBrains Mono](https://www.jetbrains.com/lp/mono/),

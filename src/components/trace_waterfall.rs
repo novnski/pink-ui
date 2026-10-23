@@ -26,8 +26,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ControlSize, FillTier, Luna, Tone, radius, space, text},
     motion::{self, AnimationExt, GLIDE, HOVER_FADE, MENU_IN, ROW_IN},
+    pink::{self, ControlSize, FillTier, Pink, Tone, radius, space, text},
     primitives::ring,
     story,
 };
@@ -339,7 +339,7 @@ fn totals(spans: &[TraceSpan], ix: usize, now: f32) -> (f32, f32, f32) {
 
 impl RenderOnce for TraceWaterfall {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
@@ -411,7 +411,7 @@ impl RenderOnce for TraceWaterfall {
         let axis_w = col_w - PAD_L - PAD_R;
         let x_of = move |s: f32| PAD_L + (s / scale).clamp(0., 1.2) * axis_w;
 
-        let font_id = window.text_system().resolve_font(&font(luna::MONO));
+        let font_id = window.text_system().resolve_font(&font(pink::MONO));
         let advance = window
             .text_system()
             .em_advance(font_id, px(LABEL_SIZE))
@@ -448,7 +448,7 @@ impl RenderOnce for TraceWaterfall {
                 .items_end()
                 .child(
                     div()
-                        .font_family(luna::MONO)
+                        .font_family(pink::MONO)
                         .text_size(px(text::BODY))
                         .line_height(px(18.))
                         .text_color(t.text)
@@ -487,7 +487,7 @@ impl RenderOnce for TraceWaterfall {
                 .child("Live")
                 .into_any_element()
         } else {
-            luna::badge("Finished", Tone::Success, &t).into_any_element()
+            pink::badge("Finished", Tone::Success, &t).into_any_element()
         };
         let header = div()
             .flex()
@@ -544,7 +544,7 @@ impl RenderOnce for TraceWaterfall {
             .child(status)
             .child({
                 let act = act.clone();
-                luna::icon_button(format!("{key}-replay"), ICON_REPLAY, ControlSize::Md, &t)
+                pink::icon_button(format!("{key}-replay"), ICON_REPLAY, ControlSize::Md, &t)
                     .on_click(move |_, window, cx| act(Command::Replay, window, cx))
             });
 
@@ -580,7 +580,7 @@ impl RenderOnce for TraceWaterfall {
                     .relative()
                     .flex_1()
                     .h_full()
-                    .font_family(luna::MONO)
+                    .font_family(pink::MONO)
                     .children(ticks.iter().map(|s| {
                         div()
                             .absolute()
@@ -716,7 +716,7 @@ impl RenderOnce for TraceWaterfall {
         };
 
         motion::keep_alive(window);
-        luna::card(&t)
+        pink::card(&t)
             .id(self.id.clone())
             .track_focus(&focus)
             .on_key_down(on_key)
@@ -726,7 +726,7 @@ impl RenderOnce for TraceWaterfall {
             })
             .w(px(self.width))
             .overflow_hidden()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .child(header)
             .child(axis)
@@ -829,7 +829,7 @@ fn row(
     advance: f32,
     state: Entity<TraceState>,
     act: Rc<dyn Fn(Command, &mut Window, &mut App)>,
-    t: &Luna,
+    t: &Pink,
 ) -> AnyElement {
     let span = &spans[ix];
     let running = now < span.end;
@@ -1061,7 +1061,7 @@ fn row(
         .flex()
         .items_center()
         .gap(px(space::S6))
-        .font_family(luna::MONO)
+        .font_family(pink::MONO)
         .text_size(px(LABEL_SIZE))
         .text_color(if running { t.text_muted } else { t.text_faint })
         .child(label)
@@ -1074,7 +1074,7 @@ fn row(
                     .items_center()
                     .rounded(px(radius::XS))
                     .bg(c.opacity(if t.dark { 0.16 } else { 0.12 }))
-                    .font_family(luna::SANS)
+                    .font_family(pink::SANS)
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(c)
                     .child(tag),
@@ -1132,7 +1132,7 @@ fn readout(
     spans: &[TraceSpan],
     now: f32,
     total: f32,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let base = div()
         .h(px(64.))
@@ -1167,7 +1167,7 @@ fn readout(
             )
             .child(
                 div()
-                    .font_family(luna::MONO)
+                    .font_family(pink::MONO)
                     .text_size(px(text::FOOTNOTE))
                     .text_color(t.text)
                     .child(value),
@@ -1253,7 +1253,7 @@ fn readout(
                     .child("Share of run")
                     .child(
                         div()
-                            .font_family(luna::MONO)
+                            .font_family(pink::MONO)
                             .text_color(t.text_muted)
                             .child(format!("{:.0}%", (end - span.start) / run_len * 100.)),
                     ),

@@ -33,7 +33,7 @@
 ![The gallery](docs/images/gallery-light.png)
 
 - **17 core components** in two looks, **Clean** and **Classic**, light and dark.
-- **39 luna components** in luna's design language (Geist, neutral surfaces,
+- **39 Pink components** in Pink's design language (Geist, neutral surfaces,
   indigo accent, its radius and spacing ladders), light and dark.
 
 Each component is one Rust file in [`src/components/`](src/components), and its
@@ -77,9 +77,9 @@ In both looks (Clean and Classic) and both themes.
 | Feedback | [Notification Stack](https://novnski.github.io/pink-ui/#notification-stack) | Notice cards stacked behind each other – dismiss the front one to reveal the next |
 | Feedback | [Progress Tracker](https://novnski.github.io/pink-ui/#progress-tracker) | Onboarding checklist with an animated progress bar, ticks that draw themselves and auto play |
 
-### Luna components
+### Pink components
 
-In luna's design language; they follow light/dark, and the Clean/Classic look
+In Pink's design language; they follow light/dark, and the Clean/Classic look
 doesn't apply.
 
 | Category | Component | What it is |
@@ -180,11 +180,11 @@ fn main() {
   `.hover_fill_fg(..)`), like CSS transitions.
 - **Text input** ([`src/primitives/text_input.rs`](src/primitives/text_input.rs)):
   single- and multi-line fields with IME, selection, clipboard and word movement.
-- **luna kit** ([`src/luna.rs`](src/luna.rs)): luna's tokens (`Luna::get(cx)`),
+- **Pink kit** ([`src/pink.rs`](src/pink.rs)): Pink's tokens (`Pink::get(cx)`),
   radius/spacing/type ladders, Geist, and controls (`button`, `icon_button`,
-  `chip`, `badge`, `kbd`, `card`, `overlay`) – what the luna components are
+  `chip`, `badge`, `kbd`, `card`, `overlay`) – what the Pink components are
   built from.
-- **Fonts**: Inter (core), Geist and Geist Mono (luna) and JetBrains Mono are
+- **Fonts**: Inter (core), Geist and Geist Mono (Pink) and JetBrains Mono are
   bundled and registered by `init`.
 
 ## In the browser
@@ -242,5 +242,5 @@ renders a component headlessly (Xvfb, openbox, xdotool, ImageMagick). See
 ## License
 
 [MIT](LICENSE). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for GPUI,
-luna-ui, the bundled fonts and the MIT-licensed work the core components derive
+the Pink app's UI crate, the bundled fonts and the MIT-licensed work the core components derive
 from.

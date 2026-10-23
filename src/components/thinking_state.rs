@@ -1,4 +1,4 @@
-//! Thinking State – a luna component.
+//! Thinking State – a pink component.
 //!
 //! A live panel for an assistant at work. The header carries a spinner, the
 //! running step count and a ticking timer, with a hairline along its bottom
@@ -30,8 +30,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, FillTier, Luna, radius, space, text},
     motion::{self, AnimationExt, EASE_IN_OUT, GLIDE, MotionSpec, ROW_IN},
+    pink::{self, FillTier, Pink, radius, space, text},
     story,
 };
 
@@ -245,7 +245,7 @@ fn seconds(d: Duration) -> String {
 
 impl RenderOnce for ThinkingState {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let reduced = motion::reduced_motion(cx);
         let key = self.id.to_string();
         let now = Instant::now();
@@ -432,7 +432,7 @@ impl RenderOnce for ThinkingState {
                     div()
                         .flex_none()
                         .text_size(px(text::FOOTNOTE))
-                        .font_family(luna::MONO)
+                        .font_family(pink::MONO)
                         .text_color(t.text_muted)
                         .child(seconds(elapsed)),
                 )
@@ -575,7 +575,7 @@ impl RenderOnce for ThinkingState {
                             .text_color(t.text_muted);
                         let chip = match chip {
                             Some((icon, label)) => base
-                                .font_family(luna::MONO)
+                                .font_family(pink::MONO)
                                 .child(
                                     svg()
                                         .path(icon)
@@ -610,7 +610,7 @@ impl RenderOnce for ThinkingState {
                                 div()
                                     .flex_none()
                                     .text_size(px(text::CAPTION))
-                                    .font_family(luna::MONO)
+                                    .font_family(pink::MONO)
                                     .text_color(t.text_faint)
                                     .child(seconds(took)),
                             )
@@ -653,9 +653,9 @@ impl RenderOnce for ThinkingState {
             .id(self.id.clone())
             .w(px(self.width))
             .max_w_full()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .child(
-                luna::card(&t).flex().flex_col().child(header).child(
+                pink::card(&t).flex().flex_col().child(header).child(
                     div()
                         .flex()
                         .flex_col()

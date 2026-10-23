@@ -26,8 +26,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, FillTier, Luna, oklch, radius, text},
     motion::{self, GLIDE, MENU_IN},
+    pink::{self, FillTier, Pink, oklch, radius, text},
     story,
 };
 
@@ -169,13 +169,13 @@ struct Ghost {
 
 impl Render for Ghost {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         task_card(&self.task, &t)
             .w(px(CARD_W))
             .bg(t.surface_overlay)
             .border_color(t.accent.opacity(0.5))
             .shadow(t.menu_shadow())
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .opacity(0.96)
     }
@@ -258,7 +258,7 @@ fn clock_label(minutes: u32) -> String {
     format!("{:02}:{:02}", (minutes / 60) % 24, minutes % 60)
 }
 
-fn monogram(name: &str, hue: f32, size: f32, t: &Luna) -> impl IntoElement {
+fn monogram(name: &str, hue: f32, size: f32, t: &Pink) -> impl IntoElement {
     let (wash, ink) = if t.dark {
         (oklch(0.30, 0.055, hue), oklch(0.86, 0.10, hue))
     } else {
@@ -284,7 +284,7 @@ fn monogram(name: &str, hue: f32, size: f32, t: &Luna) -> impl IntoElement {
 }
 
 /// Title, tag and estimate – shared by backlog cards and the drag ghost.
-fn task_card(task: &BoardTask, t: &Luna) -> gpui::Div {
+fn task_card(task: &BoardTask, t: &Pink) -> gpui::Div {
     div()
         .h(px(CARD_H))
         .pl(px(6.))
@@ -340,7 +340,7 @@ fn task_card(task: &BoardTask, t: &Luna) -> gpui::Div {
                         )
                         .child(
                             div()
-                                .font_family(luna::MONO)
+                                .font_family(pink::MONO)
                                 .text_color(t.text_faint)
                                 .child(format!("~{}m", task.minutes)),
                         ),
@@ -350,7 +350,7 @@ fn task_card(task: &BoardTask, t: &Luna) -> gpui::Div {
 
 impl RenderOnce for DelegateBoard {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
@@ -444,10 +444,10 @@ impl RenderOnce for DelegateBoard {
             })
             .collect::<Vec<_>>();
 
-        let el = luna::card(&t)
+        let el = pink::card(&t)
             .id(self.id.clone())
             .w(px(BOARD_W))
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_size(px(text::BODY))
             .text_color(t.text)
             .overflow_hidden()
@@ -474,7 +474,7 @@ fn header_view(
     clock: u32,
     auto: bool,
     on_auto: Option<ToggleHandler>,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let knob = motion::follow(&format!("{key}-auto"), if auto { 1. } else { 0. }, MENU_IN);
     let switch_key = format!("{key}-switch");
@@ -530,7 +530,7 @@ fn header_view(
                 .items_center()
                 .gap(px(5.))
                 .text_size(px(text::FOOTNOTE))
-                .font_family(luna::MONO)
+                .font_family(pink::MONO)
                 .text_color(t.text_muted)
                 .child(
                     svg()
@@ -609,7 +609,7 @@ fn backlog_view(
     dragged: Option<&(BoardTask, DropTarget)>,
     state: &Entity<BoardState>,
     on_assign: Option<AssignHandler>,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let target_over = over == Some(&DropTarget::Backlog)
         && dragged.is_some_and(|(_, from)| from != &DropTarget::Backlog);
@@ -711,7 +711,7 @@ fn backlog_view(
                         .flex()
                         .items_center()
                         .justify_center()
-                        .font_family(luna::MONO)
+                        .font_family(pink::MONO)
                         .text_size(px(10.5))
                         .child(backlog.len().to_string()),
                 )
@@ -762,7 +762,7 @@ fn agent_column(
     on_assign: Option<AssignHandler>,
     reduced: bool,
     window: &mut Window,
-    t: &Luna,
+    t: &Pink,
 ) -> gpui::AnyElement {
     let target = DropTarget::Agent(agent.id.clone());
     let incoming = dragged.filter(|(_, from)| from != &target);
@@ -867,7 +867,7 @@ fn agent_column(
                             .bg(t.accent_wash)
                             .flex()
                             .items_center()
-                            .font_family(luna::MONO)
+                            .font_family(pink::MONO)
                             .text_color(if t.dark { t.text } else { t.accent })
                             .child(format!("+{extra}m")),
                     )
@@ -1030,7 +1030,7 @@ fn queue_chip(
     dragging: Option<&SharedString>,
     state: &Entity<BoardState>,
     reduced: bool,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let lifted = dragging == Some(&task.id);
     let progress = motion::follow(
@@ -1106,7 +1106,7 @@ fn queue_chip(
                         .line_height(px(14.))
                         .text_color(t.text_faint)
                         .child(task.tag.clone())
-                        .child(div().font_family(luna::MONO).child(if running {
+                        .child(div().font_family(pink::MONO).child(if running {
                             format!("{}m left", task.left())
                         } else {
                             format!("~{}m", task.left())

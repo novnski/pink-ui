@@ -24,8 +24,8 @@ use gpui::{
 };
 
 use crate::{
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, radius, space, text},
     motion::{self, AnimationExt, GLIDE, MotionSpec},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, radius, space, text},
     story,
 };
 
@@ -433,7 +433,7 @@ impl RenderOnce for Toaster {
 
 impl Toaster {
     fn build(self, window: &mut Window, cx: &mut App) -> gpui::AnyElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let now = Instant::now();
 
@@ -573,7 +573,7 @@ impl Toaster {
             .relative()
             .w(self.width)
             .h(px(stack_h))
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .on_hover(move |hovered, _, cx| {
                 toasts.update(cx, |q, cx| q.set_hovered(*hovered, cx));
             })
@@ -629,7 +629,7 @@ fn toast_card(
     content_alpha: f32,
     progress: Option<f32>,
     measured: Rc<Cell<f32>>,
-    t: &Luna,
+    t: &Pink,
 ) -> gpui::Stateful<gpui::Div> {
     let toast = &entry.toast;
     let id = entry.id;
@@ -709,7 +709,7 @@ fn toast_card(
 
     let action = toast.action.clone().map(|action| {
         let toasts = toasts.clone();
-        luna::button(
+        pink::button(
             format!("{key}-action"),
             ButtonKind::Secondary,
             ControlSize::Sm,
@@ -724,7 +724,7 @@ fn toast_card(
 
     let close = {
         let toasts = toasts.clone();
-        luna::icon_button(format!("{key}-close"), ICON_CLOSE, ControlSize::Sm, t)
+        pink::icon_button(format!("{key}-close"), ICON_CLOSE, ControlSize::Sm, t)
             .opacity(0.35 + 0.65 * hover)
             .on_click(move |_, _, cx| toasts.update(cx, |q, cx| q.dismiss(id, cx)))
     };
@@ -792,7 +792,7 @@ fn toast_card(
         })
 }
 
-fn tone_color(kind: ToastKind, t: &Luna) -> Hsla {
+fn tone_color(kind: ToastKind, t: &Pink) -> Hsla {
     match kind {
         ToastKind::Success => t.success,
         ToastKind::Error => t.danger,
@@ -828,9 +828,9 @@ fn demo_button(
     id: &str,
     icon: &'static str,
     label: &'static str,
-    t: &Luna,
+    t: &Pink,
 ) -> gpui::Stateful<gpui::Div> {
-    luna::button(
+    pink::button(
         SharedString::from(format!("toaster-demo-{id}")),
         ButtonKind::Secondary,
         ControlSize::Lg,
@@ -838,7 +838,7 @@ fn demo_button(
     )
     .flex_1()
     .justify_start()
-    .child(luna::glyph(icon, ControlSize::Lg).text_color(t.text_muted))
+    .child(pink::glyph(icon, ControlSize::Lg).text_color(t.text_muted))
     .child(label)
 }
 
@@ -856,7 +856,7 @@ fn deploy(toasts: &mut Toasts, cx: &mut Context<Toasts>) {
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |window, cx| {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let toasts =
             window.use_keyed_state("toaster-demo-queue", cx, |_, cx: &mut Context<Toasts>| {
                 let mut q = Toasts::new();
@@ -961,7 +961,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                 )
         };
 
-        let panel = luna::card(&t)
+        let panel = pink::card(&t)
             .w(px(380.))
             .p(px(space::S16))
             .flex()
@@ -1012,7 +1012,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .flex_col()
             .items_center()
             .gap(px(space::S12))
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .child(panel)
             .child(
                 div()

@@ -30,8 +30,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, Tone, radius, space, text},
     motion::{self, EASE_IN_OUT, GLIDE, MotionSpec, ROW_IN},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, radius, space, text},
     story,
 };
 
@@ -550,19 +550,19 @@ fn ago_label(seconds: f32) -> String {
     }
 }
 
-/// A stable hue per agent name, from luna's palette family.
-fn agent_hue(name: &str, t: &Luna) -> Hsla {
+/// A stable hue per agent name, from Pink's palette family.
+fn agent_hue(name: &str, t: &Pink) -> Hsla {
     const HUES: [f32; 5] = [277.0, 200.0, 155.0, 60.0, 330.0];
     let ix = name
         .bytes()
         .fold(0usize, |a, b| a.wrapping_mul(31).wrapping_add(b as usize))
         % 5;
     let (l, c) = if t.dark { (0.74, 0.13) } else { (0.56, 0.17) };
-    luna::oklch(l, c, HUES[ix])
+    pink::oklch(l, c, HUES[ix])
 }
 
 /// A tiny square monogram for an agent.
-fn monogram(name: &str, size: f32, t: &Luna) -> Div {
+fn monogram(name: &str, size: f32, t: &Pink) -> Div {
     let hue = agent_hue(name, t);
     div()
         .size(px(size))
@@ -623,7 +623,7 @@ fn spinner(id: impl Into<ElementId>, size: f32, color: Hsla, track: Hsla) -> Any
         .into_any_element()
 }
 
-fn status_glyph(row: &Row, key: &str, t: &Luna) -> AnyElement {
+fn status_glyph(row: &Row, key: &str, t: &Pink) -> AnyElement {
     let size = 18.0;
     let frame = || {
         div()
@@ -695,7 +695,7 @@ fn rolling_count(id: String, prev: usize, now: usize, color: Hsla) -> AnyElement
         .w(px(digits * 7.0 + 1.0))
         .h(px(16.))
         .overflow_hidden()
-        .font_family(luna::MONO)
+        .font_family(pink::MONO)
         .text_size(px(text::CAPTION))
         .text_color(color)
         .with_animation(
@@ -731,7 +731,7 @@ fn mark(marks: Rc<RefCell<TabMarks>>, slot: Option<usize>) -> impl IntoElement {
 
 impl RenderOnce for AgentInbox {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "inbox".into()),
@@ -789,14 +789,14 @@ impl RenderOnce for AgentInbox {
                     ),
             )
             .child(
-                luna::button(
+                pink::button(
                     format!("{key}-clear"),
                     ButtonKind::Ghost,
                     ControlSize::Md,
                     &t,
                 )
                 .when(!has_done, |el| el.opacity(0.45))
-                .child(luna::glyph(ICON_CLEAR, ControlSize::Md).text_color(t.text_muted))
+                .child(pink::glyph(ICON_CLEAR, ControlSize::Md).text_color(t.text_muted))
                 .child("Clear done")
                 .on_click({
                     let state = state.clone();
@@ -840,7 +840,7 @@ impl RenderOnce for AgentInbox {
                 )
             } else {
                 div()
-                    .font_family(luna::MONO)
+                    .font_family(pink::MONO)
                     .text_size(px(text::CAPTION))
                     .text_color(pill_fg)
                     .child(count.to_string())
@@ -1026,7 +1026,7 @@ impl RenderOnce for AgentInbox {
                 .child(
                     div()
                         .flex_none()
-                        .font_family(luna::MONO)
+                        .font_family(pink::MONO)
                         .text_size(px(text::FOOTNOTE))
                         .text_color(time_color)
                         .child(time),
@@ -1037,7 +1037,7 @@ impl RenderOnce for AgentInbox {
                         .flex_none()
                         .flex()
                         .justify_end()
-                        .child(luna::badge(status.label(), status.tone(), &t)),
+                        .child(pink::badge(status.label(), status.tone(), &t)),
                 )
                 .child(
                     svg()
@@ -1100,7 +1100,7 @@ impl RenderOnce for AgentInbox {
                             .child(
                                 div()
                                     .flex_none()
-                                    .font_family(luna::MONO)
+                                    .font_family(pink::MONO)
                                     .text_size(px(text::CAPTION))
                                     .text_color(t.text_faint)
                                     .child(ago_label(clock - at)),
@@ -1116,9 +1116,9 @@ impl RenderOnce for AgentInbox {
                         ButtonKind::Primary => t.on_solid,
                         _ => t.text,
                     };
-                    luna::button(format!("{row_key}-{name}"), kind, ControlSize::Md, &t)
+                    pink::button(format!("{row_key}-{name}"), kind, ControlSize::Md, &t)
                         .when_some(icon, |el, icon| {
-                            el.child(luna::glyph(icon, ControlSize::Md).text_color(fg))
+                            el.child(pink::glyph(icon, ControlSize::Md).text_color(fg))
                         })
                         .child(name.to_string())
                         .on_click({
@@ -1261,9 +1261,9 @@ impl RenderOnce for AgentInbox {
             window.request_animation_frame();
         }
         motion::keep_alive(window);
-        luna::card(&t)
+        pink::card(&t)
             .w(px(WIDTH))
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .child(header)
             .child(tab_bar)

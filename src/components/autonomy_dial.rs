@@ -29,8 +29,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, FillTier, Luna, Tone, oklch, radius, text},
     motion::{self, GLIDE, MotionSpec},
+    pink::{self, FillTier, Pink, Tone, oklch, radius, text},
     story,
 };
 
@@ -303,7 +303,7 @@ fn emit(handler: &Option<LevelHandler>, level: Option<usize>, window: &mut Windo
 
 impl RenderOnce for AutonomyDial {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let (initial, initial_locked) = (
             self.level,
@@ -460,8 +460,8 @@ impl RenderOnce for AutonomyDial {
                     .gap(px(4.))
                     .text_size(px(text::CAPTION))
                     .text_color(t.text_faint)
-                    .child(luna::kbd("←", &t))
-                    .child(luna::kbd("→", &t))
+                    .child(pink::kbd("←", &t))
+                    .child(pink::kbd("→", &t))
                     .child(div().ml(px(2.)).child("or drag the knob")),
             );
 
@@ -502,9 +502,9 @@ impl RenderOnce for AutonomyDial {
             )
             .child(lanes);
 
-        let el = luna::card(&t)
+        let el = pink::card(&t)
             .id(self.id.clone())
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_size(px(text::BODY))
             .text_color(t.text)
             .overflow_hidden()
@@ -527,7 +527,7 @@ fn dial_view(
     focused: bool,
     state: &Entity<DialState>,
     on_change: Option<LevelHandler>,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let (track, fill, tick, tick_on) = (
         t.fill(FillTier::Primary),
@@ -767,7 +767,7 @@ fn lanes_view(
     locked: &HashSet<SharedString>,
     state: &Entity<DialState>,
     on_lock: Option<LockHandler>,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let runs_on_own = |a: &AgentAction| !locked.contains(&a.id) && a.risk.runs_from() <= level;
     let counts = [
@@ -830,7 +830,7 @@ fn lanes_view(
                             .flex()
                             .items_center()
                             .justify_center()
-                            .font_family(luna::MONO)
+                            .font_family(pink::MONO)
                             .text_size(px(text::CAPTION))
                             .text_color(t.text_muted)
                             .child(counts[i].to_string()),
@@ -900,7 +900,7 @@ fn action_row(
     is_locked: bool,
     state: &Entity<DialState>,
     on_lock: Option<LockHandler>,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let row_key = format!("{key}-row-{}", action.id);
     let lock_key = format!("{key}-lock-{}", action.id);
@@ -948,7 +948,7 @@ fn action_row(
                 .text_size(px(text::BODY))
                 .child(action.label.clone()),
         )
-        .child(luna::badge(badge, tone, t))
+        .child(pink::badge(badge, tone, t))
         .child(
             div()
                 .id(eid(format!("lock-{}", action.id)))

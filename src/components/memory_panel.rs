@@ -24,8 +24,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, radius, space, text},
     motion::{self, GLIDE, HOVER_FADE, LINEAR, MENU_IN, MotionSpec, ROW_IN},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, radius, space, text},
     primitives::{InputEvent, TextInput, color_mix},
     story,
 };
@@ -226,7 +226,7 @@ impl MemoryState {
 
     fn edit(&mut self, id: SharedString, window: &mut Window, cx: &mut Context<Self>) {
         let Some(ix) = self.index(&id) else { return };
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let text = self.items[ix].memory.text.clone();
         let input = cx.new(|cx| {
             TextInput::new(window, cx)
@@ -383,7 +383,7 @@ impl MemoryState {
 
 impl RenderOnce for MemoryPanel {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let initial = self.memories.clone();
         let state = window.use_keyed_state(
@@ -476,7 +476,7 @@ impl RenderOnce for MemoryPanel {
             let state = state.clone();
             let selected = filter == ix;
             let id = format!("{key}-filter-{}", ix.map_or(-1, |i| i as i64));
-            luna::chip(id, selected, ControlSize::Sm, &t)
+            pink::chip(id, selected, ControlSize::Sm, &t)
                 .gap(px(space::S6))
                 .on_click(move |_, _, cx| {
                     state.update(cx, |s, cx| {
@@ -487,7 +487,7 @@ impl RenderOnce for MemoryPanel {
                 .child(label)
                 .child(
                     div()
-                        .font_family(luna::MONO)
+                        .font_family(pink::MONO)
                         .text_size(px(10.))
                         .opacity(0.7)
                         .child(count_of(ix).to_string()),
@@ -667,7 +667,7 @@ impl RenderOnce for MemoryPanel {
                             ),
                     )
                     .child(
-                        luna::button(
+                        pink::button(
                             format!("{key}-undo"),
                             ButtonKind::Secondary,
                             ControlSize::Sm,
@@ -710,8 +710,8 @@ impl RenderOnce for MemoryPanel {
                             )),
                     )
                     .child(
-                        luna::button(format!("{key}-add"), ButtonKind::Ghost, ControlSize::Sm, &t)
-                            .child(luna::glyph(ICON_PLUS, ControlSize::Sm).text_color(t.text_muted))
+                        pink::button(format!("{key}-add"), ButtonKind::Ghost, ControlSize::Sm, &t)
+                            .child(pink::glyph(ICON_PLUS, ControlSize::Sm).text_color(t.text_muted))
                             .child("Remember something")
                             .on_click(move |_, window, cx| {
                                 state.update(cx, |s, cx| s.add(window, cx))
@@ -722,11 +722,11 @@ impl RenderOnce for MemoryPanel {
         };
 
         motion::keep_alive(window);
-        luna::card(&t)
+        pink::card(&t)
             .id(self.id.clone())
             .w(px(self.width))
             .overflow_hidden()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .child(header)
             .children(paused)
@@ -751,7 +751,7 @@ fn rise(id: String, el: gpui::Div) -> AnyElement {
 }
 
 /// A glyph-only row action whose glyph brightens with its hover wash.
-fn action(id: String, icon: &'static str, rest: gpui::Hsla, t: &Luna) -> gpui::Stateful<gpui::Div> {
+fn action(id: String, icon: &'static str, rest: gpui::Hsla, t: &Pink) -> gpui::Stateful<gpui::Div> {
     let tone = motion::hover_blend(&id, rest, if rest == t.text_muted { t.text } else { rest });
     div()
         .id(SharedString::from(id.clone()))
@@ -777,7 +777,7 @@ fn memory_row(
     vis: f32,
     editor: Option<Entity<TextInput>>,
     state: Entity<MemoryState>,
-    t: &Luna,
+    t: &Pink,
 ) -> AnyElement {
     let row_key = format!("{key}-row-{}", m.id);
     let hover = motion::hover_t(&row_key);
@@ -840,14 +840,14 @@ fn memory_row(
                         .flex()
                         .items_center()
                         .gap(px(space::S6))
-                        .child(luna::kbd("↵", t))
+                        .child(pink::kbd("↵", t))
                         .child(
                             div()
                                 .text_size(px(text::CAPTION))
                                 .text_color(t.text_faint)
                                 .child("save"),
                         )
-                        .child(luna::kbd("esc", t))
+                        .child(pink::kbd("esc", t))
                         .child(
                             div()
                                 .flex_1()
@@ -856,7 +856,7 @@ fn memory_row(
                                 .child("cancel"),
                         )
                         .child(
-                            luna::button(
+                            pink::button(
                                 format!("{row_key}-cancel"),
                                 ButtonKind::Ghost,
                                 ControlSize::Sm,
@@ -866,7 +866,7 @@ fn memory_row(
                             .on_click(move |_, _, cx| s1.update(cx, |s, cx| s.cancel(cx))),
                         )
                         .child(
-                            luna::button(
+                            pink::button(
                                 format!("{row_key}-save"),
                                 ButtonKind::Primary,
                                 ControlSize::Sm,

@@ -1,4 +1,4 @@
-//! AI Answer – a luna component.
+//! AI Answer – a pink component.
 //!
 //! A question, the sources the assistant gathered and its streamed reply in
 //! one card. While it searches, monogram tiles drop into a stacked "sources"
@@ -33,8 +33,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, FillTier, Luna, Tone, radius, space, text},
     motion::{self, AnimationExt, EASE_OUT, GLIDE, MotionSpec, ROW_IN},
+    pink::{self, FillTier, Pink, Tone, radius, space, text},
     story,
 };
 
@@ -419,7 +419,7 @@ fn spinner(id: impl Into<ElementId>, size: f32, color: Hsla, reduced: bool) -> A
 }
 
 /// The source's letter tile; opaque so stacked tiles can overlap.
-fn tile(source: &Source, size: f32, ring: Option<Hsla>, t: &Luna) -> gpui::Div {
+fn tile(source: &Source, size: f32, ring: Option<Hsla>, t: &Pink) -> gpui::Div {
     let color = source.tone.color(t);
     let wash = motion::mix(t.surface_card, color, if t.dark { 0.22 } else { 0.13 });
     div()
@@ -442,7 +442,7 @@ fn tool_button(
     id: impl Into<SharedString>,
     icon: &'static str,
     active: bool,
-    t: &Luna,
+    t: &Pink,
 ) -> gpui::Stateful<gpui::Div> {
     let id: SharedString = id.into();
     let key = format!("ans-tool-{id}");
@@ -474,7 +474,7 @@ fn tool_button(
 // ---------------------------------------------------------------------------
 
 struct Ctx<'a> {
-    t: &'a Luna,
+    t: &'a Pink,
     key: &'a str,
     reduced: bool,
     state: &'a Entity<State>,
@@ -651,7 +651,7 @@ impl AiAnswer {
         let pinned = cx.pinned == Some(cite_ix);
         let state = cx.state.clone();
         let on_open = cx.on_open_source.clone();
-        let card = luna::overlay(t)
+        let card = pink::overlay(t)
             .id(ElementId::NamedInteger(
                 "ans-preview".into(),
                 cite_ix as u64,
@@ -661,7 +661,7 @@ impl AiAnswer {
             .flex()
             .flex_col()
             .gap(px(space::S6))
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .line_height(px(18.))
             .on_mouse_down_out(move |_, _, cx| {
                 state.update(cx, |s, cx| {
@@ -690,7 +690,7 @@ impl AiAnswer {
                         div()
                             .flex_none()
                             .text_size(px(text::CAPTION))
-                            .font_family(luna::MONO)
+                            .font_family(pink::MONO)
                             .text_color(t.text_faint)
                             .child(format!("{}", source_ix + 1)),
                     ),
@@ -712,14 +712,14 @@ impl AiAnswer {
             .when(pinned, |d| {
                 d.child(
                     div().flex().pt(px(space::S4)).child(
-                        luna::button(
+                        pink::button(
                             format!("{}-open-{cite_ix}", cx.key),
-                            luna::ButtonKind::Secondary,
-                            luna::ControlSize::Sm,
+                            pink::ButtonKind::Secondary,
+                            pink::ControlSize::Sm,
                             t,
                         )
                         .child(
-                            luna::glyph(ICON_OPEN, luna::ControlSize::Sm).text_color(t.text_muted),
+                            pink::glyph(ICON_OPEN, pink::ControlSize::Sm).text_color(t.text_muted),
                         )
                         .child(format!("Open in {}", source.site))
                         .when_some(on_open, |b, f| {
@@ -748,7 +748,7 @@ impl AiAnswer {
 
 impl RenderOnce for AiAnswer {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let reduced = motion::reduced_motion(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
@@ -903,14 +903,14 @@ impl RenderOnce for AiAnswer {
                             .child(label),
                     )
                     .child(
-                        luna::button(
+                        pink::button(
                             format!("{key}-stop"),
-                            luna::ButtonKind::Secondary,
-                            luna::ControlSize::Sm,
+                            pink::ButtonKind::Secondary,
+                            pink::ControlSize::Sm,
                             &t,
                         )
                         .child(
-                            luna::glyph(ICON_STOP, luna::ControlSize::Sm).text_color(t.text_muted),
+                            pink::glyph(ICON_STOP, pink::ControlSize::Sm).text_color(t.text_muted),
                         )
                         .child("Stop")
                         .when_some(on_stop, |b, f| {
@@ -968,7 +968,7 @@ impl RenderOnce for AiAnswer {
                     div()
                         .w(px(14.))
                         .text_size(px(text::CAPTION))
-                        .font_family(luna::MONO)
+                        .font_family(pink::MONO)
                         .text_color(t.text_faint)
                         .child(format!("{}", ix + 1)),
                 )
@@ -1298,9 +1298,9 @@ impl RenderOnce for AiAnswer {
             .id(self.id.clone())
             .w(px(self.width))
             .max_w_full()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .child(
-                luna::card(&t)
+                pink::card(&t)
                     .flex()
                     .flex_col()
                     .child(
@@ -1332,7 +1332,7 @@ impl RenderOnce for AiAnswer {
                         div()
                             .mx(px(space::S20))
                             .mt(px(space::S12))
-                            .child(luna::divider(&t)),
+                            .child(pink::divider(&t)),
                     )
                     .child(body)
                     .children(follow_ups),

@@ -27,8 +27,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, Tone, oklch, radius, text},
     motion::{self, GLIDE, MENU_IN, ROW_IN},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, oklch, radius, text},
     story,
 };
 
@@ -238,7 +238,7 @@ fn token_count(tokens: u32) -> String {
 }
 
 /// Monogram wash and ink for a hue.
-fn hue_colors(hue: f32, t: &Luna) -> (Hsla, Hsla) {
+fn hue_colors(hue: f32, t: &Pink) -> (Hsla, Hsla) {
     if t.dark {
         (oklch(0.30, 0.055, hue), oklch(0.86, 0.10, hue))
     } else {
@@ -358,7 +358,7 @@ impl AgentTree {
 
 /// What every row needs to know about the tree around it.
 struct Ctx<'a> {
-    t: &'a Luna,
+    t: &'a Pink,
     key: &'a str,
     folded: &'a HashSet<SharedString>,
     selected: &'a SharedString,
@@ -369,7 +369,7 @@ struct Ctx<'a> {
 
 impl RenderOnce for AgentTree {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let initial = self.selected.clone();
         let state = window.use_keyed_state(
@@ -481,17 +481,17 @@ impl RenderOnce for AgentTree {
             )
         });
 
-        let el = luna::card(&t)
+        let el = pink::card(&t)
             .id(self.id.clone())
             .w(px(TREE_W + if self.inspector { INSPECTOR_W } else { 0. }))
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_size(px(text::BODY))
             .text_color(t.text)
             .overflow_hidden()
             .flex()
             .flex_col()
             .child(header(&root, &self.title, &key, &t))
-            .child(luna::divider(&t))
+            .child(pink::divider(&t))
             .child(div().flex().child(tree).children(inspector));
         motion::keep_alive(window);
         el
@@ -499,7 +499,7 @@ impl RenderOnce for AgentTree {
 }
 
 /// Title, run counts and the total spend.
-fn header(root: &AgentNode, title: &SharedString, key: &str, t: &Luna) -> impl IntoElement {
+fn header(root: &AgentNode, title: &SharedString, key: &str, t: &Pink) -> impl IntoElement {
     let total = motion::follow(&format!("{key}-total"), root.branch_cost(), GLIDE);
     let agents = 1 + root.descendants();
     let running = root.count(AgentStatus::Running);
@@ -549,10 +549,10 @@ fn header(root: &AgentNode, title: &SharedString, key: &str, t: &Luna) -> impl I
                 ),
         )
         .when(running > 0, |d| {
-            d.child(luna::badge(format!("{running} running"), Tone::Accent, t))
+            d.child(pink::badge(format!("{running} running"), Tone::Accent, t))
         })
         .when(failed > 0, |d| {
-            d.child(luna::badge(format!("{failed} failed"), Tone::Danger, t))
+            d.child(pink::badge(format!("{failed} failed"), Tone::Danger, t))
         })
         .child(
             div()
@@ -560,7 +560,7 @@ fn header(root: &AgentNode, title: &SharedString, key: &str, t: &Luna) -> impl I
                 .min_w(px(64.))
                 .flex()
                 .justify_end()
-                .font_family(luna::MONO)
+                .font_family(pink::MONO)
                 .text_size(px(text::CALLOUT))
                 .font_weight(FontWeight::MEDIUM)
                 .child(money(total)),
@@ -703,7 +703,7 @@ fn row(node: &AgentNode, depth: usize, row_ix: usize, c: &Ctx) -> impl IntoEleme
             .justify_between()
             .rounded(px(radius::SM))
             .text_size(px(text::CAPTION))
-            .font_family(luna::MONO)
+            .font_family(pink::MONO)
             .cursor_pointer()
             .hover_fill_fg(
                 fold_key.clone(),
@@ -783,7 +783,7 @@ fn row(node: &AgentNode, depth: usize, row_ix: usize, c: &Ctx) -> impl IntoEleme
         .flex()
         .flex_col()
         .items_end()
-        .font_family(luna::MONO)
+        .font_family(pink::MONO)
         .child(
             div()
                 .flex()
@@ -860,7 +860,7 @@ fn row(node: &AgentNode, depth: usize, row_ix: usize, c: &Ctx) -> impl IntoEleme
 }
 
 /// Monogram with a status badge in its corner.
-fn avatar(node: &AgentNode, size: f32, key: &str, t: &Luna, reduced: bool) -> Div {
+fn avatar(node: &AgentNode, size: f32, key: &str, t: &Pink, reduced: bool) -> Div {
     let (wash, ink) = hue_colors(node.hue, t);
     let badge_size = if size > 28. { 14. } else { 12. };
     let badge = status_badge(node, badge_size, key, t, reduced);
@@ -880,7 +880,7 @@ fn avatar(node: &AgentNode, size: f32, key: &str, t: &Luna, reduced: bool) -> Di
         .child(div().absolute().right(px(-4.)).bottom(px(-4.)).child(badge))
 }
 
-fn status_badge(node: &AgentNode, size: f32, key: &str, t: &Luna, reduced: bool) -> AnyElement {
+fn status_badge(node: &AgentNode, size: f32, key: &str, t: &Pink, reduced: bool) -> AnyElement {
     let ring = div()
         .size(px(size + 4.))
         .rounded_full()
@@ -948,7 +948,7 @@ fn inspector(
     parent: Option<SharedString>,
     run_total: f32,
     key: &str,
-    t: &Luna,
+    t: &Pink,
     on_stop: Option<IdHandler>,
     on_retry: Option<IdHandler>,
     on_open_log: Option<IdHandler>,
@@ -980,7 +980,7 @@ fn inspector(
                     // Figures in mono, names in the interface face.
                     .when(
                         value.starts_with(|c: char| c.is_ascii_digit() || c == '$'),
-                        |d| d.font_family(luna::MONO),
+                        |d| d.font_family(pink::MONO),
                     )
                     .text_color(t.text)
                     .child(value),
@@ -993,14 +993,14 @@ fn inspector(
             AgentStatus::Running | AgentStatus::Queued => {
                 let id = id.clone();
                 row = row.child(
-                    luna::button(
+                    pink::button(
                         format!("{key}-stop"),
                         ButtonKind::Secondary,
                         ControlSize::Md,
                         t,
                     )
                     .flex_1()
-                    .child(luna::glyph(ICON_STOP, ControlSize::Md).text_color(t.text_muted))
+                    .child(pink::glyph(ICON_STOP, ControlSize::Md).text_color(t.text_muted))
                     .child("Stop")
                     .when_some(on_stop, |b, f| {
                         b.on_click(move |_, window, cx| f(&id, window, cx))
@@ -1010,14 +1010,14 @@ fn inspector(
             AgentStatus::Failed | AgentStatus::Stopped => {
                 let id = id.clone();
                 row = row.child(
-                    luna::button(
+                    pink::button(
                         format!("{key}-retry"),
                         ButtonKind::Primary,
                         ControlSize::Md,
                         t,
                     )
                     .flex_1()
-                    .child(luna::glyph(ICON_RETRY, ControlSize::Md).text_color(t.on_solid))
+                    .child(pink::glyph(ICON_RETRY, ControlSize::Md).text_color(t.on_solid))
                     .child("Retry")
                     .when_some(on_retry, |b, f| {
                         b.on_click(move |_, window, cx| f(&id, window, cx))
@@ -1027,9 +1027,9 @@ fn inspector(
             AgentStatus::Done => {}
         }
         row.child(
-            luna::button(format!("{key}-log"), ButtonKind::Ghost, ControlSize::Md, t)
+            pink::button(format!("{key}-log"), ButtonKind::Ghost, ControlSize::Md, t)
                 .flex_1()
-                .child(luna::glyph(ICON_LOG, ControlSize::Md).text_color(t.text_muted))
+                .child(pink::glyph(ICON_LOG, ControlSize::Md).text_color(t.text_muted))
                 .child("Open log")
                 .when_some(on_open_log, |b, f| {
                     b.on_click(move |_, window, cx| f(&id, window, cx))
@@ -1069,7 +1069,7 @@ fn inspector(
                                 .child(node.model.clone()),
                         ),
                 )
-                .child(luna::badge(node.status.label(), node.status.tone(), t)),
+                .child(pink::badge(node.status.label(), node.status.tone(), t)),
         )
         .child(
             div()
@@ -1086,7 +1086,7 @@ fn inspector(
                 .text_color(t.text)
                 .child(node.task.clone()),
         )
-        .child(div().mt(px(12.)).mb(px(4.)).child(luna::divider(t)))
+        .child(div().mt(px(12.)).mb(px(4.)).child(pink::divider(t)))
         .child(stat(
             "Spawned by",
             parent
@@ -1118,7 +1118,7 @@ fn inspector(
                 .child("Share of run")
                 .child(
                     div()
-                        .font_family(luna::MONO)
+                        .font_family(pink::MONO)
                         .child(format!("{:.0}%", share_v * 100.)),
                 ),
         )

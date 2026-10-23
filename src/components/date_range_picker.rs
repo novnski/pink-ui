@@ -23,8 +23,8 @@ use gpui::{
 };
 
 use crate::{
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, radius, space, text},
     motion::{self, AnimationExt, MotionSpec},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, radius, space, text},
     story,
 };
 
@@ -463,7 +463,7 @@ impl RenderOnce for DateRangePicker {
 
 impl DateRangePicker {
     fn build(self, window: &mut Window, cx: &mut App) -> gpui::AnyElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let today = self.today;
         let state = window.use_keyed_state(
@@ -547,9 +547,9 @@ impl DateRangePicker {
                             .child(format!("vs {}", cmp.label())),
                     )
                 })
-                .child(luna::badge(
+                .child(pink::badge(
                     format!("{}d", applied.days()),
-                    luna::Tone::Neutral,
+                    pink::Tone::Neutral,
                     &t,
                 ))
                 .child(
@@ -579,7 +579,7 @@ impl DateRangePicker {
             .flex()
             .flex_col()
             .items_start()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .child(trigger)
             .when_some(popover, |d, popover| {
@@ -602,7 +602,7 @@ fn popover(
     today: Day,
     presets: &[Preset],
     on_apply: Option<ApplyHandler>,
-    t: &Luna,
+    t: &Pink,
     window: &mut Window,
     cx: &mut App,
 ) -> gpui::Stateful<gpui::Div> {
@@ -623,7 +623,7 @@ fn popover(
         .map(|(ix, preset)| {
             let state = state.clone();
             let range = preset.range(today);
-            luna::chip(
+            pink::chip(
                 format!("{key}-preset-{ix}"),
                 s.preset == Some(ix),
                 ControlSize::Sm,
@@ -773,7 +773,7 @@ fn popover(
             .gap(px(space::S4))
             .children(modes.map(|(mode, label)| {
                 let state = state.clone();
-                luna::chip(
+                pink::chip(
                     format!("{key}-mode-{label}"),
                     last_compare == mode,
                     ControlSize::Sm,
@@ -792,7 +792,7 @@ fn popover(
 
     let cancel = {
         let state = state.clone();
-        luna::button(
+        pink::button(
             format!("{key}-cancel"),
             ButtonKind::Ghost,
             ControlSize::Md,
@@ -809,7 +809,7 @@ fn popover(
     };
     let apply = {
         let state = state.clone();
-        luna::button(
+        pink::button(
             format!("{key}-apply"),
             ButtonKind::Primary,
             ControlSize::Md,
@@ -890,7 +890,7 @@ fn popover(
     };
 
     let close_state = state.clone();
-    luna::overlay(t)
+    pink::overlay(t)
         .id(SharedString::from(format!("{key}-popover")))
         .track_focus(&s.focus)
         .on_key_down(on_key)
@@ -915,7 +915,7 @@ fn popover(
                 .pb(px(space::S12))
                 .children(chips),
         )
-        .child(luna::divider(t))
+        .child(pink::divider(t))
         .child(
             div()
                 .px(px(space::S16))
@@ -924,7 +924,7 @@ fn popover(
                 .overflow_hidden()
                 .child(months),
         )
-        .child(luna::divider(t))
+        .child(pink::divider(t))
         .child(
             div()
                 .flex()
@@ -991,7 +991,7 @@ fn month_view(
     previewing: bool,
     compare: Option<DateRange>,
     focused: bool,
-    t: &Luna,
+    t: &Pink,
     cx: &App,
 ) -> AnyElement {
     let s = state.read(cx);
@@ -1001,7 +1001,7 @@ fn month_view(
     let title = format!("{} {}", MONTHS[first.month as usize - 1], first.year);
     let nav = |id: &str, icon: &'static str, delta: i32| {
         let state = state.clone();
-        luna::icon_button(format!("{key}-{id}"), icon, ControlSize::Sm, t).on_click(
+        pink::icon_button(format!("{key}-{id}"), icon, ControlSize::Sm, t).on_click(
             move |_, _, cx| {
                 state.update(cx, |s, cx| {
                     s.page(delta);
@@ -1099,7 +1099,7 @@ fn day_cell(
     compare: Option<DateRange>,
     cursor: bool,
     pick_epoch: usize,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let id = format!("{key}-d-{}-{}-{}", day.year, day.month, day.day);
     let disabled = day > today;
@@ -1234,7 +1234,7 @@ fn day_cell(
 }
 
 /// A small on/off switch whose knob glides.
-fn switch(key: &str, on: bool, t: &Luna) -> impl IntoElement {
+fn switch(key: &str, on: bool, t: &Pink) -> impl IntoElement {
     let k = motion::follow(
         &format!("{key}-knob"),
         if on { 1. } else { 0. },

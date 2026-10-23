@@ -3,15 +3,15 @@
 Every component is **one Rust file**, `src/components/<slug>.rs`. A file
 depends only on GPUI
 and the shared modules in this crate (`motion`, `interaction`, `primitives`,
-`luna`, `theme`, `story`), and exports `NAME`, `DESCRIPTION` and `story`.
+`pink`, `theme`, `story`), and exports `NAME`, `DESCRIPTION` and `story`.
 Icons live in `assets/icons/<slug>/`.
 
 There are two kinds (`components::Kind`):
 
 - **Core** components come in two looks, Clean and Classic.
   `src/components/profile_menu.rs` is the reference: read it first.
-- **Luna** components are drawn in luna's design language. See
-  [Luna components](#luna-components).
+- **Pink** components are drawn in Pink's design language. See
+  [Pink components](#pink-components).
 
 The looks section applies to core components; the API, state, motion and GPUI
 notes apply to both.
@@ -28,7 +28,7 @@ Each core component comes in two **looks**, and each look in light and dark:
 Build both. Share the structure and logic, and switch tokens and sizes on the
 look. The module's `story` is its demo, with realistic sample data.
 
-## API shape (luna style)
+## API shape (Pink style)
 
 Components are builders you drop into any element tree:
 
@@ -193,14 +193,14 @@ Check it in the browser with `scripts/build-site.sh` and
 `python3 -m http.server -d site/dist`, then give it a catalog card picture
 with `node scripts/site/thumbnails.mjs site/dist` and commit `site/thumbs/`.
 
-## Luna components
+## Pink components
 
-- Style with [`crate::luna`](src/luna.rs): `Luna::get(cx)` tokens (surfaces,
+- Style with [`crate::pink`](src/pink.rs): `Pink::get(cx)` tokens (surfaces,
   text, borders, fills, accent, status colors), the radius and spacing
-  ladders, `luna::SANS` (Geist) / `luna::MONO`, and the control kit
+  ladders, `pink::SANS` (Geist) / `pink::MONO`, and the control kit
   (`button`, `icon_button`, `chip`, `badge`, `kbd`, `card`, `overlay`).
-  Luna components follow light/dark; the Clean/Classic look doesn't apply.
-- Use luna's motion presets (`motion::MENU_IN`, `GLIDE`, `HOVER_FADE`, …)
+  Pink components follow light/dark; the Clean/Classic look doesn't apply.
+- Use Pink's motion presets (`motion::MENU_IN`, `GLIDE`, `HOVER_FADE`, …)
   and `HoverFill` for hovers.
 - Write your own demo content and `DESCRIPTION`; draw icons as simple 24×24
   strokes, `stroke-width="1.5"`.

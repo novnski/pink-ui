@@ -26,8 +26,8 @@ use gpui::{
 };
 
 use crate::{
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, Tone, radius, space, text},
     motion::{self, GLIDE, HOVER_FADE, LINEAR, MENU_IN, MotionSpec},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, radius, space, text},
     story,
 };
 
@@ -241,7 +241,7 @@ enum Command {
 
 impl RenderOnce for PermissionRequest {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let autofocus = self.autofocus;
         let state = window.use_keyed_state(
@@ -372,7 +372,7 @@ impl RenderOnce for PermissionRequest {
                             .text_size(px(text::FOOTNOTE))
                             .text_color(t.text_faint)
                             .when_some(self.risk.clone(), |d, (label, tone)| {
-                                d.child(luna::badge(label, tone, &t))
+                                d.child(pink::badge(label, tone, &t))
                             })
                             .when_some(self.context.clone(), |d, c| {
                                 d.child(
@@ -433,7 +433,7 @@ impl RenderOnce for PermissionRequest {
                 .bg(t.fill(FillTier::Quaternary))
                 .border_1()
                 .border_color(t.border)
-                .font_family(luna::MONO)
+                .font_family(pink::MONO)
                 .text_size(px(text::FOOTNOTE))
                 .line_height(px(20.))
                 .children(self.commands.iter().map(|c| {
@@ -527,7 +527,7 @@ impl RenderOnce for PermissionRequest {
             )
             .child({
                 let act = act.clone();
-                luna::button(
+                pink::button(
                     format!("{key}-deny"),
                     ButtonKind::Secondary,
                     ControlSize::Lg,
@@ -539,7 +539,7 @@ impl RenderOnce for PermissionRequest {
             })
             .child({
                 let act = act.clone();
-                luna::button(
+                pink::button(
                     format!("{key}-allow"),
                     ButtonKind::Primary,
                     ControlSize::Lg,
@@ -620,7 +620,7 @@ impl RenderOnce for PermissionRequest {
         };
 
         motion::keep_alive(window);
-        luna::card(&t)
+        pink::card(&t)
             .id(self.id.clone())
             .track_focus(&focus)
             .on_key_down(on_key)
@@ -630,7 +630,7 @@ impl RenderOnce for PermissionRequest {
             })
             .w(px(self.width))
             .overflow_hidden()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .child(request_slot)
             .children(line_slot)
@@ -705,7 +705,7 @@ fn key_hint(keys: &'static str, fg: Hsla) -> impl IntoElement {
         .justify_center()
         .rounded(px(radius::XS))
         .bg(fg.opacity(0.10))
-        .font_family(luna::MONO)
+        .font_family(pink::MONO)
         .text_size(px(10.))
         .text_color(fg.opacity(0.62))
         .child(keys)
@@ -717,7 +717,7 @@ fn segmented(
     scopes: &[GrantScope; 3],
     selected: usize,
     act: Rc<dyn Fn(Command, &mut Window, &mut App)>,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let x = motion::follow(&format!("{key}-thumb"), selected as f32 * SEGMENT_W, GLIDE);
     let thumb_bg = if t.dark {
@@ -785,7 +785,7 @@ fn grant_line(
     window_len: Duration,
     action: &SharedString,
     act: Rc<dyn Fn(Command, &mut Window, &mut App)>,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let (allowed, title, detail, back): (bool, SharedString, SharedString, &'static str) =
         match status {
@@ -894,7 +894,7 @@ fn grant_line(
                     )
                     .child(
                         div()
-                            .font_family(luna::MONO)
+                            .font_family(pink::MONO)
                             .text_color(t.text_muted)
                             .child(clock),
                     )
@@ -902,7 +902,7 @@ fn grant_line(
             )
         })
         .child(
-            luna::button(
+            pink::button(
                 format!("{key}-back"),
                 ButtonKind::Secondary,
                 ControlSize::Md,

@@ -32,8 +32,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ControlSize, FillTier, Luna, Tone, space, text},
     motion::{self, MotionSpec},
+    pink::{self, ControlSize, FillTier, Pink, Tone, space, text},
     primitives::{InputEvent, TextInput},
     story,
 };
@@ -695,7 +695,7 @@ fn plural(n: usize, word: &str) -> String {
 
 impl RenderOnce for DataTable {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let kinds: Vec<ColumnKind> = self.columns.iter().map(|c| c.kind).collect();
         let initial = self.rows.clone();
@@ -705,7 +705,7 @@ impl RenderOnce for DataTable {
             |window, cx| State::new(Sheet::new(kinds, initial), window, cx),
         );
         if self.columns.is_empty() {
-            return luna::card(&t).id(self.id.clone());
+            return pink::card(&t).id(self.id.clone());
         }
 
         // Tell the owner about changes made since the last render.
@@ -749,7 +749,7 @@ impl RenderOnce for DataTable {
         let history_button = |id: &str, icon: &'static str, enabled: bool, redo: bool| {
             let state = state.clone();
             let focus = focus.clone();
-            luna::icon_button(
+            pink::icon_button(
                 SharedString::from(format!("{key}-{id}")),
                 icon,
                 ControlSize::Sm,
@@ -791,7 +791,7 @@ impl RenderOnce for DataTable {
                             .text_color(t.text)
                             .child(self.title.clone()),
                     )
-                    .child(luna::badge(
+                    .child(pink::badge(
                         plural(sheet.rows.len(), "row"),
                         Tone::Neutral,
                         &t,
@@ -919,7 +919,7 @@ impl RenderOnce for DataTable {
                             t.fill(FillTier::Quaternary)
                         })
                         .cursor_pointer()
-                        .font_family(luna::MONO)
+                        .font_family(pink::MONO)
                         .text_size(px(text::CAPTION))
                         .text_color(if row_lit { t.text } else { t.text_faint })
                         .on_mouse_down(MouseButton::Left, move |ev: &MouseDownEvent, window, cx| {
@@ -956,7 +956,7 @@ impl RenderOnce for DataTable {
                         .text_size(px(text::BODY))
                         .when(col.kind.numeric(), |d| {
                             d.justify_end()
-                                .font_family(luna::MONO)
+                                .font_family(pink::MONO)
                                 .text_size(px(text::FOOTNOTE))
                         })
                         .on_mouse_down(MouseButton::Left, move |ev: &MouseDownEvent, window, cx| {
@@ -1000,7 +1000,7 @@ impl RenderOnce for DataTable {
                                 .iter()
                                 .find(|(v, _)| v.eq_ignore_ascii_case(&raw))
                                 .map_or(Tone::Neutral, |(_, tone)| *tone);
-                            cell.child(luna::badge(shown, tone, &t))
+                            cell.child(pink::badge(shown, tone, &t))
                         }
                         ColumnKind::Date => {
                             let soon = today.zip(parse_date(&raw)).and_then(|(now, d)| {
@@ -1131,7 +1131,7 @@ impl RenderOnce for DataTable {
                 .flex()
                 .items_center()
                 .gap(px(space::S4))
-                .child(luna::kbd(keys, &t))
+                .child(pink::kbd(keys, &t))
                 .child(label)
         };
         let add_state = state.clone();
@@ -1145,13 +1145,13 @@ impl RenderOnce for DataTable {
             .text_size(px(text::FOOTNOTE))
             .text_color(t.text_faint)
             .child(
-                luna::button(
+                pink::button(
                     SharedString::from(format!("{key}-add")),
-                    luna::ButtonKind::Ghost,
+                    pink::ButtonKind::Ghost,
                     ControlSize::Sm,
                     &t,
                 )
-                .child(luna::glyph(ICON_PLUS, ControlSize::Sm).text_color(t.text_muted))
+                .child(pink::glyph(ICON_PLUS, ControlSize::Sm).text_color(t.text_muted))
                 .child("Add row")
                 .on_click(move |_, window, cx| {
                     window.focus(&add_focus, cx);
@@ -1172,7 +1172,7 @@ impl RenderOnce for DataTable {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .font_family(luna::MONO)
+                    .font_family(pink::MONO)
                     .text_size(px(text::CAPTION))
                     .child(match &flash {
                         Some((message, error)) => motion::fade_in(
@@ -1306,11 +1306,11 @@ impl RenderOnce for DataTable {
         };
 
         motion::keep_alive(window);
-        luna::card(&t)
+        pink::card(&t)
             .id(self.id.clone())
             .w(px(width + 2.))
             .overflow_hidden()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .track_focus(&focus)
             .on_key_down(on_key)
             .child(toolbar)

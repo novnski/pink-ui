@@ -25,8 +25,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, Tone, radius, space, text},
     motion::{self, MotionSpec},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, radius, space, text},
     primitives::shadow,
     story,
 };
@@ -400,7 +400,7 @@ impl RenderOnce for BillingSchedule {
 
 impl BillingSchedule {
     fn build(self, window: &mut Window, cx: &mut App) -> AnyElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
@@ -440,11 +440,11 @@ impl BillingSchedule {
         );
         let summary = summary(&key, &state, &t, cx);
 
-        luna::card(&t)
+        pink::card(&t)
             .id(self.id.clone())
             .w(px(800.))
             .flex()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .text_size(px(text::BODY))
             .child(composer)
@@ -453,7 +453,7 @@ impl BillingSchedule {
     }
 }
 
-fn label(text_: &'static str, t: &Luna) -> gpui::Div {
+fn label(text_: &'static str, t: &Pink) -> gpui::Div {
     div()
         .text_size(px(text::FOOTNOTE))
         .font_weight(FontWeight::MEDIUM)
@@ -467,7 +467,7 @@ fn composer(
     customer: &SharedString,
     caption: &SharedString,
     catalog: &[Product],
-    t: &Luna,
+    t: &Pink,
     cx: &App,
 ) -> impl IntoElement {
     let s = state.read(cx);
@@ -515,7 +515,7 @@ fn composer(
                         .child(caption.clone()),
                 ),
         )
-        .child(luna::badge("Draft", Tone::Warning, t));
+        .child(pink::badge("Draft", Tone::Warning, t));
 
     // Start month stepper and term chips.
     let shift = |delta: i32| {
@@ -537,7 +537,7 @@ fn composer(
         .border_color(t.border)
         .bg(t.input_bg)
         .child(
-            luna::icon_button(format!("{key}-start-prev"), ICON_PREV, ControlSize::Sm, t)
+            pink::icon_button(format!("{key}-start-prev"), ICON_PREV, ControlSize::Sm, t)
                 .on_click(shift(-1)),
         )
         .child(
@@ -559,7 +559,7 @@ fn composer(
                 .child(plan.month_label(0)),
         )
         .child(
-            luna::icon_button(format!("{key}-start-next"), ICON_NEXT, ControlSize::Sm, t)
+            pink::icon_button(format!("{key}-start-next"), ICON_NEXT, ControlSize::Sm, t)
                 .on_click(shift(1)),
         );
     let terms = div()
@@ -567,7 +567,7 @@ fn composer(
         .gap(px(space::S4))
         .children(TERMS.map(|months| {
             let state = state.clone();
-            luna::chip(
+            pink::chip(
                 format!("{key}-term-{months}"),
                 plan.term == months,
                 ControlSize::Md,
@@ -618,9 +618,9 @@ fn composer(
         div()
             .relative()
             .child(
-                luna::button(format!("{key}-add"), ButtonKind::Ghost, ControlSize::Md, t)
+                pink::button(format!("{key}-add"), ButtonKind::Ghost, ControlSize::Md, t)
                     .when(disabled, |b| b.opacity(0.5))
-                    .child(luna::glyph(ICON_PLUS, ControlSize::Md).text_color(t.text_muted))
+                    .child(pink::glyph(ICON_PLUS, ControlSize::Md).text_color(t.text_muted))
                     .child("Add item")
                     .on_click(move |_, _, cx| {
                         state.update(cx, |s, cx| {
@@ -643,7 +643,7 @@ fn composer(
                 .gap(px(space::S4))
                 .children(DISCOUNTS.map(|pct| {
                     let state = state.clone();
-                    luna::chip(
+                    pink::chip(
                         format!("{key}-pct-{pct}"),
                         plan.discount == Some(pct),
                         ControlSize::Sm,
@@ -690,7 +690,7 @@ fn composer(
                 .border_color(t.border)
                 .bg(t.input_bg)
                 .child(
-                    luna::icon_button(format!("{key}-min-down"), ICON_MINUS, ControlSize::Sm, t)
+                    pink::icon_button(format!("{key}-min-down"), ICON_MINUS, ControlSize::Sm, t)
                         .size(px(22.))
                         .on_click(move |_, window, cx| {
                             edit(&down, window, cx, |s| {
@@ -706,11 +706,11 @@ fn composer(
                         .flex()
                         .justify_center()
                         .text_size(px(text::FOOTNOTE))
-                        .font_family(luna::MONO)
+                        .font_family(pink::MONO)
                         .child(money(min).trim_end_matches(".00").to_string()),
                 )
                 .child(
-                    luna::icon_button(format!("{key}-min-up"), ICON_PLUS, ControlSize::Sm, t)
+                    pink::icon_button(format!("{key}-min-up"), ICON_PLUS, ControlSize::Sm, t)
                         .size(px(22.))
                         .on_click(move |_, window, cx| {
                             edit(&up, window, cx, |s| {
@@ -788,7 +788,7 @@ fn line_row(
     lkey: u64,
     line: &Product,
     state: &Entity<PlanState>,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let rkey = format!("{key}-line-{lkey}");
     let hover = motion::hover_t(&rkey);
@@ -900,7 +900,7 @@ fn line_row(
                     .border_color(t.border)
                     .bg(t.input_bg)
                     .child(
-                        luna::icon_button(format!("{rkey}-less"), ICON_MINUS, ControlSize::Sm, t)
+                        pink::icon_button(format!("{rkey}-less"), ICON_MINUS, ControlSize::Sm, t)
                             .size(px(22.))
                             .on_click(move |_, window, cx| {
                                 edit(&less, window, cx, |s| {
@@ -916,11 +916,11 @@ fn line_row(
                             .flex()
                             .justify_center()
                             .text_size(px(text::FOOTNOTE))
-                            .font_family(luna::MONO)
+                            .font_family(pink::MONO)
                             .child(qty.to_string()),
                     )
                     .child(
-                        luna::icon_button(format!("{rkey}-more"), ICON_PLUS, ControlSize::Sm, t)
+                        pink::icon_button(format!("{rkey}-more"), ICON_PLUS, ControlSize::Sm, t)
                             .size(px(22.))
                             .on_click(move |_, window, cx| {
                                 edit(&more, window, cx, |s| {
@@ -950,7 +950,7 @@ fn line_row(
                     ),
             )
             .child(
-                luna::icon_button(format!("{rkey}-remove"), ICON_REMOVE, ControlSize::Sm, t)
+                pink::icon_button(format!("{rkey}-remove"), ICON_REMOVE, ControlSize::Sm, t)
                     .opacity(0.25 + 0.75 * hover)
                     .on_click(move |_, window, cx| {
                         edit(&remove, window, cx, |s| {
@@ -968,7 +968,7 @@ fn add_menu(
     key: &str,
     state: Entity<PlanState>,
     products: &[Product],
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let close = state.clone();
     let items = products.iter().enumerate().map(|(ix, product)| {
@@ -1035,7 +1035,7 @@ fn add_menu(
             .right_0()
             .child(motion::pop_in(
                 SharedString::from(format!("{key}-menu")),
-                luna::overlay(t)
+                pink::overlay(t)
                     .id(SharedString::from(format!("{key}-menu-list")))
                     .w(px(248.))
                     .p(px(space::S4))
@@ -1069,7 +1069,7 @@ fn adjustment(
     title: &'static str,
     hint: &'static str,
     on: bool,
-    t: &Luna,
+    t: &Pink,
     toggle: impl Fn(&mut Window, &mut App) + 'static,
 ) -> gpui::Stateful<gpui::Div> {
     div()
@@ -1109,7 +1109,7 @@ fn adjustment(
         )
 }
 
-fn summary(key: &str, state: &Entity<PlanState>, t: &Luna, cx: &App) -> impl IntoElement {
+fn summary(key: &str, state: &Entity<PlanState>, t: &Pink, cx: &App) -> impl IntoElement {
     let s = state.read(cx);
     let plan = &s.plan;
     let invoices = plan.invoices();
@@ -1254,7 +1254,7 @@ fn summary(key: &str, state: &Entity<PlanState>, t: &Luna, cx: &App) -> impl Int
                             div()
                                 .text_size(px(text::FOOTNOTE))
                                 .font_weight(FontWeight::MEDIUM)
-                                .font_family(luna::MONO)
+                                .font_family(pink::MONO)
                                 .child(money(readout.1)),
                         ),
                 )
@@ -1310,7 +1310,7 @@ fn summary(key: &str, state: &Entity<PlanState>, t: &Luna, cx: &App) -> impl Int
                         t.success,
                     ))
                 })
-                .child(div().my(px(space::S8)).child(luna::divider(t)))
+                .child(div().my(px(space::S8)).child(pink::divider(t)))
                 .child(
                     div()
                         .flex()
@@ -1340,7 +1340,7 @@ fn summary(key: &str, state: &Entity<PlanState>, t: &Luna, cx: &App) -> impl Int
 }
 
 /// An on/off switch whose knob glides.
-fn switch(key: &str, on: bool, t: &Luna) -> impl IntoElement {
+fn switch(key: &str, on: bool, t: &Pink) -> impl IntoElement {
     let k = motion::follow(
         &format!("{key}-knob"),
         if on { 1. } else { 0. },

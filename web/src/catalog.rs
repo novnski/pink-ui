@@ -30,7 +30,7 @@ pub fn json() -> String {
         .map(|c| {
             let kind = match c.kind {
                 Kind::Core => "core",
-                Kind::Luna => "luna",
+                Kind::Pink => "pink",
             };
             format!(
                 "{{\"slug\":{},\"name\":{},\"category\":{},\"description\":{},\"kind\":{},\"source\":{}}}",
