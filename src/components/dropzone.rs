@@ -1,23 +1,26 @@
-//! Dropzone – drag files in (or browse) and watch them upload.
+//! Dropzone – files dropped from the desktop (or added with the button)
+//! upload as thumbnails.
 //!
-//! The drop target lights up while files hover over it and takes real file
-//! drops from the desktop. Every file gets a row with a colored type tile,
-//! its speed and time left, and a ring that fills and turns into a check.
-//! Files over the size limit or of a type that isn't accepted are refused in
-//! place; a failed upload offers Retry and resumes where it stopped.
+//! Drawn the way PINK takes attachments. At rest the card shows its staged
+//! files and an "Add files" ghost button (pink's brief image editor); while
+//! files hover over it a "Drop to attach" veil fades in over the whole card
+//! (pink's chat dropzone). Each file is a 112×80 thumbnail with its type's
+//! artwork: a pulsing skeleton while it is read, the radial upload ring over a
+//! darkened plate while its bytes go out, the dashed "missing" thumb with
+//! Retry when the transfer stops, and the same spinner pink shows during a
+//! retry backoff. Files over the size limit or of a type that isn't accepted
+//! never join the strip; pink's error strip says why.
 //!
 //! Transfers are simulated (a steady per-file speed) so the component can be
 //! shown on its own; `on_files` hands the real paths to your uploader.
 //!
 //! ```ignore
 //! Dropzone::new("attachments")
-//!     .max_size(25 * MB)
+//!     .max_size(24 * MB)
 //!     .on_files(|paths, _, _| upload(paths))
 //! ```
 
 use std::{
-    cell::Cell,
-    f32::consts::PI,
     path::{Path, PathBuf},
     rc::Rc,
     sync::Arc,
@@ -25,31 +28,57 @@ use std::{
 use web_time::{Duration, Instant};
 
 use gpui::{
-    Animation, AnyView, App, Context, ElementId, Entity, ExternalPaths, FillOptions, FillRule,
-    FontWeight, Hsla, IntoElement, PathBuilder, PathPromptOptions, PathStyle, Pixels, Point,
-    SharedString, Task, Window, canvas, div, point, prelude::*, px, relative, svg,
+    AnyElement, AnyView, App, Context, Div, ElementId, Entity, ExternalPaths, FontWeight,
+    IntoElement, PathPromptOptions, Pixels, SharedString, Task, Window, div, hsla, img, prelude::*,
+    px, svg,
 };
 
 use crate::{
-    HoverFill,
-    motion::{self, AnimationExt, GLIDE, MotionSpec},
-    pink::{self, ButtonKind, ControlSize, FillTier, Pink, radius, space, text},
+    motion,
+    pink::{self, ButtonKind, ControlSize, Pink, icon_size, layout, loaders, radius, space, text},
     story,
 };
 
 pub const NAME: &str = "Dropzone";
-pub const DESCRIPTION: &str = "A drop target for files from the desktop with per-file type tiles, upload speed and time left, progress rings and retry on failure";
+pub const DESCRIPTION: &str = "An attachments card that takes files dropped from the desktop – a Drop to attach veil while they hover, thumbnails that pulse while read, upload under a radial ring and offer Retry when a transfer stops, an Add files button, and a red strip naming any file over the size limit";
 
 pub const MB: u64 = 1024 * 1024;
 
-const ICON_UPLOAD: &str = "icons/dropzone/upload.svg";
-const ICON_CHECK: &str = "icons/dropzone/check.svg";
-const ICON_REMOVE: &str = "icons/dropzone/x.svg";
-const ICON_RETRY: &str = "icons/dropzone/refresh.svg";
-const ICON_ALERT: &str = "icons/dropzone/alert.svg";
+const ICON_PLUS: &str = "icons/dropzone/plus.svg";
+const ICON_CLOSE: &str = "icons/dropzone/close.svg";
+const ICON_DANGER: &str = "icons/dropzone/danger-circle.svg";
+const ICON_WARNING: &str = "icons/dropzone/danger-triangle.svg";
+/// pink: `file_icons` – the file-type artwork (vscode-symbols); the slate
+/// ones have dark variants lifted like pink's `dark_icon_svg`.
+const FILE_PDF: &str = "icons/dropzone/file-pdf.svg";
+const FILE_SHEET: &str = "icons/dropzone/file-csv.svg";
+const FILE_IMAGE: &str = "icons/dropzone/file-image.svg";
+const FILE_ARCHIVE: &str = "icons/dropzone/file-compressed.svg";
+const FILE_VIDEO: &str = "icons/dropzone/file-video.svg";
+const FILE_VIDEO_DARK: &str = "icons/dropzone/file-video-dark.svg";
+const FILE_DOCUMENT: &str = "icons/dropzone/file-document.svg";
+const FILE_DOCUMENT_DARK: &str = "icons/dropzone/file-document-dark.svg";
+
+/// pink: `attachments::MAX_ATTACHMENT_BYTES`.
+const DEFAULT_MAX_SIZE: u64 = 24 * MB;
+/// pink: `transcript::ATT_THUMB_W` / `ATT_THUMB_H` (also the brief editor's
+/// `THUMB_W` / `THUMB_H`).
+const THUMB_W: f32 = 112.;
+const THUMB_H: f32 = 80.;
+/// pink: the sending overlay's `upload_progress_ring(pct, 34.0)`.
+const RING: f32 = 34.;
+/// pink: the indeterminate sending spinner's cell (`mini_glyph_spinner(.., 3.0, ..)`).
+const SPINNER_CELL: f32 = 3.;
+/// The file artwork at its own 24 box.
+const FILE_ICON: f32 = 24.;
+/// pink: `widgets::error_strip` copy size.
+const STRIP_TEXT: f32 = 12.5;
 
 const TICK: Duration = Duration::from_millis(50);
-const GROUP: &str = "pink-dropzone";
+/// How long a new file reads before its bytes go out (the skeleton).
+const READ_SECS: f64 = 0.6;
+/// The backoff after Retry before the transfer resumes (the spinner).
+const RETRY_SECS: f64 = 1.2;
 
 type FilesHandler = Rc<dyn Fn(&[PathBuf], &mut Window, &mut App)>;
 
@@ -95,13 +124,30 @@ fn simulated_speed(name: &str) -> f64 {
     (1.4 + (hash % 1000) as f64 / 1000. * 2.4) * MB as f64
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Status {
+    /// Being read before upload (pink: `AttachmentSnapshot::Loading`).
+    Reading {
+        wait: f64,
+    },
+    /// Bytes going out (pink: the sending overlay with a percent).
     Uploading,
+    /// Backing off after Retry (pink: the sending overlay without a percent).
+    Retrying {
+        wait: f64,
+    },
     Done,
-    Failed(SharedString),
-    /// Refused before uploading (size or type); can only be removed.
-    Refused(SharedString),
+    /// Stopped part-way (pink: `AttachmentSnapshot::Error`).
+    Failed,
+}
+
+impl Status {
+    fn live(self) -> bool {
+        matches!(
+            self,
+            Status::Reading { .. } | Status::Uploading | Status::Retrying { .. }
+        )
+    }
 }
 
 struct Upload {
@@ -113,16 +159,21 @@ struct Upload {
     eta: f64,
 }
 
+impl Upload {
+    fn fraction(&self) -> f32 {
+        (self.sent / self.file.size.max(1) as f64) as f32
+    }
+}
+
 struct DropState {
     seeded: bool,
     uploads: Vec<Upload>,
     next_key: u64,
+    /// The last batch's refusals, in pink's copy.
+    notice: Option<SharedString>,
     ticker: Option<Task<()>>,
     browse: Option<Task<()>>,
     last_tick: Instant,
-    /// Bumped on each drop, so the target flashes.
-    drops: usize,
-    measured: Rc<Cell<f32>>,
 }
 
 impl DropState {
@@ -131,43 +182,54 @@ impl DropState {
             seeded: false,
             uploads: Vec::new(),
             next_key: 1,
+            notice: None,
             ticker: None,
             browse: None,
             last_tick: Instant::now(),
-            drops: 0,
-            measured: Rc::default(),
         }
     }
 
-    fn add(&mut self, file: QueuedFile, rules: &Rules, cx: &mut Context<Self>) {
-        let status = rules.check(&file);
-        self.uploads.push(Upload {
-            key: self.next_key,
-            eta: file.size as f64 / file.speed.max(1.),
-            file,
-            sent: 0.,
-            status,
-        });
-        self.next_key += 1;
+    /// Stages a batch; anything refused goes to the error strip instead
+    /// (pink: `add_brief_images` setting `edit.error`).
+    fn add(&mut self, files: Vec<QueuedFile>, rules: &Rules, cx: &mut Context<Self>) {
+        let mut refused = Vec::new();
+        for file in files {
+            if let Err(message) = rules.check(&file) {
+                refused.push(message);
+                continue;
+            }
+            self.uploads.push(Upload {
+                key: self.next_key,
+                eta: READ_SECS + file.size as f64 / file.speed.max(1.),
+                file,
+                sent: 0.,
+                status: Status::Reading { wait: READ_SECS },
+            });
+            self.next_key += 1;
+        }
+        self.notice = (!refused.is_empty()).then(|| refused.join(" ").into());
         self.ensure_ticker(cx);
         cx.notify();
     }
 
     fn add_paths(&mut self, paths: &[PathBuf], rules: &Rules, cx: &mut Context<Self>) {
-        for path in paths {
-            let name = path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| path.display().to_string());
-            let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-            self.add(QueuedFile::new(name, size), rules, cx);
-        }
-        self.drops += 1;
+        let files = paths
+            .iter()
+            .map(|path| {
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| path.display().to_string());
+                let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+                QueuedFile::new(name, size)
+            })
+            .collect();
+        self.add(files, rules, cx);
     }
 
     fn retry(&mut self, key: u64, cx: &mut Context<Self>) {
         if let Some(upload) = self.uploads.iter_mut().find(|u| u.key == key) {
-            upload.status = Status::Uploading;
+            upload.status = Status::Retrying { wait: RETRY_SECS };
             upload.file.fail_at = None;
             self.ensure_ticker(cx);
             cx.notify();
@@ -179,13 +241,8 @@ impl DropState {
         cx.notify();
     }
 
-    fn clear_finished(&mut self, cx: &mut Context<Self>) {
-        self.uploads.retain(|u| u.status == Status::Uploading);
-        cx.notify();
-    }
-
     fn ensure_ticker(&mut self, cx: &mut Context<Self>) {
-        if self.ticker.is_some() {
+        if self.ticker.is_some() || !self.uploads.iter().any(|u| u.status.live()) {
             return;
         }
         self.last_tick = Instant::now();
@@ -207,22 +264,36 @@ impl DropState {
         self.last_tick = now;
         let mut active = false;
         for upload in &mut self.uploads {
-            if upload.status != Status::Uploading {
-                continue;
-            }
+            let speed = upload.file.speed.max(1.);
             let size = upload.file.size.max(1) as f64;
-            upload.sent = (upload.sent + upload.file.speed * dt).min(size);
-            let left = (size - upload.sent) / upload.file.speed.max(1.);
-            upload.eta += (left - upload.eta) * 0.2;
-            if let Some(at) = upload.file.fail_at
-                && upload.sent / size >= at as f64
-            {
-                upload.sent = size * at as f64;
-                upload.status = Status::Failed("Connection lost".into());
-            } else if upload.sent >= size {
-                upload.status = Status::Done;
-            } else {
-                active = true;
+            match upload.status {
+                Status::Reading { wait } | Status::Retrying { wait } => {
+                    let wait = wait - dt;
+                    upload.status = match upload.status {
+                        _ if wait <= 0. => Status::Uploading,
+                        Status::Reading { .. } => Status::Reading { wait },
+                        _ => Status::Retrying { wait },
+                    };
+                    let left = wait.max(0.) + (size - upload.sent) / speed;
+                    upload.eta += (left - upload.eta) * 0.2;
+                    active = true;
+                }
+                Status::Uploading => {
+                    upload.sent = (upload.sent + upload.file.speed * dt).min(size);
+                    let left = (size - upload.sent) / speed;
+                    upload.eta += (left - upload.eta) * 0.2;
+                    if let Some(at) = upload.file.fail_at
+                        && upload.sent / size >= at as f64
+                    {
+                        upload.sent = size * at as f64;
+                        upload.status = Status::Failed;
+                    } else if upload.sent >= size {
+                        upload.status = Status::Done;
+                    } else {
+                        active = true;
+                    }
+                }
+                Status::Done | Status::Failed => {}
             }
         }
         cx.notify();
@@ -238,19 +309,39 @@ struct Rules {
 }
 
 impl Rules {
-    fn check(&self, file: &QueuedFile) -> Status {
-        if file.size > self.max_size {
-            return Status::Refused(
-                format!("Over the {} limit", format_size(self.max_size)).into(),
-            );
-        }
+    /// pink: `attachments::stage_file` – the refusal copy names the file.
+    fn check(&self, file: &QueuedFile) -> Result<(), String> {
         if let Some(accept) = &self.accept {
             let ext = extension(&file.name);
             if !accept.iter().any(|a| a.eq_ignore_ascii_case(&ext)) {
-                return Status::Refused(format!(".{ext} files aren't accepted").into());
+                return Err(format!("{} is not a supported file type.", file.name));
             }
         }
-        Status::Uploading
+        if file.size > self.max_size {
+            return Err(format!(
+                "{} is too large ({} max).",
+                file.name,
+                format_size(self.max_size)
+            ));
+        }
+        Ok(())
+    }
+
+    /// The limits sentence under the strip.
+    fn limits(&self) -> String {
+        let size = format_size(self.max_size);
+        match &self.accept {
+            Some(list) => {
+                let names: Vec<String> = list.iter().map(|e| e.to_uppercase()).collect();
+                let types = match names.as_slice() {
+                    [] => String::new(),
+                    [only] => only.clone(),
+                    [rest @ .., last] => format!("{} or {last}", rest.join(", ")),
+                };
+                format!("{types} files, up to {size} each.")
+            }
+            None => format!("Up to {size} per file."),
+        }
     }
 }
 
@@ -270,12 +361,12 @@ impl Dropzone {
             id: id.into(),
             title: "Attachments".into(),
             rules: Rules {
-                max_size: 25 * MB,
+                max_size: DEFAULT_MAX_SIZE,
                 accept: None,
             },
             seed: Vec::new(),
             on_files: None,
-            width: px(468.),
+            width: px(600.),
         }
     }
 
@@ -284,7 +375,7 @@ impl Dropzone {
         self
     }
 
-    /// Largest accepted file in bytes (25 MB by default).
+    /// Largest accepted file in bytes (24 MB by default, as in pink).
     pub fn max_size(mut self, bytes: u64) -> Self {
         self.rules.max_size = bytes;
         self
@@ -320,7 +411,7 @@ impl Dropzone {
 impl RenderOnce for Dropzone {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let element = self.build(window, cx);
-        // Followers started while building need frames: the story's own
+        // Hover fades started while building need frames: the story's own
         // keep_alive ran before this component rendered.
         motion::keep_alive(window);
         element
@@ -328,7 +419,9 @@ impl RenderOnce for Dropzone {
 }
 
 impl Dropzone {
-    fn build(self, window: &mut Window, cx: &mut App) -> gpui::AnyElement {
+    /// pink: `BoardDetail::render_brief` (a section card holding the brief
+    /// editor) with `Shell::render_main`'s attachment veil over it.
+    fn build(self, window: &mut Window, cx: &mut App) -> AnyElement {
         let t = Pink::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
@@ -340,547 +433,420 @@ impl Dropzone {
             let (seed, rules) = (self.seed.clone(), self.rules.clone());
             state.update(cx, |s, cx| {
                 s.seeded = true;
-                for file in seed {
-                    s.add(file, &rules, cx);
+                if !seed.is_empty() {
+                    s.add(seed, &rules, cx);
                 }
             });
         }
 
-        let target = drop_target(&key, &state, &self.rules, self.on_files.clone(), &t, cx);
+        // pink: the skeleton and the sending plate breathe on the shared
+        // pulse clock; only lease it while something is in flight.
+        let live = state.read(cx).uploads.iter().any(|u| u.status.live());
+        let pulse = if live {
+            motion::pulse_wave(motion::pulse_phase(&motion::PINK_PULSE, window, cx))
+        } else {
+            0.
+        };
 
         let s = state.read(cx);
-        let total: u64 = s
+        let summary = summary(&s.uploads);
+        let tiles: Vec<AnyElement> = s
             .uploads
             .iter()
-            .filter(|u| !matches!(u.status, Status::Refused(_)))
-            .map(|u| u.file.size)
-            .sum();
-        let sent: f64 = s
-            .uploads
-            .iter()
-            .filter(|u| !matches!(u.status, Status::Refused(_)))
-            .map(|u| u.sent)
-            .sum();
-        let counted = s
-            .uploads
-            .iter()
-            .filter(|u| !matches!(u.status, Status::Refused(_)))
-            .count();
-        let done = s
-            .uploads
-            .iter()
-            .filter(|u| u.status == Status::Done)
-            .count();
-        let uploading = s.uploads.iter().any(|u| u.status == Status::Uploading);
-        let finished = s.uploads.iter().any(|u| u.status != Status::Uploading);
-        let attention = s
-            .uploads
-            .iter()
-            .filter(|u| matches!(u.status, Status::Failed(_) | Status::Refused(_)))
-            .count();
-        let eta = s
-            .uploads
-            .iter()
-            .filter(|u| u.status == Status::Uploading)
-            .map(|u| u.eta)
-            .fold(0., f64::max);
-
-        let rows: Vec<_> = s
-            .uploads
-            .iter()
-            .map(|upload| file_row(&key, upload, &state, &t))
+            .map(|upload| thumbnail(&key, upload, &state, pulse, &t).into_any_element())
             .collect();
-        let has_rows = !rows.is_empty();
+        let empty = tiles.is_empty();
+        let notice = s.notice.clone();
+        let browsing = s.browse.is_some();
 
-        let overall = if total == 0 {
-            0.
-        } else {
-            (sent / total as f64) as f32
-        };
-        let overall = motion::follow(&format!("{key}-overall"), overall, GLIDE);
+        let add = add_button(
+            &key,
+            browsing,
+            &state,
+            &self.rules,
+            self.on_files.clone(),
+            &t,
+        );
 
-        let footer = has_rows.then(|| {
-            let clear_state = state.clone();
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(space::S8))
-                .px(px(space::S16))
-                .pt(px(space::S12))
-                .pb(px(space::S12))
-                .border_t_1()
-                .border_color(t.border)
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(space::S8))
-                        .child(
-                            div()
-                                .flex_1()
-                                .text_size(px(text::FOOTNOTE))
-                                .text_color(t.text_muted)
-                                .child(if uploading {
-                                    format!(
-                                        "{}% sent · about {} to go",
-                                        (overall * 100.).round() as u32,
-                                        format_eta(eta)
-                                    )
-                                } else if attention > 0 {
-                                    format!(
-                                        "{done} uploaded · {attention} need{} attention",
-                                        if attention == 1 { "s" } else { "" }
-                                    )
-                                } else {
-                                    format!("{done} uploaded · {}", format_size(total))
-                                }),
-                        )
-                        .when(finished, |d| {
-                            d.child(
-                                pink::button(
-                                    format!("{key}-clear"),
-                                    ButtonKind::Ghost,
-                                    ControlSize::Sm,
-                                    &t,
-                                )
-                                .child("Clear finished")
-                                .on_click(move |_, _, cx| {
-                                    clear_state.update(cx, |s, cx| s.clear_finished(cx))
-                                }),
-                            )
-                        }),
-                )
-                .child(
-                    div()
-                        .h(px(3.))
-                        .w_full()
-                        .rounded(px(2.))
-                        .bg(t.fill(FillTier::Secondary))
-                        .child(
-                            div()
-                                .h_full()
-                                .w(relative(overall.clamp(0., 1.)))
-                                .rounded(px(2.))
-                                .bg(if uploading { t.accent } else { t.success }),
-                        ),
-                )
-        });
-
-        let list_height = s.measured.clone();
-        let list = div()
+        // pink: `render_brief_image_editor` – the wrapping strip with Add
+        // last, then the hint.
+        let image_editor = div()
+            .w_full()
             .flex()
             .flex_col()
-            .px(px(space::S8))
-            .pb(px(if has_rows { space::S8 } else { 0. }))
-            .children(rows);
-        let natural = list_height.get();
-        let height = (natural > 0.).then(|| motion::follow(&format!("{key}-list"), natural, GLIDE));
+            .gap(px(space::S6))
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .flex_row()
+                    .flex_wrap()
+                    .items_start()
+                    .gap(px(space::S8))
+                    .children(tiles)
+                    // The button centres on the thumbnails, not their captions.
+                    .child(
+                        div()
+                            .when(!empty, |slot| slot.h(px(THUMB_H)))
+                            .flex()
+                            .items_center()
+                            .child(add),
+                    ),
+            )
+            .child(pink::row_description(
+                format!(
+                    "Drop files on this card or add them here; they upload right away. {}",
+                    self.rules.limits()
+                ),
+                &t,
+            ));
 
-        if uploading {
-            window.request_animation_frame();
-        }
+        let editor = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(px(space::S8))
+            .child(image_editor)
+            .children(notice.map(|message| error_strip(message, &t)));
+
+        let drop_state = state.clone();
+        let drop_rules = self.rules.clone();
+        let on_files = self.on_files.clone();
 
         pink::card(&t)
             .id(self.id.clone())
+            .relative()
             .w(self.width)
-            .font_family(pink::SANS)
-            .text_color(t.text)
             .overflow_hidden()
+            .flex()
+            .flex_col()
+            .text_color(t.text)
+            .on_drop(move |paths: &ExternalPaths, window, cx| {
+                cx.stop_propagation();
+                drop_state.update(cx, |s, cx| s.add_paths(paths.paths(), &drop_rules, cx));
+                if let Some(f) = &on_files {
+                    f(paths.paths(), window, cx);
+                }
+            })
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .px(px(space::S16))
-                    .pt(px(space::S16))
-                    .pb(px(space::S12))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .child(
-                                div()
-                                    .text_size(px(text::CALLOUT))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(self.title.clone()),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(text::FOOTNOTE))
-                                    .text_color(t.text_muted)
-                                    .child(format!(
-                                        "Up to {} per file",
-                                        format_size(self.rules.max_size)
-                                    )),
-                            ),
-                    )
-                    .when(counted > 0, |d| {
-                        d.child(pink::badge(
-                            format!("{counted} file{}", if counted == 1 { "" } else { "s" }),
-                            pink::Tone::Neutral,
-                            &t,
-                        ))
-                    }),
+                pink::section_header(self.title.clone(), Some(summary.into()), &t)
+                    .font_features(pink::tabular_figures()),
             )
-            .child(div().px(px(space::S16)).pb(px(space::S12)).child(target))
-            .child(
-                div()
-                    .overflow_hidden()
-                    .when_some(height, |d, h| d.h(px(h)))
-                    .child(div().relative().child(list).child(measure(list_height))),
-            )
-            .children(footer)
+            .child(pink::card_row(false, &t).child(editor))
+            .child(drop_veil(&t))
             .into_any_element()
     }
 }
 
-fn drop_target(
+/// The header line: progress while files move, then the tally.
+fn summary(uploads: &[Upload]) -> String {
+    let total = uploads.len();
+    let done = uploads.iter().filter(|u| u.status == Status::Done).count();
+    let failed = uploads
+        .iter()
+        .filter(|u| u.status == Status::Failed)
+        .count();
+    let live: Vec<&Upload> = uploads.iter().filter(|u| u.status.live()).collect();
+    if total == 0 {
+        "No files yet".into()
+    } else if !live.is_empty() {
+        let eta = live.iter().map(|u| u.eta).fold(0., f64::max);
+        format!(
+            "{done} of {total} uploaded · about {} left",
+            loaders::format_elapsed(eta.ceil().max(1.) as i64)
+        )
+    } else if failed > 0 {
+        format!("{done} uploaded · {failed} failed")
+    } else {
+        let bytes: u64 = uploads.iter().map(|u| u.file.size).sum();
+        format!(
+            "{total} file{} · {}",
+            if total == 1 { "" } else { "s" },
+            format_size(bytes)
+        )
+    }
+}
+
+/// pink: `shell.rs` "attachment-drop-overlay" – hidden until files hover,
+/// then a 0.4 (dark) scrim with a centred 13 pt "Drop to attach". GPUI
+/// matches the style against the payload type, so only file drags reveal it.
+fn drop_veil(t: &Pink) -> Div {
+    div()
+        .absolute()
+        .inset_0()
+        .rounded(px(radius::inner(radius::SECTION_CARD, 1.)))
+        .opacity(0.)
+        .bg(t
+            .scrim(pink::SCRIM_ALPHA_DARK)
+            .opacity(0.4 / pink::SCRIM_ALPHA_DARK))
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_size(px(text::BODY))
+        .text_color(t.text)
+        .drag_over::<ExternalPaths>(|style, _, _, _| style.opacity(1.))
+        .child("Drop to attach")
+}
+
+/// pink: the brief editor's "Add image" – a small ghost button, label then
+/// a plus, disabled while the picker is open.
+fn add_button(
     key: &str,
+    browsing: bool,
     state: &Entity<DropState>,
     rules: &Rules,
     on_files: Option<FilesHandler>,
     t: &Pink,
-    cx: &App,
 ) -> impl IntoElement {
-    let drops = state.read(cx).drops;
-    let hover_key = format!("{key}-target");
-    let hover = motion::hover_t(&hover_key);
-    let accent = t.accent;
-    let wash = t.accent_wash;
-    let lit = t.accent.opacity(if t.dark { 0.9 } else { 0.7 });
-
-    let orb = div()
-        .relative()
-        .size(px(44.))
-        .flex()
-        .items_center()
-        .justify_center()
-        // A sonar ring that keeps breathing outward.
-        .child(
-            div()
-                .absolute()
-                .inset_0()
-                .rounded_full()
-                .border_1()
-                .border_color(t.accent.opacity(0.35))
-                .with_animation(
-                    SharedString::from(format!("{key}-sonar")),
-                    Animation::new(Duration::from_millis(2600)).repeat(),
-                    |el, p| {
-                        let e = motion::EASE_OUT.eval(p);
-                        let grow = 10. * e;
-                        el.top(px(-grow))
-                            .left(px(-grow))
-                            .right(px(-grow))
-                            .bottom(px(-grow))
-                            .opacity((1. - e) * 0.9)
-                    },
-                ),
-        )
-        .child(
-            div()
-                .size(px(44.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded_full()
-                .bg(t.surface_card)
-                .border_1()
-                .border_color(t.border)
-                .shadow(t.card_shadow())
-                .child(
-                    svg()
-                        .path(ICON_UPLOAD)
-                        .size(px(18.))
-                        .text_color(motion::mix(t.text_muted, t.accent, hover))
-                        .group_drag_over::<ExternalPaths>(GROUP, move |s| s.text_color(accent)),
-                ),
-        );
-
-    let browse_state = state.clone();
-    let browse_rules = rules.clone();
-    let browse_cb = on_files.clone();
-    let browse = div()
-        .id(SharedString::from(format!("{key}-browse")))
-        .text_color(t.accent)
-        .font_weight(FontWeight::MEDIUM)
-        .cursor_pointer()
-        .hover(|s| s.underline())
-        .child("browse")
-        .on_click(move |_, window, cx| {
+    let state = state.clone();
+    let rules = rules.clone();
+    pink::button_enabled(
+        format!("{key}-add"),
+        ButtonKind::Ghost,
+        ControlSize::Sm,
+        !browsing,
+        t,
+    )
+    .aria_label("Add files")
+    .child("Add files")
+    .child(pink::glyph(ICON_PLUS, ControlSize::Sm))
+    .when(!browsing, |button| {
+        button.on_click(move |_, window, cx| {
             let prompt = cx.prompt_for_paths(PathPromptOptions {
                 files: true,
                 directories: false,
                 multiple: true,
-                prompt: Some("Upload".into()),
+                prompt: Some("Add".into()),
             });
-            let rules = browse_rules.clone();
-            let on_files = browse_cb.clone();
-            let task = window.spawn(cx, async move |cx| {
-                if let Ok(Ok(Some(paths))) = prompt.await {
-                    cx.update(|window, cx| {
-                        if let Some(f) = &on_files {
-                            f(&paths, window, cx);
+            let rules = rules.clone();
+            let on_files = on_files.clone();
+            state.update(cx, |s, cx| {
+                s.browse = Some(cx.spawn_in(window, async move |this, cx| {
+                    let paths = match prompt.await {
+                        Ok(Ok(Some(paths))) => Some(paths),
+                        _ => None,
+                    };
+                    this.update(cx, |s, cx| {
+                        s.browse = None;
+                        match &paths {
+                            Some(paths) => s.add_paths(paths, &rules, cx),
+                            None => cx.notify(),
                         }
                     })
                     .ok();
-                    return Some(paths);
-                }
-                None
-            });
-            let state = browse_state.clone();
-            browse_state.update(cx, |s, cx| {
-                s.browse = Some(cx.spawn(async move |_, cx| {
-                    if let Some(paths) = task.await {
-                        state.update(cx, |s, cx| s.add_paths(&paths, &rules, cx));
+                    if let (Some(paths), Some(f)) = (paths, on_files) {
+                        cx.update(|window, cx| f(&paths, window, cx)).ok();
                     }
                 }));
+                cx.notify();
             });
-        });
-
-    let drop_state = state.clone();
-    let drop_rules = rules.clone();
-    let label_idle = div()
-        .flex()
-        .gap(px(4.))
-        .child("Drop files here or")
-        .child(browse);
-    let label_over = div()
-        .absolute()
-        .inset_0()
-        .flex()
-        .justify_center()
-        .opacity(0.)
-        .text_color(t.accent)
-        .group_drag_over::<ExternalPaths>(GROUP, |s| s.opacity(1.))
-        .child("Release to start uploading");
-
-    let flash = (drops > 0).then(|| {
-        div()
-            .absolute()
-            .inset_0()
-            .rounded(px(radius::LG))
-            .bg(t.accent)
-            .with_animation(
-                SharedString::from(format!("{key}-flash-{drops}")),
-                MotionSpec::new(520, motion::EASE_OUT).animation(),
-                |el, p| el.opacity(0.14 * (1. - p)),
-            )
-    });
-
-    div()
-        .id(SharedString::from(hover_key.clone()))
-        .group(GROUP)
-        .relative()
-        .h(px(148.))
-        .flex()
-        .flex_col()
-        .items_center()
-        .justify_center()
-        .gap(px(space::S12))
-        .rounded(px(radius::LG))
-        .border_1()
-        .border_dashed()
-        .border_color(motion::mix(t.border_strong, t.text_faint, hover))
-        .bg(motion::mix(
-            t.fill(FillTier::Quaternary),
-            t.fill(FillTier::Tertiary),
-            hover,
-        ))
-        .on_hover(motion::hover_listener(hover_key))
-        .drag_over::<ExternalPaths>(move |s, _, _, _| s.bg(wash).border_color(lit))
-        .on_drop(move |paths: &ExternalPaths, window, cx| {
-            drop_state.update(cx, |s, cx| s.add_paths(paths.paths(), &drop_rules, cx));
-            if let Some(f) = &on_files {
-                f(paths.paths(), window, cx);
-            }
         })
-        .children(flash)
-        .child(orb)
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .items_center()
-                .gap(px(2.))
-                .child(
-                    div()
-                        .relative()
-                        .text_size(px(text::BODY))
-                        .text_color(t.text)
-                        .child(
-                            label_idle.group_drag_over::<ExternalPaths>(GROUP, |s| s.opacity(0.)),
-                        )
-                        .child(label_over),
-                )
-                .child(
-                    div()
-                        .text_size(px(text::FOOTNOTE))
-                        .text_color(t.text_faint)
-                        .child(match &rules.accept {
-                            Some(list) => list
-                                .iter()
-                                .map(|e| e.to_uppercase())
-                                .collect::<Vec<_>>()
-                                .join(", "),
-                            None => "Documents, images, sheets and archives".into(),
-                        }),
-                ),
-        )
+    })
 }
 
-fn file_row(key: &str, upload: &Upload, state: &Entity<DropState>, t: &Pink) -> impl IntoElement {
-    let rkey = format!("{key}-file-{}", upload.key);
-    let hover = motion::hover_t(&rkey);
-    let ext = extension(&upload.file.name);
-    let tone = type_color(&ext, t);
-    let size = upload.file.size;
-    let fraction = (upload.sent / size.max(1) as f64) as f32;
-    let shown = motion::follow_from(
-        &format!("{rkey}-ring"),
-        0.,
-        fraction,
-        MotionSpec::new(200, motion::EASE_OUT),
-    );
-
-    let (meta, meta_color): (String, Hsla) = match &upload.status {
-        Status::Uploading => (
-            format!(
-                "{} of {} · {}/s · {} left",
-                format_size(upload.sent as u64),
-                format_size(size),
-                format_size(upload.file.speed as u64),
-                format_eta(upload.eta)
-            ),
-            t.text_muted,
-        ),
-        Status::Done => (format!("{} · Uploaded", format_size(size)), t.text_muted),
-        Status::Failed(reason) => (
-            format!("{reason} at {}%", (fraction * 100.) as u32),
-            t.danger,
-        ),
-        Status::Refused(reason) => (format!("{} · {reason}", format_size(size)), t.danger),
-    };
-
-    let tile = div()
-        .size(px(34.))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
+/// One staged file: pink's 112×80 attachment thumbnail (transcript
+/// `render_user_attachments` states, brief-editor Remove) with a caption.
+fn thumbnail(
+    key: &str,
+    upload: &Upload,
+    state: &Entity<DropState>,
+    pulse: f32,
+    t: &Pink,
+) -> impl IntoElement {
+    let tkey = format!("{key}-file-{}", upload.key);
+    let frame = div()
+        .size_full()
         .rounded(px(radius::MD))
-        .bg(tone.opacity(if t.dark { 0.16 } else { 0.10 }))
-        .text_size(px(9.5))
-        .font_family(pink::MONO)
-        .font_weight(FontWeight::BOLD)
-        .text_color(tone)
-        .child(if ext.is_empty() {
-            "FILE".to_string()
-        } else {
-            ext.to_uppercase().chars().take(4).collect()
-        });
+        .overflow_hidden()
+        .border_1();
 
-    let status: gpui::AnyElement = match &upload.status {
-        Status::Uploading => {
-            progress_ring(shown, 20., 2.5, t.fill(FillTier::Primary), t.accent).into_any_element()
-        }
-        Status::Done => div()
-            .size(px(20.))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_full()
-            .bg(t.success.opacity(if t.dark { 0.18 } else { 0.12 }))
-            .child(
-                svg()
-                    .path(ICON_CHECK)
-                    .size(px(12.))
-                    .text_color(t.success)
-                    .with_animation(
-                        SharedString::from(format!("{rkey}-done")),
-                        MotionSpec::new(320, motion::EASE_OUT_QUINT).animation(),
-                        |el, p| el.size(px(4. + 8. * p)).opacity(p),
-                    ),
-            )
-            .into_any_element(),
-        Status::Failed(_) => {
+    let frame = match upload.status {
+        // pink: the loading skeleton (the popover skeletons' wash and pulse).
+        Status::Reading { .. } => frame
+            .border_color(t.hairline(0.08))
+            .bg(t.ink(0.055))
+            .opacity(0.35 + 0.4 * pulse),
+        // pink: the dashed "missing" thumb, holding the inline Retry.
+        Status::Failed => {
             let state = state.clone();
             let id = upload.key;
-            pink::button(
-                format!("{rkey}-retry"),
-                ButtonKind::Secondary,
-                ControlSize::Sm,
-                t,
-            )
-            .child(pink::glyph(ICON_RETRY, ControlSize::Sm).text_color(t.text_muted))
-            .child("Retry")
-            .on_click(move |_, _, cx| state.update(cx, |s, cx| s.retry(id, cx)))
-            .into_any_element()
+            frame
+                .border_dashed()
+                .border_color(t.hairline(0.14))
+                .bg(t.ink(0.025))
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    pink::button(
+                        format!("{tkey}-retry"),
+                        ButtonKind::Secondary,
+                        ControlSize::Sm,
+                        t,
+                    )
+                    .aria_label(format!("Retry {}", upload.file.name))
+                    .child("Retry")
+                    .on_click(move |_, _, cx| state.update(cx, |s, cx| s.retry(id, cx))),
+                )
         }
-        Status::Refused(_) => svg()
-            .path(ICON_ALERT)
-            .size(px(18.))
-            .text_color(t.danger)
-            .into_any_element(),
+        status => {
+            let plate = frame
+                .relative()
+                .border_color(t.hairline(0.11))
+                .bg(t.ink(0.035))
+                .flex()
+                .items_center()
+                .justify_center();
+            let indicator: Option<AnyElement> = match status {
+                Status::Uploading => Some(loaders::upload_progress_ring(
+                    (upload.fraction() * 100.).floor().clamp(0., 100.) as u8,
+                    RING,
+                )),
+                Status::Retrying { .. } => Some(
+                    loaders::mini_glyph_spinner(format!("{tkey}-spin"), SPINNER_CELL, t.glyph)
+                        .into_any_element(),
+                ),
+                _ => None,
+            };
+            // The artwork stands in for pink's photo; while bytes move the
+            // ring takes its place so the percent stays legible.
+            let artwork = indicator.is_none().then(|| {
+                img(file_icon(&upload.file.name, t.dark))
+                    .flex_none()
+                    .size(px(FILE_ICON))
+            });
+            // pink: the sending overlay – the plate dimmed to black 38%,
+            // breathing 5% on the pulse, a fixed white ring on top.
+            plate.children(artwork).children(indicator.map(|indicator| {
+                div()
+                    .absolute()
+                    .inset_0()
+                    .rounded(px(radius::MD))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .bg(hsla(0., 0., 0., 0.38 + 0.05 * pulse))
+                    .child(indicator)
+            }))
+        }
     };
 
+    // pink: the brief editor's Remove – a small icon button on a near-opaque
+    // disc in the corner, always there.
     let remove = {
         let state = state.clone();
         let id = upload.key;
-        pink::icon_button(format!("{rkey}-remove"), ICON_REMOVE, ControlSize::Sm, t)
-            .opacity(0.3 + 0.7 * hover)
-            .on_click(move |_, _, cx| state.update(cx, |s, cx| s.remove(id, cx)))
+        pink::icon_button(format!("{tkey}-remove"), ICON_CLOSE, ControlSize::Sm, t)
+            .aria_label(format!("Remove {}", upload.file.name))
+            .absolute()
+            .top(px(space::S4))
+            .right(px(space::S4))
+            .rounded_full()
+            .bg(t.bg.opacity(0.85))
+            .tooltip(pink::text_tooltip("Remove file"))
+            .tooltip_show_delay(layout::TOOLTIP_DELAY)
+            .on_click(move |_, _, cx| {
+                cx.stop_propagation();
+                state.update(cx, |s, cx| s.remove(id, cx));
+            })
+    };
+
+    let meta = match upload.status {
+        Status::Reading { .. } => div().text_color(t.content_muted).child("Reading…"),
+        Status::Uploading => div().text_color(t.content_muted).child(format!(
+            "{} left",
+            loaders::format_elapsed(upload.eta.ceil().max(1.) as i64)
+        )),
+        Status::Retrying { .. } => div().text_color(t.content_muted).child("Reconnecting…"),
+        Status::Done => div()
+            .text_color(t.content_muted)
+            .child(format_size(upload.file.size)),
+        // pink: one red glyph plus one red word.
+        Status::Failed => div()
+            .flex()
+            .items_center()
+            .gap(px(space::S4))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(t.readable_tone(t.danger, 0.9))
+            .child(
+                svg()
+                    .path(ICON_DANGER)
+                    .flex_none()
+                    .size(px(icon_size::XS))
+                    .text_color(t.readable_icon(t.danger)),
+            )
+            .child(format!("Failed at {}%", (upload.fraction() * 100.) as u32)),
     };
 
     motion::rise_in(
-        SharedString::from(format!("{rkey}-in")),
-        motion::ROW_IN,
-        6.,
+        SharedString::from(format!("{tkey}-in")),
+        motion::ATTACHMENT_IN,
+        8.,
         div()
-            .id(SharedString::from(rkey.clone()))
+            .w(px(THUMB_W))
+            .flex_none()
             .flex()
-            .items_center()
-            .gap(px(space::S12))
-            .h(px(54.))
-            .px(px(space::S8))
-            .rounded(px(radius::MD))
-            .hover_fill(
-                rkey.clone(),
-                t.fill(FillTier::Quaternary).opacity(0.),
-                t.fill(FillTier::Quaternary),
-            )
-            .child(tile)
+            .flex_col()
+            .gap(px(space::S6))
             .child(
                 div()
+                    .relative()
+                    .w(px(THUMB_W))
+                    .h(px(THUMB_H))
+                    .child(frame)
+                    .child(remove),
+            )
+            .child(
+                div()
+                    .w_full()
                     .flex()
                     .flex_col()
-                    .flex_1()
-                    .min_w_0()
+                    .items_center()
+                    .gap(px(space::TEXT_STACK_GAP))
                     .child(
                         div()
+                            .w_full()
                             .truncate()
-                            .text_size(px(text::BODY))
-                            .line_height(px(18.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(if matches!(upload.status, Status::Refused(_)) {
-                                t.text_muted
-                            } else {
-                                t.text
-                            })
+                            .text_center()
+                            .text_size(px(text::FOOTNOTE))
+                            .line_height(px(16.))
+                            .text_color(t.text)
                             .child(upload.file.name.clone()),
                     )
                     .child(
-                        div()
-                            .truncate()
-                            .text_size(px(text::FOOTNOTE))
-                            .line_height(px(16.))
-                            .text_color(meta_color)
-                            .child(meta),
+                        meta.text_size(px(text::CAPTION))
+                            .line_height(px(14.))
+                            .font_features(pink::tabular_figures()),
                     ),
-            )
-            .child(status)
-            .child(remove),
+            ),
     )
+}
+
+/// pink: `widgets::error_strip` – the danger plate with a leading triangle.
+fn error_strip(message: SharedString, t: &Pink) -> Div {
+    let (plate, edge, copy) = pink::strip_colors(t.danger, t.danger_muted, t);
+    div()
+        .px(px(layout::ROW_PAD_X))
+        .py(px(layout::ROW_PAD_Y))
+        .rounded(px(radius::STRIP))
+        .border_1()
+        .border_color(edge)
+        .bg(plate)
+        .text_size(px(STRIP_TEXT))
+        .text_color(copy)
+        .flex()
+        .flex_row()
+        .items_start()
+        .gap(px(space::S8))
+        .child(
+            div().flex_none().mt(px(space::S2)).child(
+                svg()
+                    .path(ICON_WARNING)
+                    .size(px(icon_size::MD))
+                    .text_color(copy),
+            ),
+        )
+        .child(div().min_w_0().child(message))
 }
 
 fn extension(name: &str) -> String {
@@ -890,14 +856,17 @@ fn extension(name: &str) -> String {
         .unwrap_or_default()
 }
 
-/// One hue per family of file types.
-fn type_color(ext: &str, t: &Pink) -> Hsla {
-    match ext {
-        "pdf" | "doc" | "docx" | "key" | "ppt" | "pptx" => t.danger,
-        "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp" | "heic" => t.accent,
-        "csv" | "xls" | "xlsx" | "numbers" | "tsv" => t.success,
-        "zip" | "tar" | "gz" | "7z" | "rar" => t.warning,
-        _ => t.text_muted,
+/// pink: `file_icons::asset_path` for the kinds a dropzone sees.
+fn file_icon(name: &str, dark: bool) -> &'static str {
+    match extension(name).as_str() {
+        "pdf" => FILE_PDF,
+        "csv" | "tsv" | "xls" | "xlsx" => FILE_SHEET,
+        "png" | "jpg" | "jpeg" | "heic" | "webp" => FILE_IMAGE,
+        "zip" | "tar" | "gz" | "7z" | "rar" => FILE_ARCHIVE,
+        "mov" | "mp4" | "m4v" | "webm" | "avi" if dark => FILE_VIDEO_DARK,
+        "mov" | "mp4" | "m4v" | "webm" | "avi" => FILE_VIDEO,
+        _ if dark => FILE_DOCUMENT_DARK,
+        _ => FILE_DOCUMENT,
     }
 }
 
@@ -917,116 +886,13 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-fn format_eta(seconds: f64) -> String {
-    let s = seconds.max(0.).ceil() as u64;
-    if s >= 60 {
-        format!("{}m {}s", s / 60, s % 60)
-    } else {
-        format!("{}s", s.max(1))
-    }
-}
-
-/// Records its parent's height in `cell` (and asks for a frame when it changes).
-fn measure(cell: Rc<Cell<f32>>) -> impl IntoElement {
-    canvas(
-        move |bounds, window, _| {
-            let h = f32::from(bounds.size.height);
-            if (cell.get() - h).abs() > 0.5 {
-                cell.set(h);
-                window.request_animation_frame();
-            }
-        },
-        |_, _, _, _| {},
-    )
-    .absolute()
-    .top_0()
-    .left_0()
-    .size_full()
-}
-
-/// A track ring with an arc filled to `ratio`, starting at 12 o'clock.
-fn progress_ring(ratio: f32, size: f32, width: f32, track: Hsla, fill: Hsla) -> impl IntoElement {
-    canvas(
-        |_, _, _| {},
-        move |bounds, _, window, _| {
-            let center = bounds.center();
-            let r = size / 2. - width / 2.;
-            if let Some(path) = annulus(center, r, width) {
-                window.paint_path(path, track);
-            }
-            let ratio = ratio.clamp(0., 1.);
-            if ratio >= 0.999 {
-                if let Some(path) = annulus(center, r, width) {
-                    window.paint_path(path, fill);
-                }
-            } else if ratio > 0.001
-                && let Some(path) = arc(center, r, width, -PI / 2., ratio * 2. * PI)
-            {
-                window.paint_path(path, fill);
-            }
-        },
-    )
-    .size(px(size))
-    .flex_none()
-}
-
-fn fill_builder() -> PathBuilder {
-    PathBuilder::fill().with_style(PathStyle::Fill(
-        FillOptions::default().with_fill_rule(FillRule::NonZero),
-    ))
-}
-
-fn polar(c: Point<Pixels>, r: f32, a: f32) -> Point<Pixels> {
-    point(c.x + px(r * a.cos()), c.y + px(r * a.sin()))
-}
-
-fn annulus(c: Point<Pixels>, r: f32, w: f32) -> Option<gpui::Path<Pixels>> {
-    let steps = 72;
-    let mut b = fill_builder();
-    b.move_to(polar(c, r + w / 2., 0.));
-    for i in 1..steps {
-        b.line_to(polar(c, r + w / 2., 2. * PI * i as f32 / steps as f32));
-    }
-    b.close();
-    b.move_to(polar(c, r - w / 2., 0.));
-    for i in (1..steps).rev() {
-        b.line_to(polar(c, r - w / 2., 2. * PI * i as f32 / steps as f32));
-    }
-    b.close();
-    b.build().ok()
-}
-
-fn arc(c: Point<Pixels>, r: f32, w: f32, start: f32, sweep: f32) -> Option<gpui::Path<Pixels>> {
-    let steps = ((sweep.abs() / (2. * PI)) * 72.).ceil().max(2.) as usize;
-    let (outer, inner, half) = (r + w / 2., r - w / 2., w / 2.);
-    let end = start + sweep;
-    let mut b = fill_builder();
-    b.move_to(polar(c, outer, start));
-    for i in 1..=steps {
-        b.line_to(polar(c, outer, start + sweep * i as f32 / steps as f32));
-    }
-    let tip = polar(c, r, end);
-    for i in 1..6 {
-        b.line_to(polar(tip, half, end + PI * i as f32 / 6.));
-    }
-    for i in (0..=steps).rev() {
-        b.line_to(polar(c, inner, start + sweep * i as f32 / steps as f32));
-    }
-    let tail = polar(c, r, start);
-    for i in 1..6 {
-        b.line_to(polar(tail, half, start + PI + PI * i as f32 / 6.));
-    }
-    b.close();
-    b.build().ok()
-}
-
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |_, _| {
         Dropzone::new("dropzone")
             .title("Contract attachments")
             .files([
                 QueuedFile::new("q4-forecast.xlsx", 2_900_000).speed(2.6 * MB as f64),
-                QueuedFile::new("master-services-agreement.pdf", 11_400_000).speed(1.7 * MB as f64),
+                QueuedFile::new("master-services-agreement.pdf", 11_400_000).speed(1.2 * MB as f64),
                 QueuedFile::new("site-photo-03.jpg", 4_200_000).speed(1.3 * MB as f64),
                 QueuedFile::new("vendor-records.zip", 9_800_000)
                     .speed(2.1 * MB as f64)
