@@ -31,8 +31,8 @@ use std::{
 
 use gpui::{
     AnyElement, AnyView, App, ClipboardItem, Context, ElementId, Entity, FontWeight, IntoElement,
-    KeyDownEvent, MouseButton, Role, ScrollHandle, SharedString, Subscription, Task, TextRun,
-    Window, deferred, div, font, prelude::*, px, svg,
+    KeyDownEvent, MouseButton, Role, SharedString, Subscription, Task, TextRun, Window, deferred,
+    div, font, prelude::*, px, svg,
 };
 use web_time::Instant;
 
@@ -237,7 +237,6 @@ struct LibraryState {
     notes: u32,
     _note_timer: Option<Task<()>>,
     _reap: Option<Task<()>>,
-    scroll: ScrollHandle,
     templates: Rc<Vec<PromptTemplate>>,
     on_use: Option<UseHandler>,
     on_delete: Option<DeleteHandler>,
@@ -583,7 +582,6 @@ impl RenderOnce for PromptLibrary {
                     notes: 0,
                     _note_timer: None,
                     _reap: None,
-                    scroll: ScrollHandle::new(),
                     templates: Rc::new(Vec::new()),
                     on_use: None,
                     on_delete: None,
@@ -724,7 +722,6 @@ fn stash_menu(
             .id(SharedString::from(format!("{key}-stash-list")))
             .max_h(px(STASH_LIST_MAX_H))
             .overflow_y_scroll()
-            .track_scroll(&s.scroll)
             .flex()
             .flex_col()
             .gap(px(layout::MENU_GAP))
