@@ -1,176 +1,205 @@
-//! Model Picker – a chat composer's model menu with a live spec sheet.
+//! Model Picker – the composer's model chip and its model menu.
 //!
-//! A pink component. A quiet trigger names the current
-//! model; its menu opens above the composer with the models on the left and
-//! a spec sheet on the right. Point at a model (or arrow to it) and its
-//! speed, depth and cost meters glide to the new values while the latency,
-//! per-reply price and context figures roll over. "Think longer" unfolds a
-//! three-step reasoning budget whose thumb glides, and the figures follow it.
+//! A pink component, ported from pink's harness/model picker (pink:
+//! pickers.rs `trigger_chip` + `model_chip_content` and
+//! `render_harness_model_popover`). The chip is a ghost pill: the
+//! provider's mark, the model name and the reasoning level as a muted
+//! second tone. Its menu is a flush 320 card: a strip of provider tabs led
+//! by a Favorites star, a search row, a band of compact model rows (⌘1–⌘9
+//! and a star each), and a pinned tray whose Reasoning and option rows open
+//! nested choice menus on hover. Picking a model keeps the card open, so
+//! the tray can be adjusted right after.
 //!
-//! Keys: ↑/↓ point, Enter chooses, Space toggles reasoning, ←/→ change the
-//! budget, Escape closes.
+//! Keys: ↑/↓ move through the models and on into the tray, Enter picks a
+//! model or opens a tray row, → opens and ← closes a tray row's choices,
+//! ⌘1–⌘9 pick a model, Escape closes the choices, then the menu.
 //!
 //! ```ignore
-//! ModelPicker::new("model", default_models())
-//!     .selected("helix-pro")
+//! ModelPicker::new("model", default_providers())
+//!     .selected("helix-4-pro")
 //!     .on_change(|model, _, _| println!("now using {}", model.name))
 //! ```
 
-use std::rc::Rc;
-use std::sync::Arc;
+use std::{collections::HashMap, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
-    AnimationExt, AnyView, App, Bounds, ElementId, FocusHandle, FontWeight, Hsla, IntoElement,
-    KeyDownEvent, MouseDownEvent, Pixels, SharedString, Stateful, Transformation, Window, canvas,
-    deferred, div, hsla, percentage, prelude::*, px, relative, svg,
+    Action, Anchor, AnyElement, AnyView, App, Bounds, Context, DispatchPhase, Div, ElementId,
+    Entity, FocusHandle, Focusable, FontWeight, Hsla, IntoElement, KeyDownEvent, MouseButton,
+    MouseDownEvent, MouseMoveEvent, Pixels, Point, Render, Role, ScrollHandle, SharedString,
+    Stateful, Subscription, Task, Toggled, Window, anchored, canvas, deferred, div, point,
+    prelude::*, px, svg,
 };
+use web_time::Instant;
 
 use crate::{
     HoverFill,
-    motion::{self, EASE, EASE_OUT_QUINT, GLIDE, MENU_IN, MotionSpec},
-    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, radius, text},
-    primitives::shadow,
+    motion::{self, MENU_OUT, MENU_RISE_DOWN, MENU_RISE_UP},
+    pink::{self, FillTier, Pink, layout, radius},
+    primitives::{InputEvent, TextInput, text_input},
     story,
 };
 
 pub const NAME: &str = "Model Picker";
-pub const DESCRIPTION: &str = "A composer's model menu with a live spec sheet – point at a model to glide its meters and roll its latency and price, then unfold a reasoning budget";
+pub const DESCRIPTION: &str = "A composer's model chip and menu – provider tabs, a search row, compact model rows with ⌘ shortcuts and stars, and a tray whose Reasoning and option rows open nested choices";
 
-const ICON_AUTO: &str = "icons/model-picker/auto.svg";
-const ICON_ULTRA: &str = "icons/model-picker/ultra.svg";
-const ICON_PRO: &str = "icons/model-picker/pro.svg";
-const ICON_FLASH: &str = "icons/model-picker/flash.svg";
-const ICON_CHEVRON: &str = "icons/model-picker/chevron.svg";
-const ICON_CHECK: &str = "icons/model-picker/check.svg";
-const ICON_HOURGLASS: &str = "icons/model-picker/hourglass.svg";
-const ICON_SEND: &str = "icons/model-picker/send.svg";
-const ICON_PLUS: &str = "icons/model-picker/plus.svg";
-const ICON_MIC: &str = "icons/model-picker/mic.svg";
+const ICON_HELIX: &str = "icons/model-picker/helix.svg";
+const ICON_ORBIT: &str = "icons/model-picker/orbit.svg";
+const ICON_RELAY: &str = "icons/model-picker/relay.svg";
+const ICON_MAGNIFER: &str = "icons/model-picker/magnifer.svg";
+const ICON_STAR: &str = "icons/model-picker/star.svg";
+const ICON_STAR_BOLD: &str = "icons/model-picker/star-bold.svg";
+const ICON_BOLT: &str = "icons/model-picker/bolt-fast.svg";
+const ICON_PAPERCLIP: &str = "icons/model-picker/paperclip.svg";
+const ICON_ARROW_UP: &str = "icons/model-picker/arrow-up.svg";
 
-const MENU_W: f32 = 548.;
-const LIST_W: f32 = 236.;
-const ROW_H: f32 = 44.;
-const TRIGGER_H: f32 = 28.;
-const MENU_GAP: f32 = 10.;
-const SEG_W: f32 = 76.;
-/// Tokens an average reply spends on the answer itself.
-const REPLY_TOKENS: f32 = 700.;
+/// The chip's brand mark and fast bolt (pink: pickers.rs `CHIP_ICON`,
+/// `CHIP_BOLT`).
+const CHIP_ICON: f32 = 16.;
+const CHIP_BOLT: f32 = 13.;
+/// The tab strip and the search row (pink: `render_harness_model_popover`).
+const STRIP_H: f32 = 40.;
+const TAB: f32 = 32.;
+/// The model band: roughly seven compact rows (pink: 216 at the 16 px
+/// baseline).
+const LIST_H: f32 = 216.;
+const TRAY_MAX_H: f32 = 236.;
+const ROW_STAR: f32 = 22.;
+/// Tray rows and their nested choices (pink: `render_traits_sections`).
+const TRAY_ROW_H: f32 = 30.;
+const CHOICES_W: f32 = 232.;
+const CHOICES_MAX_H: f32 = 240.;
+/// Room a nested choices card needs beside its row before it opens left.
+const NESTED_ROOM: f32 = 244.;
+/// Gap between a tray row and its nested card (pink: `nested_menu`).
+const NESTED_GAP: f32 = layout::CARD_INSET + 6.;
+/// While the pointer heads for an open submenu, a sibling it crosses takes
+/// over only after this pause (pink: `hover_setting`).
+const SUBMENU_GRACE: Duration = Duration::from_millis(300);
+/// Tooltip details longer than this wrap (pink: `ControlTooltip`).
+const TOOLTIP_WRAP_CHARS: usize = 40;
+/// Settings that carry a provider's speed, and the choices that run fast:
+/// the chip then wears a bolt (pink: `fast_speed`).
+const SPEED_SETTINGS: [&str; 3] = ["serviceTier", "fastMode", "speed"];
+const FAST_CHOICES: [&str; 4] = ["fast", "on", "priority", "ultrafast"];
 
 type ChangeHandler = Rc<dyn Fn(&ModelOption, &mut Window, &mut App)>;
-type ReasoningHandler = Rc<dyn Fn(Option<Budget>, &mut Window, &mut App)>;
+type ReasoningHandler = Rc<dyn Fn(ReasoningLevel, &mut Window, &mut App)>;
+type SettingHandler = Rc<dyn Fn(&SharedString, &SharedString, &mut Window, &mut App)>;
+type FavoriteHandler = Rc<dyn Fn(&SharedString, bool, &mut Window, &mut App)>;
 
-/// How long the model may think before it answers.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Budget {
-    Light,
-    Balanced,
-    Deep,
+/// How hard a model thinks before it answers (pink: `ReasoningLevel`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ReasoningLevel {
+    Minimal,
+    Low,
+    Medium,
+    High,
+    XHigh,
+    Max,
 }
 
-impl Budget {
-    pub const ALL: [Budget; 3] = [Budget::Light, Budget::Balanced, Budget::Deep];
-
+impl ReasoningLevel {
+    /// pink: `reasoning_label`.
     pub fn label(self) -> &'static str {
         match self {
-            Budget::Light => "Light",
-            Budget::Balanced => "Balanced",
-            Budget::Deep => "Deep",
-        }
-    }
-
-    fn index(self) -> usize {
-        match self {
-            Budget::Light => 0,
-            Budget::Balanced => 1,
-            Budget::Deep => 2,
-        }
-    }
-
-    /// Thinking tokens spent per reply.
-    fn tokens(self) -> f32 {
-        match self {
-            Budget::Light => 2_000.,
-            Budget::Balanced => 8_000.,
-            Budget::Deep => 24_000.,
-        }
-    }
-
-    /// How much longer the first token takes.
-    fn wait(self) -> f32 {
-        match self {
-            Budget::Light => 2.2,
-            Budget::Balanced => 4.0,
-            Budget::Deep => 7.5,
-        }
-    }
-
-    fn note(self) -> &'static str {
-        match self {
-            Budget::Light => "Up to 2K thinking tokens",
-            Budget::Balanced => "Up to 8K thinking tokens",
-            Budget::Deep => "Up to 24K thinking tokens",
+            ReasoningLevel::Minimal => "Minimal",
+            ReasoningLevel::Low => "Low",
+            ReasoningLevel::Medium => "Medium",
+            ReasoningLevel::High => "High",
+            ReasoningLevel::XHigh => "X-High",
+            ReasoningLevel::Max => "Max",
         }
     }
 }
 
-/// One model in the menu. Meter values run from 0 to 1; a routed model
-/// (like Auto) gives a range, drawn as a solid run plus a lighter reach.
+/// The model's default level: High when it offers it, then Medium, then
+/// its first (pink: `default_reasoning_level`).
+fn default_reasoning(ladder: &[ReasoningLevel]) -> Option<ReasoningLevel> {
+    [ReasoningLevel::High, ReasoningLevel::Medium]
+        .into_iter()
+        .find(|level| ladder.contains(level))
+        .or_else(|| ladder.first().copied())
+}
+
+/// A picked level the model still offers, else its default (pink:
+/// `clamp_reasoning`).
+fn clamp_reasoning(
+    level: Option<ReasoningLevel>,
+    ladder: &[ReasoningLevel],
+) -> Option<ReasoningLevel> {
+    match level {
+        Some(level) if ladder.contains(&level) => Some(level),
+        _ => default_reasoning(ladder),
+    }
+}
+
+/// One more row of the tray (pink: a model option such as Context or
+/// Speed), with its own nested choices.
+#[derive(Clone, Debug)]
+pub struct ModelSetting {
+    pub id: SharedString,
+    pub label: SharedString,
+    pub choices: Vec<SharedString>,
+    /// The index of the choice a fresh pick starts on.
+    pub default: usize,
+}
+
+impl ModelSetting {
+    pub fn new(
+        id: impl Into<SharedString>,
+        label: impl Into<SharedString>,
+        choices: impl IntoIterator<Item = impl Into<SharedString>>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            choices: choices.into_iter().map(Into::into).collect(),
+            default: 0,
+        }
+    }
+
+    pub fn default_choice(mut self, ix: usize) -> Self {
+        self.default = ix;
+        self
+    }
+}
+
+/// One model in the menu.
 #[derive(Clone, Debug)]
 pub struct ModelOption {
     pub id: SharedString,
     pub name: SharedString,
-    /// A few words under the name in the list.
-    pub summary: SharedString,
-    /// A sentence for the spec sheet.
-    pub about: SharedString,
-    /// An SVG path under `assets/`, drawn in the model's tile.
-    pub icon: Option<SharedString>,
-    /// Small pill after the name, e.g. "New".
+    /// Who serves the model when its provider routes several vendors, shown
+    /// after the name (pink: the OpenCode attribution). Rows otherwise show
+    /// the name alone.
+    pub attribution: Option<SharedString>,
+    /// A small accent capsule after the name (pink: the "New" badge).
     pub tag: Option<SharedString>,
-    pub speed: (f32, f32),
-    pub depth: (f32, f32),
-    pub cost: (f32, f32),
-    /// Seconds to the first token, without reasoning.
-    pub first_token: (f32, f32),
-    /// USD per million output tokens.
-    pub price: (f32, f32),
-    /// Context window, e.g. "400K".
-    pub context: SharedString,
-    /// Whether extended reasoning is available.
-    pub reasoning: bool,
+    /// The reasoning ladder; empty hides the tray's Reasoning row.
+    pub reasoning: Vec<ReasoningLevel>,
+    /// More tray rows.
+    pub settings: Vec<ModelSetting>,
 }
 
 impl ModelOption {
+    /// A model with a Low, Medium and High reasoning ladder.
     pub fn new(id: impl Into<SharedString>, name: impl Into<SharedString>) -> Self {
         Self {
             id: id.into(),
             name: name.into(),
-            summary: SharedString::default(),
-            about: SharedString::default(),
-            icon: None,
+            attribution: None,
             tag: None,
-            speed: (0.5, 0.5),
-            depth: (0.5, 0.5),
-            cost: (0.5, 0.5),
-            first_token: (1.0, 1.0),
-            price: (10.0, 10.0),
-            context: "128K".into(),
-            reasoning: true,
+            reasoning: vec![
+                ReasoningLevel::Low,
+                ReasoningLevel::Medium,
+                ReasoningLevel::High,
+            ],
+            settings: Vec::new(),
         }
     }
 
-    pub fn summary(mut self, summary: impl Into<SharedString>) -> Self {
-        self.summary = summary.into();
-        self
-    }
-
-    pub fn about(mut self, about: impl Into<SharedString>) -> Self {
-        self.about = about.into();
-        self
-    }
-
-    pub fn icon(mut self, path: impl Into<SharedString>) -> Self {
-        self.icon = Some(path.into());
+    pub fn attribution(mut self, attribution: impl Into<SharedString>) -> Self {
+        self.attribution = Some(attribution.into());
         self
     }
 
@@ -179,120 +208,118 @@ impl ModelOption {
         self
     }
 
-    /// Speed, depth and cost, each from 0 to 1.
-    pub fn meters(mut self, speed: f32, depth: f32, cost: f32) -> Self {
-        self.speed = (speed, speed);
-        self.depth = (depth, depth);
-        self.cost = (cost, cost);
+    pub fn reasoning(mut self, ladder: impl IntoIterator<Item = ReasoningLevel>) -> Self {
+        self.reasoning = ladder.into_iter().collect();
         self
     }
 
-    /// Meters for a routed model: each one a `(low, high)` range.
-    pub fn meter_ranges(mut self, speed: (f32, f32), depth: (f32, f32), cost: (f32, f32)) -> Self {
-        self.speed = speed;
-        self.depth = depth;
-        self.cost = cost;
-        self
-    }
-
-    /// Seconds to the first token (pass the same value twice for a fixed model).
-    pub fn first_token(mut self, low: f32, high: f32) -> Self {
-        self.first_token = (low, high);
-        self
-    }
-
-    /// USD per million output tokens (pass the same value twice for a fixed model).
-    pub fn price(mut self, low: f32, high: f32) -> Self {
-        self.price = (low, high);
-        self
-    }
-
-    pub fn context(mut self, context: impl Into<SharedString>) -> Self {
-        self.context = context.into();
-        self
-    }
-
-    /// Hides extended reasoning for this model.
+    /// Hides the Reasoning row for this model.
     pub fn no_reasoning(mut self) -> Self {
-        self.reasoning = false;
+        self.reasoning.clear();
         self
     }
 
-    fn first_token_label(&self, budget: Option<Budget>) -> String {
-        let extra = budget.map_or(0., Budget::wait);
-        let (lo, hi) = (self.first_token.0 + extra, self.first_token.1 + extra);
-        if (hi - lo).abs() < 0.05 {
-            format!("{} s", seconds(lo))
-        } else {
-            format!("{}–{} s", seconds(lo), seconds(hi))
+    pub fn setting(mut self, setting: ModelSetting) -> Self {
+        self.settings.push(setting);
+        self
+    }
+}
+
+/// A provider: one tab of the menu, and the mark the chip wears for its
+/// models.
+#[derive(Clone, Debug)]
+pub struct ModelProvider {
+    pub id: SharedString,
+    pub name: SharedString,
+    /// An SVG path under `assets/`.
+    pub icon: SharedString,
+    /// A brand tint for the mark; without one it paints in the text tones
+    /// (pink keeps one harness mark in its brand color).
+    pub tint: Option<Hsla>,
+    pub models: Vec<ModelOption>,
+}
+
+impl ModelProvider {
+    pub fn new(
+        id: impl Into<SharedString>,
+        name: impl Into<SharedString>,
+        icon: impl Into<SharedString>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            icon: icon.into(),
+            tint: None,
+            models: Vec::new(),
         }
     }
 
-    fn reply_cost_label(&self, budget: Option<Budget>) -> String {
-        let tokens = REPLY_TOKENS + budget.map_or(0., Budget::tokens);
-        let (lo, hi) = (self.price.0 * tokens / 1e6, self.price.1 * tokens / 1e6);
-        if (hi - lo).abs() < 0.0005 {
-            format!("${}", cents(lo))
-        } else {
-            // A routed model only promises a ceiling.
-            format!("≤ ${}", cents(hi))
-        }
+    pub fn tint(mut self, tint: Hsla) -> Self {
+        self.tint = Some(tint);
+        self
+    }
+
+    pub fn model(mut self, model: ModelOption) -> Self {
+        self.models.push(model);
+        self
     }
 }
 
-fn seconds(value: f32) -> String {
-    if value < 10. {
-        format!("{value:.1}")
-    } else {
-        format!("{value:.0}")
-    }
-}
-
-fn cents(value: f32) -> String {
-    if value < 0.01 {
-        format!("{value:.4}")
-    } else {
-        format!("{value:.3}")
-    }
-}
-
-/// Auto, Helix Ultra, Helix Pro and Helix Flash.
-pub fn default_models() -> Vec<ModelOption> {
+/// Helix, Orbit and Relay (a router that serves other vendors' models).
+pub fn default_providers() -> Vec<ModelProvider> {
+    use ReasoningLevel::*;
+    let context = || ModelSetting::new("contextWindow", "Context", ["200K", "1M"]);
+    let speed = || ModelSetting::new("speed", "Speed", ["Standard", "Fast"]);
     vec![
-        ModelOption::new("auto", "Auto")
-            .summary("Picks per message")
-            .about("Sends each message to the model that fits it")
-            .icon(ICON_AUTO)
-            .meter_ranges((0.45, 0.95), (0.4, 0.95), (0.1, 0.8))
-            .first_token(0.3, 1.6)
-            .price(1.2, 30.)
-            .context("200K"),
-        ModelOption::new("helix-ultra", "Helix Ultra")
-            .summary("Hard, long problems")
-            .about("Deep analysis across long documents and code")
-            .icon(ICON_ULTRA)
-            .tag("New")
-            .meters(0.38, 0.97, 0.88)
-            .first_token(1.6, 1.6)
-            .price(30., 30.)
-            .context("1M"),
-        ModelOption::new("helix-pro", "Helix Pro")
-            .summary("Everyday work")
-            .about("Balanced speed and depth for most tasks")
-            .icon(ICON_PRO)
-            .meters(0.7, 0.78, 0.42)
-            .first_token(0.8, 0.8)
-            .price(9., 9.)
-            .context("400K"),
-        ModelOption::new("helix-flash", "Helix Flash")
-            .summary("Quick and light")
-            .about("Instant replies for drafts, lookups and chat")
-            .icon(ICON_FLASH)
-            .meters(0.96, 0.48, 0.1)
-            .first_token(0.3, 0.3)
-            .price(1.2, 1.2)
-            .context("200K")
-            .no_reasoning(),
+        ModelProvider::new("helix", "Helix", ICON_HELIX)
+            .tint(pink::project_tint(5))
+            .model(
+                ModelOption::new("helix-4-ultra", "Helix 4 Ultra")
+                    .tag("New")
+                    .reasoning([Low, Medium, High, Max])
+                    .setting(context()),
+            )
+            .model(
+                ModelOption::new("helix-4-pro", "Helix 4 Pro")
+                    .reasoning([Low, Medium, High, Max])
+                    .setting(context()),
+            )
+            .model(
+                ModelOption::new("helix-4-flash", "Helix 4 Flash")
+                    .reasoning([Minimal, Low, Medium])
+                    .setting(speed()),
+            )
+            .model(ModelOption::new("helix-3-5-pro", "Helix 3.5 Pro"))
+            .model(ModelOption::new("helix-3-5-flash", "Helix 3.5 Flash").no_reasoning()),
+        ModelProvider::new("orbit", "Orbit", ICON_ORBIT)
+            .model(
+                ModelOption::new("orbit-6", "Orbit-6")
+                    .reasoning([Minimal, Low, Medium, High, XHigh])
+                    .setting(ModelSetting::new(
+                        "serviceTier",
+                        "Speed",
+                        ["Standard", "Priority"],
+                    )),
+            )
+            .model(
+                ModelOption::new("orbit-6-coder", "Orbit-6 Coder")
+                    .tag("New")
+                    .reasoning([Low, Medium, High, XHigh]),
+            )
+            .model(ModelOption::new("orbit-6-mini", "Orbit-6 Mini"))
+            .model(ModelOption::new("orbit-5", "Orbit-5")),
+        ModelProvider::new("relay", "Relay", ICON_RELAY)
+            .model(
+                ModelOption::new("kestrel-2-70b", "Kestrel 2 70B")
+                    .attribution("Northwind")
+                    .no_reasoning(),
+            )
+            .model(ModelOption::new("lumen-3", "Lumen 3").attribution("Fieldstone"))
+            .model(
+                ModelOption::new("quill-1-5", "Quill 1.5")
+                    .attribution("Papermill")
+                    .no_reasoning(),
+            ),
     ]
 }
 
@@ -303,62 +330,57 @@ pub enum Placement {
     Below,
 }
 
-#[derive(Clone)]
-struct PickerState {
-    focus: FocusHandle,
-    open: bool,
-    /// Bumped on every open so the entrance and the meter fill replay.
-    opened: u32,
-    selected: usize,
-    pointed: usize,
-    reasoning: bool,
-    budget: Budget,
-    trigger: Bounds<Pixels>,
-}
-
-impl PickerState {
-    fn set_open(&mut self, open: bool) {
-        if open && !self.open {
-            self.opened += 1;
-            self.pointed = self.selected;
-        }
-        self.open = open;
-    }
-}
-
 #[derive(IntoElement)]
 pub struct ModelPicker {
     id: ElementId,
-    models: Vec<ModelOption>,
+    providers: Vec<ModelProvider>,
     selected: Option<SharedString>,
+    favorites: Vec<SharedString>,
+    reasoning: Option<ReasoningLevel>,
     default_open: bool,
     autofocus: bool,
-    reasoning: bool,
-    budget: Budget,
     placement: Placement,
     on_change: Option<ChangeHandler>,
     on_reasoning_change: Option<ReasoningHandler>,
+    on_setting_change: Option<SettingHandler>,
+    on_favorite_change: Option<FavoriteHandler>,
 }
 
 impl ModelPicker {
-    pub fn new(id: impl Into<ElementId>, models: Vec<ModelOption>) -> Self {
+    pub fn new(id: impl Into<ElementId>, providers: Vec<ModelProvider>) -> Self {
         Self {
             id: id.into(),
-            models,
+            providers,
             selected: None,
+            favorites: Vec::new(),
+            reasoning: None,
             default_open: false,
             autofocus: false,
-            reasoning: false,
-            budget: Budget::Balanced,
             placement: Placement::Above,
             on_change: None,
             on_reasoning_change: None,
+            on_setting_change: None,
+            on_favorite_change: None,
         }
     }
 
     /// The model chosen at first (by id); defaults to the first one.
     pub fn selected(mut self, id: impl Into<SharedString>) -> Self {
         self.selected = Some(id.into());
+        self
+    }
+
+    /// Models starred at first (by id). With any star the menu opens on the
+    /// Favorites tab, as pink's does.
+    pub fn favorites(mut self, ids: impl IntoIterator<Item = impl Into<SharedString>>) -> Self {
+        self.favorites = ids.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// The reasoning level picked at first; each model clamps it to its
+    /// ladder (else its default, High when offered).
+    pub fn reasoning(mut self, level: ReasoningLevel) -> Self {
+        self.reasoning = Some(level);
         self
     }
 
@@ -371,13 +393,6 @@ impl ModelPicker {
     /// Takes keyboard focus when it first renders.
     pub fn autofocus(mut self, autofocus: bool) -> Self {
         self.autofocus = autofocus;
-        self
-    }
-
-    /// Starts with extended reasoning on, at `budget`.
-    pub fn reasoning(mut self, on: bool, budget: Budget) -> Self {
-        self.reasoning = on;
-        self.budget = budget;
         self
     }
 
@@ -394,13 +409,686 @@ impl ModelPicker {
         self
     }
 
-    /// Called with the budget when reasoning turns on or changes, `None` when it turns off.
+    /// Called with the level picked from the Reasoning row.
     pub fn on_reasoning_change(
         mut self,
-        handler: impl Fn(Option<Budget>, &mut Window, &mut App) + 'static,
+        handler: impl Fn(ReasoningLevel, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_reasoning_change = Some(Rc::new(handler));
         self
+    }
+
+    /// Called with a setting's id and the choice picked from its row.
+    pub fn on_setting_change(
+        mut self,
+        handler: impl Fn(&SharedString, &SharedString, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_setting_change = Some(Rc::new(handler));
+        self
+    }
+
+    /// Called with a model's id and whether it is now starred.
+    pub fn on_favorite_change(
+        mut self,
+        handler: impl Fn(&SharedString, bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_favorite_change = Some(Rc::new(handler));
+        self
+    }
+}
+
+/// The builder's data and callbacks, refreshed every render so the search
+/// field's events act on the current ones.
+struct Props {
+    providers: Vec<ModelProvider>,
+    on_change: Option<ChangeHandler>,
+    on_reasoning_change: Option<ReasoningHandler>,
+    on_setting_change: Option<SettingHandler>,
+    on_favorite_change: Option<FavoriteHandler>,
+}
+
+/// The viewed tab (pink: `ModelRail`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Rail {
+    Favorites,
+    Provider(usize),
+}
+
+/// A visible model row: provider and model index.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Row {
+    p: usize,
+    m: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GroupKind {
+    Reasoning,
+    Setting(usize),
+}
+
+/// One tray row and its choices (pink: `SettingGroup`).
+struct Group {
+    kind: GroupKind,
+    label: SharedString,
+    choices: Vec<Choice>,
+}
+
+struct Choice {
+    label: SharedString,
+    selected: bool,
+    default: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Nav {
+    Up,
+    Down,
+    Left,
+    Right,
+    Enter,
+    Escape,
+}
+
+/// Match rank of `label` for `query`: 0 prefix, 1 substring (pink:
+/// `popover::match_rank`).
+fn match_rank(query: &str, label: &str) -> Option<usize> {
+    let label = label.to_lowercase();
+    if label.starts_with(query) {
+        Some(0)
+    } else if label.contains(query) {
+        Some(1)
+    } else {
+        None
+    }
+}
+
+/// The rows one tab shows (pink: `scoped_model_rows`). A query never leaves
+/// the viewed tab: it ranks label prefix, then substring, then attribution
+/// hits, stars and input order breaking ties. Without one, a provider tab
+/// lists its stars first and the Favorites tab every star.
+fn scoped_rows(
+    providers: &[ModelProvider],
+    rail: Rail,
+    query: &str,
+    starred: impl Fn(usize, usize) -> bool,
+) -> Vec<Row> {
+    let in_scope = |p: usize, m: usize| match rail {
+        Rail::Favorites => starred(p, m),
+        Rail::Provider(viewed) => p == viewed,
+    };
+    let query = query.trim().to_lowercase();
+    if !query.is_empty() {
+        let mut ranked: Vec<(usize, bool, usize, Row)> = Vec::new();
+        let mut input_ix = 0;
+        for (p, provider) in providers.iter().enumerate() {
+            for (m, model) in provider.models.iter().enumerate() {
+                if !in_scope(p, m) {
+                    continue;
+                }
+                let by_label = match_rank(&query, &model.name);
+                let haystack = format!(
+                    "{} {}",
+                    model.attribution.as_deref().unwrap_or(""),
+                    model.name
+                );
+                let by_attribution = match_rank(&query, &haystack).map(|rank| rank + 2);
+                if let Some(rank) = by_label.into_iter().chain(by_attribution).min() {
+                    ranked.push((rank, !starred(p, m), input_ix, Row { p, m }));
+                }
+                input_ix += 1;
+            }
+        }
+        ranked.sort_by_key(|&(rank, unstarred, ix, _)| (rank, unstarred, ix));
+        return ranked.into_iter().map(|(.., row)| row).collect();
+    }
+    match rail {
+        Rail::Favorites => providers
+            .iter()
+            .enumerate()
+            .flat_map(|(p, provider)| (0..provider.models.len()).map(move |m| Row { p, m }))
+            .filter(|row| starred(row.p, row.m))
+            .collect(),
+        Rail::Provider(viewed) => {
+            let Some(provider) = providers.get(viewed) else {
+                return Vec::new();
+            };
+            let (stars, rest): (Vec<Row>, Vec<Row>) = (0..provider.models.len())
+                .map(|m| Row { p: viewed, m })
+                .partition(|row| starred(row.p, row.m));
+            stars.into_iter().chain(rest).collect()
+        }
+    }
+}
+
+/// Whether `pointer`, moving away from `origin`, is still heading into
+/// `submenu` (pink: `submenu_corridor`).
+fn submenu_corridor(
+    origin: Point<Pixels>,
+    pointer: Point<Pixels>,
+    submenu: Bounds<Pixels>,
+    on_left: bool,
+) -> bool {
+    let edge = if on_left {
+        submenu.right()
+    } else {
+        submenu.left()
+    };
+    let direction = if on_left { -1.0 } else { 1.0 };
+    let distance = f32::from(edge - origin.x) * direction;
+    let advance = f32::from(pointer.x - origin.x) * direction;
+    if distance <= 0.0 || advance <= 0.0 || advance > distance + 8.0 {
+        return false;
+    }
+    let fraction = (advance / distance).min(1.0);
+    let top = origin.y + (submenu.top() - px(8.0) - origin.y) * fraction;
+    let bottom = origin.y + (submenu.bottom() + px(8.0) - origin.y) * fraction;
+    pointer.y >= top && pointer.y <= bottom
+}
+
+struct PickerState {
+    /// The trigger's focus.
+    focus: FocusHandle,
+    search: Entity<TextInput>,
+    _search_events: Subscription,
+    props: Rc<Props>,
+    open: bool,
+    /// When the menu began its exit fade.
+    closing: Option<Instant>,
+    _close_task: Option<Task<()>>,
+    /// Bumped on every open so the entrance replays.
+    opened: u32,
+    rail: Rail,
+    selected: (usize, usize),
+    /// The one shared highlight, over the model rows and then the tray rows.
+    active: usize,
+    query: SharedString,
+    /// The picked reasoning level, before each model clamps it.
+    reasoning: Option<ReasoningLevel>,
+    /// Setting picks per model, keyed by provider, model and setting id.
+    picks: HashMap<SharedString, usize>,
+    favorites: Vec<(SharedString, SharedString)>,
+    scroll: ScrollHandle,
+    trigger: Bounds<Pixels>,
+    /// The tray row whose choices are open, with their cursor and bounds.
+    setting_menu: Option<usize>,
+    setting_active: usize,
+    setting_bounds: Option<Bounds<Pixels>>,
+    setting_on_left: bool,
+    setting_origin: Option<Point<Pixels>>,
+    hover_pending: Option<usize>,
+    hover_pointer: Option<Point<Pixels>>,
+    _hover_task: Option<Task<()>>,
+}
+
+impl PickerState {
+    fn provider(&self) -> &ModelProvider {
+        &self.props.providers[self.selected.0]
+    }
+
+    fn model(&self) -> &ModelOption {
+        &self.provider().models[self.selected.1]
+    }
+
+    fn starred(&self, p: usize, m: usize) -> bool {
+        let provider = &self.props.providers[p];
+        let model = &provider.models[m];
+        self.favorites
+            .iter()
+            .any(|(pid, mid)| *pid == provider.id && *mid == model.id)
+    }
+
+    fn rows(&self) -> Vec<Row> {
+        scoped_rows(&self.props.providers, self.rail, &self.query, |p, m| {
+            self.starred(p, m)
+        })
+    }
+
+    /// Where the selected model sits in the visible rows (pink:
+    /// `selected_model_index`).
+    fn selected_index(&self) -> usize {
+        let (p, m) = self.selected;
+        self.rows()
+            .iter()
+            .position(|row| row.p == p && row.m == m)
+            .unwrap_or(0)
+    }
+
+    /// Keeps indices in range after the builder's data changes.
+    fn clamp(&mut self) {
+        let providers = &self.props.providers;
+        let (p, m) = self.selected;
+        if providers
+            .get(p)
+            .is_none_or(|provider| m >= provider.models.len())
+        {
+            self.selected = providers
+                .iter()
+                .position(|provider| !provider.models.is_empty())
+                .map_or((0, 0), |p| (p, 0));
+        }
+        if let Rail::Provider(viewed) = self.rail
+            && viewed >= providers.len()
+        {
+            self.rail = Rail::Provider(self.selected.0);
+        }
+    }
+
+    fn pick_key(&self, setting: &ModelSetting) -> SharedString {
+        format!(
+            "{}\u{1f}{}\u{1f}{}",
+            self.provider().id,
+            self.model().id,
+            setting.id
+        )
+        .into()
+    }
+
+    fn effective_reasoning(&self) -> Option<ReasoningLevel> {
+        clamp_reasoning(self.reasoning, &self.model().reasoning)
+    }
+
+    /// The effective choice of the selected model's setting `si`.
+    fn setting_choice(&self, si: usize) -> usize {
+        let setting = &self.model().settings[si];
+        let last = setting.choices.len().saturating_sub(1);
+        self.picks
+            .get(&self.pick_key(setting))
+            .copied()
+            .filter(|&ix| ix <= last)
+            .unwrap_or(setting.default.min(last))
+    }
+
+    /// The tray rows for the selected model (pink: `setting_groups`).
+    fn groups(&self) -> Vec<Group> {
+        let model = self.model();
+        let mut groups = Vec::new();
+        if !model.reasoning.is_empty() {
+            let selected = self.effective_reasoning();
+            let default = default_reasoning(&model.reasoning);
+            groups.push(Group {
+                kind: GroupKind::Reasoning,
+                label: "Reasoning".into(),
+                choices: model
+                    .reasoning
+                    .iter()
+                    .map(|&level| Choice {
+                        label: level.label().into(),
+                        selected: Some(level) == selected,
+                        default: Some(level) == default,
+                    })
+                    .collect(),
+            });
+        }
+        for (si, setting) in model.settings.iter().enumerate() {
+            if setting.choices.is_empty() {
+                continue;
+            }
+            let chosen = self.setting_choice(si);
+            groups.push(Group {
+                kind: GroupKind::Setting(si),
+                label: setting.label.clone(),
+                choices: setting
+                    .choices
+                    .iter()
+                    .enumerate()
+                    .map(|(ci, label)| Choice {
+                        label: label.clone(),
+                        selected: ci == chosen,
+                        default: ci == setting.default,
+                    })
+                    .collect(),
+            });
+        }
+        groups
+    }
+
+    /// Whether any trait departs from its default: the chip's suffix then
+    /// brightens (pink: `traits_customized`).
+    fn customized(&self) -> bool {
+        let model = self.model();
+        self.effective_reasoning() != default_reasoning(&model.reasoning)
+            || (0..model.settings.len())
+                .filter(|&si| !model.settings[si].choices.is_empty())
+                .any(|si| self.setting_choice(si) != model.settings[si].default)
+    }
+
+    /// Whether the effective speed runs faster than standard (pink:
+    /// `fast_speed`).
+    fn fast(&self) -> bool {
+        let model = self.model();
+        model.settings.iter().enumerate().any(|(si, setting)| {
+            SPEED_SETTINGS.contains(&setting.id.as_ref())
+                && setting
+                    .choices
+                    .get(self.setting_choice(si))
+                    .is_some_and(|choice| FAST_CHOICES.contains(&choice.to_lowercase().as_str()))
+        })
+    }
+
+    /// "High · 1M · Fast": the reasoning level and every setting's choice
+    /// (pink: `traits_summary`).
+    fn summary(&self) -> Option<SharedString> {
+        let model = self.model();
+        let mut parts: Vec<SharedString> = Vec::new();
+        if let Some(level) = self.effective_reasoning() {
+            parts.push(level.label().into());
+        }
+        for (si, setting) in model.settings.iter().enumerate() {
+            if let Some(choice) = setting.choices.get(self.setting_choice(si)) {
+                parts.push(choice.clone());
+            }
+        }
+        (!parts.is_empty()).then(|| parts.join(" · ").into())
+    }
+
+    /// Runs a callback once the current update is done.
+    fn emit(
+        &self,
+        window: &mut Window,
+        cx: &mut App,
+        f: impl FnOnce(&Props, &mut Window, &mut App) + 'static,
+    ) {
+        let props = self.props.clone();
+        window.defer(cx, move |window, cx| f(&props, window, cx));
+    }
+
+    fn toggle(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.open {
+            self.close_menu(true, window, cx);
+        } else {
+            self.open_menu(window, cx);
+        }
+    }
+
+    /// pink: `toggle` opening the model picker. The search clears, the
+    /// Favorites tab leads when there are stars, the highlight starts on the
+    /// selected row and the search takes focus.
+    fn open_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open = true;
+        self.closing = None;
+        self._close_task = None;
+        self.opened += 1;
+        self.query = SharedString::default();
+        self.search.update(cx, |input, cx| input.clear(cx));
+        self.close_setting();
+        self.rail = if self.favorites.is_empty() {
+            Rail::Provider(self.selected.0)
+        } else {
+            Rail::Favorites
+        };
+        self.active = self.selected_index();
+        self.scroll.set_offset(point(px(0.), px(0.)));
+        self.scroll.scroll_to_item(self.active);
+        TextInput::focus(&self.search, window, cx);
+        cx.notify();
+    }
+
+    /// Starts the exit fade; the menu unmounts when it ends.
+    fn close_menu(&mut self, refocus: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.open {
+            return;
+        }
+        self.close_setting();
+        self.open = false;
+        self.closing = Some(Instant::now());
+        let wait = MENU_OUT.total().mul_f32(motion::speed_scale()) + Duration::from_millis(16);
+        self._close_task = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(wait).await;
+            let _ = this.update(cx, |s, cx| {
+                s.closing = None;
+                cx.notify();
+            });
+        }));
+        if refocus {
+            window.focus(&self.focus, cx);
+        }
+        cx.notify();
+    }
+
+    fn cancel_setting_hover(&mut self) {
+        self._hover_task = None;
+        self.hover_pending = None;
+        self.hover_pointer = None;
+    }
+
+    fn close_setting(&mut self) {
+        self.cancel_setting_hover();
+        self.setting_menu = None;
+        self.setting_bounds = None;
+    }
+
+    /// pink: `open_setting`. The choices open with their cursor on the
+    /// current one.
+    fn open_setting(&mut self, ix: usize, cx: &mut Context<Self>) {
+        self.cancel_setting_hover();
+        self.setting_origin = None;
+        self.setting_active = self
+            .groups()
+            .get(ix)
+            .and_then(|group| group.choices.iter().position(|choice| choice.selected))
+            .unwrap_or(0);
+        self.setting_menu = Some(ix);
+        self.setting_bounds = None;
+        cx.notify();
+    }
+
+    /// The pointer resting on tray row `ix` opens its choices, after a short
+    /// grace when it is only crossing on its way into an open submenu
+    /// (pink: `hover_setting`).
+    fn hover_setting(
+        &mut self,
+        ix: usize,
+        active: usize,
+        pointer: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        self.cancel_setting_hover();
+        if self.setting_menu == Some(ix) {
+            self.setting_origin = Some(pointer);
+            return;
+        }
+        let toward_child = self.setting_menu.is_some()
+            && self
+                .setting_origin
+                .zip(self.setting_bounds)
+                .is_some_and(|(origin, bounds)| {
+                    submenu_corridor(origin, pointer, bounds, self.setting_on_left)
+                });
+        if toward_child {
+            let source = self.setting_menu;
+            self.hover_pending = Some(ix);
+            self.hover_pointer = Some(pointer);
+            self._hover_task = Some(cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(SUBMENU_GRACE).await;
+                let _ = this.update(cx, |s, cx| {
+                    if s.open && s.setting_menu == source && s.hover_pending == Some(ix) {
+                        s.active = active;
+                        s.open_setting(ix, cx);
+                        s.setting_origin = Some(pointer);
+                    }
+                });
+            }));
+        } else {
+            self.active = active;
+            self.open_setting(ix, cx);
+            self.setting_origin = Some(pointer);
+        }
+    }
+
+    /// pink: `activate_model_index` + `pick_model`. The card stays open.
+    fn pick_model(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(row) = self.rows().get(ix).copied() else {
+            return;
+        };
+        self.close_setting();
+        self.selected = (row.p, row.m);
+        self.active = ix;
+        self.emit(window, cx, move |props, window, cx| {
+            if let Some(f) = props.on_change.as_ref() {
+                f(&props.providers[row.p].models[row.m], window, cx);
+            }
+        });
+        cx.notify();
+    }
+
+    /// pink: `toggle_model_favorite`. A star reorders the list, so the
+    /// highlight goes back to the selected row.
+    fn toggle_favorite(&mut self, p: usize, m: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let provider = &self.props.providers[p];
+        let key = (provider.id.clone(), provider.models[m].id.clone());
+        let starred = match self.favorites.iter().position(|fav| *fav == key) {
+            Some(ix) => {
+                self.favorites.remove(ix);
+                false
+            }
+            None => {
+                self.favorites.push(key.clone());
+                true
+            }
+        };
+        self.active = self.selected_index();
+        self.emit(window, cx, move |props, window, cx| {
+            if let Some(f) = props.on_favorite_change.as_ref() {
+                f(&key.1, starred, window, cx);
+            }
+        });
+        cx.notify();
+    }
+
+    fn view(&mut self, rail: Rail, cx: &mut Context<Self>) {
+        self.close_setting();
+        self.rail = rail;
+        self.active = self.selected_index();
+        self.scroll.set_offset(point(px(0.), px(0.)));
+        self.scroll.scroll_to_item(self.active);
+        cx.notify();
+    }
+
+    /// pink: `activate_setting_choice`.
+    fn pick_choice(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(gi) = self.setting_menu else {
+            return;
+        };
+        let groups = self.groups();
+        let Some(group) = groups.get(gi) else {
+            return;
+        };
+        let ci = self.setting_active;
+        if ci >= group.choices.len() {
+            return;
+        }
+        match group.kind {
+            GroupKind::Reasoning => {
+                let level = self.model().reasoning[ci];
+                self.reasoning = Some(level);
+                self.emit(window, cx, move |props, window, cx| {
+                    if let Some(f) = props.on_reasoning_change.as_ref() {
+                        f(level, window, cx);
+                    }
+                });
+            }
+            GroupKind::Setting(si) => {
+                let setting = self.model().settings[si].clone();
+                self.picks.insert(self.pick_key(&setting), ci);
+                self.emit(window, cx, move |props, window, cx| {
+                    if let Some(f) = props.on_setting_change.as_ref() {
+                        f(&setting.id, &setting.choices[ci], window, cx);
+                    }
+                });
+            }
+        }
+        self.close_setting();
+        cx.notify();
+    }
+
+    /// The picker's keys (pink: `on_key_down`). Returns whether it took the
+    /// key.
+    fn nav(&mut self, nav: Nav, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        self.cancel_setting_hover();
+        if !self.open {
+            if matches!(nav, Nav::Up | Nav::Down) {
+                self.open_menu(window, cx);
+                return true;
+            }
+            return false;
+        }
+        let groups = self.groups();
+        if let Some(open) = self.setting_menu {
+            match nav {
+                Nav::Escape | Nav::Left => self.close_setting(),
+                Nav::Up | Nav::Down => {
+                    let count = groups.get(open).map_or(0, |group| group.choices.len());
+                    self.setting_active = step(self.setting_active, count, nav == Nav::Up);
+                }
+                Nav::Enter => self.pick_choice(window, cx),
+                Nav::Right => return false,
+            }
+            cx.notify();
+            return true;
+        }
+        let rows = self.rows().len();
+        match nav {
+            Nav::Right if self.active >= rows && self.active < rows + groups.len() => {
+                self.open_setting(self.active - rows, cx);
+            }
+            Nav::Escape => self.close_menu(true, window, cx),
+            Nav::Up | Nav::Down => {
+                self.active = step(self.active, rows + groups.len(), nav == Nav::Up);
+                if self.active < rows {
+                    self.scroll.scroll_to_item(self.active);
+                }
+            }
+            Nav::Enter => {
+                if self.active >= rows {
+                    if self.active - rows < groups.len() {
+                        self.open_setting(self.active - rows, cx);
+                    }
+                } else {
+                    self.pick_model(self.active, window, cx);
+                }
+            }
+            Nav::Left | Nav::Right => return false,
+        }
+        cx.notify();
+        true
+    }
+
+    fn on_search(&mut self, event: &InputEvent, _: &mut Window, cx: &mut Context<Self>) {
+        // Typing resets the highlight to the top of the fresh results.
+        if let InputEvent::Change(text) = event {
+            self.query = text.clone();
+            self.close_setting();
+            self.active = 0;
+            self.scroll.set_offset(point(px(0.), px(0.)));
+            cx.notify();
+        }
+    }
+}
+
+/// One step through `count` rows, wrapping (pink: `popover::menu_step`).
+fn step(at: usize, count: usize, up: bool) -> usize {
+    if count == 0 {
+        return 0;
+    }
+    if up {
+        (at.min(count) + count - 1) % count
+    } else {
+        (at + 1) % count
+    }
+}
+
+/// A capture listener for one of the search field's keys, so the picker
+/// sees them before the field does.
+fn nav_action<A: Action>(
+    state: &Entity<PickerState>,
+    nav: Nav,
+) -> impl Fn(&A, &mut Window, &mut App) + 'static {
+    let state = state.clone();
+    move |_, window, cx| {
+        if state.update(cx, |s, cx| s.nav(nav, window, cx)) {
+            cx.stop_propagation();
+        }
     }
 }
 
@@ -408,161 +1096,218 @@ impl RenderOnce for ModelPicker {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Pink::get(cx);
         let key = self.id.to_string();
-        let models = Rc::new(self.models);
-        let count = models.len();
+        if self
+            .providers
+            .iter()
+            .all(|provider| provider.models.is_empty())
+        {
+            return div().id(self.id);
+        }
         let initial = self
             .selected
             .as_ref()
-            .and_then(|id| models.iter().position(|m| &m.id == id))
-            .unwrap_or(0);
-        let (default_open, autofocus) = (self.default_open, self.autofocus);
-        let (reasoning, budget) = (self.reasoning, self.budget);
+            .and_then(|id| {
+                self.providers.iter().enumerate().find_map(|(p, provider)| {
+                    provider
+                        .models
+                        .iter()
+                        .position(|m| &m.id == id)
+                        .map(|m| (p, m))
+                })
+            })
+            .unwrap_or_else(|| {
+                let p = self
+                    .providers
+                    .iter()
+                    .position(|provider| !provider.models.is_empty())
+                    .unwrap_or(0);
+                (p, 0)
+            });
+        let favorites: Vec<(SharedString, SharedString)> = self
+            .favorites
+            .iter()
+            .filter_map(|id| {
+                self.providers.iter().find_map(|provider| {
+                    provider
+                        .models
+                        .iter()
+                        .any(|m| &m.id == id)
+                        .then(|| (provider.id.clone(), id.clone()))
+                })
+            })
+            .collect();
+        let props = Rc::new(Props {
+            providers: self.providers,
+            on_change: self.on_change,
+            on_reasoning_change: self.on_reasoning_change,
+            on_setting_change: self.on_setting_change,
+            on_favorite_change: self.on_favorite_change,
+        });
+        let (default_open, autofocus, reasoning) =
+            (self.default_open, self.autofocus, self.reasoning);
 
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
-            move |window, cx| {
-                let focus = cx.focus_handle();
-                if autofocus {
-                    let handle = focus.clone();
-                    window.defer(cx, move |window, cx| window.focus(&handle, cx));
-                }
-                PickerState {
-                    focus,
-                    open: default_open,
-                    opened: u32::from(default_open),
-                    selected: initial,
-                    pointed: initial,
-                    reasoning,
-                    budget,
-                    trigger: Bounds::default(),
+            {
+                let props = props.clone();
+                move |window, cx| {
+                    let focus = cx.focus_handle().tab_stop(true);
+                    let search =
+                        cx.new(|cx| TextInput::new(window, cx).placeholder("Search models…"));
+                    let search_events = cx.subscribe_in(
+                        &search,
+                        window,
+                        |s: &mut PickerState, _, event, window, cx| s.on_search(event, window, cx),
+                    );
+                    let mut s = PickerState {
+                        focus,
+                        search,
+                        _search_events: search_events,
+                        props,
+                        open: false,
+                        closing: None,
+                        _close_task: None,
+                        opened: 0,
+                        rail: Rail::Provider(initial.0),
+                        selected: initial,
+                        active: 0,
+                        query: SharedString::default(),
+                        reasoning,
+                        picks: HashMap::new(),
+                        favorites,
+                        scroll: ScrollHandle::new(),
+                        trigger: Bounds::default(),
+                        setting_menu: None,
+                        setting_active: 0,
+                        setting_bounds: None,
+                        setting_on_left: false,
+                        setting_origin: None,
+                        hover_pending: None,
+                        hover_pointer: None,
+                        _hover_task: None,
+                    };
+                    if default_open {
+                        s.open = true;
+                        s.opened = 1;
+                        s.rail = if s.favorites.is_empty() {
+                            Rail::Provider(initial.0)
+                        } else {
+                            Rail::Favorites
+                        };
+                        s.active = s.selected_index();
+                        s.scroll.scroll_to_item(s.active);
+                    }
+                    if autofocus {
+                        let handle = if default_open {
+                            s.search.read(cx).focus_handle(cx)
+                        } else {
+                            s.focus.clone()
+                        };
+                        window.defer(cx, move |window, cx| window.focus(&handle, cx));
+                    }
+                    s
                 }
             },
         );
-        let s = state.read(cx).clone();
-        if count == 0 {
-            return div().id(self.id);
-        }
-        let selected = s.selected.min(count - 1);
-        let current = &models[selected];
-        let reasoning_on = s.reasoning && current.reasoning;
+        state.update(cx, |s, cx| {
+            s.props = props;
+            s.clamp();
+            s.search.update(cx, |input, _| {
+                input.set_colors(Some(t.placeholder), Some(t.caret), Some(t.selection))
+            });
+        });
 
-        let on_change = self.on_change.clone();
-        let on_reasoning = self.on_reasoning_change.clone();
+        let placement = self.placement;
+        let s = state.read(cx);
+        let trigger = trigger(&key, s, &t, &state);
+        let layer = (s.open || s.closing.is_some()).then(|| {
+            let exit = (!s.open)
+                .then(|| s.closing.map(motion::menu_exit_progress))
+                .flatten();
+            let above = placement == Placement::Above;
+            let inner = div()
+                .occlude()
+                .when(above, |el| el.pb(px(layout::POPOVER_GAP)))
+                .when(!above, |el| el.pt(px(layout::POPOVER_GAP)))
+                .child(menu(&key, s, &t, &state));
+            let inner: AnyElement = match exit {
+                // A dying menu takes no clicks (pink: `menu_motion_from`).
+                Some(progress) => motion::menu_out(
+                    ElementId::NamedInteger("menu-out".into(), u64::from(s.opened)),
+                    progress,
+                    inner.relative().child(div().absolute().inset_0().occlude()),
+                )
+                .into_any_element(),
+                None => motion::menu_in_from(
+                    ElementId::NamedInteger("menu-in".into(), u64::from(s.opened)),
+                    if above { MENU_RISE_UP } else { MENU_RISE_DOWN },
+                    inner,
+                )
+                .into_any_element(),
+            };
+            // pink: `anchored_menu_above_leading` / `_below_leading`. The card
+            // starts one inset left of the chip so its rows line up with the
+            // chip's mark.
+            div()
+                .absolute()
+                .left_0()
+                .when(above, |el| el.top_0())
+                .when(!above, |el| el.bottom_0())
+                .size_0()
+                .child(
+                    deferred(
+                        anchored()
+                            .anchor(if above {
+                                Anchor::BottomLeft
+                            } else {
+                                Anchor::TopLeft
+                            })
+                            .offset(point(px(-layout::CARD_INSET), px(0.)))
+                            .snap_to_window_with_margin(px(layout::WINDOW_MARGIN))
+                            .child(inner),
+                    )
+                    .with_priority(1),
+                )
+        });
 
-        // Keyboard: the trigger and the open menu share one focus handle.
         let on_key = {
             let state = state.clone();
-            let models = models.clone();
-            let on_change = on_change.clone();
-            let on_reasoning = on_reasoning.clone();
             move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {
-                let mut chosen = None;
-                let mut reasoning_event = None;
-                let handled = state.update(cx, |s, cx| {
-                    let pointed_reasons = models[s.pointed.min(count - 1)].reasoning;
-                    let handled = match (s.open, event.keystroke.key.as_str()) {
-                        (false, "enter" | "space" | "down" | "up") => {
-                            s.set_open(true);
+                let keystroke = &event.keystroke;
+                // ⌘1–⌘9 pick the Nth visible row (pink: the rows' hints).
+                if keystroke.modifiers.secondary()
+                    && let Ok(n) = keystroke.key.parse::<usize>()
+                    && (1..=9).contains(&n)
+                {
+                    let handled = state.update(cx, |s, cx| {
+                        s.open && {
+                            s.pick_model(n - 1, window, cx);
                             true
                         }
-                        (true, "escape") => {
-                            s.set_open(false);
-                            true
-                        }
-                        (true, "down") => {
-                            s.pointed = (s.pointed + 1) % count;
-                            true
-                        }
-                        (true, "up") => {
-                            s.pointed = (s.pointed + count - 1) % count;
-                            true
-                        }
-                        (true, "home") => {
-                            s.pointed = 0;
-                            true
-                        }
-                        (true, "end") => {
-                            s.pointed = count - 1;
-                            true
-                        }
-                        (true, "enter") => {
-                            s.selected = s.pointed;
-                            s.set_open(false);
-                            chosen = Some(s.selected);
-                            true
-                        }
-                        (true, "space") if pointed_reasons => {
-                            s.reasoning = !s.reasoning;
-                            reasoning_event = Some(s.reasoning.then_some(s.budget));
-                            true
-                        }
-                        (true, "left" | "right") if pointed_reasons => {
-                            let ix = s.budget.index();
-                            let ix = if event.keystroke.key == "left" {
-                                ix.saturating_sub(1)
-                            } else {
-                                (ix + 1).min(2)
-                            };
-                            s.budget = Budget::ALL[ix];
-                            s.reasoning = true;
-                            reasoning_event = Some(Some(s.budget));
-                            true
-                        }
-                        _ => false,
-                    };
+                    });
                     if handled {
-                        cx.notify();
+                        cx.stop_propagation();
                     }
-                    handled
-                });
-                if handled {
+                    return;
+                }
+                if keystroke.modifiers.modified() {
+                    return;
+                }
+                let nav = match keystroke.key.as_str() {
+                    "up" => Nav::Up,
+                    "down" => Nav::Down,
+                    "left" => Nav::Left,
+                    "right" => Nav::Right,
+                    "enter" => Nav::Enter,
+                    "escape" => Nav::Escape,
+                    _ => return,
+                };
+                if state.update(cx, |s, cx| s.nav(nav, window, cx)) {
                     cx.stop_propagation();
-                }
-                if let (Some(ix), Some(f)) = (chosen, on_change.as_ref()) {
-                    f(&models[ix], window, cx);
-                }
-                if let (Some(value), Some(f)) = (reasoning_event, on_reasoning.as_ref()) {
-                    f(value, window, cx);
                 }
             }
         };
-
-        let trigger = trigger(&key, current, &s, reasoning_on, &t, &state);
-        let menu = s.open.then(|| {
-            let content = menu(&key, &models, &s, &t, &state, on_change, on_reasoning);
-            let opened = s.opened;
-            let placement = self.placement;
-            let closer = state.clone();
-            let menu = div()
-                .id("menu")
-                .absolute()
-                .left(px(-6.))
-                .w(px(MENU_W))
-                .occlude()
-                .on_mouse_down_out(move |event: &MouseDownEvent, _, cx| {
-                    closer.update(cx, |s, cx| {
-                        if s.open && !s.trigger.contains(&event.position) {
-                            s.set_open(false);
-                            cx.notify();
-                        }
-                    })
-                })
-                .child(content)
-                .with_animation(
-                    ElementId::NamedInteger("menu-in".into(), u64::from(opened)),
-                    MENU_IN.with_duration(240).animation(),
-                    move |el, k| {
-                        let offset = px(TRIGGER_H + MENU_GAP - 6. * (1. - k));
-                        let el = el.opacity(k);
-                        match placement {
-                            Placement::Above => el.bottom(offset),
-                            Placement::Below => el.top(offset),
-                        }
-                    },
-                );
-            deferred(menu).with_priority(1)
-        });
 
         motion::keep_alive(window);
         div()
@@ -570,93 +1315,71 @@ impl RenderOnce for ModelPicker {
             .relative()
             .flex_none()
             .font_family(pink::SANS)
-            .track_focus(&s.focus)
             .on_key_down(on_key)
+            // The search field binds these keys; the picker reads them first.
+            .capture_action(nav_action::<text_input::Up>(&state, Nav::Up))
+            .capture_action(nav_action::<text_input::Down>(&state, Nav::Down))
+            .capture_action(nav_action::<text_input::Left>(&state, Nav::Left))
+            .capture_action(nav_action::<text_input::Right>(&state, Nav::Right))
+            .capture_action(nav_action::<text_input::Enter>(&state, Nav::Enter))
+            .capture_action(nav_action::<text_input::Escape>(&state, Nav::Escape))
             .child(trigger)
-            .children(menu)
+            .children(layer)
     }
 }
 
-fn trigger(
-    key: &str,
-    current: &ModelOption,
-    s: &PickerState,
-    reasoning_on: bool,
-    t: &Pink,
-    state: &gpui::Entity<PickerState>,
-) -> Stateful<gpui::Div> {
-    let turn = motion::follow(
-        &format!("{key}-chevron"),
-        if s.open { 0.5 } else { 0. },
-        MotionSpec::new(280, EASE_OUT_QUINT),
-    );
-    let rest = if s.open {
-        t.fill(FillTier::Secondary)
-    } else {
-        t.fill(FillTier::Tertiary).opacity(0.)
-    };
-    let hover = if s.open {
-        t.fill(FillTier::Secondary)
-    } else {
-        t.fill(FillTier::Tertiary)
-    };
+/// The model chip (pink: pickers.rs `trigger_chip` with
+/// `model_chip_content`): the provider's mark, the model name, a bolt for a
+/// fast speed and the reasoning level as the muted second tone, brighter
+/// when the configuration departs from the model's defaults.
+fn trigger(key: &str, s: &PickerState, t: &Pink, state: &Entity<PickerState>) -> Stateful<Div> {
+    let provider = s.provider();
+    let model = s.model();
+    let id = format!("{key}-trigger");
+    // The kit chip's own hover key: the bolt brightens with the label.
+    let label_color =
+        motion::hover_blend(&format!("pink-trigger-{id}"), t.text.opacity(0.9), t.text);
+    let suffix = s.effective_reasoning().map(|level| {
+        let tone = if s.customized() {
+            t.text.opacity(0.85)
+        } else {
+            t.readable_muted(0.7)
+        };
+        (level.label(), tone)
+    });
+    let (title, detail) = (model.name.clone(), s.summary());
     let toggler = state.clone();
     let measurer = state.clone();
-    div()
-        .id("trigger")
+    pink::trigger_chip(id, true, s.open, t)
         .relative()
-        .h(px(TRIGGER_H))
-        .pl(px(8.))
-        .pr(px(6.))
-        .flex()
-        .items_center()
-        .gap(px(6.))
-        .rounded(px(radius::MD))
-        .cursor_pointer()
-        .text_size(px(text::BODY))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(t.text)
-        .hover_fill(format!("{key}-trigger"), rest, hover)
-        .on_click(move |_, window, cx| {
-            toggler.update(cx, |s, cx| {
-                let open = !s.open;
-                s.set_open(open);
-                window.focus(&s.focus, cx);
-                cx.notify();
-            })
-        })
-        .when_some(current.icon.clone(), |el, icon| {
-            el.child(svg().path(icon).size(px(14.)).text_color(t.text_muted))
-        })
-        .child(current.name.clone())
-        .when(reasoning_on, |el| {
-            el.child(
-                div()
-                    .h(px(18.))
-                    .px(px(5.))
-                    .flex()
-                    .items_center()
-                    .gap(px(3.))
-                    .rounded(px(radius::XS))
-                    .bg(t.accent.opacity(if t.dark { 0.18 } else { 0.1 }))
-                    .text_size(px(text::CAPTION))
-                    .text_color(t.accent)
-                    .child(
-                        svg()
-                            .path(ICON_HOURGLASS)
-                            .size(px(11.))
-                            .text_color(t.accent),
-                    )
-                    .child(s.budget.label()),
-            )
+        .track_focus(&s.focus)
+        .aria_label(model.name.clone())
+        .on_click(move |_, window, cx| toggler.update(cx, |s, cx| s.toggle(window, cx)))
+        // The open menu already says everything the tooltip would.
+        .when(!s.open, |el| {
+            el.tooltip(move |_, cx| ControlTooltip::view(title.clone(), detail.clone(), cx))
+                .tooltip_show_delay(layout::TOOLTIP_DELAY)
         })
         .child(
             svg()
-                .path(ICON_CHEVRON)
-                .size(px(14.))
-                .text_color(t.text_faint)
-                .with_transformation(Transformation::rotate(percentage(turn))),
+                .path(provider.icon.clone())
+                .size(px(CHIP_ICON))
+                .flex_none()
+                .text_color(provider.tint.unwrap_or(t.text_muted)),
         )
+        .child(div().min_w_0().truncate().child(model.name.clone()))
+        .when(s.fast(), |el| {
+            el.child(
+                svg()
+                    .path(ICON_BOLT)
+                    .size(px(CHIP_BOLT))
+                    .flex_none()
+                    .text_color(label_color),
+            )
+        })
+        .when_some(suffix, |el, (label, tone)| {
+            el.child(div().flex_none().text_color(tone).child(label))
+        })
         .child(
             canvas(
                 move |bounds, _, cx| measurer.update(cx, |s, _| s.trigger = bounds),
@@ -667,719 +1390,832 @@ fn trigger(
         )
 }
 
-fn menu(
-    key: &str,
-    models: &Rc<Vec<ModelOption>>,
-    s: &PickerState,
-    t: &Pink,
-    state: &gpui::Entity<PickerState>,
-    on_change: Option<ChangeHandler>,
-    on_reasoning: Option<ReasoningHandler>,
-) -> impl IntoElement {
-    let count = models.len();
-    let pointed = s.pointed.min(count - 1);
-    let plate_top = motion::follow(
-        &format!("{key}-plate"),
-        pointed as f32 * ROW_H,
-        MotionSpec::new(220, EASE_OUT_QUINT),
-    );
-
-    let rows = models.iter().enumerate().map(|(ix, m)| {
-        let lit = motion::follow(
-            &format!("{key}-lit-{ix}"),
-            if ix == pointed { 1. } else { 0. },
-            MotionSpec::new(160, EASE),
-        );
-        let pointer = state.clone();
-        let chooser = state.clone();
-        let models = models.clone();
-        let on_change = on_change.clone();
-        div()
-            .id(("model", ix))
-            .h(px(ROW_H))
-            .px(px(8.))
-            .flex()
-            .items_center()
-            .gap(px(10.))
-            .cursor_pointer()
-            .on_mouse_move(move |_, _, cx| {
-                pointer.update(cx, |s, cx| {
-                    if s.pointed != ix {
-                        s.pointed = ix;
-                        cx.notify();
-                    }
-                })
-            })
-            .on_click(move |_, window, cx| {
-                chooser.update(cx, |s, cx| {
-                    s.selected = ix;
-                    s.set_open(false);
-                    cx.notify();
-                });
-                if let Some(f) = on_change.as_ref() {
-                    f(&models[ix], window, cx);
+/// The menu card (pink: `popover_frame_flush` at `MENU_W_L` around
+/// `render_harness_model_popover`): tabs, search, the model band and the
+/// traits tray.
+fn menu(key: &str, s: &PickerState, t: &Pink, state: &Entity<PickerState>) -> Div {
+    let rows = s.rows();
+    let groups = s.groups();
+    let refocus = s.search.clone();
+    let closer = state.clone();
+    pink::popover_card_flush(t)
+        .w(px(layout::MENU_W_L))
+        .flex()
+        .flex_col()
+        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            if !refocus.read(cx).is_focused(window) {
+                TextInput::focus(&refocus, window, cx);
+            }
+        })
+        .on_mouse_down_out(move |event: &MouseDownEvent, window, cx| {
+            closer.update(cx, |s, cx| {
+                if !s.open
+                    || s.trigger.contains(&event.position)
+                    || (s.setting_menu.is_some()
+                        && s.setting_bounds
+                            .is_some_and(|b| b.contains(&event.position)))
+                {
+                    return;
+                }
+                let focused = s.search.read(cx).is_focused(window);
+                s.close_menu(false, window, cx);
+                if focused {
+                    window.blur(cx);
                 }
             })
-            .child(
-                div()
-                    .size(px(28.))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(radius::MD))
-                    .border_1()
-                    .border_color(motion::mix(t.border, t.border_strong, lit))
-                    .bg(motion::mix(
-                        t.fill(FillTier::Quaternary),
-                        t.surface_overlay,
-                        lit,
-                    ))
-                    .when_some(m.icon.clone(), |el, icon| {
-                        el.child(svg().path(icon).size(px(16.)).text_color(motion::mix(
-                            t.text_faint,
-                            t.text,
-                            lit,
-                        )))
-                    }),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(6.))
-                            .text_size(px(text::BODY))
-                            .line_height(px(18.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(t.text)
-                            .child(m.name.clone())
-                            .when_some(m.tag.clone(), |el, tag| {
-                                el.child(pink::badge(tag, Tone::Accent, t).h(px(16.)).px(px(5.)))
-                            }),
-                    )
-                    .child(
-                        div()
-                            .truncate()
-                            .text_size(px(text::FOOTNOTE))
-                            .line_height(px(16.))
-                            .text_color(t.text_faint)
-                            .child(m.summary.clone()),
-                    ),
-            )
-            .when(ix == s.selected, |el| {
-                el.child(
-                    svg()
-                        .path(ICON_CHECK)
-                        .size(px(16.))
-                        .flex_none()
-                        .text_color(t.accent),
-                )
-            })
-    });
-
-    let list = div()
-        .w(px(LIST_W))
-        .flex_none()
-        .p(px(6.))
-        .flex()
-        .flex_col()
-        .child(
-            div()
-                .h(px(26.))
-                .px(px(8.))
-                .flex()
-                .items_center()
-                .text_size(px(text::FOOTNOTE))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(t.text_faint)
-                .child("Models"),
-        )
-        .child(
-            div()
-                .relative()
-                .child(
-                    div()
-                        .absolute()
-                        .left_0()
-                        .right_0()
-                        .top(px(plate_top))
-                        .h(px(ROW_H))
-                        .rounded(px(radius::MD))
-                        .bg(t.fill(FillTier::Tertiary)),
-                )
-                .children(rows),
-        );
-
-    let model = &models[pointed];
-    let budget = (s.reasoning && model.reasoning).then_some(s.budget);
-
-    div()
-        .w_full()
-        .bg(t.surface_overlay)
-        .border_1()
-        .border_color(t.border)
-        .rounded(px(radius::LG))
-        .shadow(t.menu_shadow())
-        .overflow_hidden()
-        .text_color(t.text)
+        })
         .child(
             div()
                 .flex()
-                .child(list)
-                .child(div().w(px(1.)).bg(t.border))
-                .child(spec_sheet(key, model, budget, s.opened, t)),
+                .flex_col()
+                .child(tabs(key, s, t, state))
+                .child(search_row(s, t))
+                .child(list(key, s, &rows, t, state))
+                .children(tray(key, s, &groups, rows.len(), t, state)),
         )
-        .child(pink::divider(t))
-        .child(reasoning_panel(key, model, s, t, state, on_reasoning))
 }
 
-/// The pointed model's name, meters and figures.
-fn spec_sheet(
-    key: &str,
-    model: &ModelOption,
-    budget: Option<Budget>,
-    opened: u32,
-    t: &Pink,
-) -> impl IntoElement {
-    let header = div()
-        .flex()
-        .flex_col()
-        .gap(px(2.))
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .child(
-                    div()
-                        .text_size(px(text::CALLOUT))
-                        .line_height(px(20.))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .child(model.name.clone()),
-                )
-                .child(
-                    div()
-                        .text_size(px(text::CAPTION))
-                        .font_family(pink::MONO)
-                        .text_color(t.text_faint)
-                        .child(price_label(model)),
-                ),
-        )
-        .child(
-            div()
-                .text_size(px(text::FOOTNOTE))
-                .line_height(px(17.))
-                .text_color(t.text_muted)
-                .child(model.about.clone()),
-        )
-        .with_animation(
-            SharedString::from(format!("{key}-spec-{}", model.id)),
-            MotionSpec::new(260, EASE_OUT_QUINT).animation(),
-            |el, k| el.relative().opacity(k).left(px(4. * (1. - k))),
-        );
-
-    let meters = div()
-        .flex()
-        .flex_col()
-        .gap(px(8.))
-        .child(meter(
-            key,
-            "Speed",
-            model.speed,
-            speed_word(model.speed),
-            opened,
-            t,
-        ))
-        .child(meter(
-            key,
-            "Depth",
-            model.depth,
-            depth_word(model.depth),
-            opened,
-            t,
-        ))
-        .child(meter(
-            key,
-            "Cost",
-            model.cost,
-            cost_word(model.cost),
-            opened,
-            t,
-        ));
-
-    let figures = div()
-        .flex()
-        .gap(px(6.))
-        .child(figure(
-            key,
-            "first",
-            model.first_token_label(budget),
-            "First token",
-            t,
-        ))
-        .child(figure(
-            key,
-            "reply",
-            model.reply_cost_label(budget),
-            "Per reply",
-            t,
-        ))
-        .child(figure(
-            key,
-            "context",
-            model.context.to_string(),
-            "Context",
-            t,
-        ));
-
+/// A provider tab (pink: `model_tab`): an announced tab that keeps focus in
+/// the search field when pressed.
+fn tab(id: impl Into<ElementId>, label: SharedString, viewed: bool, t: &Pink) -> Stateful<Div> {
+    let ring = t.accent;
     div()
-        .flex_1()
-        .min_w_0()
-        .p(px(14.))
-        .flex()
-        .flex_col()
-        .gap(px(14.))
-        .child(header)
-        .child(meters)
-        .child(figures)
-}
-
-fn price_label(model: &ModelOption) -> String {
-    let (lo, hi) = model.price;
-    if (hi - lo).abs() < 0.01 {
-        format!("${lo:.0}/M")
-    } else {
-        format!("${lo:.0}–{hi:.0}/M")
-    }
-}
-
-fn speed_word(range: (f32, f32)) -> &'static str {
-    if range.1 - range.0 > 0.05 {
-        return "Adapts";
-    }
-    match range.0 {
-        v if v > 0.9 => "Instant",
-        v if v > 0.6 => "Quick",
-        v if v > 0.4 => "Steady",
-        _ => "Patient",
-    }
-}
-
-fn depth_word(range: (f32, f32)) -> &'static str {
-    if range.1 - range.0 > 0.05 {
-        return "Adapts";
-    }
-    match range.0 {
-        v if v > 0.9 => "Deepest",
-        v if v > 0.7 => "Strong",
-        v if v > 0.4 => "Solid",
-        _ => "Light",
-    }
-}
-
-fn cost_word(range: (f32, f32)) -> &'static str {
-    if range.1 - range.0 > 0.05 {
-        return "Varies";
-    }
-    match range.0 {
-        v if v > 0.75 => "$$$$",
-        v if v > 0.5 => "$$$",
-        v if v > 0.25 => "$$",
-        _ => "$",
-    }
-}
-
-/// A labelled bar that glides to its value; a range adds a lighter reach.
-fn meter(
-    key: &str,
-    label: &'static str,
-    (lo, hi): (f32, f32),
-    word: &'static str,
-    opened: u32,
-    t: &Pink,
-) -> impl IntoElement {
-    // Keyed by the open count, so the bars fill from empty each time the menu opens.
-    let low = motion::follow_from(&format!("{key}-{label}-lo-{opened}"), 0., lo, GLIDE);
-    let high = motion::follow_from(&format!("{key}-{label}-hi-{opened}"), 0., hi, GLIDE);
-    div()
+        .id(id)
+        .role(Role::Tab)
+        .aria_label(label)
+        .aria_selected(viewed)
+        .tab_index(0)
+        .focus_visible(move |style| pink::focus_ring(style, ring))
+        .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+        .on_key_down(pink::swallow_activation_key)
+        .relative()
+        .w(px(TAB))
+        .h(px(TAB))
+        .rounded(px(radius::MD))
         .flex()
         .items_center()
-        .gap(px(10.))
-        .h(px(16.))
+        .justify_center()
+        .cursor_pointer()
+}
+
+/// The viewed tab's 2 px accent bar, sitting on the strip's bottom hairline
+/// (pink: `tab_indicator`).
+fn tab_indicator(t: &Pink) -> Div {
+    div()
+        .absolute()
+        .bottom(px(-4.))
+        .left(px(6.))
+        .right(px(6.))
+        .h(px(2.))
+        .rounded(px(1.))
+        .bg(t.accent)
+}
+
+/// The tab strip: the Favorites star, then one mark per provider.
+fn tabs(key: &str, s: &PickerState, t: &Pink, state: &Entity<PickerState>) -> Stateful<Div> {
+    let favorites = s.rail == Rail::Favorites;
+    let viewer = state.clone();
+    let star = tab("tab-favorites", "Favorites".into(), favorites, t)
+        .when(!favorites, |el| {
+            el.hover_wash(format!("{key}-tab-favorites"), t.fill(FillTier::Tertiary))
+        })
+        .on_click(move |_, _, cx| viewer.update(cx, |s, cx| s.view(Rail::Favorites, cx)))
         .child(
-            div()
-                .w(px(44.))
-                .flex_none()
-                .text_size(px(text::FOOTNOTE))
-                .text_color(t.text_muted)
-                .child(label),
+            svg()
+                .path(ICON_STAR_BOLD)
+                .size(px(15.))
+                .text_color(if favorites { t.text } else { t.text_muted }),
         )
-        .child(
-            div()
-                .relative()
-                .flex_1()
-                .h(px(6.))
-                .rounded_full()
-                .overflow_hidden()
-                .bg(t.fill(FillTier::Secondary))
-                .child(
-                    div()
-                        .absolute()
-                        .top_0()
-                        .left_0()
-                        .h_full()
-                        .w(relative(high.clamp(0., 1.)))
-                        .rounded_full()
-                        .bg(t.accent.opacity(0.3)),
-                )
-                .child(
-                    div()
-                        .absolute()
-                        .top_0()
-                        .left_0()
-                        .h_full()
-                        .w(relative(low.clamp(0., 1.)))
-                        .rounded_full()
-                        .bg(t.accent),
+        .when(favorites, |el| el.child(tab_indicator(t)));
+    let providers = s.props.providers.iter().enumerate().map(|(ix, provider)| {
+        let viewed = s.rail == Rail::Provider(ix);
+        let viewer = state.clone();
+        tab(("tab-provider", ix), provider.name.clone(), viewed, t)
+            .when(!viewed, |el| {
+                el.hover_wash(format!("{key}-tab-{ix}"), t.fill(FillTier::Tertiary))
+            })
+            .on_click(move |_, _, cx| viewer.update(cx, |s, cx| s.view(Rail::Provider(ix), cx)))
+            .child(
+                svg().path(provider.icon.clone()).size(px(16.)).text_color(
+                    provider
+                        .tint
+                        .unwrap_or(if viewed { t.text } else { t.text_muted }),
                 ),
+            )
+            .when(viewed, |el| el.child(tab_indicator(t)))
+    });
+    div()
+        .id("model-provider-tabs")
+        .role(Role::TabList)
+        .aria_label("Providers")
+        .flex_none()
+        .h(px(STRIP_H))
+        .px(px(layout::CARD_INSET))
+        .border_b_1()
+        .border_color(t.hairline(0.08))
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(2.))
+        .child(star)
+        .children(providers)
+}
+
+/// The search row: a magnifier and a borderless field over a full-bleed
+/// hairline (a strip, not a well).
+fn search_row(s: &PickerState, t: &Pink) -> Div {
+    div()
+        .flex_none()
+        .h(px(STRIP_H))
+        .px(px(10.))
+        .border_b_1()
+        .border_color(t.hairline(0.08))
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(8.))
+        .child(
+            svg()
+                .path(ICON_MAGNIFER)
+                .size(px(14.))
+                .flex_none()
+                .text_color(t.text_muted),
         )
         .child(
             div()
-                .w(px(46.))
-                .flex_none()
-                .flex()
-                .justify_end()
-                .overflow_hidden()
-                .text_size(px(text::CAPTION))
-                .text_color(t.text_faint)
-                .child(roll(format!("{key}-{label}-word"), word.to_string(), 6.)),
+                .flex_1()
+                .min_w_0()
+                .text_size(px(13.))
+                .child(s.search.clone()),
         )
 }
 
-/// Text that rolls up into place whenever its value changes.
-fn roll(id: String, value: String, rise: f32) -> impl IntoElement {
-    div().child(value.clone()).with_animation(
-        SharedString::from(format!("{id}-{value}")),
-        MotionSpec::new(300, EASE_OUT_QUINT).animation(),
-        move |el, k| el.relative().top(px(rise * (1. - k))).opacity(k),
+/// The model band: a fixed height on a whisper of wash between the pinned
+/// chrome above and the tray below.
+fn list(
+    key: &str,
+    s: &PickerState,
+    rows: &[Row],
+    t: &Pink,
+    state: &Entity<PickerState>,
+) -> Stateful<Div> {
+    let body = if rows.is_empty() {
+        let note = if !s.query.trim().is_empty() {
+            "No models found"
+        } else {
+            "No starred models yet — hit a row's star"
+        };
+        div()
+            .id("model-list")
+            .size_full()
+            .px(px(layout::CARD_INSET))
+            .child(pink::menu_empty(note, t))
+    } else {
+        div()
+            .id("model-list")
+            .role(Role::ListBox)
+            .aria_label("Models")
+            .size_full()
+            .overflow_y_scroll()
+            .track_scroll(&s.scroll)
+            .px(px(layout::CARD_INSET))
+            .children(
+                rows.iter()
+                    .enumerate()
+                    .map(|(ix, &row)| model_row(key, ix, row, rows.len(), s, t, state)),
+            )
+    };
+    div()
+        .id("model-list-host")
+        .relative()
+        .flex_none()
+        .h(px(LIST_H))
+        .py(px(layout::CARD_INSET))
+        .bg(t.ink(0.02))
+        .child(body)
+}
+
+/// One model row (pink: `render_model_row`). Hovering moves the shared
+/// highlight; the selected row wears the stronger wash and ring. A
+/// provider tab shows the name alone (plus an attribution), the Favorites
+/// tab adds the provider's mark and name underneath.
+fn model_row(
+    key: &str,
+    ix: usize,
+    row: Row,
+    count: usize,
+    s: &PickerState,
+    t: &Pink,
+    state: &Entity<PickerState>,
+) -> AnyElement {
+    let provider = &s.props.providers[row.p];
+    let model = &provider.models[row.m];
+    let selected = s.selected == (row.p, row.m);
+    let active = ix == s.active;
+    let starred = s.starred(row.p, row.m);
+    let compact = s.rail != Rail::Favorites;
+    let name = model.name.clone();
+
+    let label = div()
+        .text_size(px(12.5))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(t.text)
+        .child(name.clone());
+    let badge = model.tag.clone().map(|tag| new_badge(tag, t));
+    let attribution = model.attribution.clone();
+    let body = if compact {
+        div()
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(6.))
+            .child(label.flex_none().max_w_full().truncate())
+            .children(badge)
+            .when_some(attribution, |el, attribution| {
+                el.child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(px(11.))
+                        .text_color(t.text_muted)
+                        .child(attribution),
+                )
+            })
+    } else {
+        let meta = |copy: SharedString| {
+            div()
+                .flex_none()
+                .text_size(px(11.))
+                .text_color(t.text_muted)
+                .child(copy)
+        };
+        div()
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .gap(px(2.))
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .child(label.min_w_0().truncate())
+                    .children(badge),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(6.))
+                    .child(
+                        svg()
+                            .path(provider.icon.clone())
+                            .size(px(11.))
+                            .flex_none()
+                            .text_color(provider.tint.unwrap_or(t.text_muted)),
+                    )
+                    .child(meta(provider.name.clone()))
+                    .when_some(attribution, |el, attribution| {
+                        el.child(meta("·".into()))
+                            .child(meta(attribution).flex_initial().min_w_0().truncate())
+                    }),
+            )
+    };
+
+    let hover = state.clone();
+    let chooser = state.clone();
+    let star_state = state.clone();
+    let star = div()
+        .id("star")
+        .role(Role::Button)
+        .aria_label(SharedString::from(format!("Favorite {name}")))
+        .aria_toggled(if starred {
+            Toggled::True
+        } else {
+            Toggled::False
+        })
+        .flex_none()
+        .size(px(ROW_STAR))
+        .rounded(px(radius::MENU_ITEM))
+        .flex()
+        .items_center()
+        .justify_center()
+        .cursor_pointer()
+        .hover_wash(
+            format!("{key}-star-{}-{}", provider.id, model.id),
+            t.fill(FillTier::Tertiary),
+        )
+        .on_click(move |_, window, cx| {
+            cx.stop_propagation();
+            star_state.update(cx, |s, cx| s.toggle_favorite(row.p, row.m, window, cx));
+        })
+        .child(
+            svg()
+                .path(if starred { ICON_STAR_BOLD } else { ICON_STAR })
+                .size(px(13.))
+                .text_color(if starred { t.warning } else { t.text_muted }),
+        );
+
+    let el = div()
+        .id(ElementId::Name(
+            format!("model-row-{}-{}", provider.id, model.id).into(),
+        ))
+        .role(Role::ListBoxOption)
+        .aria_label(name)
+        .aria_selected(selected)
+        .aria_position_in_set(ix + 1)
+        .aria_size_of_set(count)
+        .px(px(8.))
+        .py(px(if compact { 5. } else { 6. }))
+        .rounded(px(radius::MENU_ITEM))
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(10.))
+        .cursor_pointer()
+        .when(selected, |el| {
+            el.bg(t.card_selected_bg())
+                .shadow(t.card_selected_shadows())
+        })
+        .when(!selected && active, |el| el.bg(t.ink(0.05)))
+        .on_hover(move |hovered, _, cx| {
+            if *hovered {
+                hover.update(cx, |s, cx| {
+                    if s.active != ix {
+                        s.active = ix;
+                        cx.notify();
+                    }
+                });
+            }
+        })
+        .on_click(move |_, window, cx| chooser.update(cx, |s, cx| s.pick_model(ix, window, cx)))
+        .child(body)
+        .when(ix < 9, |el| {
+            el.child(pink::kbd_hint(format!("⌘{}", ix + 1), t))
+        })
+        .child(star);
+    div().pb(px(layout::MENU_GAP)).child(el).into_any_element()
+}
+
+/// The "New" capsule beside a model's name (pink: `new_model_badge`).
+fn new_badge(label: SharedString, t: &Pink) -> Div {
+    div()
+        .flex_none()
+        .h(px(16.))
+        .px(px(5.))
+        .flex()
+        .items_center()
+        .rounded(px(radius::XS))
+        .bg(t.accent.opacity(0.14))
+        .text_size(px(10.5))
+        .line_height(px(14.))
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(t.readable_tone(t.accent, 1.0))
+        .child(label)
+}
+
+/// The "Default" marker beside a row's default choice: bare muted text
+/// (pink: `default_badge`).
+fn default_badge(t: &Pink) -> Div {
+    div()
+        .flex_none()
+        .text_size(px(11.))
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(t.text_muted)
+        .child("Default")
+}
+
+/// The traits tray pinned under the list (pink: the tray around
+/// `render_traits_sections`): the Reasoning row and the model's settings,
+/// each naming its current choice. Hidden when the model has neither.
+fn tray(
+    key: &str,
+    s: &PickerState,
+    groups: &[Group],
+    base: usize,
+    t: &Pink,
+    state: &Entity<PickerState>,
+) -> Option<Stateful<Div>> {
+    if groups.is_empty() {
+        return None;
+    }
+    let rows = groups
+        .iter()
+        .enumerate()
+        .map(|(ix, group)| tray_row(key, ix, group, base, s, t, state));
+    Some(
+        div()
+            .id("model-traits-tray")
+            .flex_none()
+            .border_t_1()
+            .border_color(t.hairline(0.08))
+            .max_h(px(TRAY_MAX_H))
+            .overflow_y_scroll()
+            .px(px(layout::CARD_INSET))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(layout::MENU_GAP))
+                    .py(px(layout::CARD_INSET))
+                    .children(rows),
+            ),
     )
 }
 
-fn figure(key: &str, name: &str, value: String, label: &'static str, t: &Pink) -> impl IntoElement {
-    div()
-        .flex_1()
-        .min_w_0()
-        .px(px(9.))
-        .py(px(7.))
-        .rounded(px(radius::MD))
-        .bg(t.fill(FillTier::Quaternary))
-        .border_1()
-        .border_color(t.border)
-        .flex()
-        .flex_col()
-        .gap(px(1.))
-        .child(
-            div()
-                .h(px(18.))
-                .overflow_hidden()
-                .text_size(px(text::BODY))
-                .line_height(px(18.))
-                .font_weight(FontWeight::SEMIBOLD)
-                .whitespace_nowrap()
-                .child(roll(format!("{key}-fig-{name}"), value, 10.)),
-        )
-        .child(
-            div()
-                .text_size(px(text::CAPTION))
-                .text_color(t.text_faint)
-                .child(label),
-        )
-}
-
-/// "Think longer" with its switch, and the budget that unfolds under it.
-fn reasoning_panel(
+/// One tray row: a 30 tall menu row with the label, the muted value and a
+/// chevron. The pointer opens its choices by resting on it; a click only
+/// closes them.
+fn tray_row(
     key: &str,
-    model: &ModelOption,
+    ix: usize,
+    group: &Group,
+    base: usize,
     s: &PickerState,
     t: &Pink,
-    state: &gpui::Entity<PickerState>,
-    on_reasoning: Option<ReasoningHandler>,
-) -> impl IntoElement {
-    // The budget stays unfolded while reasoning is on, and dims on a model
-    // without it, so the menu keeps its height while you browse.
-    let available = model.reasoning;
-    let on = s.reasoning;
-    let unfold = motion::follow(&format!("{key}-unfold"), if on { 1. } else { 0. }, GLIDE);
-    let lit = motion::follow(
-        &format!("{key}-available"),
-        if available { unfold } else { 0. },
-        MotionSpec::new(200, EASE),
-    );
-    let note: SharedString = if available {
-        "Works through the problem before it answers".into()
-    } else {
-        format!("Not available on {}", model.name).into()
-    };
-
-    let toggler = state.clone();
-    let on_toggle = on_reasoning.clone();
-    let toggle = switch(&format!("{key}-switch"), on, t)
-        .when(!available, |el| el.opacity(0.45))
-        .when(available, |el| {
-            el.cursor_pointer().on_click(move |_, window, cx| {
-                let value = toggler.update(cx, |s, cx| {
-                    s.reasoning = !s.reasoning;
-                    cx.notify();
-                    s.reasoning.then_some(s.budget)
-                });
-                if let Some(f) = on_toggle.as_ref() {
-                    f(value, window, cx);
-                }
-            })
+    state: &Entity<PickerState>,
+) -> Stateful<Div> {
+    let open = s.setting_menu == Some(ix);
+    let value = group
+        .choices
+        .iter()
+        .find(|choice| choice.selected)
+        .map(|choice| choice.label.clone())
+        .unwrap_or_default();
+    let clicker = state.clone();
+    let outside = state.clone();
+    let side = state.clone();
+    let exit = state.clone();
+    let row = pink::menu_row(
+        format!("{key}-setting-{ix}"),
+        open || s.active == base + ix,
+        t,
+    )
+    .role(Role::ComboBox)
+    .aria_label(group.label.clone())
+    .aria_value(value.clone())
+    .aria_expanded(open)
+    .relative()
+    .h(px(TRAY_ROW_H))
+    .py(px(0.))
+    .on_click(move |_, window, cx| {
+        cx.stop_propagation();
+        clicker.update(cx, |s, cx| {
+            s.active = base + ix;
+            s.close_setting();
+            TextInput::focus(&s.search, window, cx);
+            cx.notify();
         });
-
-    let thumb_x = motion::follow(
-        &format!("{key}-thumb"),
-        s.budget.index() as f32 * SEG_W,
-        MotionSpec::new(280, EASE_OUT_QUINT),
-    );
-    let thumb = if t.dark {
-        t.surface_raised
-    } else {
-        t.surface_overlay
-    };
-    let segments = Budget::ALL.iter().map(|&b| {
-        let picker = state.clone();
-        let on_pick = on_reasoning.clone();
-        let active = b == s.budget;
-        div()
-            .id(SharedString::from(format!("budget-{}", b.label())))
-            .w(px(SEG_W))
-            .h_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_pointer()
-            .text_size(px(text::FOOTNOTE))
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(if active { t.text } else { t.text_muted })
-            .when(available, |el| {
-                el.on_click(move |_, window, cx| {
-                    picker.update(cx, |s, cx| {
-                        s.budget = b;
+    })
+    // Elsewhere in the card, a press closes these choices and still
+    // reaches its target; inside the choices it stays local.
+    .on_mouse_down_out(move |event: &MouseDownEvent, _, cx| {
+        outside.update(cx, |s, cx| {
+            if s.setting_menu == Some(ix)
+                && !s
+                    .setting_bounds
+                    .is_some_and(|b| b.contains(&event.position))
+            {
+                s.close_setting();
+                cx.notify();
+            }
+        })
+    })
+    .child(
+        canvas(
+            move |bounds, window, cx| {
+                let left = bounds.right() + px(NESTED_ROOM) > window.viewport_size().width;
+                side.update(cx, |s, cx| {
+                    if s.setting_on_left != left {
+                        s.setting_on_left = left;
+                        cx.notify();
+                    }
+                });
+            },
+            move |trigger, _, window, _| {
+                if !open {
+                    return;
+                }
+                // Leaving both the row and its choices (and not heading
+                // for them) closes them.
+                window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
+                    if phase != DispatchPhase::Bubble {
+                        return;
+                    }
+                    exit.update(cx, |s, cx| {
+                        if s.setting_menu != Some(ix) {
+                            return;
+                        }
+                        let pointer = event.position;
+                        if trigger.contains(&pointer) {
+                            s.setting_origin = Some(pointer);
+                            return;
+                        }
+                        let Some(bounds) = s.setting_bounds else {
+                            return;
+                        };
+                        if bounds.contains(&pointer)
+                            || s.setting_origin.is_some_and(|origin| {
+                                submenu_corridor(origin, pointer, bounds, s.setting_on_left)
+                            })
+                        {
+                            return;
+                        }
+                        s.close_setting();
+                        s.setting_origin = None;
+                        // No keyboard-style highlight is left on the row.
+                        s.active = 0;
                         cx.notify();
                     });
-                    if let Some(f) = on_pick.as_ref() {
-                        f(Some(b), window, cx);
-                    }
-                })
-            })
-            .child(b.label())
-    });
-    let budget = div()
-        .pt(px(10.))
-        .when(!available, |el| el.opacity(0.45))
-        .flex()
-        .items_center()
-        .gap(px(12.))
-        .child(
-            div()
-                .relative()
-                .flex_none()
-                .w(px(SEG_W * 3. + 4.))
-                .h(px(28.))
-                .p(px(2.))
-                .rounded(px(radius::MD))
-                .bg(t.fill(FillTier::Secondary))
-                .child(
-                    div()
-                        .absolute()
-                        .top(px(2.))
-                        .left(px(2. + thumb_x))
-                        .w(px(SEG_W))
-                        .h(px(24.))
-                        .rounded(px(radius::SM))
-                        .bg(thumb)
-                        .shadow(vec![shadow(
-                            0.,
-                            1.,
-                            2.,
-                            0.,
-                            hsla(0., 0., 0., if t.dark { 0.4 } else { 0.12 }),
-                        )]),
-                )
-                .child(div().relative().flex().size_full().children(segments)),
+                });
+            },
         )
-        .child(
-            div()
-                .overflow_hidden()
-                .text_size(px(text::FOOTNOTE))
-                .text_color(t.text_faint)
-                .child(roll(
-                    format!("{key}-budget-note"),
-                    s.budget.note().to_string(),
-                    6.,
-                )),
-        );
+        .absolute()
+        .inset_0(),
+    )
+    .child(
+        div()
+            .flex_1()
+            .min_w_0()
+            .truncate()
+            .child(group.label.clone()),
+    )
+    .child(
+        div()
+            .max_w(px(100.))
+            .truncate()
+            .text_color(t.text_muted)
+            .child(value),
+    )
+    .child(pink::line_glyph(
+        pink::glyphs::ALT_ARROW_RIGHT,
+        12.,
+        t.text_muted,
+    ))
+    .when(open, |el| el.child(choices(key, ix, group, s, t, state)));
 
+    // Hover lives on a stable wrapper: the row owns its own hover fade.
+    let hover = state.clone();
+    let mover = state.clone();
     div()
-        .px(px(14.))
-        .pt(px(10.))
-        .pb(px(10. + 2. * unfold))
-        .flex()
-        .flex_col()
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(10.))
-                .child(
-                    div()
-                        .size(px(28.))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded(px(radius::MD))
-                        .bg(motion::mix(
-                            t.fill(FillTier::Quaternary),
-                            t.accent.opacity(if t.dark { 0.18 } else { 0.1 }),
-                            lit,
-                        ))
-                        .child(
-                            svg()
-                                .path(ICON_HOURGLASS)
-                                .size(px(16.))
-                                .text_color(motion::mix(t.text_muted, t.accent, lit)),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .child(
-                            div()
-                                .text_size(px(text::BODY))
-                                .line_height(px(18.))
-                                .font_weight(FontWeight::MEDIUM)
-                                .child("Think longer"),
-                        )
-                        .child(
-                            div()
-                                .truncate()
-                                .text_size(px(text::FOOTNOTE))
-                                .line_height(px(16.))
-                                .text_color(t.text_faint)
-                                .child(note),
-                        ),
-                )
-                .child(toggle),
-        )
-        .child(
-            div()
-                .h(px(38. * unfold))
-                .overflow_hidden()
-                .opacity(unfold)
-                .child(budget),
-        )
+        .id(("model-setting-hover", ix))
+        .on_hover(move |hovered, window, cx| {
+            let pointer = window.mouse_position();
+            hover.update(cx, |s, cx| {
+                if *hovered {
+                    s.hover_setting(ix, base + ix, pointer, cx);
+                } else if s.hover_pending == Some(ix) {
+                    s.cancel_setting_hover();
+                }
+            })
+        })
+        .on_mouse_move(move |event: &MouseMoveEvent, _, cx| {
+            mover.update(cx, |s, cx| {
+                if s.setting_menu == Some(ix) {
+                    s.setting_origin = Some(event.position);
+                } else if s.hover_pending == Some(ix) {
+                    let in_corridor =
+                        s.setting_origin
+                            .zip(s.setting_bounds)
+                            .is_some_and(|(origin, bounds)| {
+                                submenu_corridor(origin, event.position, bounds, s.setting_on_left)
+                            });
+                    let forward = s.hover_pointer.map_or(0.0, |previous| {
+                        f32::from(event.position.x - previous.x)
+                            * if s.setting_on_left { -1.0 } else { 1.0 }
+                    });
+                    if !in_corridor || forward <= -2.0 {
+                        s.active = base + ix;
+                        s.open_setting(ix, cx);
+                        s.setting_origin = Some(event.position);
+                    } else if forward >= 2.0 {
+                        // Slow but continuing progress renews the grace.
+                        s.hover_setting(ix, base + ix, event.position, cx);
+                    }
+                }
+            })
+        })
+        .child(row)
 }
 
-/// A 30×18 switch whose knob and track ease between off and on.
-fn switch(key: &str, on: bool, t: &Pink) -> Stateful<gpui::Div> {
-    let k = motion::follow(
-        key,
-        if on { 1. } else { 0. },
-        MotionSpec::new(240, EASE_OUT_QUINT),
-    );
-    let off = if t.dark {
-        t.fill(FillTier::Primary)
-    } else {
-        t.border_strong
-    };
-    div()
-        .id(SharedString::from(key.to_string()))
+/// A tray row's nested choices (pink: the `popover_card` that
+/// `render_traits_sections` hands `nested_menu`): a 232 card beside the
+/// row with an uppercase heading, the Default marker and a check.
+fn choices(
+    key: &str,
+    ix: usize,
+    group: &Group,
+    s: &PickerState,
+    t: &Pink,
+    state: &Entity<PickerState>,
+) -> AnyElement {
+    let rows = group.choices.iter().enumerate().map(|(ci, choice)| {
+        let picker = state.clone();
+        pink::menu_row(format!("{key}-choice-{ix}-{ci}"), ci == s.setting_active, t)
+            .role(Role::ListBoxOption)
+            .aria_label(choice.label.clone())
+            .aria_selected(choice.selected)
+            .h(px(TRAY_ROW_H))
+            .py(px(0.))
+            .flex_none()
+            .on_click(move |_, window, cx| {
+                cx.stop_propagation();
+                picker.update(cx, |s, cx| {
+                    s.setting_active = ci;
+                    s.pick_choice(window, cx);
+                });
+            })
+            .child(choice.label.clone())
+            .child(div().flex_1())
+            .when(choice.default, |el| el.child(default_badge(t)))
+            .when(choice.selected, |el| {
+                el.child(pink::line_glyph(pink::glyphs::CHECK, 14., t.text))
+            })
+    });
+    let measurer = state.clone();
+    let card = pink::popover_card(t)
+        .w(px(CHOICES_W))
         .relative()
-        .flex_none()
-        .w(px(30.))
-        .h(px(18.))
-        .rounded_full()
-        .bg(motion::mix(off, t.accent_strong, k))
+        .child(pink::menu_heading(&group.label, t))
         .child(
             div()
-                .absolute()
-                .top(px(2.))
-                .left(px(2. + 12. * k))
-                .size(px(14.))
-                .rounded_full()
-                .bg(gpui::white())
-                .shadow(vec![shadow(0., 1., 2., 0., hsla(0., 0., 0., 0.25))]),
+                .id("model-setting-choices")
+                .role(Role::ListBox)
+                .aria_label(group.label.clone())
+                .max_h(px(CHOICES_MAX_H))
+                .overflow_y_scroll()
+                .flex()
+                .flex_col()
+                .gap(px(layout::MENU_GAP))
+                .children(rows),
         )
+        .child(
+            canvas(
+                move |bounds, _, cx| measurer.update(cx, |s, _| s.setting_bounds = Some(bounds)),
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .inset_0(),
+        );
+    let left = s.setting_on_left;
+    div()
+        .absolute()
+        .top_0()
+        .size_0()
+        .when(left, |el| el.left(px(-NESTED_GAP)))
+        .when(!left, |el| el.right(px(-NESTED_GAP)))
+        .child(
+            deferred(
+                anchored()
+                    .anchor(if left {
+                        Anchor::TopRight
+                    } else {
+                        Anchor::TopLeft
+                    })
+                    .snap_to_window_with_margin(px(layout::WINDOW_MARGIN))
+                    .child(motion::menu_in_from(
+                        SharedString::from(format!("{key}-setting-menu-{ix}")),
+                        MENU_RISE_DOWN,
+                        div().occlude().child(card),
+                    )),
+            )
+            .with_priority(2),
+        )
+        .into_any_element()
+}
+
+/// The chip's tooltip: the model over its configuration (pink: pickers.rs
+/// `ControlTooltip`).
+struct ControlTooltip {
+    title: SharedString,
+    detail: Option<SharedString>,
+}
+
+impl ControlTooltip {
+    fn view(title: SharedString, detail: Option<SharedString>, cx: &mut App) -> AnyView {
+        cx.new(|_| Self { title, detail }).into()
+    }
+}
+
+impl Render for ControlTooltip {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = Pink::get(cx);
+        let wraps = self.detail.as_ref().is_some_and(|detail| {
+            detail
+                .split('\n')
+                .any(|line| line.chars().count() > TOOLTIP_WRAP_CHARS)
+        });
+        pink::tooltip_card(&t)
+            .when(wraps, |card| card.w(px(layout::TOOLTIP_MAX_WIDTH)))
+            .when(!wraps, |card| card.whitespace_nowrap())
+            .px(px(10.))
+            .py(px(7.))
+            .flex()
+            .flex_col()
+            .gap(px(2.))
+            .text_size(px(12.))
+            .child(
+                div()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(t.text)
+                    .child(self.title.clone()),
+            )
+            .when_some(self.detail.clone(), |card, detail| {
+                card.children(detail.split('\n').map(|line| {
+                    div()
+                        .text_size(px(11.))
+                        .text_color(t.text_muted)
+                        .child(SharedString::from(line.to_string()))
+                }))
+            })
+    }
 }
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |_, cx| {
         let t = Pink::get(cx);
-        let hint: Hsla = t.text_faint;
+        // pink composer.rs: the opaque composer pill, its textarea and the
+        // controls row (attach, the model chip, the recessed Send disc).
+        let attach = div()
+            .id("mp-attach")
+            .size(px(28.))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_full()
+            .cursor_pointer()
+            .hover_wash("mp-story-attach", t.ink(0.10))
+            .child(
+                svg()
+                    .path(ICON_PAPERCLIP)
+                    .size(px(16.))
+                    .relative()
+                    .left(px(1.))
+                    .text_color(t.text_muted),
+            );
+        let send = div()
+            .size(px(28.))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_full()
+            .bg(t.ink(0.08))
+            .child(
+                svg()
+                    .path(ICON_ARROW_UP)
+                    .size(px(14.))
+                    .text_color(t.text.opacity(0.35)),
+            );
         div()
-            .h(px(420.))
-            .w(px(600.))
+            .w(px(640.))
+            .h(px(520.))
             .flex()
             .flex_col()
             .justify_end()
             .font_family(pink::SANS)
             .child(
-                pink::card(&t)
+                div()
                     .w_full()
-                    .rounded(px(radius::XL))
-                    .p(px(8.))
-                    .flex()
-                    .flex_col()
+                    .rounded(px(radius::COMPOSER))
+                    .border_1()
+                    .border_color(t.border)
+                    .bg(t.input_glass_bg())
+                    .shadow(pink::shadow_lg())
                     .child(
                         div()
-                            .h(px(44.))
-                            .px(px(8.))
-                            .pt(px(6.))
-                            .text_size(px(text::CALLOUT))
-                            .text_color(hint)
-                            .child("Ask Helix to draft, review or explain…"),
+                            .h(px(60.))
+                            .px(px(16.))
+                            .pt(px(16.))
+                            .text_size(px(14.))
+                            .line_height(px(22.75))
+                            .text_color(t.placeholder)
+                            .child("Ask for a change, a review or a plan…"),
                     )
                     .child(
                         div()
+                            .h(px(46.))
+                            .px(px(10.))
+                            .pt(px(2.))
+                            .pb(px(12.))
                             .flex()
                             .items_center()
-                            .gap(px(4.))
-                            .child(pink::icon_button(
-                                "mp-attach",
-                                ICON_PLUS,
-                                ControlSize::Md,
-                                &t,
-                            ))
                             .child(
-                                ModelPicker::new("model-picker", default_models())
-                                    .selected("helix-pro")
-                                    .reasoning(true, Budget::Balanced)
-                                    .default_open(true)
-                                    .autofocus(true),
+                                div().flex().items_center().gap(px(2.)).child(attach).child(
+                                    ModelPicker::new("model-picker", default_providers())
+                                        .selected("helix-4-pro")
+                                        .default_open(true)
+                                        .autofocus(true),
+                                ),
                             )
                             .child(div().flex_1())
-                            .child(pink::icon_button("mp-voice", ICON_MIC, ControlSize::Md, &t))
-                            .child(
-                                pink::button("mp-send", ButtonKind::Primary, ControlSize::Md, &t)
-                                    .w(px(28.))
-                                    .px_0()
-                                    .child(
-                                        pink::glyph(ICON_SEND, ControlSize::Md)
-                                            .text_color(t.on_solid),
-                                    ),
-                            ),
+                            .child(send),
                     ),
             )
     })
@@ -1390,23 +2226,48 @@ mod tests {
     use super::*;
 
     #[test]
-    fn figures_follow_the_budget() {
-        let pro = ModelOption::new("pro", "Pro")
-            .first_token(0.8, 0.8)
-            .price(9., 9.);
-        assert_eq!(pro.first_token_label(None), "0.8 s");
-        assert_eq!(pro.first_token_label(Some(Budget::Balanced)), "4.8 s");
-        assert_eq!(pro.reply_cost_label(None), "$0.0063");
-        assert_eq!(pro.reply_cost_label(Some(Budget::Deep)), "$0.222");
+    fn reasoning_defaults_to_high_then_medium() {
+        use ReasoningLevel::*;
+        assert_eq!(default_reasoning(&[Low, Medium, High, Max]), Some(High));
+        assert_eq!(default_reasoning(&[Minimal, Low, Medium]), Some(Medium));
+        assert_eq!(default_reasoning(&[Minimal, Low]), Some(Minimal));
+        assert_eq!(default_reasoning(&[]), None);
+        assert_eq!(clamp_reasoning(Some(Max), &[Low, Medium, High]), Some(High));
+        assert_eq!(clamp_reasoning(Some(Low), &[Low, Medium, High]), Some(Low));
     }
 
     #[test]
-    fn routed_models_show_ranges() {
-        let auto = ModelOption::new("auto", "Auto")
-            .first_token(0.3, 1.6)
-            .price(1.2, 30.);
-        assert_eq!(auto.first_token_label(None), "0.3–1.6 s");
-        assert!(auto.reply_cost_label(None).starts_with("≤ $"));
-        assert_eq!(speed_word((0.4, 0.9)), "Adapts");
+    fn rows_stay_in_the_viewed_tab() {
+        let providers = default_providers();
+        let none = |_: usize, _: usize| false;
+        let helix = scoped_rows(&providers, Rail::Provider(0), "", none);
+        assert_eq!(helix.len(), providers[0].models.len());
+        // Stars lead a provider tab.
+        let star = |p: usize, m: usize| p == 0 && m == 3;
+        assert_eq!(
+            scoped_rows(&providers, Rail::Provider(0), "", star)[0],
+            Row { p: 0, m: 3 }
+        );
+        assert_eq!(
+            scoped_rows(&providers, Rail::Favorites, "", star),
+            vec![Row { p: 0, m: 3 }]
+        );
+        // A query ranks prefix hits first and never leaves the tab.
+        let flash = scoped_rows(&providers, Rail::Provider(0), "flash", none);
+        assert_eq!(flash.len(), 2);
+        assert!(scoped_rows(&providers, Rail::Provider(1), "flash", none).is_empty());
+        // Attribution is searchable too.
+        assert_eq!(
+            scoped_rows(&providers, Rail::Provider(2), "north", none),
+            vec![Row { p: 2, m: 0 }]
+        );
+    }
+
+    #[test]
+    fn steps_wrap() {
+        assert_eq!(step(0, 3, true), 2);
+        assert_eq!(step(2, 3, false), 0);
+        assert_eq!(step(5, 3, true), 2);
+        assert_eq!(step(0, 0, false), 0);
     }
 }
