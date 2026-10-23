@@ -1,24 +1,31 @@
-//! OTP Input – the verification code field: one box per character, a focus
-//! ring that glides from box to box, paste, a calm shake on errors and a
-//! morph into Verified.
+//! OTP Input – a one-time code typed one character per cell, in pink's
+//! dialog-field chrome.
 //!
-//! Clean: white cells with hairline shadows, a thin blue outline and caret,
-//! quiet gray helper text and a tab-style "Resend code" button. Classic:
-//! gray boxes with 1px borders that turn white once filled, a dark ring with
-//! a soft halo, and a blue "Resend code" link.
+//! A pink component. Pink's only code entry is the sign-in dialog's
+//! paste-code step (pink: settings/accounts.rs `render_login_dialog`,
+//! `LoginFlow::PasteCode`): a mono `dialog_field`, a plain red 12px line
+//! under it when the code is refused, and the dialog's primary button
+//! reading "Verifying…" at half opacity while the code is checked. This field
+//! keeps that anatomy and splits the field into one cell per character:
+//! every cell is a `dialog_field` plate (radius 8, `separator(false)` edge,
+//! Quaternary fill), the active cell wears pink's 2px inset focus ring, which
+//! glides from cell to cell over `QUICK` like the segmented thumb, and an
+//! empty active cell shows pink's composer caret (2px accent, solid while
+//! typing, blinking 500ms on / 500ms off when idle).
 //!
 //! The field keeps the code itself (or follows `value` when controlled):
 //! typing replaces the character under the ring, Backspace removes it, the
-//! arrows, Home and End move the ring, and a pasted "482 913" fills the boxes
-//! one after another. Verifying runs a light band over the cells, a wrong
-//! code shakes, shows the message and clears for the next try, a right one
-//! folds the boxes into a single "Verified" chip. A resend countdown runs
-//! below.
+//! arrows, Home and End move the ring, and a pasted "482 913" fills the cells
+//! one after another. While verifying the cells are read-only and their
+//! characters dim; a refused code prints the error line and clears for the
+//! next try; an accepted one prints the success label behind a check. The
+//! resend row counts down on a disabled ghost button that turns into
+//! "Resend code" (pink's pairing sheet: an "expires in m:ss" countdown and
+//! `ghost_action` buttons, settings/connections.rs).
 //!
 //! ```ignore
 //! OtpInput::new("otp")
 //!     .separator(true)
-//!     .align(OtpAlign::Center)
 //!     .on_complete(|code, _, _| println!("check {code}"))
 //!     .on_resend(|_, _| {})
 //! ```
@@ -29,42 +36,54 @@ use std::sync::Arc;
 use web_time::{Duration, Instant};
 
 use gpui::{
-    AnyView, App, BoxShadow, Context, CursorStyle, ElementId, FocusHandle, FontWeight, Hsla,
-    IntoElement, KeyDownEvent, Keystroke, MouseButton, MouseDownEvent, Pixels, Point, SharedString,
-    StyledText, Task, TextRun, Window, canvas, div, font, linear_color_stop, linear_gradient,
-    point, prelude::*, px, svg,
+    AnimationExt, AnyView, App, Context, CursorStyle, ElementId, FocusHandle, IntoElement,
+    KeyDownEvent, Keystroke, MouseButton, MouseDownEvent, Pixels, Point, Role, SharedString, Task,
+    Window, canvas, div, point, prelude::*, px,
 };
 
 use crate::{
-    ActiveTheme, HoverFill, Look,
-    motion::{
-        self, AnimationExt, CubicBezier, EASE, EASE_IN_OUT, EASE_OUT, EASE_OUT_QUINT, LINEAR,
-        MotionSpec,
+    HoverFill,
+    motion::{self, QUICK, STATUS_SWAP, TOOL_ROW_STAGGER_MS},
+    pink::{
+        self, ButtonKind, ControlSize, Pink, TextStyle, TypeStyleExt, glyphs, layout, loaders,
+        radius, space,
     },
-    primitives::{SANS, black_a, color_mix, hex, hexa, shadow, white_a},
     story,
 };
 
 pub const NAME: &str = "OTP Input";
-pub const DESCRIPTION: &str = "The verification code field done right – a gliding focus ring, paste and SMS autofill, a calm shake on errors and a morph into Verified";
+pub const DESCRIPTION: &str = "A one-time code typed one character per cell – dialog-field plates under a gliding focus ring, paste that fills every cell, a plain red line when the code is refused and a resend countdown";
 
 type Handler = Rc<dyn Fn(&mut Window, &mut App)>;
 type CodeHandler = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
+
+/// Largest cell; the default when no `fit_width` is given.
+const CELL: f32 = 40.;
+/// Cells grow to fill a `fit_width` up to this size, and shrink to
+/// [`CELL_MIN`] (a `ControlSize::Md` control) at the narrowest.
+const CELL_MAX: f32 = 44.;
+const CELL_MIN: f32 = 28.;
+const GAP: f32 = space::S8;
+/// The dash between the two halves of the code.
+const SEP_W: f32 = space::S8;
+/// A refused code stays readable this long before it clears.
+const CLEAR_AFTER: Duration = Duration::from_millis(700);
 
 /// Where the code stands, set by the owner after checking it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum OtpStatus {
     #[default]
     Idle,
-    /// Gray digits under a passing light band; the field is read-only.
+    /// The cells are read-only and their characters dim (pink keeps the field
+    /// and relabels the dialog's primary button "Verifying…").
     Verifying,
-    /// A shake, red cells and the error message; the code clears for a retry.
+    /// The error line under the cells; the code clears for a retry.
     Error,
-    /// The boxes fold into the "Verified" chip.
+    /// The success line under the cells; the field stays read-only.
     Success,
 }
 
-/// Placement of the boxes and the lines below them.
+/// Placement of the cells and the lines below them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum OtpAlign {
     #[default]
@@ -79,7 +98,7 @@ enum Separator {
     After(usize),
 }
 
-/// "0:24"
+/// "0:24" (pink's pairing sheet "expires in {}:{:02}").
 fn clock(seconds: u32) -> String {
     format!("{}:{:02}", seconds / 60, seconds % 60)
 }
@@ -99,8 +118,9 @@ fn clean_code(text: &str, numeric: bool, length: usize) -> String {
         .collect()
 }
 
-/// Typing with the active box selected: the character under the ring is
-/// replaced (or appended in the first empty box). `None` when nothing changes.
+/// Typing with the active cell selected: the character under the ring is
+/// replaced (or appended in the first empty cell). `None` when nothing
+/// changes.
 fn type_into(
     code: &str,
     active: usize,
@@ -125,7 +145,7 @@ fn type_into(
 }
 
 /// A paste: a whole code replaces everything; a part is written from the
-/// active box on.
+/// active cell on.
 fn paste_into(
     code: &str,
     active: usize,
@@ -148,7 +168,7 @@ fn paste_into(
 }
 
 /// Backspace or Delete: the active character is selected, so both remove
-/// it; in an empty box Backspace takes the one before.
+/// it; in an empty cell Backspace takes the one before.
 fn delete_at(code: &str, active: usize, backspace: bool) -> Option<(String, usize)> {
     let mut next = code.to_string();
     if active < code.len() {
@@ -162,473 +182,67 @@ fn delete_at(code: &str, active: usize, backspace: bool) -> Option<(String, usiz
     }
 }
 
+/// Pink's caret cadence (composer.rs `caret_visible`): solid for the first
+/// half-period after any keystroke or caret move, then 500ms off, 500ms on.
+fn caret_visible(ms_since_activity: u64) -> bool {
+    (ms_since_activity / layout::CARET_BLINK_MS).is_multiple_of(2)
+}
+
 // ---------------------------------------------------------------------------
-// Tokens
+// Layout
 // ---------------------------------------------------------------------------
 
-/// The `--ui-otpc-*` (Clean) and `--ui-otp-*` (Classic) tokens.
-struct Palette {
-    /// Clean cells and the chip; Classic filled boxes and the pill.
-    card: Hsla,
-    /// Box background while empty (Classic `--ui-otp-bg`).
-    empty: Hsla,
-    /// The box edge: Clean hairline, Classic 1px border.
-    edge: Hsla,
-    /// Classic border of a filled box (`--ui-otp-line-strong`).
-    edge_filled: Hsla,
-    /// Clean `--ui-otpc-lift`.
-    lift: Vec<BoxShadow>,
-    ink: Hsla,
-    text: Hsla,
-    muted: Hsla,
-    faint: Hsla,
-    /// Box background while verifying (Clean wash on the card, Classic `--ui-otp-wait`).
-    wait: Hsla,
-    /// Clean pressed button.
-    fill: Hsla,
-    /// Clean button hover.
-    wash: Hsla,
-    shine: Hsla,
-    /// Clean: the 0.5px outline. Classic: the 1.5px inset ring.
-    ring: Hsla,
-    /// Clean: the 2px focus glow. Classic: the 4px halo.
-    halo: Hsla,
-    /// Classic: the extra 6px keyboard-focus ring.
-    focus: Hsla,
-    caret: Hsla,
-    danger: Hsla,
-    /// Clean: error cell fill (the tint over the card).
-    danger_fill: Hsla,
-    /// Classic: error border, ring halo.
-    danger_edge: Hsla,
-    danger_halo: Hsla,
-    success: Hsla,
-    /// Clean: the chip's success fill (the tint over the card).
-    success_fill: Hsla,
-    /// Classic: the blue Resend link.
-    accent: Hsla,
-}
-
-impl Palette {
-    fn get(look: Look, cx: &App) -> Self {
-        let dark = cx.is_dark();
-        match (look, dark) {
-            (Look::Clean, false) => {
-                let card = hex(0xffffff);
-                Palette {
-                    card,
-                    empty: card,
-                    edge: black_a(0.06),
-                    edge_filled: black_a(0.06),
-                    lift: vec![
-                        shadow(0., 1., 1., -1., black_a(0.1)),
-                        shadow(0., 1., 2., 0., black_a(0.05)),
-                    ],
-                    ink: black_a(0.88),
-                    text: black_a(0.61),
-                    muted: black_a(0.45),
-                    faint: black_a(0.27),
-                    wait: over(card, black_a(0.03)),
-                    fill: black_a(0.06),
-                    wash: black_a(0.03),
-                    shine: white_a(0.82),
-                    ring: hexa(0x0060e2, 0.765),
-                    halo: hexa(0x0060e2, 0.35),
-                    focus: hexa(0x0060e2, 0.),
-                    caret: hexa(0x0060e2, 0.765),
-                    danger: hex(0xe5484d),
-                    danger_fill: over(card, hexa(0xe5484d, 0.08)),
-                    danger_edge: black_a(0.06),
-                    danger_halo: hexa(0x0060e2, 0.35),
-                    success: hex(0x1a9a52),
-                    success_fill: over(card, hexa(0x1a9a52, 0.08)),
-                    accent: hexa(0x0060e2, 0.765),
-                }
-            }
-            (Look::Clean, true) => {
-                let card = hex(0x1c1c1e);
-                Palette {
-                    card,
-                    empty: card,
-                    edge: white_a(0.1),
-                    edge_filled: white_a(0.1),
-                    lift: vec![shadow(0., 1., 2., 0., black_a(0.4))],
-                    ink: white_a(0.9),
-                    text: white_a(0.62),
-                    muted: white_a(0.46),
-                    faint: white_a(0.3),
-                    wait: over(card, white_a(0.03)),
-                    fill: white_a(0.08),
-                    wash: white_a(0.03),
-                    shine: white_a(0.1),
-                    ring: hex(0x4d8dff),
-                    halo: hexa(0x4d8dff, 0.5),
-                    focus: hexa(0x4d8dff, 0.),
-                    caret: hex(0x4d8dff),
-                    danger: hex(0xff6369),
-                    danger_fill: over(card, hexa(0xff6369, 0.14)),
-                    danger_edge: white_a(0.1),
-                    danger_halo: hexa(0x4d8dff, 0.5),
-                    success: hex(0x3ec27a),
-                    success_fill: over(card, hexa(0x3ec27a, 0.14)),
-                    accent: hex(0x4d8dff),
-                }
-            }
-            (Look::Classic, false) => Palette {
-                card: hex(0xffffff),
-                empty: hex(0xfafafa),
-                edge: hex(0xe4e4e7),
-                edge_filled: hex(0xcfcfd4),
-                lift: Vec::new(),
-                ink: hex(0x171717),
-                text: hex(0x404040),
-                muted: hex(0x8f8f8f),
-                faint: hex(0xc4c4c8),
-                wait: hex(0xf2f2f3),
-                fill: hex(0xf2f2f3),
-                wash: hex(0xfafafa),
-                shine: white_a(0.95),
-                ring: hex(0x171717),
-                halo: hexa(0x171717, 0.07),
-                focus: hexa(0x171717, 0.22),
-                caret: hex(0x171717),
-                danger: hex(0xe5484d),
-                danger_fill: hex(0xfafafa),
-                danger_edge: hexa(0xe5484d, 0.6),
-                danger_halo: hexa(0xe5484d, 0.12),
-                success: hex(0x2f9e5b),
-                success_fill: hex(0xffffff),
-                accent: hex(0x2f6bff),
-            },
-            (Look::Classic, true) => Palette {
-                card: hex(0x19191b),
-                empty: hex(0x1d1d20),
-                edge: hex(0x2a2a2e),
-                edge_filled: hex(0x3a3a40),
-                lift: Vec::new(),
-                ink: hex(0xededed),
-                text: hex(0xc8c8cc),
-                muted: hex(0x8b8b92),
-                faint: hex(0x4a4a50),
-                wait: hex(0x1d1d20),
-                fill: hex(0x1d1d20),
-                wash: hex(0x1d1d20),
-                shine: white_a(0.07),
-                ring: hex(0xededed),
-                halo: white_a(0.08),
-                focus: white_a(0.3),
-                caret: hex(0xededed),
-                danger: hex(0xff6369),
-                danger_fill: hex(0x1d1d20),
-                danger_edge: hexa(0xff6369, 0.55),
-                danger_halo: hexa(0xff6369, 0.14),
-                success: hex(0x4cc38a),
-                success_fill: hex(0x19191b),
-                accent: hex(0x6d8bff),
-            },
-        }
-    }
-}
-
-/// `color` composited over `base`: translucent tints are flattened onto the
-/// card so the hairline shadows under them stay hidden, as in the browser.
-fn over(base: Hsla, color: Hsla) -> Hsla {
-    color_mix(Hsla { a: 1., ..color }, base, color.a)
-}
-
-/// Sizes from the two stylesheets.
-struct Metrics {
-    /// `--ui-otp-box`: the largest box.
-    box_max: f32,
-    gap: f32,
-    sep_width: f32,
-    /// The container query: under this width the gaps tighten.
-    narrow_below: f32,
-    narrow_gap: f32,
-    narrow_sep: f32,
-    sep_height: f32,
-    /// Clean subtracts 6px for the ring's glow.
-    inset: f32,
-    height_ratio: f32,
-    radius_ratio: f32,
-    field_pad: f32,
-    caret_width: f32,
-    font_size: Pixels,
-    line_height: Pixels,
-    msg_pad: f32,
-    msg_size: f32,
-    msg_line: f32,
-    alert: f32,
-    resend_gap: f32,
-    pill_pad: (f32, f32),
-    pill_size: f32,
-    check: f32,
-}
-
-impl Metrics {
-    fn get(look: Look) -> Self {
-        match look {
-            Look::Clean => Metrics {
-                box_max: 40.,
-                gap: 8.,
-                sep_width: 8.,
-                narrow_below: 340.,
-                narrow_gap: 6.,
-                narrow_sep: 6.,
-                sep_height: 1.,
-                inset: 6.,
-                height_ratio: 1.1,
-                radius_ratio: 0.2,
-                field_pad: 3.,
-                caret_width: 1.,
-                font_size: px(13.),
-                line_height: px(20.),
-                msg_pad: 8.,
-                msg_size: 12.,
-                msg_line: 16.,
-                alert: 14.,
-                resend_gap: 12.,
-                pill_pad: (12., 14.),
-                pill_size: 13.,
-                check: 16.,
-            },
-            Look::Classic => Metrics {
-                box_max: 48.,
-                gap: 8.,
-                sep_width: 10.,
-                narrow_below: 360.,
-                narrow_gap: 6.,
-                narrow_sep: 8.,
-                sep_height: 2.,
-                inset: 0.,
-                height_ratio: 1.18,
-                radius_ratio: 0.24,
-                field_pad: 0.,
-                caret_width: 1.5,
-                font_size: px(13.5),
-                line_height: px(13.5 * 1.45),
-                msg_pad: 10.,
-                msg_size: 13.,
-                msg_line: 13. * 1.45,
-                alert: 15.,
-                resend_gap: 14.,
-                pill_pad: (12., 15.),
-                pill_size: 14.,
-                check: 17.,
-            },
-        }
-    }
-}
-
-/// Where the boxes sit, from the width the field lays out in.
+/// Where the cells sit, from the width the field lays out in.
 #[derive(Clone)]
 struct Layout {
     n: usize,
     size: f32,
-    height: f32,
-    radius: f32,
-    gap: f32,
     sep_at: Option<usize>,
-    sep_width: f32,
     width: f32,
-    font: f32,
-    line: f32,
 }
 
 impl Layout {
-    fn new(m: &Metrics, look: Look, n: usize, sep_at: Option<usize>, fit: Option<f32>) -> Self {
-        let narrow = fit.is_some_and(|w| w <= m.narrow_below);
-        let gap = if narrow { m.narrow_gap } else { m.gap };
-        let sep_width = if narrow { m.narrow_sep } else { m.sep_width };
-        let sep_space = if sep_at.is_some() {
-            gap + sep_width
-        } else {
-            0.
-        };
+    fn new(n: usize, sep_at: Option<usize>, fit: Option<f32>) -> Self {
+        let sep_space = if sep_at.is_some() { GAP + SEP_W } else { 0. };
+        let fixed = (n as f32 - 1.) * GAP + sep_space;
         let size = match fit {
-            Some(w) => m
-                .box_max
-                .min((w - m.inset - (n as f32 - 1.) * gap - sep_space) / n as f32)
-                .max(16.),
-            None => m.box_max,
-        };
-        let height = size * m.height_ratio;
-        let font = match look {
-            Look::Clean => (size * 0.375).min(15.),
-            Look::Classic => size * 0.46,
-        };
-        let line = match look {
-            Look::Clean => 24.,
-            Look::Classic => font * 1.45,
+            Some(w) => ((w - fixed) / n as f32).clamp(CELL_MIN, CELL_MAX),
+            None => CELL,
         };
         Layout {
             n,
             size,
-            height,
-            radius: size * m.radius_ratio,
-            gap,
             sep_at,
-            sep_width,
-            width: n as f32 * size + (n as f32 - 1.) * gap + sep_space,
-            font,
-            line,
+            width: n as f32 * size + fixed,
         }
     }
 
-    fn box_x(&self, i: usize) -> f32 {
+    fn cell_x(&self, i: usize) -> f32 {
         let after_sep = self.sep_at.is_some_and(|k| i >= k);
-        i as f32 * (self.size + self.gap)
-            + if after_sep {
-                self.gap + self.sep_width
-            } else {
-                0.
-            }
+        i as f32 * (self.size + GAP) + if after_sep { GAP + SEP_W } else { 0. }
     }
 
     fn sep_x(&self) -> Option<f32> {
-        self.sep_at.map(|k| k as f32 * (self.size + self.gap))
+        self.sep_at.map(|k| k as f32 * (self.size + GAP))
     }
 
-    /// A click picks the box under the pointer (4px of slack to its right).
+    /// A click picks the cell under the pointer (4px of slack to its right).
     fn pick(&self, x: f32) -> usize {
         (0..self.n)
-            .find(|&i| x < self.box_x(i) + self.size + 4.)
+            .find(|&i| x < self.cell_x(i) + self.size + 4.)
             .unwrap_or(self.n - 1)
     }
-}
 
-// ---------------------------------------------------------------------------
-// Transitions
-// ---------------------------------------------------------------------------
-
-/// One CSS transition on one value: retargeting starts from where the value
-/// is now, after the spec's delay.
-#[derive(Clone, Copy)]
-struct Track {
-    from: f32,
-    to: f32,
-    start: Instant,
-    delay: f32,
-    duration: f32,
-    curve: CubicBezier,
-}
-
-impl Track {
-    fn at(value: f32) -> Self {
-        Track {
-            from: value,
-            to: value,
-            start: Instant::now(),
-            delay: 0.,
-            duration: 0.,
-            curve: LINEAR,
+    /// The characters' type on the ladder: Title2 17/22 in full-size cells,
+    /// Title3 15/20 and Body 13/18 (pink's code size) as they shrink.
+    fn style(&self) -> TextStyle {
+        if self.size >= CELL {
+            TextStyle::Title2
+        } else if self.size >= 32. {
+            TextStyle::Title3
+        } else {
+            TextStyle::Body
         }
-    }
-
-    fn elapsed(&self, now: Instant) -> f32 {
-        now.saturating_duration_since(self.start).as_secs_f32() * 1000.
-    }
-
-    fn value(&self, now: Instant) -> f32 {
-        let t = self.elapsed(now) - self.delay;
-        if self.from == self.to || t >= self.duration {
-            return self.to;
-        }
-        if t <= 0. {
-            return self.from;
-        }
-        motion::lerp(self.from, self.to, self.curve.eval(t / self.duration))
-    }
-
-    fn moving(&self, now: Instant) -> bool {
-        self.from != self.to && self.elapsed(now) < self.delay + self.duration
-    }
-
-    fn go(&mut self, to: f32, spec: MotionSpec, now: Instant, snap: bool) {
-        if to == self.to {
-            return;
-        }
-        let scale = motion::speed_scale();
-        *self = Track {
-            from: if snap { to } else { self.value(now) },
-            to,
-            start: now,
-            delay: spec.delay_ms as f32 * scale,
-            duration: spec.duration_ms as f32 * scale,
-            curve: spec.curve,
-        };
-    }
-}
-
-const fn spec(ms: u64, curve: CubicBezier) -> MotionSpec {
-    MotionSpec::new(ms, curve)
-}
-
-#[derive(Clone, Copy)]
-struct Tracks {
-    ring_x: Track,
-    ring: Track,
-    focus: Track,
-    error: Track,
-    verify: Track,
-    slide: Track,
-    fade: Track,
-    sep: Track,
-    pill: Track,
-    pill_fill: Track,
-    pill_show: Track,
-    label: Track,
-    check: Track,
-    msg: Track,
-    msg_show: Track,
-    msg_rise: Track,
-    resend: Track,
-}
-
-impl Tracks {
-    fn new() -> Self {
-        let zero = Track::at(0.);
-        Tracks {
-            ring_x: zero,
-            ring: zero,
-            focus: zero,
-            error: zero,
-            verify: zero,
-            slide: zero,
-            fade: zero,
-            sep: zero,
-            pill: zero,
-            pill_fill: zero,
-            pill_show: zero,
-            label: zero,
-            check: zero,
-            msg: zero,
-            msg_show: zero,
-            msg_rise: zero,
-            resend: Track::at(1.),
-        }
-    }
-
-    fn all(&self) -> [&Track; 17] {
-        [
-            &self.ring_x,
-            &self.ring,
-            &self.focus,
-            &self.error,
-            &self.verify,
-            &self.slide,
-            &self.fade,
-            &self.sep,
-            &self.pill,
-            &self.pill_fill,
-            &self.pill_show,
-            &self.label,
-            &self.check,
-            &self.msg,
-            &self.msg_show,
-            &self.msg_rise,
-            &self.resend,
-        ]
     }
 }
 
@@ -666,29 +280,30 @@ struct OtpState {
     code: String,
     /// The code when uncontrolled.
     inner: String,
-    /// The box the next character goes to.
+    /// The cell the next character goes to.
     idx: usize,
     error_shown: bool,
-    /// The wrong code fades out.
+    /// The refused code fades out.
     clearing: bool,
-    /// No typing between the shake and the clearing.
+    /// No typing between the error and the clearing.
     locked: bool,
     /// Seconds until Resend.
     left: u32,
     resend_in: u32,
     prev_code: String,
-    /// Per box: when its character arrived (keys the pop) and its stagger.
+    /// The code this field's own last edit produced: any other new code
+    /// came from the owner, and the ring moves to its end.
+    edited: Option<String>,
+    /// Per cell: when its character arrived (keys its entrance) and its
+    /// stagger.
     stamps: Vec<u64>,
     delays: Vec<u64>,
     counter: u64,
     prev_status: OtpStatus,
-    status_at: Instant,
-    shake_at: Option<Instant>,
-    /// The boxes' top-left on screen, for picking a box under the pointer.
+    /// The last keystroke or caret move: the caret stays solid after it.
+    blink_anchor: Instant,
+    /// The cells' top-left on screen, for picking a cell under the pointer.
     origin: Rc<Cell<Point<Pixels>>>,
-    fresh: bool,
-    tracks: Tracks,
-    filled: Vec<Track>,
     // The latest props, for timers and listeners.
     layout: Option<Layout>,
     numeric: bool,
@@ -696,11 +311,14 @@ struct OtpState {
     on_change: Option<CodeHandler>,
     clear_task: Option<Task<()>>,
     countdown: Option<Task<()>>,
+    /// Repaints every half-period while the caret can blink (pink's
+    /// `blink_task`); dropped on blur so an idle field schedules nothing.
+    blink_task: Option<Task<()>>,
 }
 
 impl OtpState {
     fn new(props: &OtpInput, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let focus = cx.focus_handle();
+        let focus = cx.focus_handle().tab_stop(true);
         if props.auto_focus && !props.disabled {
             window.focus(&focus, cx);
         }
@@ -714,6 +332,7 @@ impl OtpState {
             idx: code.len().min(props.length.max(1) - 1),
             inner: code.clone(),
             prev_code: code.clone(),
+            edited: None,
             code,
             error_shown: false,
             clearing: false,
@@ -724,18 +343,15 @@ impl OtpState {
             delays: Vec::new(),
             counter: 0,
             prev_status: props.status,
-            status_at: Instant::now(),
-            shake_at: None,
+            blink_anchor: Instant::now(),
             origin: Rc::new(Cell::new(point(px(0.), px(0.)))),
-            fresh: true,
-            tracks: Tracks::new(),
-            filled: Vec::new(),
             layout: None,
             numeric: props.numeric,
             controlled: props.value.is_some(),
             on_change: None,
             clear_task: None,
             countdown: None,
+            blink_task: None,
         };
         state.start_countdown(window, cx);
         state
@@ -769,6 +385,26 @@ impl OtpState {
         }));
     }
 
+    /// Keeps the caret blinking while it can show (pink `caret_shown`).
+    fn arm_blink(&mut self, on: bool, cx: &mut Context<Self>) {
+        if !on {
+            self.blink_task = None;
+            return;
+        }
+        if self.blink_task.is_none() {
+            self.blink_task = Some(cx.spawn(async move |this, cx| {
+                loop {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(layout::CARET_BLINK_MS))
+                        .await;
+                    if this.update(cx, |_, cx| cx.notify()).is_err() {
+                        break;
+                    }
+                }
+            }));
+        }
+    }
+
     fn commit(&mut self, next: String, next_idx: usize, user: bool) -> Effects {
         let n = self.length();
         let changed = next != self.code;
@@ -788,7 +424,9 @@ impl OtpState {
             }
         }
         self.idx = next_idx.min(next.len()).min(n - 1);
+        self.edited = Some(next.clone());
         self.code = next;
+        self.blink_anchor = Instant::now();
         effects
     }
 
@@ -833,6 +471,7 @@ impl OtpState {
             };
             if let Some(target) = target {
                 self.idx = target.min(last);
+                self.blink_anchor = Instant::now();
                 return Some(Effects::default());
             }
         }
@@ -866,35 +505,30 @@ impl OtpState {
         )
     }
 
-    /// The `useEffect` on status: error shakes, shows the message and clears
-    /// the code after a beat.
+    /// A new status: an error shows its line and, after a beat, clears the
+    /// code for the next try.
     fn status_changed(
         &mut self,
         status: OtpStatus,
         clear_on_error: bool,
-        reduced: bool,
-        now: Instant,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.prev_status = status;
-        self.status_at = now;
         if status != OtpStatus::Error {
             self.error_shown = false;
             return;
         }
         self.error_shown = true;
-        if !reduced {
-            self.shake_at = Some(now);
-        }
         if !clear_on_error {
             return;
         }
         self.locked = true;
+        let fade = motion::exit_of(STATUS_SWAP)
+            .total()
+            .mul_f32(motion::speed_scale());
         self.clear_task = Some(cx.spawn_in(window, async move |this, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(700))
-                .await;
+            cx.background_executor().timer(CLEAR_AFTER).await;
             if this
                 .update(cx, |s, cx| {
                     s.clearing = true;
@@ -904,9 +538,7 @@ impl OtpState {
             {
                 return;
             }
-            cx.background_executor()
-                .timer(Duration::from_millis(280))
-                .await;
+            cx.background_executor().timer(fade).await;
             let Ok((on_change, effects)) = this.update(cx, |s, cx| {
                 s.clearing = false;
                 s.locked = false;
@@ -922,6 +554,13 @@ impl OtpState {
     }
 }
 
+/// The line under the cells.
+#[derive(Clone, PartialEq)]
+enum Note {
+    Error(SharedString),
+    Success(SharedString),
+}
+
 /// Everything one frame draws, read out of the state.
 struct Frame {
     code: String,
@@ -929,31 +568,11 @@ struct Frame {
     focused: bool,
     read_only: bool,
     clearing: bool,
+    caret: bool,
     stamps: Vec<u64>,
     delays: Vec<u64>,
     left: u32,
-    filled: Vec<f32>,
-    ring_x: f32,
-    ring: f32,
-    focus: f32,
-    error: f32,
-    verify: f32,
-    slide: f32,
-    fade: f32,
-    sep: f32,
-    pill: f32,
-    pill_fill: f32,
-    pill_show: f32,
-    label: f32,
-    check: f32,
-    msg: f32,
-    msg_show: f32,
-    msg_rise: f32,
-    resend: f32,
-    /// ms since the status changed (the shimmer's clock).
-    status_ms: f32,
-    shake: f32,
-    animating: bool,
+    note: Option<Note>,
 }
 
 // ---------------------------------------------------------------------------
@@ -980,7 +599,6 @@ pub struct OtpInput {
     disabled: bool,
     auto_focus: bool,
     fit_width: Option<Pixels>,
-    look: Option<Look>,
 }
 
 impl OtpInput {
@@ -1004,17 +622,16 @@ impl OtpInput {
             disabled: false,
             auto_focus: false,
             fit_width: None,
-            look: None,
         }
     }
 
-    /// Number of boxes (6).
+    /// Number of cells (6).
     pub fn length(mut self, length: usize) -> Self {
         self.length = length.max(1);
         self
     }
 
-    /// A small dash between the boxes, in the middle.
+    /// A small dash between the cells, in the middle.
     pub fn separator(mut self, on: bool) -> Self {
         self.separator = if on {
             Separator::Middle
@@ -1024,9 +641,9 @@ impl OtpInput {
         self
     }
 
-    /// A small dash after `boxes` boxes.
-    pub fn separator_after(mut self, boxes: usize) -> Self {
-        self.separator = Separator::After(boxes);
+    /// A small dash after `cells` cells.
+    pub fn separator_after(mut self, cells: usize) -> Self {
+        self.separator = Separator::After(cells);
         self
     }
 
@@ -1056,7 +673,7 @@ impl OtpInput {
         self
     }
 
-    /// Called once the last box is filled – typed or pasted.
+    /// Called once the last cell is filled – typed or pasted.
     pub fn on_complete(
         mut self,
         handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
@@ -1070,25 +687,25 @@ impl OtpInput {
         self
     }
 
-    /// Shown below the boxes while the status is `Error`.
+    /// Shown under the cells while the status is `Error`.
     pub fn error_message(mut self, message: impl Into<SharedString>) -> Self {
         self.error_message = message.into();
         self
     }
 
-    /// Clears the boxes shortly after an error, ready for the next try (on).
+    /// Clears the cells shortly after an error, ready for the next try (on).
     pub fn clear_on_error(mut self, clear: bool) -> Self {
         self.clear_on_error = clear;
         self
     }
 
-    /// Text in the chip after a successful check ("Verified").
+    /// Shown under the cells once the code is accepted ("Verified").
     pub fn success_label(mut self, label: impl Into<SharedString>) -> Self {
         self.success_label = label.into();
         self
     }
 
-    /// Shows "Resend code" below the boxes once the countdown is over.
+    /// Shows the resend row under the cells: a countdown, then "Resend code".
     pub fn on_resend(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_resend = Some(Rc::new(handler));
         self
@@ -1115,32 +732,21 @@ impl OtpInput {
         self
     }
 
-    /// The width the field lays out in. Like the CSS container query, the
-    /// boxes shrink to fit it and the gaps tighten on narrow widths; unset,
-    /// the boxes keep their full size.
+    /// The width the field lays out in: the cells grow or shrink to fill it,
+    /// like pink's full-width `dialog_field`. Unset, the cells are 40px.
     pub fn fit_width(mut self, width: Pixels) -> Self {
         self.fit_width = Some(width);
         self
     }
 
-    /// Overrides the global Clean/Classic look for this field.
-    pub fn look(mut self, look: Look) -> Self {
-        self.look = Some(look);
-        self
-    }
-
-    /// Reads the state for this frame and moves every transition toward
-    /// where the props now put it.
+    /// Reads the state for this frame.
     fn sync(
         &self,
         s: &mut OtpState,
         layout: &Layout,
-        look: Look,
-        reduced: bool,
         window: &mut Window,
         cx: &mut Context<OtpState>,
     ) -> Frame {
-        let now = Instant::now();
         let n = layout.n;
         s.layout = Some(layout.clone());
         s.numeric = self.numeric;
@@ -1152,8 +758,8 @@ impl OtpInput {
             None => clean_code(&s.inner, self.numeric, n),
         };
 
-        // Every character remembers when it arrived, so it pops in once;
-        // pasted codes arrive one after another.
+        // Every character remembers when it arrived, so it settles in once;
+        // a pasted code arrives one cell after another.
         if s.prev_code != s.code {
             let before: Vec<char> = s.prev_code.chars().collect();
             let changed: Vec<bool> = s
@@ -1170,179 +776,58 @@ impl OtpInput {
                 if c {
                     s.counter += 1;
                     s.stamps[i] = s.counter;
-                    s.delays[i] = if bulk { (i - first) as u64 * 45 } else { 0 };
+                    s.delays[i] = if bulk {
+                        (i - first) as u64 * TOOL_ROW_STAGGER_MS
+                    } else {
+                        0
+                    };
                 }
             }
+            if s.edited.as_deref() != Some(s.code.as_str()) {
+                s.idx = s.code.len().min(n - 1);
+            }
             s.prev_code = s.code.clone();
+            s.blink_anchor = Instant::now();
         }
+        s.edited = None;
 
         if self.status != s.prev_status {
-            s.status_changed(self.status, self.clear_on_error, reduced, now, window, cx);
+            s.status_changed(self.status, self.clear_on_error, window, cx);
         }
 
-        let len = s.code.len();
-        let active = s.active();
-        let focused = s.focus.is_focused(window);
         let busy = matches!(self.status, OtpStatus::Verifying | OtpStatus::Success);
         let read_only = busy || s.locked || self.disabled;
-        let show_error = self.status == OtpStatus::Error && s.error_shown;
-        let show_ring = !busy && !self.disabled && (focused || (len > 0 && len < n));
-        let success = self.status == OtpStatus::Success;
-        let snap = reduced || s.fresh;
-        s.fresh = false;
+        let focused = !self.disabled && s.focus.is_focused(window);
+        let active = s.active();
+        let empty_cell = s.code.chars().nth(active).is_none();
+        let can_blink = focused && !read_only && empty_cell && window.is_window_active();
+        s.arm_blink(can_blink, cx);
+        let since = s.blink_anchor.elapsed().as_millis() as u64;
 
-        let on = |b: bool| if b { 1. } else { 0. };
-        let t = &mut s.tracks;
-        t.ring_x
-            .go(layout.box_x(active), spec(260, EASE_OUT_QUINT), now, snap);
-        t.ring.go(on(show_ring), spec(180, EASE), now, snap);
-        t.focus.go(
-            on(focused && look == Look::Classic),
-            spec(220, EASE),
-            now,
-            snap,
-        );
-        t.error.go(on(show_error), spec(220, EASE), now, snap);
-        t.verify.go(
-            on(self.status == OtpStatus::Verifying),
-            spec(220, EASE),
-            now,
-            snap,
-        );
-        // The cells slide together and fade while one frame morphs into the chip
-        if success {
-            t.slide.go(1., spec(340, EASE_OUT_QUINT), now, snap);
-            t.fade.go(1., spec(220, EASE).with_delay(120), now, snap);
-            t.sep.go(1., spec(200, EASE), now, snap);
-            t.pill
-                .go(1., spec(460, EASE_OUT_QUINT).with_delay(220), now, snap);
-            t.pill_fill
-                .go(1., spec(300, EASE).with_delay(300), now, snap);
-            t.pill_show
-                .go(1., spec(160, EASE).with_delay(120), now, snap);
-            t.label.go(1., spec(240, EASE).with_delay(460), now, snap);
-            t.check
-                .go(1., spec(380, EASE_OUT_QUINT).with_delay(560), now, snap);
-        } else {
-            t.slide.go(0., spec(380, EASE_OUT_QUINT), now, snap);
-            t.fade.go(0., spec(260, EASE), now, snap);
-            t.sep.go(0., spec(200, EASE), now, snap);
-            t.pill.go(0., spec(300, EASE_OUT_QUINT), now, snap);
-            t.pill_fill.go(0., spec(300, EASE), now, snap);
-            t.pill_show
-                .go(0., spec(160, EASE).with_delay(140), now, snap);
-            t.label.go(0., spec(160, EASE), now, snap);
-            t.check.go(0., spec(120, EASE), now, snap);
-        }
-        // The error message grows in below, then folds away
-        t.msg
-            .go(on(show_error), spec(300, EASE_OUT_QUINT), now, snap);
-        if show_error {
-            t.msg_show.go(1., spec(200, EASE).with_delay(60), now, snap);
-            t.msg_rise
-                .go(1., spec(300, EASE_OUT_QUINT).with_delay(60), now, snap);
-        } else {
-            t.msg_show.go(0., spec(200, EASE), now, snap);
-            t.msg_rise.go(0., spec(300, EASE_OUT_QUINT), now, snap);
-        }
-        t.resend.go(on(!success), spec(220, EASE), now, snap);
-
-        s.filled.resize(n, Track::at(0.));
-        for (i, track) in s.filled.iter_mut().enumerate() {
-            track.go(on(i < len), spec(220, EASE), now, snap);
-        }
-
-        let scale = motion::speed_scale();
-        let status_ms = now.saturating_duration_since(s.status_at).as_secs_f32() * 1000. / scale;
-        let shake = s.shake_at.map_or(0., |at| {
-            let p = now.saturating_duration_since(at).as_secs_f32() * 1000. / (420. * scale);
-            if p >= 1. {
-                0.
-            } else {
-                shake_offset(EASE_OUT.eval(p))
-            }
-        });
-        if shake == 0. {
-            s.shake_at = None;
-        }
-
-        let t = &s.tracks;
-        let animating = t.all().iter().any(|t| t.moving(now))
-            || s.filled.iter().any(|t| t.moving(now))
-            || s.shake_at.is_some()
-            || (self.status == OtpStatus::Verifying && !reduced);
+        let note = match self.status {
+            OtpStatus::Error if s.error_shown => Some(Note::Error(self.error_message.clone())),
+            OtpStatus::Success => Some(Note::Success(self.success_label.clone())),
+            _ => None,
+        };
         Frame {
             code: s.code.clone(),
             active,
             focused,
             read_only,
             clearing: s.clearing,
+            caret: can_blink && caret_visible(since),
             stamps: s.stamps.clone(),
             delays: s.delays.clone(),
             left: s.left,
-            filled: s.filled.iter().map(|t| t.value(now)).collect(),
-            ring_x: t.ring_x.value(now),
-            ring: t.ring.value(now),
-            focus: t.focus.value(now),
-            error: t.error.value(now),
-            verify: t.verify.value(now),
-            slide: t.slide.value(now),
-            fade: t.fade.value(now),
-            sep: t.sep.value(now),
-            pill: t.pill.value(now),
-            pill_fill: t.pill_fill.value(now),
-            pill_show: t.pill_show.value(now),
-            label: t.label.value(now),
-            check: t.check.value(now),
-            msg: t.msg.value(now),
-            msg_show: t.msg_show.value(now),
-            msg_rise: t.msg_rise.value(now),
-            resend: t.resend.value(now),
-            status_ms,
-            shake,
-            animating,
+            note,
         }
-    }
-}
-
-/// The shake keyframes: none, -6px, 5px, -3px, 2px, none.
-fn shake_offset(p: f32) -> f32 {
-    const KEYS: [f32; 6] = [0., -6., 5., -3., 2., 0.];
-    let x = p.clamp(0., 1.) * 5.;
-    let i = (x.floor() as usize).min(4);
-    motion::lerp(KEYS[i], KEYS[i + 1], x - i as f32)
-}
-
-/// `ui-otp-shimmer`: -120% → 120% over the first 55% of 1.3s, then rest.
-fn shimmer_position(ms: f32) -> Option<f32> {
-    if ms < 0. {
-        return None;
-    }
-    let phase = (ms % 1300.) / 1300.;
-    Some(if phase < 0.55 {
-        motion::lerp(-1.2, 1.2, EASE_IN_OUT.eval(phase / 0.55))
-    } else {
-        1.2
-    })
-}
-
-/// `ui-otp-blink`: 1 → 0 → 1 over 1.1s.
-fn blink(t: f32) -> f32 {
-    if t < 0.5 {
-        1. - EASE_IN_OUT.eval(t * 2.)
-    } else {
-        EASE_IN_OUT.eval((t - 0.5) * 2.)
     }
 }
 
 impl RenderOnce for OtpInput {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let look = self.look.unwrap_or(cx.look());
-        let clean = look == Look::Clean;
-        let p = Palette::get(look, cx);
-        let m = Metrics::get(look);
+        let t = Pink::get(cx);
         let reduced = motion::reduced_motion(cx);
-        let hair = (1. / window.scale_factor()).max(0.5);
         let n = self.length.max(1);
         let sep_at = match self.separator {
             Separator::None => None,
@@ -1350,7 +835,7 @@ impl RenderOnce for OtpInput {
             Separator::After(k) => Some(k),
         }
         .filter(|&k| k > 0 && k < n);
-        let layout = Layout::new(&m, look, n, sep_at, self.fit_width.map(f32::from));
+        let layout = Layout::new(n, sep_at, self.fit_width.map(f32::from));
         let key = self.id.to_string();
 
         let state = window.use_keyed_state(
@@ -1358,10 +843,7 @@ impl RenderOnce for OtpInput {
             cx,
             |window, cx| OtpState::new(&self, window, cx),
         );
-        let f = state.update(cx, |s, cx| self.sync(s, &layout, look, reduced, window, cx));
-        if f.animating {
-            window.request_animation_frame();
-        }
+        let f = state.update(cx, |s, cx| self.sync(s, &layout, window, cx));
         let (focus_handle, origin) = {
             let s = state.read(cx);
             (s.focus.clone(), s.origin.clone())
@@ -1371,284 +853,103 @@ impl RenderOnce for OtpInput {
         let blocked =
             matches!(self.status, OtpStatus::Verifying | OtpStatus::Success) || self.disabled;
 
-        // ----- Boxes -----
-        let lift: Vec<BoxShadow> = p
-            .lift
-            .iter()
-            .map(|s| BoxShadow {
-                color: s.color.opacity(1. - f.verify),
-                ..s.clone()
-            })
-            .collect();
-        let box_shadow = |edge: Hsla| {
-            let mut shadows = vec![shadow(0., 0., 0., hair, edge)];
-            shadows.extend(lift.iter().cloned());
-            shadows
+        let size = layout.size;
+        let style = layout.style();
+        let (font, line) = (style.size(), style.line_height());
+        // pink's busy field: the characters drop to the description tone
+        let ink = if verifying {
+            t.readable_muted(0.85)
+        } else {
+            t.text
         };
-        let scale = motion::lerp(1., 0.7, f.slide);
-        let (w, h) = (layout.size * scale, layout.height * scale);
-        let mut boxes = Vec::with_capacity(n);
+
+        // ----- Cells: one dialog_field plate per character -----
+        // pink: popover.rs `dialog_field`, the code in the theme's mono font
+        // (accounts.rs `render_login_dialog`)
+        let mut cells = Vec::with_capacity(n);
         for i in 0..n {
-            let filled = f.filled.get(i).copied().unwrap_or(0.);
-            let slide_x = ((n as f32 - 1.) / 2. - i as f32) * (layout.size + layout.gap) * f.slide;
-            let left = layout.box_x(i) + (layout.size - w) / 2. + slide_x;
-            let top = (layout.height - h) / 2.;
-            let (bg, fg) = if clean {
-                let bg = motion::mix(p.card, p.wait, f.verify);
-                let fg = motion::mix(p.ink, p.text, f.verify);
-                (
-                    motion::mix(bg, p.danger_fill, f.error),
-                    motion::mix(fg, p.danger, f.error),
-                )
-            } else {
-                let bg = motion::mix(motion::mix(p.empty, p.card, filled), p.wait, f.verify);
-                (bg, motion::mix(p.ink, p.text, f.verify))
-            };
-            let mut cell = div()
+            let mut cell = pink::dialog_field(&t)
                 .absolute()
-                .left(px(left))
-                .top(px(top))
-                .w(px(w))
-                .h(px(h))
-                .rounded(px(layout.radius * scale))
+                .left(px(layout.cell_x(i)))
+                .top_0()
+                .w(px(size))
+                .h(px(size))
+                .p_0()
                 .flex()
                 .items_center()
                 .justify_center()
-                .overflow_hidden()
-                .bg(bg)
-                .text_color(fg)
-                .text_size(px(layout.font * scale))
-                .line_height(px(layout.line))
-                .font_weight(FontWeight::MEDIUM)
-                .when(f.fade > 0., |d| d.opacity(1. - f.fade));
-            cell = if clean {
-                cell.shadow(box_shadow(p.edge))
-            } else {
-                let edge =
-                    motion::mix(motion::mix(p.edge, p.edge_filled, filled), p.edge, f.verify);
-                cell.border_1()
-                    .border_color(motion::mix(edge, p.danger_edge, f.error))
-            };
-
+                .font_family(pink::MONO)
+                .text_size(px(font))
+                .line_height(px(line))
+                .text_color(ink);
             if let Some(ch) = f.code.chars().nth(i) {
                 let stamp = f.stamps.get(i).copied().unwrap_or(0);
-                let size = layout.font * scale;
                 let glyph = div().relative().child(ch.to_string());
                 cell = if reduced {
                     cell.child(glyph.when(f.clearing, |d| d.opacity(0.)))
                 } else if f.clearing {
-                    // The wrong code fades out, right to left
-                    let spec = MotionSpec::new(240, EASE).with_delay((n - i) as u64 * 22);
+                    // The refused code leaves over pink's exit of the status swap
                     cell.child(glyph.with_animation(
                         ElementId::Name(format!("out-{i}-{stamp}").into()),
-                        spec.animation(),
-                        move |el, t| {
-                            el.opacity(1. - t)
-                                .top(px(-4. * t))
-                                .text_size(px(size * motion::lerp(1., 0.8, t)))
-                        },
+                        motion::exit_of(STATUS_SWAP).animation(),
+                        |el, t| el.opacity(1. - t),
                     ))
                 } else {
-                    // Digits pop in – a small lift, growing from 0.7
+                    // A character arrives like pink's status label: a fade
+                    // and a 2px settle over STATUS_SWAP
                     let delay = f.delays.get(i).copied().unwrap_or(0);
-                    let spec = MotionSpec::new(280, EASE_OUT_QUINT).with_delay(delay);
                     cell.child(glyph.with_animation(
-                        ElementId::Name(format!("pop-{i}-{stamp}").into()),
-                        spec.animation(),
-                        move |el, t| {
-                            el.opacity(t)
-                                .top(px(4. * (1. - t)))
-                                .text_size(px(size * motion::lerp(0.7, 1., t)))
-                        },
+                        ElementId::Name(format!("in-{i}-{stamp}").into()),
+                        STATUS_SWAP.with_delay(delay).animation(),
+                        |el, t| el.opacity(t).top(px(2. * (1. - t))),
                     ))
                 };
             }
-
-            // Verifying: a lighter band passes over the cells, one after another
-            if verifying
-                && !reduced
-                && let Some(pos) = shimmer_position(f.status_ms - i as f32 * 70.)
-            {
-                // `linear-gradient(transparent 20%, shine 50%, transparent 80%)`
-                // as two two-stop halves
-                let clear = p.shine.opacity(0.);
-                cell = cell.child(
-                    div()
-                        .absolute()
-                        .top_0()
-                        .left(px(pos * w))
-                        .w(px(w))
-                        .h_full()
-                        .flex()
-                        .child(div().w(px(w * 0.2)))
-                        .child(div().w(px(w * 0.3)).h_full().bg(linear_gradient(
-                            90.,
-                            linear_color_stop(clear, 0.),
-                            linear_color_stop(p.shine, 1.),
-                        )))
-                        .child(div().w(px(w * 0.3)).h_full().bg(linear_gradient(
-                            90.,
-                            linear_color_stop(p.shine, 0.),
-                            linear_color_stop(clear, 1.),
-                        ))),
-                );
-            }
-            boxes.push(cell);
+            cells.push(cell);
         }
 
         let sep = layout.sep_x().map(|x| {
             div()
                 .absolute()
                 .left(px(x))
-                .top(px((layout.height - m.sep_height) / 2.))
-                .w(px(layout.sep_width))
-                .h(px(m.sep_height))
-                .rounded(px(1.))
-                .bg(p.faint)
-                .opacity(1. - f.sep)
+                .top(px((size - 1.) / 2.))
+                .w(px(SEP_W))
+                .h(px(1.))
+                .bg(t.decorative_muted(0.5))
         });
 
-        // ----- The gliding ring and its caret -----
-        let ring = (f.ring > 0.).then(|| {
-            let x = f.ring_x;
-            let outline = |spread: f32, width: f32, color: Hsla| {
-                div()
-                    .absolute()
-                    .left(px(x - spread))
-                    .top(px(-spread))
-                    .w(px(layout.size + spread * 2.))
-                    .h(px(layout.height + spread * 2.))
-                    .rounded(px(layout.radius + spread))
-                    .border(px(width))
-                    .border_color(color)
-            };
-            let caret_on = f.focused && f.code.chars().nth(f.active).is_none() && !f.read_only;
-            let caret_h = if clean {
-                (layout.height * 0.42).min(18.)
-            } else {
-                layout.height * 0.4
-            };
-            let caret = caret_on.then(|| {
-                let bar = div()
-                    .absolute()
-                    .left(px(x + (layout.size - m.caret_width) / 2.))
-                    .top(px((layout.height - caret_h) / 2.))
-                    .w(px(m.caret_width))
-                    .h(px(caret_h))
-                    .rounded(px(1.))
-                    .bg(motion::mix(
-                        p.caret,
-                        p.danger,
-                        if clean { 0. } else { f.error },
-                    ));
-                if reduced {
-                    bar.into_any_element()
-                } else {
-                    bar.with_animation(
-                        "caret",
-                        gpui::Animation::new(Duration::from_millis(1100)).repeat(),
-                        |el, t| el.opacity(blink(t)),
-                    )
-                    .into_any_element()
-                }
-            });
-            let layer = div()
+        // ----- The focus ring and the caret -----
+        // pink: theme.rs `focus_ring` (2px inset), gliding like the
+        // segmented thumb over QUICK
+        let show_ring = f.focused && !f.read_only;
+        let ring_x = motion::follow(&format!("{key}-ring-x"), layout.cell_x(f.active), QUICK);
+        let ring_on = motion::follow(
+            &format!("{key}-ring"),
+            if show_ring { 1. } else { 0. },
+            QUICK,
+        );
+        let ring = (ring_on > 0.).then(|| {
+            div()
                 .absolute()
+                .left(px(ring_x))
                 .top_0()
-                .left_0()
-                .size_full()
-                .opacity(f.ring);
-            if clean {
-                layer
-                    .child(outline(2., 2., p.halo))
-                    .child(outline(hair, hair, p.ring))
-                    .children(caret)
-            } else {
-                // The keyboard-focus ring outranks the red error ring in the CSS
-                let error = f.error * (1. - f.focus);
-                layer
-                    .when(f.focus > 0., |d| {
-                        d.child(outline(6., 6., p.focus.opacity(f.focus)))
-                    })
-                    .child(outline(4., 4., motion::mix(p.halo, p.danger_halo, error)))
-                    .child(outline(0., 1.5, motion::mix(p.ring, p.danger, error)))
-                    .children(caret)
-            }
+                .size(px(size))
+                .rounded(px(radius::MD))
+                .shadow(t.focus_ring_shadows())
+                .opacity(ring_on)
         });
-
-        // ----- The Verified chip -----
-        let pill = (f.pill_show > 0.).then(|| {
-            let label_w = text_width(
-                window,
-                &self.success_label,
-                px(m.pill_size),
-                FontWeight::MEDIUM,
-            );
-            let inner_w = m.pill_pad.0 + m.check + 6. + f32::from(label_w) + m.pill_pad.1;
-            let pw = motion::lerp(layout.width, inner_w, f.pill);
-            let (ph, pr) = if clean {
-                (layout.height, layout.radius)
-            } else {
-                let ph = motion::lerp(layout.height, 36., f.pill);
-                (ph, motion::lerp(layout.radius, 999., f.pill).min(ph / 2.))
-            };
-            let folder = if clean { "clean/" } else { "" };
-            // The check draws itself left to right (the stroke-dashoffset reveal)
-            let reveal = if f.check > 0. {
-                0.1875 + 0.625 * f.check
-            } else {
-                0.
-            };
-            let check = div().size(px(m.check)).flex_none().child(
-                div()
-                    .w(px(m.check * reveal))
-                    .h(px(m.check))
-                    .overflow_hidden()
-                    .child(
-                        svg()
-                            .path(format!("icons/otp-input/{folder}check.svg"))
-                            .size(px(m.check))
-                            .text_color(p.success),
-                    ),
-            );
-            let chip = div()
+        // pink: composer.rs caret quad, 2px wide and one line tall
+        let caret = f.caret.then(|| {
+            div()
                 .absolute()
-                .left(px((layout.width - pw) / 2.))
-                .top(px((layout.height - ph) / 2.))
-                .w(px(pw))
-                .h(px(ph))
-                .rounded(px(pr))
-                .overflow_hidden()
-                .opacity(f.pill_show)
-                .bg(motion::mix(p.card, p.success_fill, f.pill_fill))
-                .child(
-                    div()
-                        .absolute()
-                        .top_0()
-                        .left(px((pw - inner_w) / 2.))
-                        .w(px(inner_w))
-                        .h_full()
-                        .flex()
-                        .items_center()
-                        .gap(px(6.))
-                        .pl(px(m.pill_pad.0))
-                        .text_size(px(m.pill_size))
-                        .line_height(px(20.))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(p.ink)
-                        .whitespace_nowrap()
-                        .opacity(f.label)
-                        .child(check)
-                        .child(self.success_label.clone()),
-                );
-            if clean {
-                chip.shadow(box_shadow(p.edge))
-            } else {
-                chip.border_1().border_color(p.edge_filled)
-            }
+                .left(px(ring_x + (size - layout::CARET_WIDTH) / 2.))
+                .top(px((size - line) / 2.))
+                .w(px(layout::CARET_WIDTH))
+                .h(px(line))
+                .bg(t.caret)
         });
 
-        // ----- Input: keys, paste, picking a box -----
+        // ----- Input: keys, paste, picking a cell -----
         let on_change = self.on_change.clone();
         let on_complete = self.on_complete.clone();
         let key_state = state.clone();
@@ -1679,6 +980,7 @@ impl RenderOnce for OtpInput {
                 if let Some(layout) = &s.layout {
                     s.idx = layout.pick(x).min(s.code.len()).min(layout.n - 1);
                 }
+                s.blink_anchor = Instant::now();
                 cx.notify();
             });
         };
@@ -1692,13 +994,14 @@ impl RenderOnce for OtpInput {
         .left_0()
         .size_full();
 
-        let slots = div()
-            .id("slots")
+        let field = div()
+            .id("cells")
+            .role(Role::TextInput)
+            .aria_label("Verification code")
             .relative()
             .flex_none()
             .w(px(layout.width))
-            .h(px(layout.height))
-            .left(px(f.shake))
+            .h(px(size))
             .when(!self.disabled, |d| d.track_focus(&focus_handle))
             .cursor(if f.read_only {
                 CursorStyle::Arrow
@@ -1712,148 +1015,94 @@ impl RenderOnce for OtpInput {
                     window.blur(cx);
                 }
             })
-            .children(boxes)
+            .children(cells)
             .children(sep)
             .children(ring)
-            .children(pill)
+            .children(caret)
             .child(tracker);
 
-        let field = div()
-            .flex()
-            .w_full()
-            .min_w_0()
-            .py(px(m.field_pad))
-            .when(center, |d| d.justify_center())
-            .child(slots);
-
-        // ----- The error message -----
-        let msg_full = m.msg_pad + m.msg_line;
-        let folder = if clean { "clean/" } else { "" };
-        let msg = div()
-            .w_full()
-            .h(px(msg_full * f.msg))
-            .overflow_hidden()
-            .when(f.msg > 0. || f.msg_show > 0., |d| {
-                d.child(
-                    div()
-                        .relative()
-                        .top(px(-4. * (1. - f.msg_rise)))
-                        .opacity(f.msg_show)
-                        .pt(px(m.msg_pad))
-                        .flex()
-                        .items_center()
-                        .when(center, |d| d.justify_center())
-                        .text_size(px(m.msg_size))
-                        .line_height(px(m.msg_line))
-                        .text_color(p.text)
-                        .child(
-                            svg()
-                                .path(format!("icons/otp-input/{folder}alert.svg"))
-                                .size(px(m.alert))
-                                .flex_none()
-                                .mr(px(6.))
-                                .text_color(p.danger),
-                        )
-                        .child(self.error_message.clone()),
-                )
-            });
-
-        // ----- Resend -----
-        let resend = self.on_resend.clone().map(|on_resend| {
-            let size = px(if clean { 12. } else { 13. });
-            let zero = text_width(window, "0", size, FontWeight::NORMAL);
-            let time = div()
-                .min_w(zero * 3.4)
-                .when(clean, |d| d.text_color(p.ink))
-                .child(clock(f.left));
-            let swap: gpui::AnyElement = if f.left > 0 {
-                motion::rise_in(
-                    "swap-wait",
-                    spec(260, EASE_OUT_QUINT),
-                    3.,
-                    div()
-                        .flex()
-                        .text_color(p.text)
-                        .child("Resend in\u{a0}")
-                        .child(time),
-                )
-                .into_any_element()
-            } else {
-                let can = !blocked;
-                let resend_state = state.clone();
-                let button = div()
-                    .id("resend")
-                    .when(can, |d| {
-                        d.cursor_pointer().on_click(move |_, window, cx| {
-                            resend_state.update(cx, |s, cx| {
-                                s.left = s.resend_in;
-                                s.start_countdown(window, cx);
-                                cx.notify();
-                            });
-                            on_resend(window, cx);
-                        })
-                    })
-                    .child("Resend code");
-                let button = if clean {
-                    let edge = p.edge.opacity(0.5 / hair);
-                    let button = button
-                        .py(px(4. - hair))
-                        .px(px(10. - hair))
-                        .rounded(px(6.))
-                        .border(px(hair))
-                        .border_color(edge)
-                        .text_size(px(13.))
-                        .line_height(px(20.))
-                        .font_weight(FontWeight::MEDIUM);
-                    if can {
-                        button
-                            .hover_fill_fg(
-                                format!("{key}-resend"),
-                                p.wash.opacity(0.),
-                                p.wash,
-                                p.text,
-                                p.ink,
-                            )
-                            .active(|s| s.bg(p.fill))
-                    } else {
-                        button.text_color(p.faint)
-                    }
-                } else {
-                    let button = button
-                        .px(px(8.))
-                        .py(px(6.))
-                        .mx(px(-8.))
-                        .my(px(-6.))
-                        .font_weight(FontWeight::MEDIUM);
-                    if can {
-                        button.text_color(p.accent).hover(|s| s.underline())
-                    } else {
-                        button.text_color(p.muted)
-                    }
-                };
-                motion::rise_in("swap-go", spec(260, EASE_OUT_QUINT), 3., button).into_any_element()
+        // ----- The line under the cells -----
+        // pink: the paste-code error, `mt 8`, 12px in red-300 at 90%
+        // (accounts.rs `render_login_dialog`); success mirrors it in green
+        // behind a check, one glyph and one word
+        let note = f.note.map(|note| {
+            let id = match &note {
+                Note::Error(text) => loaders::label_id(&format!("{key}-error"), text),
+                Note::Success(text) => loaders::label_id(&format!("{key}-ok"), text),
             };
-            let gap = if clean {
-                px(8.)
-            } else {
-                text_width(window, "x x", size, FontWeight::NORMAL)
-                    - text_width(window, "xx", size, FontWeight::NORMAL)
+            let line = div()
+                .flex()
+                .items_center()
+                .gap(px(space::S6))
+                .when(center, |d| d.justify_center())
+                .type_style(TextStyle::Footnote);
+            let line = match note {
+                Note::Error(text) => line
+                    .text_color(t.readable_tone(t.danger_muted, 0.9))
+                    .child(text),
+                Note::Success(text) => line
+                    .text_color(t.readable_tone(t.success_muted, 0.9))
+                    .child(
+                        pink::line_glyph(
+                            glyphs::CHECK,
+                            pink::icon_size::SM,
+                            t.readable_icon(t.success),
+                        )
+                        .flex_none()
+                        .size(px(pink::icon_size::SM)),
+                    )
+                    .child(text),
             };
             div()
+                .w_full()
+                .mt(px(space::S8))
+                .child(motion::status_swap(id, line))
+        });
+
+        // ----- Resend -----
+        // pink: the pairing sheet's countdown and `ghost_action` buttons
+        // (connections.rs), a disabled ghost counting down, then enabled
+        let resend = self.on_resend.clone().map(|on_resend| {
+            let can = f.left == 0 && !blocked;
+            let label: SharedString = if f.left > 0 {
+                format!("Resend in {}", clock(f.left)).into()
+            } else {
+                "Resend code".into()
+            };
+            let resend_state = state.clone();
+            let button = pink::button_enabled(
+                format!("{key}-resend"),
+                ButtonKind::Ghost,
+                ControlSize::Md,
+                can,
+                &t,
+            )
+            .aria_label(label.clone())
+            .font_features(pink::tabular_figures())
+            .child(label)
+            .when(can, |b| {
+                b.on_click(move |_, window, cx| {
+                    resend_state.update(cx, |s, cx| {
+                        s.left = s.resend_in;
+                        s.start_countdown(window, cx);
+                        cx.notify();
+                    });
+                    on_resend(window, cx);
+                })
+            });
+            div()
+                .mt(px(space::S12))
                 .flex()
-                .flex_wrap()
                 .items_center()
+                .gap(px(space::S8))
                 .when(center, |d| d.justify_center())
-                .gap(gap)
-                .mt(px(m.resend_gap))
-                .when(clean, |d| d.min_h(px(28.)).line_height(px(16.)))
-                // `line-height: 1.45` follows the 13px font here
-                .when(!clean, |d| d.line_height(px(13. * 1.45)))
-                .text_size(size)
-                .text_color(p.muted)
-                .opacity(f.resend)
-                .child("Didn't get a code?")
-                .child(swap)
+                .child(
+                    div()
+                        .type_style(TextStyle::Footnote)
+                        .text_color(t.readable_muted(0.85))
+                        .child("Didn't get a code?"),
+                )
+                .child(button)
         });
 
         div()
@@ -1865,33 +1114,19 @@ impl RenderOnce for OtpInput {
                 Some(w) => d.w(w),
                 None => d.w_full(),
             })
-            .font_family(SANS)
-            .text_size(m.font_size)
-            .line_height(m.line_height)
-            .text_color(if clean { p.ink } else { p.text })
-            .when(self.disabled, |d| d.opacity(0.55))
-            .child(field)
-            .child(msg)
+            .text_color(t.text)
+            .when(self.disabled, |d| d.opacity(0.45))
+            .child(
+                div()
+                    .flex()
+                    .w_full()
+                    .min_w_0()
+                    .when(center, |d| d.justify_center())
+                    .child(field),
+            )
+            .children(note)
             .children(resend)
     }
-}
-
-/// The advance of `text` in Inter at `size`.
-fn text_width(window: &Window, text: &str, size: Pixels, weight: FontWeight) -> Pixels {
-    let mut face = font(SANS);
-    face.weight = weight;
-    let run = TextRun {
-        len: text.len(),
-        font: face,
-        color: hex(0x000000),
-        background_color: None,
-        underline: None,
-        strikethrough: None,
-    };
-    window
-        .text_system()
-        .shape_line(SharedString::from(text.to_string()), size, &[run], None)
-        .width
 }
 
 // ---------------------------------------------------------------------------
@@ -1900,6 +1135,8 @@ fn text_width(window: &Window, text: &str, size: Pixels, weight: FontWeight) -> 
 
 const DEMO_CODE: &str = "482913";
 const DEMO_WRONG: &str = "481973";
+/// The field fills the dialog's content column, inside its 1px edge.
+const FIELD_W: f32 = layout::DIALOG_WIDTH - 2. * layout::DIALOG_PAD - 2.;
 
 fn tries_message(tries: u32) -> String {
     if tries > 0 {
@@ -1910,8 +1147,8 @@ fn tries_message(tries: u32) -> String {
     }
 }
 
-/// The demo: types a wrong code, then the right one, and checks
-/// each; any click or key takes over from the auto-play.
+/// The demo: types a wrong code, then the right one, and checks each; any
+/// click or key takes over from the auto-play.
 struct DemoState {
     code: SharedString,
     status: OtpStatus,
@@ -1953,20 +1190,25 @@ impl DemoState {
 
     /// The server check: a second of verifying, then the verdict.
     fn verify(&mut self, code: SharedString, cx: &mut Context<Self>) {
+        if self.status == OtpStatus::Verifying || code.len() != DEMO_CODE.len() {
+            return;
+        }
         self.status = OtpStatus::Verifying;
         self.after(1000, cx, move |s, cx| {
             if code.as_ref() == DEMO_CODE {
                 s.status = OtpStatus::Success;
-                s.after(3200, cx, |s, _| {
-                    s.code = SharedString::default();
-                    s.status = OtpStatus::Idle;
-                    s.tries = 3;
-                });
+                s.after(3200, cx, |s, _| s.reset());
             } else {
                 s.tries = s.tries.saturating_sub(1);
                 s.status = OtpStatus::Error;
             }
         });
+    }
+
+    fn reset(&mut self) {
+        self.code = SharedString::default();
+        self.status = OtpStatus::Idle;
+        self.tries = 3;
     }
 
     fn type_code(&mut self, code: &'static str, at: &mut u64, cx: &mut Context<Self>) {
@@ -1996,117 +1238,38 @@ impl DemoState {
         }
         self.playing = false;
         self.timers.clear();
-        self.code = SharedString::default();
-        self.status = OtpStatus::Idle;
+        self.reset();
         cx.notify();
     }
 }
 
-/// The demo card's colors: one set per look and mode.
-struct DemoColors {
-    card: Hsla,
-    card_shadow: Vec<BoxShadow>,
-    icon_fg: Hsla,
-    icon_bg: Hsla,
-    title: Hsla,
-    text: Hsla,
-    strong: Hsla,
-    hint: Hsla,
-    line: Hsla,
-    tray: Hsla,
-}
-
-impl DemoColors {
-    fn get(look: Look, hair: f32, cx: &App) -> Self {
-        match (look, cx.is_dark()) {
-            (Look::Clean, false) => DemoColors {
-                card: hex(0xffffff),
-                card_shadow: vec![
-                    shadow(0., 0., 0., hair, black_a(0.06)),
-                    shadow(0., 1., 1., -1., black_a(0.1)),
-                    shadow(0., 1., 2., 0., black_a(0.05)),
-                ],
-                icon_fg: black_a(0.447),
-                icon_bg: hex(0xffffff),
-                title: hex(0x000000),
-                text: black_a(0.61),
-                strong: black_a(0.88),
-                hint: black_a(0.45),
-                line: black_a(0.06),
-                tray: hex(0xffffff),
-            },
-            (Look::Clean, true) => DemoColors {
-                card: hex(0x1c1c1e),
-                card_shadow: vec![
-                    shadow(0., 0., 0., hair, white_a(0.1)),
-                    shadow(0., 1., 2., 0., black_a(0.4)),
-                ],
-                icon_fg: white_a(0.5),
-                icon_bg: hex(0x1c1c1e),
-                title: hex(0xffffff),
-                text: white_a(0.62),
-                strong: white_a(0.9),
-                hint: white_a(0.46),
-                line: white_a(0.08),
-                tray: hex(0x1c1c1e),
-            },
-            (Look::Classic, false) => DemoColors {
-                card: hex(0xffffff),
-                card_shadow: vec![
-                    shadow(0., 0., 0., 1., hex(0xececec)),
-                    shadow(0., 1., 2., 0., black_a(0.04)),
-                ],
-                icon_fg: hex(0x8f8f8f),
-                icon_bg: hex(0xf4f4f5),
-                title: hex(0x171717),
-                text: hex(0x8f8f8f),
-                strong: hex(0x404040),
-                hint: hex(0x8f8f8f),
-                line: hex(0xececec),
-                tray: hex(0xf0f0f0),
-            },
-            (Look::Classic, true) => DemoColors {
-                card: hex(0x19191b),
-                card_shadow: vec![
-                    shadow(0., 0., 0., 1., hex(0x2a2a2e)),
-                    shadow(0., 1., 2., 0., black_a(0.2)),
-                ],
-                icon_fg: hex(0x8b8b92),
-                icon_bg: hex(0x222225),
-                title: hex(0xededed),
-                text: hex(0x8b8b92),
-                strong: hex(0xc8c8cc),
-                hint: hex(0x8b8b92),
-                line: hex(0x2a2a2e),
-                tray: hex(0x111113),
-            },
-        }
-    }
-}
-
+/// pink's paste-code sign-in dialog (accounts.rs `render_login_dialog`):
+/// title, body copy, a "Reopen…"-style text link, the field at `mt 12`, then
+/// Cancel and a primary that reads "Verifying…" at half opacity while the
+/// code is checked.
 #[derive(IntoElement)]
 struct OtpDemo;
 
 impl RenderOnce for OtpDemo {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let t = Pink::get(cx);
         let demo = window.use_keyed_state("otp-demo", cx, |_, cx| DemoState::new(cx));
         let (code, status, tries) = {
             let s = demo.read(cx);
             (s.code.clone(), s.status, s.tries)
         };
-        let look = cx.look();
-        let clean = look == Look::Clean;
-        let hair = (1. / window.scale_factor()).max(0.5);
-        let c = DemoColors::get(look, hair, cx);
+        let verifying = status == OtpStatus::Verifying;
+        // A refused code is on its way out, so only a fresh full code submits
+        let ready = code.len() == DEMO_CODE.len() && status == OtpStatus::Idle;
 
         let otp = OtpInput::new("otp")
             .separator(true)
-            .align(OtpAlign::Center)
-            .value(code)
+            .value(code.clone())
             .status(status)
             .error_message(tries_message(tries))
             .resend_in(30)
-            .fit_width(px(if clean { 352. } else { 344. }))
+            .fit_width(px(FIELD_W))
+            .auto_focus(true)
             .on_change({
                 let demo = demo.clone();
                 move |code, _, cx| {
@@ -2138,149 +1301,88 @@ impl RenderOnce for OtpDemo {
                 }
             });
 
-        let sent = rich_text(&[
-            ("We sent a code to ", c.text, FontWeight::NORMAL),
-            ("maya@acme.com", c.strong, FontWeight::MEDIUM),
-        ]);
-        let demo_code = rich_text(&[
-            ("Demo code: ", c.hint, FontWeight::NORMAL),
-            ("482\u{a0}913", c.strong, FontWeight::MEDIUM),
-        ]);
+        // pink: accounts.rs `url_link` – 12px, muted, brightening on hover
+        let change = div()
+            .id("otp-change-email")
+            .mt(px(space::S6))
+            .text_size(px(pink::text::FOOTNOTE))
+            .truncate()
+            .cursor_pointer()
+            .hover_fg("otp-change-email", t.text_muted, t.text)
+            .on_click({
+                let demo = demo.clone();
+                move |_, _, cx| {
+                    demo.update(cx, |s, cx| {
+                        s.reset();
+                        cx.notify();
+                    })
+                }
+            })
+            .child("Use a different email");
 
-        let icon = div().flex().items_center().justify_center().bg(c.icon_bg);
-        let icon = if clean {
-            icon.size(px(36.))
-                .rounded(px(8.))
-                .mb(px(12.))
-                .shadow(c.card_shadow.clone())
-                .child(
-                    svg()
-                        .path("icons/otp-input/clean/mail.svg")
-                        .size(px(16.))
-                        .text_color(c.icon_fg),
-                )
-        } else {
-            icon.size(px(44.))
-                .rounded(px(12.))
-                .mb(px(14.))
-                .border_1()
-                .border_color(c.line)
-                .child(
-                    svg()
-                        .path("icons/otp-input/mail.svg")
-                        .size(px(22.))
-                        .text_color(c.icon_fg),
-                )
-        };
-        let heading = div()
-            .text_color(c.title)
-            .when(clean, |d| {
-                d.text_size(px(15.))
-                    .line_height(px(24.))
-                    .font_weight(FontWeight::MEDIUM)
+        let cancel = pink::button("otp-cancel", ButtonKind::Ghost, ControlSize::Lg, &t)
+            .child("Cancel")
+            .on_click({
+                let demo = demo.clone();
+                move |_, _, cx| {
+                    demo.update(cx, |s, cx| {
+                        s.reset();
+                        cx.notify();
+                    })
+                }
+            });
+        let submit = pink::button_enabled(
+            "otp-verify",
+            ButtonKind::Primary,
+            ControlSize::Lg,
+            ready || verifying,
+            &t,
+        )
+        .child(if verifying { "Verifying…" } else { "Verify" })
+        .when(verifying, |b| b.opacity(0.5))
+        .when(ready, |b| {
+            let demo = demo.clone();
+            b.on_click(move |_, _, cx| {
+                demo.update(cx, |s, cx| {
+                    s.verify(code.clone(), cx);
+                    cx.notify();
+                })
             })
-            .when(!clean, |d| {
-                d.text_size(px(16.))
-                    .line_height(px(20.))
-                    .font_weight(FontWeight::SEMIBOLD)
-            })
-            .child("Check your email");
-        let lead = div()
-            .text_color(c.text)
-            .mb(px(20.))
-            .when(clean, |d| {
-                d.mt(px(2.)).text_size(px(13.)).line_height(px(20.))
-            })
-            .when(!clean, |d| {
-                d.mt(px(4.)).text_size(px(13.5)).line_height(px(17.))
-            })
-            .child(sent);
-        let body = div()
-            .flex()
-            .flex_col()
-            .items_center()
-            .pt(px(28.))
-            .px(px(24.))
-            .child(icon)
-            .child(heading)
-            .child(lead)
-            .child(otp);
-        let foot = div()
-            .flex()
-            .justify_center()
-            .text_color(c.hint)
-            .child(demo_code);
+        });
+
+        let card = pink::dialog_card(&t)
+            .child(pink::dialog_title("Check your email", &t))
+            .child(div().mt(px(space::S8)).child(pink::dialog_body(
+                "We sent a 6-digit code to maya@acme.com. Enter it below to finish \
+                 signing in; the code works once and expires in 10 minutes.",
+                &t,
+            )))
+            .child(change)
+            .child(div().mt(px(space::S12)).child(otp))
+            .child(
+                div()
+                    .mt(px(space::S16))
+                    .flex()
+                    .flex_row()
+                    .justify_end()
+                    .gap(px(space::S8))
+                    .child(cancel)
+                    .child(submit),
+            );
 
         let stop_mouse = demo.clone();
         let stop_key = demo.clone();
         div()
             .id("otp-demo")
-            .font_family(SANS)
+            .font_family(pink::SANS)
             .capture_any_mouse_down(move |_, _, cx| stop_mouse.update(cx, |s, cx| s.stop(cx)))
             .capture_key_down(move |_, _, cx| stop_key.update(cx, |s, cx| s.stop(cx)))
-            .child(if clean {
-                div()
-                    .w(px(400.))
-                    .rounded(px(10.))
-                    .bg(c.card)
-                    .shadow(c.card_shadow)
-                    .child(body.pb(px(20.)))
-                    .child(
-                        foot.py(px(10.))
-                            .px(px(16.))
-                            .border_t(px(hair))
-                            .border_color(c.line)
-                            .text_size(px(12.))
-                            .line_height(px(16.)),
-                    )
-            } else {
-                div()
-                    .w(px(400.))
-                    .p(px(4.))
-                    .rounded(px(20.))
-                    .bg(c.tray)
-                    .child(
-                        body.pb(px(22.))
-                            .rounded(px(16.))
-                            .bg(c.card)
-                            .shadow(c.card_shadow),
-                    )
-                    .child(
-                        foot.pt(px(10.))
-                            .px(px(12.))
-                            .pb(px(8.))
-                            .text_size(px(12.5))
-                            .line_height(px(19.)),
-                    )
-            })
+            .child(motion::dialog_in("otp-dialog", card))
     }
 }
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |_, _| OtpDemo)
-}
-
-/// A line of Inter in several colors and weights (`<strong>` inside a `<p>`).
-/// GPUI's highlight colors blend into the base color and keep its alpha, so
-/// the runs are spelled out instead.
-fn rich_text(parts: &[(&str, Hsla, FontWeight)]) -> StyledText {
-    let text: String = parts.iter().map(|(t, _, _)| *t).collect();
-    let runs = parts
-        .iter()
-        .map(|&(t, color, weight)| {
-            let mut face = font(SANS);
-            face.weight = weight;
-            TextRun {
-                len: t.len(),
-                font: face,
-                color,
-                background_color: None,
-                underline: None,
-                strikethrough: None,
-            }
-        })
-        .collect();
-    StyledText::new(text).with_runs(runs)
 }
 
 #[cfg(test)]
@@ -2296,7 +1398,7 @@ mod tests {
     }
 
     #[test]
-    fn typing_replaces_the_active_box() {
+    fn typing_replaces_the_active_cell() {
         assert_eq!(type_into("", 0, "4", true, 6), Some(("4".into(), 1)));
         assert_eq!(type_into("481", 1, "2", true, 6), Some(("421".into(), 2)));
         assert_eq!(type_into("481", 3, "x", true, 6), None);
@@ -2307,7 +1409,7 @@ mod tests {
     }
 
     #[test]
-    fn pasting_fills_from_the_active_box() {
+    fn pasting_fills_from_the_active_cell() {
         assert_eq!(
             paste_into("12", 1, "482 913", true, 6),
             Some(("482913".into(), 5))
@@ -2329,35 +1431,25 @@ mod tests {
     }
 
     #[test]
-    fn boxes_make_room_for_the_separator() {
-        let m = Metrics::get(Look::Clean);
-        let l = Layout::new(&m, Look::Clean, 6, Some(3), Some(352.));
-        assert_eq!(l.size, 40.);
-        assert_eq!(l.box_x(3), 3. * 48. + 16.);
-        assert_eq!(l.width, 296.);
+    fn cells_fill_the_field_and_make_room_for_the_separator() {
+        // The demo dialog's content column
+        let l = Layout::new(6, Some(3), Some(FIELD_W));
+        assert!((l.width - FIELD_W).abs() < 0.01);
+        assert_eq!(l.cell_x(3), 3. * (l.size + GAP) + GAP + SEP_W);
         assert_eq!(l.pick(0.), 0);
-        assert_eq!(l.pick(42.), 0);
+        assert_eq!(l.pick(l.size + 2.), 0);
         assert_eq!(l.pick(1000.), 5);
-        // Classic in the 344px demo card: the narrow gaps
-        let m = Metrics::get(Look::Classic);
-        let l = Layout::new(&m, Look::Classic, 6, Some(3), Some(344.));
-        assert_eq!((l.size, l.gap, l.width), (48., 6., 332.));
+        // Unfitted cells keep their default size; narrow fields stop shrinking
+        assert_eq!(Layout::new(6, None, None).size, CELL);
+        assert_eq!(Layout::new(6, None, Some(120.)).size, CELL_MIN);
+        assert_eq!(Layout::new(4, None, Some(600.)).size, CELL_MAX);
     }
 
     #[test]
-    fn shake_ends_at_rest() {
-        assert_eq!(shake_offset(0.), 0.);
-        assert_eq!(shake_offset(0.2), -6.);
-        assert_eq!(shake_offset(1.), 0.);
-    }
-
-    #[test]
-    fn track_eases_after_its_delay() {
-        let mut t = Track::at(0.);
-        let now = Instant::now();
-        t.go(1., spec(100, LINEAR).with_delay(100), now, false);
-        assert_eq!(t.value(now + Duration::from_millis(50)), 0.);
-        assert!(t.moving(now + Duration::from_millis(150)));
-        assert_eq!(t.value(now + Duration::from_millis(300)), 1.);
+    fn caret_is_solid_after_activity_then_blinks() {
+        assert!(caret_visible(0));
+        assert!(caret_visible(499));
+        assert!(!caret_visible(500));
+        assert!(caret_visible(1000));
     }
 }
