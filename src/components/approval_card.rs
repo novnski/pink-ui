@@ -1,182 +1,185 @@
 //! Approval Card – an agent stops and asks before it acts.
 //!
-//! The card names the agent and the action, rates the risk on a three-step
-//! meter, and previews exactly what will run (a file with line numbers and a
-//! light syntax tint) above the facts that matter for the decision. A ring
-//! timer counts down to an automatic deny and holds while the pointer is on
-//! the card. Approve (Ctrl/⌘ ⏎) or Deny (Esc) morphs the card into a one-line
-//! record: the preview fades, the height glides down, and a status disc pops
-//! in with an Undo that stays for a few seconds.
+//! PINK has one approval surface, and this is it. While the request is open,
+//! the question panel takes the composer's place (pink: composer.rs
+//! `render_wizard`): the same r26 pill, a tracked uppercase header, the
+//! question, the approval context as label-over-value rows ending in the
+//! expiry row, numbered option rows (1–9 pick one), a free answer field and a
+//! footer with the countdown, "Keep waiting" and Send. Above it sits the
+//! passive transcript chip (pink: transcript.rs `input_chip`), reading
+//! "Awaiting your answer…" until the request is answered, then naming it.
+//!
+//! Picking an option shows it picked for 220 ms and sends it. Enter sends the
+//! picked option; a typed answer wins over a pick and goes back as a Deny. When
+//! the request carries an auto answer, the footer says what PINK will pick and
+//! when; touching the panel, typing, or "Keep waiting" holds it.
 //!
 //! ```ignore
-//! ApprovalCard::new("migration", ApprovalRequest::new("Release agent", "Run a schema migration")
-//!     .risk(Risk::High)
-//!     .file("0142_split_invoice_tax.sql", vec!["ALTER TABLE invoices …".into()]))
+//! ApprovalCard::new("migrate", ApprovalRequest::new("Approve command", "Claude wants to run …")
+//!     .fact("Command / input", "npm run db:migrate")
+//!     .option(ApprovalOption::deny())
+//!     .option(ApprovalOption::allow_once())
+//!     .auto_answer(Decision::Deny, Duration::from_secs(45)))
 //!     .on_resolve(|decision, _, _| println!("{decision:?}"))
 //! ```
 
-use std::{cell::Cell, rc::Rc, sync::Arc};
+use std::{rc::Rc, sync::Arc};
 use web_time::{Duration, Instant};
 
 use gpui::{
-    AnyView, App, Bounds, ElementId, Entity, FocusHandle, FontWeight, HighlightStyle, Hsla,
-    KeyDownEvent, PathBuilder, Pixels, SharedString, StyledText, Task, Window, canvas, div, point,
-    prelude::*, px,
+    AnyView, App, Div, ElementId, Entity, FocusHandle, FontWeight, KeyDownEvent, Role,
+    SharedString, Subscription, Task, Toggled, Window, div, phi, prelude::*, px,
 };
 
 use crate::{
-    motion::{self, AnimationExt, EASE_OUT_QUINT, GLIDE, MENU_IN},
-    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, oklch, radius, text},
+    motion,
+    pink::{self, ButtonKind, ControlSize, Pink, layout, radius},
+    primitives::{InputEvent, TextInput},
     story,
 };
 
 pub const NAME: &str = "Approval Card";
-pub const DESCRIPTION: &str = "An agent pauses for sign-off before a risky action – a risk meter, a preview of exactly what will run, shortcuts, a countdown that holds while you read, and a quiet resolved record with undo";
+pub const DESCRIPTION: &str = "An agent's request to act, asked in the composer's place – the action and its context, numbered choices you can pick with 1–9, a countdown PINK answers for you unless you keep waiting, and a quiet one-line record in the transcript once it is answered";
 
-const ICON_FILE: &str = "icons/approval-card/file.svg";
-const ICON_CHECK: &str = "icons/approval-card/check.svg";
-const ICON_DENY: &str = "icons/approval-card/deny.svg";
-const ICON_PAUSE: &str = "icons/approval-card/pause.svg";
-const ICON_UNDO: &str = "icons/approval-card/undo.svg";
-const ICON_TIMER: &str = "icons/approval-card/timer.svg";
-const ICON_ENTER: &str = "icons/approval-card/enter.svg";
+const ICON_QUESTION: &str = "icons/approval-card/chat-round-line.svg";
 
-/// Height of the resolved record.
-const ROW_H: f32 = 58.;
-const CARD_W: f32 = 520.;
-const TICK: Duration = Duration::from_millis(100);
+/// A single-select pick shows for this long before it is sent (pink
+/// composer.rs `AUTO_ADVANCE_MS`).
+const AUTO_ADVANCE: Duration = Duration::from_millis(220);
+/// The countdown's tick (pink `ensure_countdown_ticking`).
+const TICK: Duration = Duration::from_secs(1);
+/// Space between the transcript chip and the panel in the composer slot.
+const SLOT_GAP: f32 = 16.;
+
+const PLACEHOLDER: &str = "Type your own answer, or pick an option above";
+const PLACEHOLDER_PICKED: &str =
+    "Type your own answer, or leave this blank to use the selected option";
 
 type DecisionHandler = Rc<dyn Fn(Decision, &mut Window, &mut App)>;
-type Handler = Rc<dyn Fn(&mut Window, &mut App)>;
+type ReplyHandler = Rc<dyn Fn(SharedString, &mut Window, &mut App)>;
 
 fn eid(s: impl Into<String>) -> ElementId {
     ElementId::Name(SharedString::from(s.into()))
 }
 
-/// How much could go wrong.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Risk {
-    Low,
-    Medium,
-    High,
-}
-
-impl Risk {
-    fn level(self) -> usize {
-        match self {
-            Risk::Low => 1,
-            Risk::Medium => 2,
-            Risk::High => 3,
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Risk::Low => "Low risk",
-            Risk::Medium => "Medium risk",
-            Risk::High => "High risk",
-        }
-    }
-
-    fn color(self, t: &Pink) -> Hsla {
-        match self {
-            Risk::Low => t.success,
-            Risk::Medium => t.warning,
-            Risk::High => t.danger,
-        }
-    }
-}
-
-/// How a request ended.
+/// What the agent is told (pink `ApprovalDecision`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Decision {
-    Approved,
-    Denied,
-    /// The countdown ran out; treated as a deny.
-    Expired,
+    AllowOnce,
+    AllowForSession,
+    Deny,
+    /// Deny and stop the agent's turn.
+    CancelTurn,
 }
 
 impl Decision {
-    fn verb(self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
-            Decision::Approved => "approved",
-            Decision::Denied => "denied",
-            Decision::Expired => "expired",
-        }
-    }
-
-    fn tone(self) -> Tone {
-        match self {
-            Decision::Approved => Tone::Success,
-            Decision::Denied => Tone::Danger,
-            Decision::Expired => Tone::Neutral,
+            Decision::AllowOnce => "Allow once",
+            Decision::AllowForSession => "Allow for session",
+            Decision::Deny => "Deny",
+            Decision::CancelTurn => "Cancel turn",
         }
     }
 }
 
-/// What the agent wants to do.
+/// One answer the request offers (pink `ApprovalChoice`: label, scope and
+/// description, rendered as "scope · description" under the label).
+#[derive(Clone, Debug)]
+pub struct ApprovalOption {
+    pub decision: Decision,
+    pub label: SharedString,
+    /// The grant's lifetime: "request", "session", "none"…
+    pub scope: Option<SharedString>,
+    pub description: Option<SharedString>,
+}
+
+impl ApprovalOption {
+    pub fn new(decision: Decision, label: impl Into<SharedString>) -> Self {
+        Self {
+            decision,
+            label: label.into(),
+            scope: None,
+            description: None,
+        }
+    }
+
+    pub fn allow_once() -> Self {
+        Self::new(Decision::AllowOnce, "Allow once")
+            .scope("request")
+            .description("Allow only this tool call.")
+    }
+
+    pub fn allow_for_session() -> Self {
+        Self::new(Decision::AllowForSession, "Allow for session")
+            .scope("session")
+            .description("Allow this call and similar ones for the rest of this session.")
+    }
+
+    pub fn deny() -> Self {
+        Self::new(Decision::Deny, "Deny")
+            .scope("none")
+            .description("Reject this tool call; the agent may continue.")
+    }
+
+    pub fn cancel_turn() -> Self {
+        Self::new(Decision::CancelTurn, "Cancel turn")
+            .scope("none")
+            .description("Reject this tool call and stop the agent's turn.")
+    }
+
+    pub fn scope(mut self, scope: impl Into<SharedString>) -> Self {
+        self.scope = Some(scope.into());
+        self
+    }
+
+    pub fn description(mut self, description: impl Into<SharedString>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// The line under the label (pink: `"{scope} · {description}"`).
+    fn detail(&self) -> Option<SharedString> {
+        match (&self.scope, &self.description) {
+            (Some(scope), Some(description)) => Some(format!("{scope} · {description}").into()),
+            (None, Some(description)) => Some(description.clone()),
+            (Some(scope), None) => Some(scope.clone()),
+            (None, None) => None,
+        }
+    }
+}
+
+/// What the agent wants to do (pink `UserInputQuestion` with its
+/// `ApprovalRequest`).
 #[derive(Clone, Debug)]
 pub struct ApprovalRequest {
-    pub agent: SharedString,
-    /// Hue (OKLCH degrees) of the agent's monogram.
-    pub agent_hue: f32,
-    pub title: SharedString,
-    /// Short noun for the resolved record ("Schema migration").
-    pub subject: SharedString,
-    pub risk: Risk,
-    pub file: Option<SharedString>,
-    pub lines: Vec<SharedString>,
-    pub added: u32,
-    pub removed: u32,
+    /// The kind of request: "Approve command", "Approve file change"…
+    pub header: SharedString,
+    /// The sentence naming the action.
+    pub question: SharedString,
+    /// Approval context, label over value (pink `display_rows`).
     pub facts: Vec<(SharedString, SharedString)>,
-    pub timeout: Duration,
+    /// Clock time the request expires; `None` waits until answered.
+    pub expires_at: Option<SharedString>,
+    /// Empty means Deny, Allow once and Cancel turn.
+    pub options: Vec<ApprovalOption>,
+    /// PINK answers with this decision when nobody replies in time.
+    pub auto_answer: Option<(Decision, Duration)>,
+    /// Whether the free answer field shows.
+    pub reply: bool,
 }
 
 impl ApprovalRequest {
-    pub fn new(agent: impl Into<SharedString>, title: impl Into<SharedString>) -> Self {
-        let title = title.into();
+    pub fn new(header: impl Into<SharedString>, question: impl Into<SharedString>) -> Self {
         Self {
-            agent: agent.into(),
-            agent_hue: 277.,
-            subject: title.clone(),
-            title,
-            risk: Risk::Medium,
-            file: None,
-            lines: Vec::new(),
-            added: 0,
-            removed: 0,
+            header: header.into(),
+            question: question.into(),
             facts: Vec::new(),
-            timeout: Duration::from_secs(60),
+            expires_at: None,
+            options: Vec::new(),
+            auto_answer: None,
+            reply: true,
         }
-    }
-
-    pub fn agent_hue(mut self, degrees: f32) -> Self {
-        self.agent_hue = degrees;
-        self
-    }
-
-    pub fn subject(mut self, subject: impl Into<SharedString>) -> Self {
-        self.subject = subject.into();
-        self
-    }
-
-    pub fn risk(mut self, risk: Risk) -> Self {
-        self.risk = risk;
-        self
-    }
-
-    /// The file or command the action runs, shown with line numbers.
-    pub fn file(mut self, name: impl Into<SharedString>, lines: Vec<SharedString>) -> Self {
-        self.file = Some(name.into());
-        self.lines = lines;
-        self
-    }
-
-    /// Lines added and removed, shown next to the file name.
-    pub fn diff(mut self, added: u32, removed: u32) -> Self {
-        self.added = added;
-        self.removed = removed;
-        self
     }
 
     pub fn fact(mut self, label: impl Into<SharedString>, value: impl Into<SharedString>) -> Self {
@@ -184,84 +187,226 @@ impl ApprovalRequest {
         self
     }
 
-    /// Time until the request denies itself.
-    pub fn timeout(mut self, timeout: Duration) -> Self {
-        self.timeout = timeout;
+    /// The clock time the request expires, e.g. "14:32:05".
+    pub fn expires_at(mut self, time: impl Into<SharedString>) -> Self {
+        self.expires_at = Some(time.into());
         self
     }
+
+    pub fn option(mut self, option: ApprovalOption) -> Self {
+        self.options.push(option);
+        self
+    }
+
+    /// PINK picks `decision` after `after` unless someone answers first.
+    pub fn auto_answer(mut self, decision: Decision, after: Duration) -> Self {
+        self.auto_answer = Some((decision, after));
+        self
+    }
+
+    /// Shows or hides the free answer field (shown by default, as in pink).
+    pub fn reply(mut self, reply: bool) -> Self {
+        self.reply = reply;
+        self
+    }
+
+    fn resolved_options(&self) -> Vec<ApprovalOption> {
+        if self.options.is_empty() {
+            vec![
+                ApprovalOption::deny(),
+                ApprovalOption::allow_once(),
+                ApprovalOption::cancel_turn(),
+            ]
+        } else {
+            self.options.clone()
+        }
+    }
+
+    /// The context rows plus the expiry row (pink `approval_expiry_row`).
+    fn context_rows(&self) -> Vec<(SharedString, SharedString)> {
+        let mut rows = self.facts.clone();
+        rows.push(match &self.expires_at {
+            Some(time) => ("Approval expires".into(), time.clone()),
+            None => (
+                "Approval waits".into(),
+                "Until you answer, the agent stops or its turn ends".into(),
+            ),
+        });
+        rows
+    }
+}
+
+/// How an answered request reads in the transcript chip: the header, then
+/// what was picked (pink appends " · no reply in time, PINK picked …" when
+/// the auto answer fired).
+fn record_value(header: &str, label: &str, by_pink: bool) -> String {
+    if by_pink {
+        format!("{header} · no reply in time, PINK picked {label}")
+    } else {
+        format!("{header} · {label}")
+    }
+}
+
+/// A bare digit picks option 1–9, unless a modifier is held or the answer
+/// field has focus (pink `wizard_number_shortcut`).
+fn number_shortcut(key: &str, modified: bool, reply_focused: bool) -> Option<usize> {
+    if modified || reply_focused {
+        return None;
+    }
+    let digit = key.parse::<usize>().ok()?;
+    (1..=9).contains(&digit).then(|| digit - 1)
 }
 
 struct CardState {
     focus: FocusHandle,
-    timeout: Duration,
-    left: Duration,
-    paused: bool,
+    reply: Entity<TextInput>,
+    /// The option each row stands for, refreshed every render.
+    decisions: Vec<Decision>,
+    labels: Vec<SharedString>,
+    picked: Option<usize>,
     decision: Option<Decision>,
-    when: SharedString,
-    /// Start of the last morph (resolve or undo).
-    changed: Option<Instant>,
-    undo_until: Option<Instant>,
-    undo_window: Duration,
-    /// Height of the open card, measured while it is shown.
-    height: Rc<Cell<f32>>,
-    /// Bumped on every resolve / undo so entrance animations replay.
-    epoch: usize,
+    /// The auto answer fired.
+    by_pink: bool,
+    /// When PINK answers; cleared once held or answered.
+    deadline: Option<Instant>,
+    auto: Option<Decision>,
     on_resolve: Option<DecisionHandler>,
-    _tick: Task<()>,
+    on_reply: Option<ReplyHandler>,
+    _advance: Option<Task<()>>,
+    _tick: Option<Task<()>>,
+    _reply_events: Subscription,
 }
 
 impl CardState {
     fn new(
-        timeout: Duration,
-        resolved: Option<(Decision, SharedString)>,
-        undo_window: Duration,
+        auto_answer: Option<(Decision, Duration)>,
+        resolved: Option<(Decision, bool)>,
         window: &mut Window,
         cx: &mut gpui::Context<Self>,
     ) -> Self {
-        let tick = cx.spawn_in(window, async move |this, cx| {
+        let reply = cx.new(|cx| TextInput::new(window, cx).placeholder(PLACEHOLDER));
+        let reply_events = cx.subscribe_in(&reply, window, |this, _, event, window, cx| {
+            match event {
+                // The field's Enter is its own submit (pink: Enter in the
+                // answer input runs `wizard_advance`).
+                InputEvent::Submit(_) => this.advance(window, cx),
+                InputEvent::Change(_) => {
+                    this.hold();
+                    cx.notify();
+                }
+                _ => {}
+            }
+        });
+        let (decision, by_pink) = match resolved {
+            Some((d, by_pink)) => (Some(d), by_pink),
+            None => (None, false),
+        };
+        let mut state = CardState {
+            focus: cx.focus_handle(),
+            reply,
+            decisions: Vec::new(),
+            labels: Vec::new(),
+            picked: None,
+            decision,
+            by_pink,
+            deadline: None,
+            auto: None,
+            on_resolve: None,
+            on_reply: None,
+            _advance: None,
+            _tick: None,
+            _reply_events: reply_events,
+        };
+        if let (None, Some((auto, after))) = (decision, auto_answer) {
+            state.auto = Some(auto);
+            state.deadline = Some(Instant::now() + after);
+            state.start_ticking(window, cx);
+        }
+        state
+    }
+
+    fn left(&self) -> Option<Duration> {
+        let deadline = self.deadline?;
+        Some(deadline.saturating_duration_since(Instant::now()))
+    }
+
+    /// Ticks on the countdown's second boundaries, so the copy changes when
+    /// the number does and the auto answer lands on time.
+    fn start_ticking(&mut self, window: &mut Window, cx: &mut gpui::Context<Self>) {
+        self._tick = Some(cx.spawn_in(window, async move |this, cx| {
             loop {
-                cx.background_executor().timer(TICK).await;
-                if this
-                    .update_in(cx, |s, window, cx| s.tick(window, cx))
-                    .is_err()
-                {
+                let Ok(Some(left)) = this.update(cx, |s, _| s.left()) else {
+                    break;
+                };
+                let rem = Duration::from_millis((left.as_millis() % TICK.as_millis()) as u64);
+                let wait = if rem.is_zero() { TICK } else { rem };
+                cx.background_executor()
+                    .timer(wait.min(left.max(Duration::from_millis(1))))
+                    .await;
+                let running = this
+                    .update_in(cx, |s, window, cx| s.on_tick(window, cx))
+                    .unwrap_or(false);
+                if !running {
                     break;
                 }
             }
-        });
-        let (decision, when) = match resolved {
-            Some((d, when)) => (Some(d), when),
-            None => (None, SharedString::default()),
-        };
-        CardState {
-            focus: cx.focus_handle(),
-            timeout,
-            left: timeout,
-            paused: false,
-            decision,
-            when,
-            changed: None,
-            undo_until: None,
-            undo_window,
-            height: Rc::new(Cell::new(0.)),
-            epoch: 0,
-            on_resolve: None,
-            _tick: tick,
-        }
+        }));
     }
 
-    fn tick(&mut self, window: &mut Window, cx: &mut gpui::Context<Self>) {
-        if self.decision.is_none() {
-            if !self.paused {
-                self.left = self.left.saturating_sub(TICK);
-                if self.left.is_zero() {
-                    self.resolve(Decision::Expired, window, cx);
-                }
-                cx.notify();
+    fn on_tick(&mut self, window: &mut Window, cx: &mut gpui::Context<Self>) -> bool {
+        if self.decision.is_some() || self.deadline.is_none() {
+            self.deadline = None;
+            return false;
+        }
+        if self.left().is_some_and(|left| left.is_zero()) {
+            self.deadline = None;
+            if let Some(auto) = self.auto {
+                self.by_pink = true;
+                self.resolve(auto, window, cx);
             }
-        } else if self.undo_until.is_some_and(|until| Instant::now() >= until) {
-            self.undo_until = None;
-            cx.notify();
+            return false;
+        }
+        cx.notify();
+        true
+    }
+
+    /// The user is answering: PINK must not answer for them (pink
+    /// `note_wizard_interaction` / `hold_auto_answer`).
+    fn hold(&mut self) {
+        self.deadline = None;
+    }
+
+    fn select(&mut self, ix: usize, window: &mut Window, cx: &mut gpui::Context<Self>) {
+        if self.decision.is_some() || ix >= self.decisions.len() {
+            return;
+        }
+        self.hold();
+        self.picked = Some(ix);
+        self.reply.update(cx, |input, cx| {
+            input.set_placeholder(PLACEHOLDER_PICKED, cx)
+        });
+        self._advance = Some(cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor().timer(AUTO_ADVANCE).await;
+            this.update_in(cx, |s, window, cx| s.advance(window, cx))
+                .ok();
+        }));
+        cx.notify();
+    }
+
+    /// Send: a typed answer wins over a pick and goes back as a Deny (pink
+    /// `approval_decision` finds no option label in it).
+    fn advance(&mut self, window: &mut Window, cx: &mut gpui::Context<Self>) {
+        if self.decision.is_some() {
+            return;
+        }
+        let typed = self.reply.read(cx).text();
+        if !typed.trim().is_empty() {
+            self.resolve(Decision::Deny, window, cx);
+            if let Some(f) = self.on_reply.clone() {
+                f(typed, window, cx);
+            }
+        } else if let Some(decision) = self.picked.and_then(|ix| self.decisions.get(ix).copied()) {
+            self.resolve(decision, window, cx);
         }
     }
 
@@ -269,40 +414,58 @@ impl CardState {
         if self.decision.is_some() {
             return;
         }
+        // The tick loop and a pending advance see this and stop on their own.
         self.decision = Some(decision);
-        self.when = "just now".into();
-        self.changed = Some(Instant::now());
-        self.undo_until = Some(Instant::now() + self.undo_window);
-        self.epoch += 1;
+        self.deadline = None;
         if let Some(f) = self.on_resolve.clone() {
             f(decision, window, cx);
         }
         cx.notify();
     }
 
-    fn undo(&mut self, cx: &mut gpui::Context<Self>) {
-        if self.decision.take().is_none() {
+    fn on_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut gpui::Context<Self>) {
+        if self.decision.is_some() {
             return;
         }
-        // Give the reviewer time to think again.
-        self.left = self.left.max(Duration::from_secs(20)).min(self.timeout);
-        self.changed = Some(Instant::now());
-        self.undo_until = None;
-        self.epoch += 1;
+        // Any key in the panel means the user is answering.
+        self.hold();
+        let reply_focused = self.reply.read(cx).is_focused(window);
+        let ks = &event.keystroke;
+        let key = ks.key.as_str();
+        if let Some(ix) = number_shortcut(key, ks.modifiers.modified(), reply_focused) {
+            self.select(ix, window, cx);
+            cx.stop_propagation();
+        } else if key == "enter" {
+            if !reply_focused {
+                self.advance(window, cx);
+                cx.stop_propagation();
+            }
+        } else if key == "escape" {
+            cx.stop_propagation();
+        }
         cx.notify();
+    }
+
+    /// The label of `decision` among this request's options.
+    fn label_of(&self, decision: Decision) -> SharedString {
+        self.decisions
+            .iter()
+            .position(|d| *d == decision)
+            .and_then(|ix| self.labels.get(ix).cloned())
+            .unwrap_or_else(|| decision.label().into())
     }
 }
 
-/// An agent's request for sign-off, resolving into a one-line record.
+/// An agent's request for sign-off: the question panel in the composer's
+/// place while it is open, and its one-line transcript chip.
 #[derive(IntoElement)]
 pub struct ApprovalCard {
     id: ElementId,
     request: ApprovalRequest,
-    resolved: Option<(Decision, SharedString)>,
+    resolved: Option<(Decision, bool)>,
     autofocus: bool,
-    undo_window: Duration,
     on_resolve: Option<DecisionHandler>,
-    on_undo: Option<Handler>,
+    on_reply: Option<ReplyHandler>,
 }
 
 impl ApprovalCard {
@@ -312,27 +475,26 @@ impl ApprovalCard {
             request,
             resolved: None,
             autofocus: false,
-            undo_window: Duration::from_secs(6),
             on_resolve: None,
-            on_undo: None,
+            on_reply: None,
         }
     }
 
-    /// Starts as a record of an earlier decision, e.g. `(Approved, "4m ago")`.
-    pub fn resolved(mut self, decision: Decision, when: impl Into<SharedString>) -> Self {
-        self.resolved = Some((decision, when.into()));
+    /// Starts as the record of an earlier answer.
+    pub fn resolved(mut self, decision: Decision) -> Self {
+        self.resolved = Some((decision, false));
         self
     }
 
-    /// Takes keyboard focus on first render, so ⏎ and Esc work right away.
+    /// Starts as the record of a request PINK answered after nobody replied.
+    pub fn auto_resolved(mut self, decision: Decision) -> Self {
+        self.resolved = Some((decision, true));
+        self
+    }
+
+    /// Takes keyboard focus on first render, so 1–9 and Enter work right away.
     pub fn autofocus(mut self, autofocus: bool) -> Self {
         self.autofocus = autofocus;
-        self
-    }
-
-    /// How long Undo stays after a decision.
-    pub fn undo_window(mut self, window: Duration) -> Self {
-        self.undo_window = window;
         self
     }
 
@@ -341,8 +503,9 @@ impl ApprovalCard {
         self
     }
 
-    pub fn on_undo(mut self, f: impl Fn(&mut Window, &mut App) + 'static) -> Self {
-        self.on_undo = Some(Rc::new(f));
+    /// A typed answer, sent instead of a choice (it resolves as a Deny).
+    pub fn on_reply(mut self, f: impl Fn(SharedString, &mut Window, &mut App) + 'static) -> Self {
+        self.on_reply = Some(Rc::new(f));
         self
     }
 }
@@ -352,704 +515,412 @@ impl RenderOnce for ApprovalCard {
         let t = Pink::get(cx);
         let key = self.id.to_string();
         let req = self.request;
-        let (timeout, resolved, undo_window, autofocus) = (
-            req.timeout,
-            self.resolved.clone(),
-            self.undo_window,
-            self.autofocus,
-        );
+        let options = req.resolved_options();
+        let (auto_answer, resolved, autofocus) = (req.auto_answer, self.resolved, self.autofocus);
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |window, cx| {
-                let state = CardState::new(timeout, resolved, undo_window, window, cx);
-                if autofocus {
+                let state = CardState::new(auto_answer, resolved, window, cx);
+                if autofocus && state.decision.is_none() {
                     window.focus(&state.focus, cx);
                 }
                 state
             },
         );
-        let on_resolve = self.on_resolve.clone();
-        state.update(cx, |s, _| s.on_resolve = on_resolve);
-
-        let s = state.read(cx);
-        let (decision, changed, epoch, focus) = (s.decision, s.changed, s.epoch, s.focus.clone());
-        let measured = s.height.get();
-        let reduced = motion::reduced_motion(cx);
-        let raw = changed
-            .map(|c| {
-                c.elapsed().as_secs_f32()
-                    / (GLIDE.duration_ms as f32 / 1000. * motion::speed_scale())
-            })
-            .unwrap_or(1.)
-            .clamp(0., 1.);
-        let raw = if reduced { 1. } else { raw };
-        let e = EASE_OUT_QUINT.eval(raw);
-        let ramp =
-            |from: f32, to: f32| EASE_OUT_QUINT.eval(((raw - from) / (to - from)).clamp(0., 1.));
-        let morphing = raw < 1. && measured > 0.;
-
-        // (height, pending opacity, record opacity); None height = natural.
-        let (height, pending_o, record_o) = match (decision.is_some(), morphing) {
-            (true, true) => (
-                Some(motion::lerp(measured, ROW_H, e)),
-                1. - (raw * 3.).min(1.),
-                ramp(0.3, 1.),
-            ),
-            (true, false) => (Some(ROW_H), 0., 1.),
-            (false, true) => (
-                Some(motion::lerp(ROW_H, measured, e)),
-                ramp(0.25, 1.),
-                1. - (raw * 3.).min(1.),
-            ),
-            (false, false) => (None, 1., 0.),
-        };
-        if raw < 1. {
-            window.request_animation_frame();
-        }
-
-        let pending = (pending_o > 0.).then(|| pending_view(&req, &key, &state, &t, cx));
-        let record = (record_o > 0.).then(|| {
-            record_view(
-                &req,
-                decision.unwrap_or(Decision::Approved),
-                epoch,
-                &key,
-                &state,
-                self.on_undo.clone(),
-                &t,
-                cx,
-            )
+        let (on_resolve, on_reply) = (self.on_resolve.clone(), self.on_reply.clone());
+        let (decisions, labels): (Vec<_>, Vec<_>) = options
+            .iter()
+            .map(|o| (o.decision, o.label.clone()))
+            .unzip();
+        state.update(cx, |s, cx| {
+            s.on_resolve = on_resolve;
+            s.on_reply = on_reply;
+            s.decisions = decisions;
+            s.labels = labels;
+            // pink composer input: `placeholder` text, accent caret.
+            s.reply.update(cx, |input, _| {
+                input.set_colors(Some(t.placeholder), Some(t.caret), Some(t.selection))
+            });
         });
 
-        let key_state = state.clone();
-        let on_key = move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {
-            let ks = &event.keystroke;
-            let decision = match ks.key.as_str() {
-                "enter" if ks.modifiers.platform || ks.modifiers.control => Decision::Approved,
-                "escape" => Decision::Denied,
-                _ => return,
-            };
-            key_state.update(cx, |s, cx| s.resolve(decision, window, cx));
-            cx.stop_propagation();
+        let s = state.read(cx);
+        let chip_value: SharedString = match s.decision {
+            Some(decision) => record_value(&req.header, &s.label_of(decision), s.by_pink).into(),
+            None => "Awaiting your answer…".into(),
         };
-        let hover_state = state.clone();
-        let focused = focus.is_focused(window);
+        let open = s.decision.is_none();
 
-        let measure = state.read(cx).height.clone();
-        let content = div()
-            .relative()
-            .overflow_hidden()
-            .when_some(height, |d, h| d.h(px(h)))
-            .when_some(pending, |d, pending| {
-                d.child(div().relative().opacity(pending_o).child(pending).when(
-                    decision.is_none() && !morphing,
-                    |d| {
-                        d.child(
-                            canvas(
-                                move |bounds: Bounds<Pixels>, _, _| {
-                                    measure.set(f32::from(bounds.size.height));
-                                },
-                                |_, _, _, _| {},
-                            )
-                            .absolute()
-                            .top_0()
-                            .left_0()
-                            .size_full(),
-                        )
-                    },
+        div()
+            .w_full()
+            .max_w(px(layout::COMPOSER_MAX_WIDTH))
+            .flex()
+            .flex_col()
+            .font_family(pink::SANS)
+            // pink's shell root: 14 px Geist on GPUI's default line height.
+            .text_size(px(14.))
+            .line_height(phi())
+            .text_color(t.text)
+            .child(input_chip(chip_value, &t))
+            .when(open, |d| {
+                d.child(motion::fade_quick(
+                    eid(format!("{key}-panel-in")),
+                    div()
+                        .pt(px(SLOT_GAP))
+                        .child(question_panel(&req, &options, &key, &state, &t, cx)),
                 ))
             })
-            .when_some(record, |d, record| {
-                d.child(
-                    div()
-                        .absolute()
-                        .top_0()
-                        .left_0()
-                        .right_0()
-                        .h(px(ROW_H))
-                        .opacity(record_o)
-                        .child(record),
-                )
-            });
-
-        pink::card(&t)
-            .id(self.id.clone())
-            .track_focus(&focus)
-            .on_key_down(on_key)
-            .on_hover(move |hovered, _, cx| {
-                hover_state.update(cx, |s, cx| {
-                    s.paused = *hovered;
-                    cx.notify();
-                })
-            })
-            .w(px(CARD_W))
-            .font_family(pink::SANS)
-            .text_size(px(text::BODY))
-            .text_color(t.text)
-            .when(focused && decision.is_none(), |d| {
-                d.border_color(t.accent.opacity(0.35))
-            })
-            .child(content)
     }
 }
 
-/// Agent monogram.
-fn monogram(name: &str, hue: f32, size: f32, t: &Pink) -> impl IntoElement {
-    let (wash, ink) = if t.dark {
-        (oklch(0.30, 0.055, hue), oklch(0.86, 0.10, hue))
-    } else {
-        (oklch(0.945, 0.035, hue), oklch(0.47, 0.13, hue))
-    };
-    let initials: String = name
-        .split_whitespace()
-        .filter_map(|w| w.chars().next())
-        .take(2)
-        .map(|c| c.to_ascii_uppercase())
-        .collect();
-    div()
-        .flex_none()
-        .size(px(size))
-        .rounded(px(radius::MD))
-        .bg(wash)
-        .flex()
-        .items_center()
-        .justify_center()
-        .text_size(px(12.))
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(ink)
-        .child(initials)
+/// The transcript's record of the request (pink: transcript.rs `input_chip`):
+/// a 34 px neutral row that never recolors on resolution.
+fn input_chip(value: SharedString, t: &Pink) -> Div {
+    div().py(px(4.)).w_full().child(
+        div()
+            .h(px(34.))
+            .w_full()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .overflow_hidden()
+            .rounded(px(radius::LG))
+            .border_1()
+            .border_color(t.hairline(0.08))
+            .bg(t.ink(0.045))
+            .px(px(8.))
+            .text_size(px(12.))
+            .child(
+                div()
+                    .flex_none()
+                    .size(px(20.))
+                    .rounded(px(radius::SM))
+                    .bg(t.ink(0.09))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        gpui::svg()
+                            .path(ICON_QUESTION)
+                            .flex_none()
+                            .size(px(12.))
+                            .text_color(t.content_muted),
+                    ),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(t.content_muted)
+                    .child("Question"),
+            )
+            .child(
+                div()
+                    .min_w_0()
+                    .flex_1()
+                    .truncate()
+                    .text_color(t.text.opacity(0.9))
+                    .child(value),
+            ),
+    )
 }
 
-/// Three rising bars, lit up to the risk level.
-fn risk_meter(risk: Risk, t: &Pink) -> impl IntoElement {
-    let color = risk.color(t);
+/// The pill chrome the composer and the question panel share (pink:
+/// composer.rs `composer_surface`, opaque treatment).
+fn composer_surface(t: &Pink) -> Div {
     div()
-        .flex_none()
-        .flex()
-        .items_center()
-        .gap(px(8.))
-        .h(px(24.))
-        .pl(px(8.))
-        .pr(px(10.))
-        .rounded(px(radius::SM))
-        .bg(color.opacity(if t.dark { 0.12 } else { 0.08 }))
-        .child(
-            div()
-                .flex()
-                .items_end()
-                .gap(px(2.))
-                .h(px(11.))
-                .children((1..=3).map(|i| {
-                    div()
-                        .w(px(3.))
-                        .h(px(3. + i as f32 * 2.7))
-                        .rounded(px(1.))
-                        .bg(if i <= risk.level() {
-                            color
-                        } else {
-                            color.opacity(0.25)
-                        })
-                })),
-        )
-        .child(
-            div()
-                .text_size(px(text::CAPTION))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(color)
-                .child(risk.label()),
-        )
+        .rounded(px(radius::COMPOSER))
+        .border_1()
+        .border_color(t.border)
+        .bg(t.input_glass_bg())
+        .shadow(pink::shadow_lg())
 }
 
-const SQL_WORDS: &[&str] = &[
-    "ALTER",
-    "TABLE",
-    "ADD",
-    "COLUMN",
-    "CREATE",
-    "INDEX",
-    "CONCURRENTLY",
-    "ON",
-    "NOT",
-    "NULL",
-    "DEFAULT",
-    "UPDATE",
-    "SET",
-    "WHERE",
-    "BEGIN",
-    "COMMIT",
-];
-
-/// A light tint: keywords, quoted strings, numbers and flags.
-fn highlight(line: &str, t: &Pink) -> Vec<(std::ops::Range<usize>, HighlightStyle)> {
-    let keyword = HighlightStyle {
-        color: Some(t.accent),
-        ..Default::default()
-    };
-    let string = HighlightStyle {
-        color: Some(t.success),
-        ..Default::default()
-    };
-    let faint = HighlightStyle {
-        color: Some(t.text_faint),
-        ..Default::default()
-    };
-    let mut out = Vec::new();
-    let bytes = line.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        let c = bytes[i];
-        if c == b'\'' {
-            let end = line[i + 1..].find('\'').map_or(line.len(), |e| i + e + 2);
-            out.push((i..end, string));
-            i = end;
-        } else if c == b'-' && bytes.get(i + 1) == Some(&b'-') {
-            out.push((i..line.len(), faint));
-            break;
-        } else if c.is_ascii_alphabetic() || c == b'-' {
-            let start = i;
-            while i < bytes.len()
-                && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'-')
-            {
-                i += 1;
-            }
-            let word = &line[start..i];
-            let flag = word.starts_with('-') && word.len() > 1;
-            if SQL_WORDS.contains(&word) || flag {
-                out.push((start..i, keyword));
-            }
+/// One numbered option (pink: composer.rs `render_wizard` option rows).
+fn option_row(
+    ix: usize,
+    option: &ApprovalOption,
+    picked: bool,
+    key: &str,
+    state: &Entity<CardState>,
+    t: &Pink,
+) -> impl IntoElement {
+    let hover_key = format!("{key}-option-{ix}");
+    let accent = t.accent;
+    let click_state = state.clone();
+    div()
+        .id(eid(hover_key.clone()))
+        .role(Role::RadioButton)
+        .aria_label(option.label.clone())
+        .aria_toggled(if picked {
+            Toggled::True
         } else {
-            i += 1;
-        }
-    }
-    out
+            Toggled::False
+        })
+        .tab_index(0)
+        .focus_visible(move |style| style.border_color(accent))
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(12.))
+        .px(px(14.))
+        .py(px(10.))
+        .rounded(px(12.))
+        .border_1()
+        .border_color(if picked {
+            t.ink(0.16)
+        } else {
+            gpui::transparent_black()
+        })
+        .bg(if picked {
+            t.ink(0.09)
+        } else {
+            motion::hover_blend(&hover_key, t.ink(0.025), t.ink(0.06))
+        })
+        .on_hover(motion::hover_listener(hover_key))
+        .cursor_pointer()
+        .on_key_down(pink::swallow_activation_key)
+        .on_click(move |_, window, cx| {
+            click_state.update(cx, |s, cx| s.select(ix, window, cx));
+        })
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .text_size(px(13.5))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(if picked { t.text } else { t.text.opacity(0.9) })
+                .flex()
+                .flex_col()
+                .gap(px(3.))
+                .child(option.label.clone())
+                .when_some(option.detail(), |el, detail| {
+                    el.child(
+                        div()
+                            .text_size(px(11.5))
+                            .font_weight(FontWeight::NORMAL)
+                            .text_color(t.readable_muted(0.65))
+                            .child(detail),
+                    )
+                }),
+        )
+        .when(ix < 9, |el| {
+            // Number kbd chip: `size-[22px] rounded-md text-[11px]`.
+            el.child(
+                div()
+                    .flex_none()
+                    .size(px(22.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(6.))
+                    .bg(if picked { t.ink(0.16) } else { t.ink(0.05) })
+                    .text_size(px(11.))
+                    .text_color(if picked {
+                        t.text
+                    } else {
+                        t.readable_muted(0.6)
+                    })
+                    .child(format!("{}", ix + 1)),
+            )
+        })
 }
 
-fn pending_view(
+/// The question panel in the composer's slot (pink: composer.rs
+/// `render_wizard` for an approval question).
+fn question_panel(
     req: &ApprovalRequest,
+    options: &[ApprovalOption],
     key: &str,
     state: &Entity<CardState>,
     t: &Pink,
     cx: &App,
 ) -> impl IntoElement {
     let s = state.read(cx);
-    let (left, paused) = (s.left, s.paused);
-    let frac = if req.timeout.is_zero() {
-        0.
-    } else {
-        left.as_secs_f32() / req.timeout.as_secs_f32()
-    };
-    let frac = motion::follow(
-        &format!("{key}-ring"),
-        frac,
-        motion::MotionSpec::new(TICK.as_millis() as u64 + 20, motion::LINEAR),
-    );
-    let secs = left.as_secs_f32().ceil() as u32;
-    let urgency = if paused {
-        t.text_muted
-    } else if secs <= 5 {
-        t.danger
-    } else if secs <= 10 {
-        t.warning
-    } else {
-        t.text_muted
-    };
+    let reply = s.reply.clone();
+    let typed_empty = reply.read(cx).text().trim().is_empty();
+    // Selection reads on the row only while no typed answer overrides it.
+    let picked = s.picked.filter(|_| typed_empty);
+    let can_advance = s.picked.is_some() || !typed_empty;
+    let countdown = s.left().zip(s.auto).map(|(left, auto)| {
+        let seconds = left.as_millis().div_ceil(1000);
+        format!(
+            "PINK picks {} in {seconds}s unless you answer",
+            s.label_of(auto)
+        )
+    });
 
-    let header = div()
+    let header = div().flex().flex_row().items_center().gap(px(10.)).child(
+        div()
+            .text_size(px(11.))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(t.readable_muted(0.6))
+            .child(pink::tracked_upper(&req.header)),
+    );
+
+    let question = div()
+        .id(eid(format!("{key}-question")))
+        .max_h(px(160.))
+        .overflow_y_scroll()
+        .mt(px(6.))
+        .text_size(px(15.))
+        .line_height(px(20.))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(t.text)
+        .child(req.question.clone());
+
+    let context = div()
+        .id(eid(format!("{key}-context")))
+        .mt(px(8.))
+        .max_h(px(220.))
+        .overflow_y_scroll()
         .flex()
-        .items_center()
-        .gap(px(12.))
-        .child(monogram(&req.agent, req.agent_hue, 34., t))
-        .child(
+        .flex_col()
+        .gap(px(6.))
+        .children(req.context_rows().into_iter().map(|(label, value)| {
             div()
                 .flex()
                 .flex_col()
-                .flex_1()
-                .min_w_0()
+                .gap(px(2.))
                 .child(
                     div()
-                        .text_size(px(text::FOOTNOTE))
-                        .line_height(px(16.))
-                        .text_color(t.text_faint)
-                        .child(format!("{} wants to", req.agent)),
+                        .text_size(px(11.))
+                        .text_color(t.readable_muted(0.65))
+                        .child(label),
                 )
+                .child(div().text_size(px(12.)).text_color(t.text).child(value))
+        }));
+
+    let option_rows = div()
+        .id(eid(format!("{key}-options")))
+        .max_h(px(220.))
+        .overflow_y_scroll()
+        .mt(px(12.))
+        .flex()
+        .flex_col()
+        .gap(px(4.))
+        .children(
+            options
+                .iter()
+                .enumerate()
+                .map(|(ix, option)| option_row(ix, option, picked == Some(ix), key, state, t)),
+        );
+
+    // The free answer: a composer surface nested in the panel.
+    let answer = req.reply.then(|| {
+        div().mt(px(12.)).pb(px(4.)).px(px(4.)).child(
+            composer_surface(t)
+                .id(eid(format!("{key}-answer")))
+                .w_full()
+                .overflow_hidden()
                 .child(
                     div()
-                        .text_size(px(15.))
-                        .line_height(px(21.))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .child(req.title.clone()),
+                        .flex()
+                        .items_center()
+                        .min_w_0()
+                        .px(px(8.))
+                        .py(px(12.))
+                        // pink composer input: `text-[14px] leading-relaxed`.
+                        .text_size(px(14.))
+                        .line_height(px(22.75))
+                        .text_color(t.text)
+                        .child(div().flex_1().min_w_0().child(reply.clone())),
                 ),
         )
-        .child(risk_meter(req.risk, t));
+    });
 
-    let preview = req.file.clone().map(|file| {
-        let lines = req.lines.iter().enumerate().map(|(i, line)| {
+    let hold_state = state.clone();
+    let keep_state = state.clone();
+    let send_state = state.clone();
+    let footer = div()
+        .flex()
+        .flex_row()
+        .justify_between()
+        .items_center()
+        .gap(px(12.))
+        .px(px(16.))
+        .pb(px(16.))
+        .pt(px(4.))
+        .child(
             div()
                 .flex()
-                .h(px(20.))
+                .flex_1()
+                .min_w_0()
                 .items_center()
-                .child(
-                    div()
-                        .flex_none()
-                        .w(px(28.))
-                        .pr(px(10.))
-                        .flex()
-                        .justify_end()
-                        .text_color(t.text_faint.opacity(0.7))
-                        .child((i + 1).to_string()),
-                )
-                .child(
-                    div()
-                        .whitespace_nowrap()
-                        .text_color(t.text)
-                        .child(StyledText::new(line.clone()).with_highlights(highlight(line, t))),
-                )
-        });
-        div()
-            .mt(px(14.))
-            .rounded(px(radius::MD))
-            .border_1()
-            .border_color(t.border)
-            .bg(t.fill(FillTier::Quaternary))
-            .overflow_hidden()
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .h(px(32.))
-                    .px(px(10.))
-                    .border_b_1()
-                    .border_color(t.border)
-                    .child(
-                        gpui::svg()
-                            .path(ICON_FILE)
-                            .size(px(14.))
-                            .text_color(t.text_faint),
-                    )
-                    .child(
+                .gap(px(8.))
+                .when_some(countdown, |el, copy| {
+                    el.child(
                         div()
                             .flex_1()
                             .min_w_0()
-                            .truncate()
-                            .font_family(pink::MONO)
-                            .text_size(px(text::FOOTNOTE))
-                            .text_color(t.text_muted)
-                            .child(file),
+                            .text_size(px(12.))
+                            .text_color(t.readable_muted(0.7))
+                            .child(copy),
                     )
-                    .when(req.added + req.removed > 0, |d| {
-                        d.child(
-                            div()
-                                .flex()
-                                .gap(px(6.))
-                                .font_family(pink::MONO)
-                                .text_size(px(text::CAPTION))
-                                .child(div().text_color(t.success).child(format!("+{}", req.added)))
-                                .child(
-                                    div()
-                                        .text_color(t.danger)
-                                        .child(format!("−{}", req.removed)),
-                                ),
+                    .child(
+                        pink::button(
+                            format!("{key}-keep-waiting"),
+                            ButtonKind::Ghost,
+                            ControlSize::Lg,
+                            t,
                         )
-                    }),
-            )
-            .child(
-                div()
-                    .py(px(6.))
-                    .font_family(pink::MONO)
-                    .text_size(px(text::FOOTNOTE))
-                    .children(lines),
-            )
-    });
-
-    let facts = (!req.facts.is_empty()).then(|| {
-        div()
-            .mt(px(14.))
-            .flex()
-            .gap(px(12.))
-            .children(req.facts.iter().map(|(label, value)| {
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .gap(px(2.))
-                    .child(
-                        div()
-                            .text_size(px(text::CAPTION))
-                            .text_color(t.text_faint)
-                            .child(label.clone()),
+                        .aria_label("Keep waiting")
+                        .child("Keep waiting")
+                        .on_click(move |_, _, cx| {
+                            keep_state.update(cx, |s, cx| {
+                                s.hold();
+                                cx.notify();
+                            })
+                        }),
                     )
-                    .child(
-                        div()
-                            .text_size(px(text::BODY))
-                            .text_color(t.text)
-                            .truncate()
-                            .child(value.clone()),
-                    )
-            }))
-    });
-
-    let timer = div()
-        .flex()
-        .items_center()
-        .gap(px(8.))
-        .flex_1()
-        .min_w_0()
-        .child(ring_timer(frac, urgency, t.fill(FillTier::Primary), paused))
-        .child(
-            div()
-                .text_size(px(text::FOOTNOTE))
-                .text_color(urgency)
-                .child(if paused {
-                    "Paused while you review".to_string()
-                } else {
-                    format!("Auto-deny in {}:{:02}", secs / 60, secs % 60)
                 }),
-        );
-
-    let (approve_state, deny_state) = (state.clone(), state.clone());
-    let approve_mod = if cfg!(target_os = "macos") {
-        "⌘"
-    } else {
-        "Ctrl"
-    };
-    let approve_kbd = div()
-        .flex_none()
-        .h(px(18.))
-        .px(px(5.))
-        .ml(px(2.))
-        .flex()
-        .items_center()
-        .gap(px(3.))
-        .rounded(px(radius::XS))
-        .bg(t.on_solid.opacity(0.14))
-        .text_size(px(text::CAPTION))
-        .font_family(pink::MONO)
-        .text_color(t.on_solid.opacity(0.75))
-        .child(approve_mod)
-        .child(
-            gpui::svg()
-                .path(ICON_ENTER)
-                .size(px(11.))
-                .text_color(t.on_solid.opacity(0.75)),
-        );
-    let footer = div()
-        .mt(px(16.))
-        .pt(px(14.))
-        .border_t_1()
-        .border_color(t.border)
-        .flex()
-        .items_center()
-        .gap(px(8.))
-        .child(timer)
-        .child(
-            pink::button(
-                format!("{key}-deny"),
-                ButtonKind::Secondary,
-                ControlSize::Lg,
-                t,
-            )
-            .pr(px(6.))
-            .child("Deny")
-            .child(pink::kbd("Esc", t).ml(px(2.)))
-            .on_click(move |_, window, cx| {
-                deny_state.update(cx, |s, cx| s.resolve(Decision::Denied, window, cx))
-            }),
         )
         .child(
             pink::button(
-                format!("{key}-approve"),
+                format!("{key}-send"),
                 ButtonKind::Primary,
                 ControlSize::Lg,
                 t,
             )
-            .pr(px(6.))
-            .child("Approve")
-            .child(approve_kbd)
-            .on_click(move |_, window, cx| {
-                approve_state.update(cx, |s, cx| s.resolve(Decision::Approved, window, cx))
-            }),
+            .aria_label("Send")
+            .px(px(16.))
+            .when(!can_advance, |el| el.opacity(0.4))
+            .child("Send")
+            .on_click(move |_, window, cx| send_state.update(cx, |s, cx| s.advance(window, cx))),
         );
 
-    div()
-        .p(px(16.))
+    let key_state = state.clone();
+    composer_surface(t)
+        .id(eid(format!("{key}-panel")))
+        .track_focus(&s.focus)
+        .capture_any_mouse_down(move |_, _, cx| {
+            hold_state.update(cx, |s, cx| {
+                if s.deadline.is_some() {
+                    s.hold();
+                    cx.notify();
+                }
+            })
+        })
+        .on_key_down(
+            move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {
+                key_state.update(cx, |s, cx| s.on_key(event, window, cx));
+            },
+        )
         .flex()
         .flex_col()
-        .child(header)
-        .children(preview)
-        .children(facts)
-        .child(footer)
-}
-
-/// A small ring that drains clockwise from twelve o'clock.
-fn ring_timer(frac: f32, color: Hsla, track: Hsla, paused: bool) -> impl IntoElement {
-    div()
-        .flex_none()
-        .relative()
-        .size(px(18.))
-        .child(
-            canvas(
-                |_, _, _| {},
-                move |bounds, _, window, _| {
-                    let center = bounds.center();
-                    let r = f32::from(bounds.size.width) / 2. - 1.5;
-                    if let Some(path) = arc(center, r, 0., 360., 1.5) {
-                        window.paint_path(path, track);
-                    }
-                    if frac > 0.002
-                        && let Some(path) = arc(center, r, 0., 360. * frac.min(1.), 1.5)
-                    {
-                        window.paint_path(path, color);
-                    }
-                },
-            )
-            .absolute()
-            .size_full(),
-        )
-        .when(paused, |d| {
-            d.child(
-                div()
-                    .absolute()
-                    .size_full()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(gpui::svg().path(ICON_PAUSE).size(px(10.)).text_color(color)),
-            )
-        })
-}
-
-/// A stroked arc as a polyline; angles in degrees, clockwise from 12 o'clock.
-fn arc(
-    center: gpui::Point<Pixels>,
-    r: f32,
-    start: f32,
-    sweep: f32,
-    width: f32,
-) -> Option<gpui::Path<Pixels>> {
-    let steps = ((sweep.abs() / 4.).ceil() as usize).max(2);
-    let mut b = PathBuilder::stroke(px(width));
-    for i in 0..=steps {
-        let a = (start + sweep * i as f32 / steps as f32 - 90.).to_radians();
-        let p = point(center.x + px(r * a.cos()), center.y + px(r * a.sin()));
-        if i == 0 {
-            b.move_to(p);
-        } else {
-            b.line_to(p);
-        }
-    }
-    b.build().ok()
-}
-
-#[allow(clippy::too_many_arguments)]
-fn record_view(
-    req: &ApprovalRequest,
-    decision: Decision,
-    epoch: usize,
-    key: &str,
-    state: &Entity<CardState>,
-    on_undo: Option<Handler>,
-    t: &Pink,
-    cx: &App,
-) -> impl IntoElement {
-    let s = state.read(cx);
-    let can_undo = s.undo_until.is_some();
-    let when = s.when.clone();
-    let color = decision.tone().color(t);
-    let wash = if decision == Decision::Expired {
-        t.fill(FillTier::Secondary)
-    } else {
-        color.opacity(if t.dark { 0.16 } else { 0.10 })
-    };
-    let icon = match decision {
-        Decision::Approved => ICON_CHECK,
-        Decision::Denied => ICON_DENY,
-        Decision::Expired => ICON_TIMER,
-    };
-    let disc = div()
-        .flex_none()
-        .size(px(28.))
-        .rounded_full()
-        .bg(wash)
-        .flex()
-        .items_center()
-        .justify_center()
-        .child(gpui::svg().path(icon).size(px(15.)).text_color(color))
-        .with_animation(
-            eid(format!("{key}-disc-{epoch}")),
-            MENU_IN.with_duration(320).with_delay(120).animation(),
-            |el, p| {
-                let s = 0.5 + 0.5 * motion::EASE_OUT_BACK.eval(p);
-                el.opacity(p).size(px(28. * s))
-            },
-        );
-    let detail = match decision {
-        Decision::Expired => format!("No answer in time · {when}"),
-        _ => format!("{} · by you · {when}", req.agent),
-    };
-    let undo_state = state.clone();
-    div()
-        .h(px(ROW_H))
-        .px(px(14.))
-        .flex()
-        .items_center()
-        .gap(px(12.))
         .child(
             div()
-                .flex_none()
-                .w(px(28.))
-                .flex()
-                .justify_center()
-                .child(disc),
-        )
-        .child(
-            div()
+                .px(px(16.))
+                .pt(px(16.))
                 .flex()
                 .flex_col()
-                .flex_1()
-                .min_w_0()
-                .child(
-                    div()
-                        .text_size(px(text::BODY))
-                        .line_height(px(18.))
-                        .font_weight(FontWeight::MEDIUM)
-                        .child(format!("{} {}", req.subject, decision.verb())),
-                )
-                .child(
-                    div()
-                        .text_size(px(text::FOOTNOTE))
-                        .line_height(px(16.))
-                        .text_color(t.text_faint)
-                        .child(detail),
-                ),
+                .child(header)
+                .child(question)
+                .child(context)
+                .child(option_rows)
+                .children(answer),
         )
-        .when(can_undo, |d| {
-            d.child(motion::fade_in(
-                eid(format!("{key}-undo-{epoch}")),
-                pink::button(format!("{key}-undo"), ButtonKind::Ghost, ControlSize::Md, t)
-                    .child(pink::glyph(ICON_UNDO, ControlSize::Md).text_color(t.text_muted))
-                    .child("Undo")
-                    .on_click(move |_, window, cx| {
-                        undo_state.update(cx, |s, cx| s.undo(cx));
-                        if let Some(f) = on_undo.as_ref() {
-                            f(window, cx);
-                        }
-                    }),
-            ))
-        })
-        .when(!can_undo, |d| {
-            d.child(pink::badge(
-                match decision {
-                    Decision::Approved => "Approved",
-                    Decision::Denied => "Denied",
-                    Decision::Expired => "Expired",
-                },
-                decision.tone(),
-                t,
-            ))
-        })
+        .child(footer)
 }
 
 // ---------------------------------------------------------------------------
@@ -1062,42 +933,39 @@ struct Queue {
 }
 
 fn migration() -> ApprovalRequest {
-    ApprovalRequest::new("Release agent", "Run a schema migration on prod-eu-1")
-        .subject("Schema migration")
-        .agent_hue(32.)
-        .risk(Risk::High)
-        .file(
-            "migrations/0142_split_invoice_tax.sql",
-            vec![
-                "ALTER TABLE invoices".into(),
-                "  ADD COLUMN tax_region text NOT NULL DEFAULT 'eu';".into(),
-                "CREATE INDEX CONCURRENTLY invoices_tax_region_idx".into(),
-                "  ON invoices (tax_region);".into(),
-            ],
-        )
-        .diff(18, 4)
-        .fact("Target", "prod-eu-1")
-        .fact("Rows touched", "≈ 1.2M")
-        .fact("Rollback", "0142_down.sql")
-        .timeout(Duration::from_secs(90))
+    ApprovalRequest::new(
+        "Approve command",
+        "Claude wants to run the invoice tax migration on prod-eu-1. Target: lena-mbp.",
+    )
+    .fact("Command / input", "npm run db:migrate -- --env production")
+    .fact("Working directory", "~/code/billing")
+    .fact(
+        "Reason",
+        "Adds tax_region to invoices and backfills about 1.2M rows",
+    )
+    .option(ApprovalOption::deny().description("Reject this tool call; Claude may continue."))
+    .option(ApprovalOption::allow_once())
+    .option(
+        ApprovalOption::cancel_turn().description("Reject this tool call and stop Claude's turn."),
+    )
+    .auto_answer(Decision::Deny, Duration::from_secs(45))
 }
 
 fn key_rotation() -> ApprovalRequest {
-    ApprovalRequest::new("Release agent", "Rotate the staging API keys")
-        .subject("Key rotation")
-        .agent_hue(32.)
-        .risk(Risk::Medium)
-        .file(
-            "scripts/rotate-keys.sh",
-            vec![
-                "vault write -f auth/staging/rotate-root".into(),
-                "kubectl rollout restart deploy/api -n staging".into(),
-            ],
-        )
-        .fact("Target", "staging")
-        .fact("Downtime", "None expected")
-        .fact("Notifies", "#release")
-        .timeout(Duration::from_secs(60))
+    ApprovalRequest::new(
+        "Approve file change",
+        "Codex wants to modify files. scripts/rotate-keys.sh Target: lena-mbp.",
+    )
+    .fact("File changes", "scripts/rotate-keys.sh (+12 −3)")
+    .fact("Working directory", "~/code/platform")
+    .fact("Reason", "Rotate the staging API keys before the release")
+    .expires_at("14:32:05")
+    .option(ApprovalOption::allow_once().description("Approve only these file changes."))
+    .option(
+        ApprovalOption::allow_for_session()
+            .description("Approve these changes and future changes to the same files."),
+    )
+    .option(ApprovalOption::deny().description("Reject this action; the agent may continue."))
 }
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
@@ -1109,18 +977,29 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
         let next_visible = queue.read(cx).next_visible;
         let reveal = queue.clone();
         div()
-            .w(px(CARD_W))
+            .w(px(680.))
             .flex()
             .flex_col()
-            .gap(px(10.))
+            .gap(px(4.))
             .child(
                 ApprovalCard::new(
                     "approval-earlier",
-                    ApprovalRequest::new("Release agent", "Open a release pull request")
-                        .subject("Release PR #482")
-                        .agent_hue(32.),
+                    ApprovalRequest::new(
+                        "Approve network access",
+                        "Claude wants to reach registry.npmjs.org.",
+                    ),
                 )
-                .resolved(Decision::Approved, "4m ago"),
+                .resolved(Decision::AllowOnce),
+            )
+            .child(
+                ApprovalCard::new(
+                    "approval-unattended",
+                    ApprovalRequest::new(
+                        "Approve command",
+                        "Claude wants to run git push --force.",
+                    ),
+                )
+                .auto_resolved(Decision::Deny),
             )
             .child(
                 ApprovalCard::new("approval-migration", migration())
@@ -1129,7 +1008,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                         reveal.update(cx, |q, cx| {
                             q._reveal = Some(cx.spawn(async move |this, cx| {
                                 cx.background_executor()
-                                    .timer(Duration::from_millis(900))
+                                    .timer(Duration::from_millis(600))
                                     .await;
                                 this.update(cx, |q, cx| {
                                     q.next_visible = true;
@@ -1141,10 +1020,8 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                     }),
             )
             .when(next_visible, |d| {
-                d.child(motion::rise_in(
+                d.child(motion::fade_quick(
                     "approval-next-in",
-                    motion::VIEW_IN,
-                    8.,
                     div().child(ApprovalCard::new("approval-keys", key_rotation())),
                 ))
             })
@@ -1155,22 +1032,35 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
 mod tests {
     use super::*;
 
-    fn spans<'a>(line: &'a str) -> Vec<&'a str> {
-        highlight(line, &Pink::light())
-            .into_iter()
-            .map(|(r, _)| &line[r])
-            .collect()
+    #[test]
+    fn digits_pick_options_only_from_the_panel() {
+        assert_eq!(number_shortcut("1", false, false), Some(0));
+        assert_eq!(number_shortcut("9", false, false), Some(8));
+        assert_eq!(number_shortcut("0", false, false), None);
+        assert_eq!(number_shortcut("3", true, false), None);
+        assert_eq!(number_shortcut("3", false, true), None);
     }
 
     #[test]
-    fn tints_keywords_strings_and_flags() {
+    fn records_name_the_request_and_who_answered() {
         assert_eq!(
-            spans("  ADD COLUMN region text DEFAULT 'eu';"),
-            ["ADD", "COLUMN", "DEFAULT", "'eu'"]
+            record_value("Approve command", "Allow once", false),
+            "Approve command · Allow once"
         );
         assert_eq!(
-            spans("kubectl rollout restart deploy/api -n staging"),
-            ["-n"]
+            record_value("Approve command", "Deny", true),
+            "Approve command · no reply in time, PINK picked Deny"
+        );
+    }
+
+    #[test]
+    fn context_ends_with_the_expiry_row() {
+        let waits = ApprovalRequest::new("Approve command", "…").fact("Command / input", "ls");
+        assert_eq!(waits.context_rows().last().unwrap().0, "Approval waits");
+        let expires = waits.expires_at("14:32:05");
+        assert_eq!(
+            expires.context_rows().last().unwrap(),
+            &("Approval expires".into(), "14:32:05".into())
         );
     }
 }
