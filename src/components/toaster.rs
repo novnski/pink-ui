@@ -590,7 +590,8 @@ fn exchange(t: &Pink) -> impl IntoElement {
 }
 
 /// A resting composer pill for the toast to float above (pink: composer.rs
-/// `composer_surface`, opaque; recessed Send disc, Attach at rest).
+/// `composer_surface`, opaque: `input_glass_bg` with `shadow_lg`; recessed
+/// Send disc, Attach at rest).
 fn composer(t: &Pink) -> impl IntoElement {
     let disc = || {
         div()
@@ -608,6 +609,7 @@ fn composer(t: &Pink) -> impl IntoElement {
         .border_1()
         .border_color(t.border)
         .bg(t.input_glass_bg())
+        .shadow(pink::shadow_lg())
         .child(
             div()
                 .min_h(px(60.))
