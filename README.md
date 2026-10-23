@@ -9,7 +9,7 @@
   <img alt="Rust: stable" src="https://img.shields.io/badge/rust-stable-b7410e">
   <br>
   <a href="#components"><img alt="components: 56" src="https://img.shields.io/badge/components-56-ec4899"></a>
-  <img alt="platforms: macOS, Windows, Linux, Web" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20Web-0f766e">
+  <a href="https://gpui.rs"><img alt="platforms: anywhere GPUI runs" src="https://img.shields.io/badge/platforms-anywhere%20GPUI%20runs-0f766e"></a>
   <a href="LICENSE"><img alt="license: MIT" src="https://img.shields.io/badge/license-MIT-2563eb"></a>
 </p>
 
