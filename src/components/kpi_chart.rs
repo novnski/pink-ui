@@ -1,60 +1,61 @@
-//! KPI Chart – a metric whose headline follows a multi-series trend chart.
+//! KPI Chart – a headline total over a period, split by series, over a
+//! smoothed trend (pink: `shell/usage.rs` `render_usage_page`, the Usage
+//! page's view card and summary card).
 //!
-//! The card leads with the headline number and its change over the range.
-//! Below it, a legend of toggles (one per series, each reading the value
-//! under the crosshair) sits over a smoothed line chart. Moving the pointer,
-//! or the arrow keys once the chart has focus, walks a crosshair across the
-//! points: the headline rolls to that day's total and a readout lists every
-//! series. Switching the range morphs the lines into the new shape, and
-//! hiding a series rescales the axis.
+//! A "Period" card switches the range with a segmented control. The summary
+//! card below leads with the range's total in Display type, lists one row
+//! per series (identity tile, series dot, share and amount), and ends on the
+//! trend: monotone cubic areas and lines on a three-line grid with a value
+//! gutter. Pointing at a period draws a guide, reads the period out in the
+//! row's description and trailing caption, and shows a tooltip listing every
+//! series.
 //!
 //! ```ignore
-//! KpiChart::new("dau", "Daily active users")
-//!     .range(KpiRange::new("30D", dates).series(KpiSeries::new("Web", web)))
+//! KpiChart::new("revenue", "Gross revenue")
+//!     .range(KpiRange::new("30 days", dates).series(KpiSeries::new("Web", web)))
 //!     .on_range_change(|ix, _, _| println!("range {ix}"))
 //! ```
 
-use std::{cell::Cell, rc::Rc, sync::Arc};
+use std::{rc::Rc, sync::Arc};
 
 use gpui::{
-    AnyView, App, BorderStyle, Bounds, ContentMask, Corners, Edges, ElementId, FocusHandle,
-    FontWeight, Hsla, KeyDownEvent, MouseButton, MouseMoveEvent, PathBuilder, Pixels, SharedString,
-    Window, canvas, div, fill, linear_color_stop, linear_gradient, point, prelude::*, px, quad,
-    size,
+    AnyView, App, Context, ElementId, FontWeight, Hsla, PathBuilder, Render, SharedString, Window,
+    canvas, div, point, prelude::*, px,
 };
 
 use crate::{
-    motion::{self, CubicBezier, MotionSpec},
-    pink::{self, ControlSize, FillTier, Pink, Tone, radius, space, text},
+    pink::{self, ControlSize, FillTier, Pink, Segment, TextStyle, TypeStyleExt, layout},
     story,
 };
 
 pub const NAME: &str = "KPI Chart";
-pub const DESCRIPTION: &str = "A headline metric over a multi-series trend: a crosshair walks the days, the number rolls with it and a readout splits it by series";
+pub const DESCRIPTION: &str = "A period's headline total split into one row per series, over smoothed trend lines – point at a period for a guide, a readout and every series' value";
 
-/// Points sampled along each smoothed line; fixed so ranges of any length morph into each other.
-const SAMPLES: usize = 120;
-const PLOT_H: f32 = 188.;
-const AXIS_W: f32 = 44.;
-/// Lines draw in from the left on first render.
-const DRAW_IN: MotionSpec = MotionSpec::new(1100, motion::EASE_OUT_QUINT).with_delay(120);
-/// Range switches and axis rescales.
-const MORPH: MotionSpec = MotionSpec::new(520, motion::EASE_OUT_QUINT);
-/// The crosshair sliding between points.
-const TRACK: MotionSpec = MotionSpec::new(140, CubicBezier::new(0.2, 0.0, 0.0, 1.0));
-/// Series fading in and out of focus.
-const DIM: MotionSpec = MotionSpec::new(200, motion::EASE);
+/// The plot height, value-axis gutter and gutter gap (pink `usage.rs`
+/// `CHART_HEIGHT` / `CHART_AXIS_WIDTH` / `CHART_AXIS_GAP`).
+const CHART_HEIGHT: f32 = 200.0;
+const CHART_AXIS_WIDTH: f32 = 56.0;
+const CHART_AXIS_GAP: f32 = 8.0;
+/// The settings page column the Usage page sits in: 720 wide, `px 32`
+/// (pink `settings/widgets.rs` `page_column`).
+const CONTENT_WIDTH: f32 = layout::PAGE_MAX_WIDTH - 2.0 * 32.0;
+/// Period control width per segment (pink: four periods in 300).
+const SEGMENT_WIDTH: f32 = 75.0;
 
 type RangeHandler = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 type Formatter = Rc<dyn Fn(f32) -> String>;
 
-/// One line of the chart.
+/// One series of the chart, with its row in the summary.
 #[derive(Clone)]
 pub struct KpiSeries {
     pub name: SharedString,
     pub values: Vec<f32>,
-    /// Overrides the palette color for this series.
+    /// Overrides the series color (pink's provider tones by default).
     pub color: Option<Hsla>,
+    /// An icon asset for the row's identity tile.
+    pub icon: Option<SharedString>,
+    /// Leads the row's description, e.g. "1,204 orders".
+    pub detail: Option<SharedString>,
 }
 
 impl KpiSeries {
@@ -63,6 +64,8 @@ impl KpiSeries {
             name: name.into(),
             values,
             color: None,
+            icon: None,
+            detail: None,
         }
     }
 
@@ -70,16 +73,36 @@ impl KpiSeries {
         self.color = Some(color);
         self
     }
+
+    pub fn icon(mut self, path: impl Into<SharedString>) -> Self {
+        self.icon = Some(path.into());
+        self
+    }
+
+    pub fn detail(mut self, detail: impl Into<SharedString>) -> Self {
+        self.detail = Some(detail.into());
+        self
+    }
 }
 
-/// A selectable time range: its points' labels and the series over them.
+/// A selectable period: its points' labels and the series over them.
 /// Every range should list the same series in the same order.
 #[derive(Clone)]
 pub struct KpiRange {
+    /// The segment label, e.g. "30 days".
     pub label: SharedString,
-    /// One label per point, e.g. "Oct 12".
+    /// One short label per point for the axis and readout, e.g. "Oct 12".
     pub points: Vec<SharedString>,
+    /// One long label per point for the hover detail, e.g. "Mon, Oct 12"
+    /// (falls back to `points`).
+    pub point_details: Vec<SharedString>,
     pub series: Vec<KpiSeries>,
+    /// The Period row's description, e.g. "One point per day."
+    pub caption: Option<SharedString>,
+    /// The chart row's title, e.g. "Daily revenue".
+    pub trend_title: Option<SharedString>,
+    /// The chart row's description while nothing is hovered.
+    pub trend_hint: Option<SharedString>,
 }
 
 impl KpiRange {
@@ -87,13 +110,60 @@ impl KpiRange {
         Self {
             label: label.into(),
             points,
+            point_details: Vec::new(),
             series: Vec::new(),
+            caption: None,
+            trend_title: None,
+            trend_hint: None,
         }
+    }
+
+    pub fn details(mut self, details: Vec<SharedString>) -> Self {
+        self.point_details = details;
+        self
     }
 
     pub fn series(mut self, series: KpiSeries) -> Self {
         self.series.push(series);
         self
+    }
+
+    pub fn caption(mut self, caption: impl Into<SharedString>) -> Self {
+        self.caption = Some(caption.into());
+        self
+    }
+
+    /// The chart row's title and its resting description.
+    pub fn trend(mut self, title: impl Into<SharedString>, hint: impl Into<SharedString>) -> Self {
+        self.trend_title = Some(title.into());
+        self.trend_hint = Some(hint.into());
+        self
+    }
+
+    fn short(&self, ix: usize) -> SharedString {
+        self.points.get(ix).cloned().unwrap_or_default()
+    }
+
+    fn long(&self, ix: usize) -> SharedString {
+        self.point_details
+            .get(ix)
+            .cloned()
+            .unwrap_or_else(|| self.short(ix))
+    }
+
+    fn value(&self, series: usize, ix: usize) -> f32 {
+        self.series
+            .get(series)
+            .and_then(|s| s.values.get(ix))
+            .copied()
+            .unwrap_or(0.)
+    }
+
+    /// The sum of every series at point `ix`.
+    fn total_at(&self, ix: usize) -> f32 {
+        (0..self.series.len())
+            .map(|s| self.value(s, ix) as f64)
+            .sum::<f64>() as f32
     }
 }
 
@@ -123,7 +193,7 @@ impl KpiChart {
         }
     }
 
-    /// A muted line under the headline, e.g. "all platforms".
+    /// The summary card's caption under its title, e.g. "Before refunds and tax".
     pub fn subtitle(mut self, subtitle: impl Into<SharedString>) -> Self {
         self.subtitle = Some(subtitle.into());
         self
@@ -140,13 +210,14 @@ impl KpiChart {
         self
     }
 
-    /// Formats the headline and readout values (default: grouped integers).
+    /// Formats the headline, row amounts and readouts (default: grouped
+    /// integers, "48,210").
     pub fn format(mut self, format: impl Fn(f32) -> String + 'static) -> Self {
         self.format = Rc::new(format);
         self
     }
 
-    /// Formats the axis labels (default: compact, "24k").
+    /// Formats the value-axis labels (default: compact, "48.21K").
     pub fn axis_format(mut self, format: impl Fn(f32) -> String + 'static) -> Self {
         self.axis_format = Rc::new(format);
         self
@@ -163,24 +234,19 @@ impl KpiChart {
 
 struct State {
     range: usize,
-    hidden: Vec<bool>,
-    /// Point under the crosshair.
+    /// The period under the pointer (pink `usage_hover_period_start`).
     hover: Option<usize>,
-    /// Series under the pointer in the legend.
-    emphasis: Option<usize>,
-    plot: Rc<Cell<Bounds<Pixels>>>,
-    focus: FocusHandle,
 }
 
-/// The series palette, derived from Pink's accent and status colors.
-fn palette(t: &Pink) -> [Hsla; 5] {
-    // Pink's light-mode warning is a deep orange for text; lines read better a step lighter.
-    let amber = if t.dark {
-        t.warning
-    } else {
-        pink::oklch(0.70, 0.165, 62.)
-    };
-    [t.accent, t.success, amber, pink::neutral(0.62), t.danger]
+/// Series colors: pink's provider tones (`usage.rs` `provider_tone`: the
+/// text color, then #5b9bbd and #d97757), then pink's project tints.
+fn series_tone(ix: usize, t: &Pink) -> Hsla {
+    match ix {
+        0 => t.text,
+        1 => gpui::rgb(0x5b9bbd).into(),
+        2 => gpui::rgb(0xd97757).into(),
+        _ => pink::project_tint(ix - 3),
+    }
 }
 
 impl RenderOnce for KpiChart {
@@ -191,702 +257,538 @@ impl RenderOnce for KpiChart {
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
-            |_, cx| State {
+            |_, _| State {
                 range: default_range,
-                hidden: Vec::new(),
                 hover: None,
-                emphasis: None,
-                plot: Rc::new(Cell::new(Bounds::default())),
-                focus: cx.focus_handle(),
             },
         );
         if self.ranges.is_empty() {
             return div().id(self.id.clone());
         }
-        let (range_ix, hidden, hover, emphasis, plot_cell, focus) = {
+        let (range_ix, hover) = {
             let s = state.read(cx);
-            (
-                s.range.min(self.ranges.len() - 1),
-                s.hidden.clone(),
-                s.hover,
-                s.emphasis,
-                s.plot.clone(),
-                s.focus.clone(),
-            )
+            (s.range.min(self.ranges.len() - 1), s.hover)
         };
         let range = &self.ranges[range_ix];
-        let n = range.points.len().max(1);
-        let hover = hover.map(|h| h.min(n - 1));
-        let colors = palette(&t);
-        let series_color = |ix: usize, s: &KpiSeries| s.color.unwrap_or(colors[ix % colors.len()]);
-        let is_hidden = |ix: usize| hidden.get(ix).copied().unwrap_or(false);
-        let value = |s: &KpiSeries, i: usize| s.values.get(i).copied().unwrap_or(0.);
+        let n = range.points.len();
+        let hover = hover.filter(|h| *h < n);
+        let format = self.format.clone();
+        let tones: Vec<Hsla> = range
+            .series
+            .iter()
+            .enumerate()
+            .map(|(ix, s)| s.color.unwrap_or_else(|| series_tone(ix, &t)))
+            .collect();
+        let sums: Vec<f64> = range
+            .series
+            .iter()
+            .map(|s| s.values.iter().map(|v| *v as f64).sum())
+            .collect();
+        let total: f64 = sums.iter().sum();
 
-        // Headline: the total of the visible series at the crosshair (or the
-        // latest point), rolling as it changes.
-        let total_at = |i: usize| -> f32 {
-            range
-                .series
+        // ---- the view card: the period switch (pink `view_card`) ----
+        let period_card = (self.ranges.len() > 1).then(|| {
+            let segments = self
+                .ranges
                 .iter()
                 .enumerate()
-                .filter(|(ix, _)| !is_hidden(*ix))
-                .map(|(_, s)| value(s, i))
-                .sum()
-        };
-        let focus_ix = hover.unwrap_or(n - 1);
-        let headline = motion::follow(&format!("{key}-headline"), total_at(focus_ix), MORPH);
-        let first = total_at(0);
-        let change = if first > 0. {
-            (total_at(focus_ix) - first) / first
-        } else {
-            0.
-        };
-
-        // Scale: a rounded ceiling over the visible series, gliding when it changes.
-        let peak = range
-            .series
-            .iter()
-            .enumerate()
-            .filter(|(ix, _)| !is_hidden(*ix))
-            .flat_map(|(_, s)| s.values.iter().copied())
-            .fold(0f32, f32::max);
-        let step = nice_step(peak / 4.);
-        let y_max = motion::follow(&format!("{key}-ymax"), step * 4., MORPH);
-        let reveal = motion::follow_from(&format!("{key}-reveal"), 0., 1., DRAW_IN);
-
-        // Smoothed, resampled lines; each sample glides on its own so a range
-        // switch morphs one shape into the next.
-        let lines: Vec<Line> = range
-            .series
-            .iter()
-            .enumerate()
-            .map(|(ix, s)| {
-                let slopes = monotone_slopes(&s.values);
-                let samples = (0..SAMPLES)
-                    .map(|j| {
-                        let u = j as f32 / (SAMPLES - 1) as f32 * (n - 1) as f32;
-                        let target = hermite(&s.values, &slopes, u);
-                        motion::follow(&format!("{key}-s{ix}-{j}"), target, MORPH)
-                    })
-                    .collect();
-                let target_opacity = if is_hidden(ix) {
-                    0.
-                } else if emphasis.is_some_and(|e| e != ix) {
-                    0.22
-                } else {
-                    1.
-                };
-                Line {
-                    color: series_color(ix, s),
-                    samples,
-                    opacity: motion::follow(&format!("{key}-op{ix}"), target_opacity, DIM),
-                    filled: emphasis.map_or(ix == 0 && !is_hidden(0), |e| e == ix),
-                }
-            })
-            .collect();
-
-        // Crosshair x as a fraction of the plot width, sliding between points.
-        let cross = hover.map(|h| {
-            let target = if n > 1 {
-                h as f32 / (n - 1) as f32
-            } else {
-                0.5
-            };
-            motion::follow(&format!("{key}-cross"), target, TRACK)
-        });
-
-        let plot_bounds = plot_cell.get();
-        let plot_w = f32::from(plot_bounds.size.width);
-
-        // --- Header -------------------------------------------------------
-        let chips = self.ranges.iter().enumerate().map(|(ix, r)| {
+                .map(|(ix, r)| Segment::new(ix.to_string(), r.label.clone()))
+                .collect();
             let state = state.clone();
             let handler = self.on_range_change.clone();
-            pink::chip(
-                format!("{key}-range-{ix}"),
-                ix == range_ix,
-                ControlSize::Sm,
-                &t,
-            )
-            .font_family(pink::MONO)
-            .child(r.label.clone())
-            .on_click(move |_, window, cx| {
-                state.update(cx, |s, cx| {
-                    if s.range != ix {
-                        s.range = ix;
-                        s.hover = None;
-                        cx.notify();
-                    }
-                });
-                if let Some(f) = &handler {
-                    f(ix, window, cx);
-                }
-            })
-        });
-        let caption: SharedString = match hover {
-            Some(h) => format!("on {}", range.points.get(h).cloned().unwrap_or_default()).into(),
-            None => format!(
-                "since {}",
-                range.points.first().cloned().unwrap_or_default()
-            )
-            .into(),
-        };
-        let delta_tone = if change >= 0. {
-            Tone::Success
-        } else {
-            Tone::Danger
-        };
-        let header = div()
-            .flex()
-            .items_start()
-            .justify_between()
-            .gap(px(space::S16))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(space::S4))
-                    .child(
-                        div()
-                            .text_size(px(text::BODY))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(t.text_muted)
-                            .child(self.title.clone()),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(space::S10))
-                            .child(
-                                div()
-                                    .text_size(px(30.))
-                                    .line_height(px(36.))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(t.text)
-                                    .child((self.format)(headline)),
-                            )
-                            .child(
-                                pink::badge(
-                                    format!(
-                                        "{} {:.1}%",
-                                        if change >= 0. { "▲" } else { "▼" },
-                                        change.abs() * 100.
-                                    ),
-                                    delta_tone,
-                                    &t,
-                                )
-                                .font_family(pink::MONO),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .gap(px(space::S4))
-                            .text_size(px(text::FOOTNOTE))
-                            .text_color(t.text_faint)
-                            .child(caption)
-                            .when_some(self.subtitle.clone(), |d, sub| d.child("·").child(sub)),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .gap(px(space::S2))
-                    .p(px(space::S2))
-                    .rounded(px(radius::MD))
-                    .bg(t.fill(FillTier::Quaternary))
-                    .children(chips),
-            );
-
-        // --- Legend: one toggle per series --------------------------------
-        let legend = div().flex().flex_wrap().gap(px(space::S4)).children(
-            range.series.iter().enumerate().map(|(ix, s)| {
-                let color = series_color(ix, s);
-                let off = is_hidden(ix);
-                let hover_key = format!("{key}-legend-{ix}");
-                let listener = motion::hover_listener(hover_key.clone());
-                let wash = motion::hover_blend(
-                    &hover_key,
-                    t.fill(FillTier::Tertiary).opacity(0.),
-                    t.fill(FillTier::Tertiary),
-                );
-                let state_hover = state.clone();
-                let state_click = state.clone();
-                let count = range.series.len();
-                div()
-                    .id(SharedString::from(hover_key.clone()))
-                    .flex()
-                    .items_center()
-                    .gap(px(space::S6))
-                    .h(px(26.))
-                    .px(px(space::S8))
-                    .rounded(px(radius::SM))
-                    .border_1()
-                    .border_color(t.border)
-                    .bg(wash)
-                    .cursor_pointer()
-                    .on_hover(move |hovered, window, cx| {
-                        listener(hovered, window, cx);
-                        state_hover.update(cx, |st, cx| {
-                            let next = if *hovered && !st.hidden.get(ix).copied().unwrap_or(false) {
-                                Some(ix)
-                            } else if st.emphasis == Some(ix) {
-                                None
-                            } else {
-                                st.emphasis
-                            };
-                            if next != st.emphasis {
-                                st.emphasis = next;
-                                cx.notify();
-                            }
-                        });
-                    })
-                    .on_click(move |_, _, cx| {
-                        state_click.update(cx, |st, cx| {
-                            st.hidden.resize(count, false);
-                            let visible = st.hidden.iter().filter(|h| !**h).count();
-                            // Keep at least one series on the chart.
-                            if st.hidden[ix] || visible > 1 {
-                                st.hidden[ix] = !st.hidden[ix];
-                                if st.hidden[ix] && st.emphasis == Some(ix) {
-                                    st.emphasis = None;
+            pink::section_card(&t).mt_0().child(
+                pink::card_row(true, &t)
+                    .child(pink::row_text("Period", range.caption.clone(), &t))
+                    .child(pink::row_controls().child(pink::segmented(
+                        format!("{key}-period"),
+                        segments,
+                        range_ix,
+                        SEGMENT_WIDTH * self.ranges.len() as f32,
+                        ControlSize::Md,
+                        &t,
+                        move |ix: &usize, window, cx| {
+                            let ix = *ix;
+                            state.update(cx, |s, cx| {
+                                if s.range != ix {
+                                    s.range = ix;
+                                    s.hover = None;
+                                    cx.notify();
                                 }
-                                cx.notify();
+                            });
+                            if let Some(f) = &handler {
+                                f(ix, window, cx);
                             }
-                        });
+                        },
+                    ))),
+            )
+        });
+
+        // ---- the summary card: total, one row per series, then the chart ----
+        let mut summary = pink::section_card(&t)
+            .when(period_card.is_none(), |card| card.mt_0())
+            .child(pink::section_header(
+                self.title.clone(),
+                self.subtitle.clone(),
+                &t,
+            ))
+            .child(
+                pink::card_row(false, &t).child(
+                    div()
+                        .min_w_0()
+                        .type_style(TextStyle::Display)
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(t.text)
+                        .child(format(total as f32)),
+                ),
+            );
+        for (ix, series) in range.series.iter().enumerate() {
+            if sums[ix] == 0. {
+                continue;
+            }
+            let share = if total == 0. { 0. } else { sums[ix] / total };
+            let description = match &series.detail {
+                Some(detail) => format!("{detail} · {} of total", percent(share)),
+                None => format!("{} of total", percent(share)),
+            };
+            summary = summary.child(
+                pink::card_row(false, &t)
+                    .when_some(series.icon.clone(), |row, icon| {
+                        row.child(series_tile(icon, &t))
                     })
                     .child(
                         div()
-                            .size(px(8.))
-                            .rounded(px(2.))
-                            .border_1()
-                            .border_color(color)
-                            .when(!off, |d| d.bg(color)),
+                            .flex_1()
+                            .min_w(px(layout::ROW_TEXT_MIN))
+                            .flex()
+                            .flex_col()
+                            .gap(px(2.0))
+                            .child(
+                                // The dot is the series' color in the chart below.
+                                div()
+                                    .flex()
+                                    .flex_row()
+                                    .items_center()
+                                    .gap(px(6.0))
+                                    .child(
+                                        div()
+                                            .flex_none()
+                                            .size(px(8.0))
+                                            .rounded_full()
+                                            .bg(tones[ix]),
+                                    )
+                                    .child(pink::row_title(series.name.clone(), &t)),
+                            )
+                            .child(pink::row_description(description, &t)),
                     )
                     .child(
-                        div()
-                            .text_size(px(text::FOOTNOTE))
-                            .text_color(if off { t.text_faint } else { t.text })
-                            .child(s.name.clone()),
-                    )
-                    .child(
-                        div()
-                            .font_family(pink::MONO)
-                            .text_size(px(text::FOOTNOTE))
-                            .text_color(t.text_faint)
-                            .child(if off {
-                                "–".to_string()
-                            } else {
-                                (self.axis_format)(value(s, focus_ix))
-                            }),
-                    )
-            }),
-        );
+                        pink::row_controls().child(
+                            div()
+                                .text_size(px(13.0))
+                                .line_height(px(18.0))
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(t.text)
+                                .child(format(sums[ix] as f32)),
+                        ),
+                    ),
+            );
+        }
 
-        // --- Plot -------------------------------------------------------
-        let grid = t.border;
-        let hair = t.text_faint.opacity(0.55);
-        let card = t.surface_card;
-        let paint_lines = lines.clone();
-        let plot_canvas = canvas(
-            {
-                let plot_cell = plot_cell.clone();
-                move |bounds, _, _| plot_cell.set(bounds)
-            },
-            move |bounds, _, window, _| {
-                let w = f32::from(bounds.size.width);
-                let h = f32::from(bounds.size.height);
-                let at = |x: f32, y: f32| bounds.origin + point(px(x), px(y));
-                for k in 0..=4 {
-                    let y = (h - 1.) * k as f32 / 4.;
-                    window.paint_quad(fill(Bounds::new(at(0., y), size(px(w), px(1.))), grid));
-                }
-                let y_of = |v: f32| h - 1. - (v / y_max.max(1.)).clamp(0., 1.2) * (h - 8.);
-                let x_of = |j: usize| w * j as f32 / (SAMPLES - 1) as f32;
-
-                let mask = ContentMask {
-                    bounds: Bounds::new(bounds.origin, size(px(w * reveal), px(h))),
-                };
-                window.with_content_mask(Some(mask), |window| {
-                    // Areas first, under every line.
-                    for line in paint_lines.iter().rev().filter(|l| l.filled) {
-                        let mut area = PathBuilder::fill();
-                        area.move_to(at(0., h - 1.));
-                        for (j, v) in line.samples.iter().enumerate() {
-                            area.line_to(at(x_of(j), y_of(*v)));
-                        }
-                        area.line_to(at(w, h - 1.));
-                        area.close();
-                        if let Ok(path) = area.build() {
-                            window.paint_path(
-                                path,
-                                linear_gradient(
-                                    180.,
-                                    linear_color_stop(line.color.opacity(0.20 * line.opacity), 0.),
-                                    linear_color_stop(line.color.opacity(0.), 1.),
-                                ),
-                            );
-                        }
-                    }
-                    for line in paint_lines.iter().rev() {
-                        if line.opacity <= 0.01 {
-                            continue;
-                        }
-                        let mut stroke =
-                            PathBuilder::stroke(px(if line.filled { 2. } else { 1.6 }));
-                        for (j, v) in line.samples.iter().enumerate() {
-                            let p = at(x_of(j), y_of(*v));
-                            if j == 0 {
-                                stroke.move_to(p);
-                            } else {
-                                stroke.line_to(p);
-                            }
-                        }
-                        if let Ok(path) = stroke.build() {
-                            window.paint_path(path, line.color.opacity(line.opacity));
-                        }
-                    }
-                });
-
-                if let Some(fx) = cross {
-                    let x = (w * fx).round();
-                    window.paint_quad(fill(Bounds::new(at(x, 0.), size(px(1.), px(h))), hair));
-                    for line in paint_lines.iter().filter(|l| l.opacity > 0.3) {
-                        let v = sample_at(&line.samples, fx);
-                        let c = at(x, y_of(v));
-                        let r = 4.5;
-                        window.paint_quad(quad(
-                            Bounds::new(c - point(px(r), px(r)), size(px(r * 2.), px(r * 2.))),
-                            Corners::all(px(r)),
-                            line.color.opacity(line.opacity),
-                            Edges::all(px(2.)),
-                            card,
-                            BorderStyle::default(),
-                        ));
-                    }
-                }
-            },
-        )
-        .size_full();
-
-        // Axis labels on the right, aligned to the gridlines.
-        let axis = div()
-            .relative()
-            .w(px(AXIS_W))
-            .h(px(PLOT_H))
-            .flex_none()
-            .children((0..=4).map(|k| {
-                let y = (PLOT_H - 1.) * k as f32 / 4.;
-                let v = step * (4 - k) as f32;
-                div()
-                    .absolute()
-                    .right_0()
-                    .top(px(y - 8.))
-                    .text_size(px(text::CAPTION))
-                    .line_height(px(16.))
-                    .font_family(pink::MONO)
-                    .text_color(t.text_faint)
-                    .child((self.axis_format)(v))
-            }));
-
-        // Dates under the plot: up to five, evenly spread.
-        let ticks = tick_indices(n, if n <= 7 { n } else { 5 });
-        let dates = div()
-            .relative()
-            .h(px(16.))
-            .mr(px(AXIS_W))
-            .mt(px(space::S8))
-            .children(ticks.iter().enumerate().map(|(k, &i)| {
-                let fx = if n > 1 { i as f32 / (n - 1) as f32 } else { 0. };
-                let label = div()
-                    .absolute()
-                    .top_0()
-                    .w(px(64.))
-                    .text_size(px(text::CAPTION))
-                    .line_height(px(16.))
-                    .text_color(if hover == Some(i) {
-                        t.text
-                    } else {
-                        t.text_faint
-                    })
-                    .child(range.points.get(i).cloned().unwrap_or_default());
-                if k == 0 {
-                    label.left_0()
-                } else if k == ticks.len() - 1 {
-                    label.right_0().flex().justify_end()
-                } else {
-                    label.left(px(plot_w * fx - 32.)).flex().justify_center()
-                }
-            }));
-
-        // The readout next to the crosshair.
-        let readout = hover.zip(cross).map(|(h, fx)| {
-            let mut rows: Vec<(usize, &KpiSeries, f32)> = range
+        // The chart row: its title, the hovered period's detail (or the
+        // resting hint), the trailing readout, then the chart itself.
+        let hover_detail = hover.map(|h| {
+            let parts: Vec<String> = range
                 .series
                 .iter()
                 .enumerate()
-                .filter(|(ix, _)| !is_hidden(*ix))
-                .map(|(ix, s)| (ix, s, value(s, h)))
+                .filter(|(ix, _)| range.value(*ix, h) > 0.)
+                .map(|(ix, s)| format!("{} {}", s.name, format(range.value(ix, h))))
                 .collect();
-            rows.sort_by(|a, b| b.2.total_cmp(&a.2));
-            let x = plot_w * fx;
-            let tip = div()
-                .absolute()
-                .top(px(space::S8))
-                .w(px(176.))
-                .p(px(space::S8))
-                .flex()
-                .flex_col()
-                .gap(px(space::S4))
-                .rounded(px(radius::MD))
-                .bg(t.surface_overlay)
-                .border_1()
-                .border_color(t.border)
-                .shadow(t.tooltip_shadow())
-                .child(
-                    div()
-                        .flex()
-                        .justify_between()
-                        .pb(px(space::S2))
-                        .text_size(px(text::CAPTION))
-                        .text_color(t.text_faint)
-                        .child(range.points.get(h).cloned().unwrap_or_default())
-                        .child(
-                            div()
-                                .font_family(pink::MONO)
-                                .text_color(t.text_muted)
-                                .child((self.format)(total_at(h))),
-                        ),
-                )
-                .children(rows.into_iter().map(|(ix, s, v)| {
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(space::S6))
-                        .text_size(px(text::FOOTNOTE))
-                        .line_height(px(18.))
-                        .child(div().size(px(6.)).rounded(px(3.)).bg(series_color(ix, s)))
-                        .child(
-                            div()
-                                .flex_1()
-                                .text_color(if emphasis == Some(ix) {
-                                    t.text
-                                } else {
-                                    t.text_muted
-                                })
-                                .child(s.name.clone()),
-                        )
-                        .child(
-                            div()
-                                .font_family(pink::MONO)
-                                .text_color(t.text)
-                                .child((self.format)(v)),
-                        )
-                }));
-            let tip = if fx < 0.62 {
-                tip.left(px(x + 14.))
+            if parts.is_empty() {
+                format!("{} · No activity", range.long(h))
             } else {
-                tip.right(px(plot_w - x + 14.))
-            };
-            motion::fade_in(SharedString::from(format!("{key}-tip")), tip)
+                format!(
+                    "{} · {} · Total {}",
+                    range.long(h),
+                    parts.join(" · "),
+                    format(range.total_at(h))
+                )
+            }
         });
-
-        let plot = {
-            let move_state = state.clone();
-            let leave_state = state.clone();
-            let key_state = state.clone();
-            let plot_cell = plot_cell.clone();
-            let focus_click = focus.clone();
-            div()
-                .id(SharedString::from(format!("{key}-plot")))
-                .relative()
-                .flex_1()
-                .h(px(PLOT_H))
-                .track_focus(&focus)
-                .cursor_crosshair()
-                .child(plot_canvas)
-                .children(readout)
-                .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                    window.focus(&focus_click, cx)
-                })
-                .on_mouse_move(move |ev: &MouseMoveEvent, _, cx| {
-                    let b = plot_cell.get();
-                    if b.size.width <= px(0.) {
-                        return;
-                    }
-                    let fx = ((ev.position.x - b.origin.x) / b.size.width).clamp(0., 1.);
-                    let ix = (fx * (n - 1) as f32).round() as usize;
-                    move_state.update(cx, |s, cx| {
-                        if s.hover != Some(ix) {
-                            s.hover = Some(ix);
-                            cx.notify();
-                        }
-                    });
-                })
-                .on_hover(move |hovered, window, cx| {
-                    if !hovered && !focus_is(&leave_state, window, cx) {
-                        leave_state.update(cx, |s, cx| {
-                            s.hover = None;
-                            cx.notify();
-                        });
-                    }
-                })
-                .on_key_down(move |ev: &KeyDownEvent, _, cx| {
-                    let step = |s: &mut State, delta: isize| {
-                        let cur = s.hover.unwrap_or(n - 1) as isize;
-                        let next = if s.hover.is_none() {
-                            cur
-                        } else {
-                            (cur + delta).clamp(0, n as isize - 1)
-                        };
-                        s.hover = Some(next as usize);
-                    };
-                    let handled = key_state.update(cx, |s, cx| {
-                        match ev.keystroke.key.as_str() {
-                            "left" => step(s, -1),
-                            "right" => step(s, 1),
-                            "home" => s.hover = Some(0),
-                            "end" => s.hover = Some(n - 1),
-                            "escape" => s.hover = None,
-                            _ => return false,
-                        }
-                        cx.notify();
-                        true
-                    });
-                    if handled {
-                        cx.stop_propagation();
-                    }
-                })
+        let hover_readout =
+            hover.map(|h| format!("{} · Total {}", range.short(h), format(range.total_at(h))));
+        let description: SharedString = match hover_detail {
+            Some(detail) => detail.into(),
+            None => range
+                .trend_hint
+                .clone()
+                .unwrap_or_else(|| "Hover a point for each series' value.".into()),
         };
+        summary = summary.child(
+            pink::card_row(false, &t)
+                .child(pink::row_text(
+                    range.trend_title.clone().unwrap_or_else(|| "Trend".into()),
+                    Some(description),
+                    &t,
+                ))
+                .when_some(hover_readout, |row, readout| {
+                    row.child(
+                        pink::row_controls().child(
+                            div()
+                                .text_size(px(11.0))
+                                .line_height(px(14.0))
+                                .text_color(t.readable_muted(0.85))
+                                .child(readout),
+                        ),
+                    )
+                })
+                .child(pink::row_block().child(trend_chart(
+                    &key,
+                    range,
+                    &tones,
+                    &sums,
+                    hover,
+                    &self.format,
+                    &self.axis_format,
+                    &state,
+                    &t,
+                ))),
+        );
 
-        // Followers started above need frames even when nothing else animates.
-        motion::keep_alive(window);
-        pink::card(&t)
+        div()
             .id(self.id.clone())
-            .w(px(620.))
+            .w_full()
+            .max_w(px(CONTENT_WIDTH))
             .flex()
             .flex_col()
-            .gap(px(space::S16))
-            .p(px(space::S20))
             .font_family(pink::SANS)
-            .child(header)
-            .child(legend)
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .child(div().flex().gap(px(space::S8)).child(plot).child(axis))
-                    .child(dates),
-            )
+            .children(period_card)
+            .child(summary)
     }
 }
 
-fn focus_is(state: &gpui::Entity<State>, window: &Window, cx: &App) -> bool {
-    state.read(cx).focus.is_focused(window)
+/// A series' identity tile (pink `usage.rs` `provider_tile`): the row tile
+/// frame, 28 square, radius 7, 1 px `border`, `fill(Quaternary)`, with the
+/// mark at full `text` strength so it reads as identity, not decoration.
+fn series_tile(icon: SharedString, t: &Pink) -> gpui::Div {
+    div()
+        .flex_none()
+        .size(px(28.0))
+        .rounded(px(pink::radius::TILE))
+        .border_1()
+        .border_color(t.border)
+        .bg(t.fill(FillTier::Quaternary))
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(gpui::svg().path(icon).size(px(16.0)).text_color(t.text))
 }
 
-#[derive(Clone)]
-struct Line {
-    color: Hsla,
-    samples: Vec<f32>,
-    opacity: f32,
-    filled: bool,
-}
+/// The trend (pink `usage.rs` `usage_chart`): a nice-number scale, three
+/// gridlines, a flat 12% area and a 2 px line per series (largest painted
+/// first), a 1 px guide on the hovered period, one hover cell per period
+/// with a tooltip, and 11/14 axis labels in `readable_muted(0.85)`.
+#[allow(clippy::too_many_arguments)]
+fn trend_chart(
+    key: &str,
+    range: &KpiRange,
+    tones: &[Hsla],
+    sums: &[f64],
+    hover: Option<usize>,
+    format: &Formatter,
+    axis_format: &Formatter,
+    state: &gpui::Entity<State>,
+    t: &Pink,
+) -> gpui::Div {
+    let n = range.points.len();
+    let peak = range
+        .series
+        .iter()
+        .flat_map(|s| s.values.iter().copied())
+        .fold(0f32, f32::max);
+    let scale = nice_scale(peak);
+    let labels: [String; 3] = if peak <= 0. {
+        [String::new(), String::new(), "0".into()]
+    } else {
+        [scale, scale / 2., 0.].map(|v| if v == 0. { "0".into() } else { axis_format(v) })
+    };
 
-/// Fritsch–Carlson tangents: a smooth curve that never overshoots the data.
-fn monotone_slopes(y: &[f32]) -> Vec<f32> {
-    let n = y.len();
-    if n < 2 {
-        return vec![0.; n];
-    }
-    let d: Vec<f32> = y.windows(2).map(|w| w[1] - w[0]).collect();
-    let mut m = vec![0.; n];
-    m[0] = d[0];
-    m[n - 1] = d[n - 2];
-    for i in 1..n - 1 {
-        m[i] = if d[i - 1] * d[i] <= 0. {
-            0.
-        } else {
-            (d[i - 1] + d[i]) / 2.
-        };
-    }
-    for i in 0..n - 1 {
-        if d[i] == 0. {
-            m[i] = 0.;
-            m[i + 1] = 0.;
-            continue;
+    // Each series from zero; the largest is painted first so smaller
+    // series and their lines stay visible.
+    let mut order: Vec<usize> = (0..range.series.len()).collect();
+    order.sort_by(|a, b| sums[*b].total_cmp(&sums[*a]));
+    let lines: Vec<(Hsla, Vec<f32>)> = order
+        .into_iter()
+        .filter(|ix| range.series[*ix].values.iter().any(|v| *v > 0.))
+        .map(|ix| {
+            let values = (0..n).map(|i| range.value(ix, i)).collect();
+            (tones[ix], values)
+        })
+        .collect();
+    let grid = t.border;
+    let guide = t.text_muted;
+    let plot = canvas(
+        |_, _, _| (),
+        move |bounds, _, window, _| {
+            let width = f32::from(bounds.size.width);
+            let height = f32::from(bounds.size.height);
+            if width < 2. || height < 2. {
+                return;
+            }
+            let (x0, y0) = (bounds.origin.x, bounds.origin.y);
+            for ratio in [0.0_f32, 0.5, 1.0] {
+                let mut path = PathBuilder::stroke(px(1.0));
+                let y = y0 + px(ratio * height);
+                path.move_to(point(x0, y));
+                path.line_to(point(x0 + px(width), y));
+                if let Ok(path) = path.build() {
+                    window.paint_path(path, grid);
+                }
+            }
+            if n == 0 {
+                return;
+            }
+            let x_of = |i: usize| {
+                if n == 1 {
+                    width / 2.
+                } else {
+                    width * i as f32 / (n - 1) as f32
+                }
+            };
+            for fill in [true, false] {
+                for (color, values) in &lines {
+                    let coords: Vec<(f32, f32)> = values
+                        .iter()
+                        .enumerate()
+                        .map(|(i, v)| {
+                            let y = height - (v / scale).clamp(0., 1.) * (height - 8.);
+                            (x_of(i), y)
+                        })
+                        .collect();
+                    let mut path = if fill {
+                        PathBuilder::fill()
+                    } else {
+                        PathBuilder::stroke(px(2.0))
+                    };
+                    path.move_to(point(x0 + px(coords[0].0), y0 + px(coords[0].1)));
+                    // A monotone cubic never draws a false peak between two
+                    // measured periods.
+                    let tangents = monotone_tangents(&coords);
+                    for (i, pair) in coords.windows(2).enumerate() {
+                        let ((xa, ya), (xb, yb)) = (pair[0], pair[1]);
+                        let dx = (xb - xa) / 3.;
+                        path.cubic_bezier_to(
+                            point(x0 + px(xb), y0 + px(yb)),
+                            point(x0 + px(xa + dx), y0 + px(ya + tangents[i] * dx)),
+                            point(x0 + px(xb - dx), y0 + px(yb - tangents[i + 1] * dx)),
+                        );
+                    }
+                    if fill {
+                        let last = coords[coords.len() - 1].0;
+                        path.line_to(point(x0 + px(last), y0 + px(height)));
+                        path.line_to(point(x0 + px(coords[0].0), y0 + px(height)));
+                        path.close();
+                    }
+                    if let Ok(path) = path.build() {
+                        window.paint_path(path, if fill { color.opacity(0.12) } else { *color });
+                    }
+                }
+            }
+            if let Some(h) = hover {
+                let x = x_of(h);
+                let mut line = PathBuilder::stroke(px(1.0));
+                line.move_to(point(x0 + px(x), y0));
+                line.line_to(point(x0 + px(x), y0 + px(height)));
+                if let Ok(line) = line.build() {
+                    window.paint_path(line, guide);
+                }
+            }
+        },
+    )
+    .w_full()
+    .h(px(CHART_HEIGHT));
+
+    // One hover cell per period, each with the period's tooltip.
+    let cells = (0..n).map(|i| {
+        let mut detail = range.long(i).to_string();
+        for (ix, s) in range.series.iter().enumerate() {
+            detail.push_str(&format!("\n{} {}", s.name, format(range.value(ix, i))));
         }
-        let a = m[i] / d[i];
-        let b = m[i + 1] / d[i];
-        let s = a * a + b * b;
-        if s > 9. {
-            let tau = 3. / s.sqrt();
-            m[i] = tau * a * d[i];
-            m[i + 1] = tau * b * d[i];
-        }
-    }
-    m
+        detail.push_str(&format!("\nTotal {}", format(range.total_at(i))));
+        let detail = SharedString::from(detail);
+        let state = state.clone();
+        div()
+            .id(SharedString::from(format!("{key}-period-{i}")))
+            .flex_1()
+            .h_full()
+            .on_hover(move |hovered, _, cx| {
+                state.update(cx, |s, cx| {
+                    if *hovered {
+                        s.hover = Some(i);
+                    } else if s.hover == Some(i) {
+                        s.hover = None;
+                    }
+                    cx.notify();
+                })
+            })
+            .tooltip(move |_, cx| {
+                cx.new(|_| PeriodTooltip {
+                    text: detail.clone(),
+                })
+                .into()
+            })
+    });
+
+    let x_labels: [SharedString; 3] = if n == 0 {
+        Default::default()
+    } else {
+        [0, n / 2, n - 1].map(|i| range.short(i).to_uppercase().into())
+    };
+    let label_tone = t.readable_muted(0.85);
+    div()
+        .w_full()
+        .min_w_0()
+        .flex()
+        .flex_col()
+        .gap(px(6.0))
+        .child(
+            div()
+                .w_full()
+                .flex()
+                .gap(px(CHART_AXIS_GAP))
+                .child(
+                    div()
+                        .w(px(CHART_AXIS_WIDTH))
+                        .h(px(CHART_HEIGHT))
+                        .flex_none()
+                        .flex()
+                        .flex_col()
+                        .justify_between()
+                        .text_align(gpui::TextAlign::Right)
+                        .text_size(px(11.0))
+                        .line_height(px(14.0))
+                        .text_color(label_tone)
+                        .children(labels),
+                )
+                .child(
+                    div()
+                        .relative()
+                        .flex_1()
+                        .min_w_0()
+                        .h(px(CHART_HEIGHT))
+                        .child(plot)
+                        .child(div().absolute().inset_0().flex().children(cells)),
+                ),
+        )
+        .child(
+            div()
+                .w_full()
+                .pl(px(CHART_AXIS_WIDTH + CHART_AXIS_GAP))
+                .flex()
+                .justify_between()
+                .text_size(px(11.0))
+                .line_height(px(14.0))
+                .text_color(label_tone)
+                .children(x_labels),
+        )
 }
 
-/// The curve through `y` at fractional index `u`.
-fn hermite(y: &[f32], m: &[f32], u: f32) -> f32 {
-    let n = y.len();
-    match n {
-        0 => 0.,
-        1 => y[0],
-        _ => {
-            let i = (u.floor() as usize).min(n - 2);
-            let t = (u - i as f32).clamp(0., 1.);
-            let (t2, t3) = (t * t, t * t * t);
-            (2. * t3 - 3. * t2 + 1.) * y[i]
-                + (t3 - 2. * t2 + t) * m[i]
-                + (-2. * t3 + 3. * t2) * y[i + 1]
-                + (t3 - t2) * m[i + 1]
-        }
+/// A period's hover tooltip (pink `shell.rs` `SurfaceTabTooltip`): the
+/// tooltip card, at most 380 wide, `px 8 / py 5`, 11/14 `text`, one line per
+/// series.
+struct PeriodTooltip {
+    text: SharedString,
+}
+
+impl Render for PeriodTooltip {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = Pink::get(cx);
+        pink::tooltip_card(&t)
+            .max_w(px(380.0))
+            .px(px(8.0))
+            .py(px(5.0))
+            .text_size(px(11.0))
+            .line_height(px(14.0))
+            .text_color(t.text)
+            .child(self.text.clone())
     }
 }
 
-/// Linear read of resampled values at fraction `f` of the width.
-fn sample_at(samples: &[f32], f: f32) -> f32 {
-    if samples.is_empty() {
-        return 0.;
-    }
-    let u = f.clamp(0., 1.) * (samples.len() - 1) as f32;
-    let i = (u.floor() as usize).min(samples.len().saturating_sub(2));
-    let t = u - i as f32;
-    let next = samples.get(i + 1).copied().unwrap_or(samples[i]);
-    samples[i] + (next - samples[i]) * t
-}
-
-/// A round axis step at or above `raw`.
-fn nice_step(raw: f32) -> f32 {
-    if raw <= 0. {
+/// The value axis' top: a 1-2-5 unit near half the peak, rounded up to a
+/// whole number of units (pink `usage_chart`).
+fn nice_scale(peak: f32) -> f32 {
+    if peak <= 0. {
         return 1.;
     }
-    let base = 10f32.powf(raw.log10().floor());
-    let f = raw / base;
-    let nice = [1., 1.5, 2., 2.5, 3., 4., 5., 6., 8., 10.]
+    let rough = peak as f64 / 2.;
+    let magnitude = 10_f64.powf(rough.log10().floor());
+    let unit = [1., 2., 5., 10.]
         .into_iter()
-        .find(|c| f <= *c + 1e-4)
-        .unwrap_or(10.);
-    nice * base
+        .find(|step| step * magnitude >= rough)
+        .unwrap_or(10.)
+        * magnitude;
+    ((peak as f64 / unit).ceil() * unit) as f32
 }
 
-/// `count` point indices spread evenly across `n` points.
-fn tick_indices(n: usize, count: usize) -> Vec<usize> {
-    if n <= 1 || count <= 1 {
-        return vec![0];
+/// Fritsch–Carlson tangents over `(x, y)` points (pink
+/// `monotone_usage_tangents`): a smooth curve that never overshoots the data.
+fn monotone_tangents(points: &[(f32, f32)]) -> Vec<f32> {
+    if points.len() < 2 {
+        return vec![0.; points.len()];
     }
-    (0..count)
-        .map(|k| ((k as f32 / (count - 1) as f32) * (n - 1) as f32).round() as usize)
-        .collect()
+    let slopes: Vec<f32> = points
+        .windows(2)
+        .map(|pair| {
+            let dx = pair[1].0 - pair[0].0;
+            if dx == 0. {
+                0.
+            } else {
+                (pair[1].1 - pair[0].1) / dx
+            }
+        })
+        .collect();
+    let mut tangents = vec![0.; points.len()];
+    tangents[0] = slopes[0];
+    tangents[points.len() - 1] = slopes[slopes.len() - 1];
+    for i in 1..points.len() - 1 {
+        let (previous, next) = (slopes[i - 1], slopes[i]);
+        tangents[i] = if previous * next <= 0. {
+            0.
+        } else {
+            (previous + next) / 2.
+        };
+    }
+    for (i, slope) in slopes.iter().copied().enumerate() {
+        if slope == 0. {
+            tangents[i] = 0.;
+            tangents[i + 1] = 0.;
+            continue;
+        }
+        let a = tangents[i] / slope;
+        let b = tangents[i + 1] / slope;
+        let magnitude = a * a + b * b;
+        if magnitude > 9. {
+            let scale = 3. / magnitude.sqrt();
+            tangents[i] = scale * a * slope;
+            tangents[i + 1] = scale * b * slope;
+        }
+    }
+    tangents
 }
 
-/// 48210 → "48,210".
+/// A share as pink writes it (`usage_percent`): "38.4%", "<0.1%".
+fn percent(share: f64) -> String {
+    let percent = share * 100.;
+    if percent > 0. && percent < 0.1 {
+        "<0.1%".into()
+    } else {
+        format!("{percent:.1}%")
+    }
+}
+
+/// 48210 → "48,210" (pink `count`).
 fn grouped(v: f32) -> String {
     let n = v.round() as i64;
-    let digits = n.abs().to_string();
+    let digits = n.unsigned_abs().to_string();
     let mut out = String::new();
     for (i, c) in digits.chars().enumerate() {
         if i > 0 && (digits.len() - i) % 3 == 0 {
@@ -897,28 +799,45 @@ fn grouped(v: f32) -> String {
     if n < 0 { format!("-{out}") } else { out }
 }
 
-/// 48210 → "48.2k", 24000 → "24k".
+/// 48210 → "48.21K", 125000 → "125K" (pink `compact_tokens`).
 fn compact(v: f32) -> String {
-    let a = v.abs();
-    if a >= 1_000_000. {
-        trim(v / 1_000_000., "M")
-    } else if a >= 1_000. {
-        trim(v / 1_000., "k")
-    } else {
-        format!("{}", v.round())
+    let value = v.max(0.).round() as u64;
+    for (threshold, suffix) in [
+        (1_000_000_000_000_u64, "T"),
+        (1_000_000_000, "B"),
+        (1_000_000, "M"),
+        (1_000, "K"),
+    ] {
+        if value >= threshold {
+            let scaled = value as f64 / threshold as f64;
+            let digits = if scaled >= 100. {
+                0
+            } else if scaled >= 10. {
+                1
+            } else {
+                2
+            };
+            let formatted = format!("{scaled:.digits$}");
+            let trimmed = if formatted.contains('.') {
+                formatted.trim_end_matches('0').trim_end_matches('.')
+            } else {
+                &formatted
+            };
+            return format!("{trimmed}{suffix}");
+        }
     }
+    grouped(value as f32)
 }
 
-fn trim(v: f32, unit: &str) -> String {
-    if (v - v.round()).abs() < 0.05 {
-        format!("{}{unit}", v.round())
-    } else {
-        format!("{v:.1}{unit}")
-    }
+/// 1234.5 → "$1,234.50" (pink `money`).
+fn money(v: f32) -> String {
+    let cents = (v.max(0.) as f64 * 100.).round() as u64;
+    format!("${}.{:02}", grouped((cents / 100) as f32), cents % 100)
 }
 
 // ---------------------------------------------------------------------------
-// Demo data: 90 days of daily active users by platform, ending Tue Oct 20.
+// Demo data: a shop's gross revenue by channel, the last 24 hours and the
+// last 90 days to Thu Oct 22, 2026.
 // ---------------------------------------------------------------------------
 
 /// A repeatable 0..1 jitter.
@@ -932,8 +851,8 @@ fn jitter(seed: u32) -> f32 {
     x as f32 / u32::MAX as f32
 }
 
-/// "Mon D" for a day of the year 2026.
-fn date_label(day_of_year: usize) -> SharedString {
+/// ("Oct", 22) for a day of the year 2026.
+fn month_day(day_of_year: usize) -> (&'static str, usize) {
     const MONTHS: [(&str, usize); 12] = [
         ("Jan", 31),
         ("Feb", 28),
@@ -951,63 +870,198 @@ fn date_label(day_of_year: usize) -> SharedString {
     let mut d = day_of_year;
     for (name, len) in MONTHS {
         if d <= len {
-            return format!("{name} {d}").into();
+            return (name, d);
         }
         d -= len;
     }
-    "Dec 31".into()
+    ("Dec", 31)
+}
+
+/// "9 AM" for an hour of the day.
+fn hour_label(hour: usize) -> String {
+    let h = hour % 12;
+    format!(
+        "{} {}",
+        if h == 0 { 12 } else { h },
+        if hour < 12 { "AM" } else { "PM" }
+    )
+}
+
+fn hour_minutes(hour: usize) -> String {
+    let h = hour % 12;
+    format!(
+        "{}:00 {}",
+        if h == 0 { 12 } else { h },
+        if hour % 24 < 12 { "AM" } else { "PM" }
+    )
+}
+
+/// (name, icon, daily revenue at the start and end of the 90 days, weekend
+/// factor, average order value).
+const CHANNELS: [(&str, &str, f32, f32, f32, f32); 3] = [
+    (
+        "Web",
+        "icons/kpi-chart/globe.svg",
+        6_100.,
+        8_000.,
+        0.88,
+        64.,
+    ),
+    (
+        "iOS app",
+        "icons/kpi-chart/smartphone.svg",
+        3_200.,
+        4_600.,
+        1.08,
+        41.,
+    ),
+    (
+        "Desktop app",
+        "icons/kpi-chart/laptop.svg",
+        1_250.,
+        1_600.,
+        0.8,
+        118.,
+    ),
+];
+
+fn demo_range(
+    label: &str,
+    points: Vec<SharedString>,
+    details: Vec<SharedString>,
+    values: [Vec<f32>; 3],
+    hourly: bool,
+) -> KpiRange {
+    let range = KpiRange::new(label.to_string(), points)
+        .details(details)
+        .caption(if hourly {
+            "One point per hour."
+        } else {
+            "One point per day."
+        })
+        .trend(
+            if hourly {
+                "Hourly revenue"
+            } else {
+                "Daily revenue"
+            },
+            if hourly {
+                "Each point covers one hour. Hover for channel values."
+            } else {
+                "Each point covers one day. Hover for channel values."
+            },
+        );
+    values.into_iter().zip(CHANNELS).fold(
+        range,
+        |range, (values, (name, icon, .., order_value))| {
+            let sum: f32 = values.iter().sum();
+            let orders = grouped((sum / order_value).round());
+            range.series(
+                KpiSeries::new(name, values)
+                    .icon(icon)
+                    .detail(format!("{orders} orders")),
+            )
+        },
+    )
 }
 
 fn demo_chart() -> KpiChart {
     const DAYS: usize = 90;
-    // Oct 20, 2026 is day 293 and a Tuesday.
-    let last_day = 293;
-    let dates: Vec<SharedString> = (0..DAYS)
-        .map(|d| date_label(last_day - (DAYS - 1 - d)))
-        .collect();
-    let weekend = |d: usize| {
-        let weekday = (1 - (DAYS as isize - 1 - d as isize)).rem_euclid(7);
-        weekday >= 5
-    };
-    // (name, start, end, weekend factor, noise)
-    let platforms = [
-        ("Web", 20_400., 26_800., 0.88, 0.03),
-        ("iOS", 12_100., 16_300., 1.04, 0.03),
-        ("Android", 8_300., 11_600., 1.03, 0.03),
-        ("Desktop", 5_200., 5_900., 0.8, 0.04),
-    ];
-    let series: Vec<(SharedString, Vec<f32>)> = platforms
-        .iter()
-        .enumerate()
-        .map(|(p, (name, start, end, weekend_factor, noise))| {
-            let values = (0..DAYS)
-                .map(|d| {
-                    let f = d as f32 / (DAYS - 1) as f32;
-                    // Growth with a summer lull and a launch bump in late September.
-                    let trend = start + (end - start) * (f * f * 0.4 + f * 0.6);
-                    let lull = 1. - 0.05 * (-(f - 0.3).powi(2) / 0.01).exp();
-                    let launch = 1. + 0.07 * (-(f - 0.74).powi(2) / 0.002).exp();
-                    let week = if weekend(d) { *weekend_factor } else { 1. };
-                    let j = 1. + (jitter((p * 1000 + d) as u32) - 0.5) * 2. * noise;
-                    (trend * lull * launch * week * j).round()
-                })
-                .collect();
-            (SharedString::from(*name), values)
+    // Oct 22, 2026 is day 295 and a Thursday.
+    const LAST_DAY: usize = 295;
+    const WEEKDAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    let day_of = |d: usize| LAST_DAY - (DAYS - 1 - d);
+    let weekday = |d: usize| (3 + day_of(d) as isize - LAST_DAY as isize).rem_euclid(7) as usize;
+    let short: Vec<SharedString> = (0..DAYS)
+        .map(|d| {
+            let (month, day) = month_day(day_of(d));
+            format!("{month} {day}").into()
         })
         .collect();
-    let range = |label: &str, days: usize| {
-        let from = DAYS - days;
-        series.iter().fold(
-            KpiRange::new(label.to_string(), dates[from..].to_vec()),
-            |r, (name, values)| r.series(KpiSeries::new(name.clone(), values[from..].to_vec())),
+    let long: Vec<SharedString> = (0..DAYS)
+        .map(|d| {
+            let (month, day) = month_day(day_of(d));
+            format!("{}, {month} {day}", WEEKDAYS[weekday(d)]).into()
+        })
+        .collect();
+    let daily: Vec<Vec<f32>> = CHANNELS
+        .iter()
+        .enumerate()
+        .map(|(c, (_, _, start, end, weekend, _))| {
+            (0..DAYS)
+                .map(|d| {
+                    let f = d as f32 / (DAYS - 1) as f32;
+                    // Growth, a late-summer lull and a sale in early October.
+                    let trend = start + (end - start) * (f * f * 0.4 + f * 0.6);
+                    let lull = 1. - 0.07 * (-(f - 0.3).powi(2) / 0.008).exp();
+                    let sale = 1. + 0.12 * (-(f - 0.8).powi(2) / 0.0015).exp();
+                    let week = if weekday(d) >= 5 { *weekend } else { 1. };
+                    let noise = 1. + (jitter((c * 1000 + d) as u32) - 0.5) * 0.16;
+                    (trend * lull * sale * week * noise * 100.).round() / 100.
+                })
+                .collect()
+        })
+        .collect();
+    let days = |label: &str, count: usize| {
+        let from = DAYS - count;
+        demo_range(
+            label,
+            short[from..].to_vec(),
+            long[from..].to_vec(),
+            [0, 1, 2].map(|c| daily[c][from..].to_vec()),
+            false,
         )
     };
-    KpiChart::new("kpi-chart", "Daily active users")
-        .subtitle("all platforms")
-        .range(range("7D", 7))
-        .range(range("30D", 30))
-        .range(range("90D", 90))
-        .default_range(1)
+
+    // The past 24 hours: 3 PM Wednesday to 2 PM Thursday.
+    let hours: Vec<usize> = (0..24).map(|h| 15 + h).collect();
+    let hour_points: Vec<SharedString> = hours.iter().map(|h| hour_label(h % 24).into()).collect();
+    let hour_details: Vec<SharedString> = hours
+        .iter()
+        .map(|h| {
+            let day = if *h < 24 { 21 } else { 22 };
+            format!(
+                "Oct {day}, {}–{}",
+                hour_minutes(h % 24),
+                hour_minutes(h + 1)
+            )
+            .into()
+        })
+        .collect();
+    // Share of a day's orders by hour: quiet nights, a lunch bump and an
+    // evening peak.
+    let curve = |hour: usize| {
+        let h = hour as f32;
+        0.15 + 0.9 * (-(h - 12.5).powi(2) / 8.).exp() + 1.3 * (-(h - 20.5).powi(2) / 6.).exp()
+    };
+    let norm: f32 = (0..24).map(curve).sum();
+    let hourly = [0, 1, 2].map(|c| {
+        let (_, _, _, end, _, _) = CHANNELS[c];
+        hours
+            .iter()
+            .enumerate()
+            .map(|(i, h)| {
+                let noise = 1. + (jitter((c * 7919 + i) as u32 + 50_000) - 0.5) * 0.3;
+                (end * curve(h % 24) / norm * noise * 100.).round() / 100.
+            })
+            .collect::<Vec<f32>>()
+    });
+
+    KpiChart::new("kpi-chart", "Gross revenue")
+        .subtitle("Paid orders across every channel · before refunds and tax")
+        .format(money)
+        .axis_format(|v| format!("${}", compact(v)))
+        .range(demo_range(
+            "Past 24h",
+            hour_points,
+            hour_details,
+            hourly,
+            true,
+        ))
+        .range(days("7 days", 7))
+        .range(days("30 days", 30))
+        .range(days("90 days", 90))
+        .default_range(2)
 }
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
