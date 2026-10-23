@@ -15,9 +15,9 @@
 
 <p align="center">
   <b>Animated components for GPUI, written in Rust.</b><br>
-  56 components for Zed's GPU-accelerated UI framework, one file each. Build one,
-  drop it into <code>.child(…)</code>, and it animates – on the desktop, and live
-  in your browser through WebAssembly.
+  56 components for Zed's GPU-accelerated UI framework, one file each, in the
+  Pink app's design language. Build one, drop it into <code>.child(…)</code>, and
+  it animates – on the desktop, and live in your browser through WebAssembly.
 </p>
 
 <p align="center">

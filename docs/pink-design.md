@@ -3,8 +3,8 @@
 This guide is for anyone writing a Pink component (`Kind::Pink`), whether a person or an agent.
 Follow it and the component will look like it belongs in the PINK desktop app. The kit in
 `src/pink.rs`, `src/pink/{controls,surfaces,loaders}.rs`, `src/motion.rs` and `src/interaction.rs`
-reproduces pink's own UI crate (`pink/crates/ui/src`) value for value. Build from the kit. Don't
-re-derive colors or sizes. If this guide and pink's source disagree, pink's source wins. Fix the
+reproduces Pink's own UI crate (`pink/crates/ui/src`) value for value. Build from the kit. Don't
+re-derive colors or sizes. If this guide and Pink's source disagree, Pink's source wins. Fix the
 kit and this guide to match it.
 
 ## 1. The idea
@@ -19,8 +19,8 @@ weights 400/500/600. Motion is short and decelerating, and it never bounces.
 
 The app ships Frosted surfaces by default: translucent tints over a 16 px backdrop blur. pink-ui's
 GPUI (`gpui-pre 0.3.9`) has no backdrop blur and no `EdgeFade`. The kit therefore reproduces
-pink's other shipped treatment, **Opaque** (Settings → Surface → Opaque), with the default theme
-(`pink-dark` / `pink-light`) and the default Violet accent, using the runtime palette pink paints
+Pink's other shipped treatment, **Opaque** (Settings → Surface → Opaque), with the default theme
+(`pink-dark` / `pink-light`) and the default Violet accent, using the runtime palette Pink paints
 after `Theme::from_variant` and its contrast hardening. Every floating plate is an opaque color
 plus a GPUI shadow, and every secondary text tone is floored against those same plates. Don't fake
 frost with alpha. Without the blur, a translucent menu turns muddy, and the hardened tones no
@@ -29,8 +29,9 @@ longer hold their contrast.
 ### Ground rules
 
 1. Start every render with `let t = Pink::get(cx);`. It also records the mode `pink::glyph()` reads.
-2. Sizes are px at pink's default 16 px interface size (`ui_rems(13.)` paints 13 px).
-3. Set `.font_family(pink::SANS)` on the component root. The story wrapper defaults to Inter.
+2. Sizes are px at Pink's default 16 px interface size (`ui_rems(13.)` paints 13 px).
+3. Set `.font_family(pink::SANS)` on the component root. The gallery's story wrapper sets Geist too, but a
+   component dropped into another app only gets it from its own root.
 4. Sizes come from a ladder (§3), colors from a token or helper (§2), durations from `motion` (§5).
 5. Use `web_time::Instant` for clocks, never `std::time`.
 
@@ -90,7 +91,7 @@ Code and terminal tokens are `code_text`, `diff_add`, `diff_del`, `diff_hunk_bg`
 | Label on Primary / Danger plate | `t.on_solid` / `t.on_danger()` | `on_accent` |
 
 `readable_*` take a dark-mode opacity, and light mode paints the full token. Both results are
-floored to 4.6:1 (text) or 3.1:1 (icons) over pink's reading surfaces. They are memoized, so call
+floored to 4.6:1 (text) or 3.1:1 (icons) over Pink's reading surfaces. They are memoized, so call
 them on every frame. Fill tiers are tinted by the text hue, never pure white or black.
 
 ## 3. Ladders
@@ -156,10 +157,10 @@ Nested corners: `radius::inner(outer, inset)` = `max(outer − inset, 4)` (12 px
 
 ## 4. Recipes
 
-Every builder returns a `Div` or `Stateful<Div>`, so keep chaining. The pink symbol named in each
+Every builder returns a `Div` or `Stateful<Div>`, so keep chaining. The Pink symbol named in each
 recipe's heading or last line is the original to check against.
 
-### In-flow cards, never shadowed (pink `transcript::code_surface_frame`)
+### In-flow cards, never shadowed (Pink `transcript::code_surface_frame`)
 
 | Card | Kit | Anatomy |
 |---|---|---|
@@ -201,7 +202,7 @@ Pink: `popover::popover_card`.
 
 Hover never looks like selection. Pink: `popover::menu_row`.
 
-### Section headers and labels (pink `popover::menu_heading`)
+### Section headers and labels (Pink `popover::menu_heading`)
 
 | Where | Recipe |
 |---|---|
@@ -243,7 +244,7 @@ Rows have no hover, because rows aren't controls. Pink: `settings::widgets::sect
 Frames don't change on focus. The 2 px accent caret, blinking every `layout::CARET_BLINK_MS`, shows
 it. Pink: `popover::search_input_frame`.
 
-### Chips, pills, badges, kbd (pink `settings::widgets::badge`)
+### Chips, pills, badges, kbd (Pink `settings::widgets::badge`)
 
 | Element | Kit | Notes |
 |---|---|---|
@@ -301,7 +302,7 @@ either. If you need one, put `mini_mono_spinner(key, 2., t.on_solid)` where the 
 Shape comes before color: every state has its own shape at ≥ 3:1. Done states are quiet, with no
 green checks and no success pops. Pink: `loaders::mini_glyph_spinner`.
 
-### Numbers, timers, mono (pink `typography::tabular_figures`)
+### Numbers, timers, mono (Pink `typography::tabular_figures`)
 
 - Ticking numbers (timers, time-ago, counts): sans 11, `.font_features(pink::tabular_figures())`,
   `content_faint`, formatted by `loaders::format_elapsed(secs)` (`12s`, `1m 5s`). The working line
@@ -324,7 +325,7 @@ green checks and no success pops. Pink: `loaders::mini_glyph_spinner`.
 One hover key per element, unique on screen (prefix it with the component slug). Pink:
 `interaction::HoverFill::hover_wash`.
 
-### Empty, loading, error (pink `surface_chrome::surface_state`)
+### Empty, loading, error (Pink `surface_chrome::surface_state`)
 
 | State | Kit / recipe |
 |---|---|
@@ -368,7 +369,7 @@ and its footer holds `key_hint`s. Pink: `popover::dialog_card`.
 
 ## 5. Motion
 
-`crate::motion` is pink's catalog. Pick from it. Don't invent durations.
+`crate::motion` is Pink's catalog. Pick from it. Don't invent durations.
 
 | Job | Preset / helper |
 |---|---|
@@ -394,7 +395,7 @@ with `spec.animation()` directly. Pink never overshoots, so `EASE_OUT_BACK` is o
 
 ### Pulse clock and loaders
 
-Every loop runs on pink's shared pulse clock: ~30 fps (15 Hz for coarse loaders), phase-locked
+Every loop runs on Pink's shared pulse clock: ~30 fps (15 Hz for coarse loaders), phase-locked
 across instances, parked when nothing is mounted. Never loop with `with_animation(..).repeat()` or
 a timer task. The kit's loaders need no window or cx. For a custom loop, read
 `motion::pulse_phase(&SPEC, window, cx)` (a phase in `[0, 1)`) while rendering, which also keeps
@@ -411,7 +412,7 @@ the view ticking. `pulse_phase_slow` is the 15 Hz form, and `pulse_keep` ticks w
 | Upload progress | `upload_progress_ring(percent, 34.)` over a dimmed image |
 | Boot | `splash_overlay(bg, t.glyph, label, label_color, fading)` |
 
-**The working trailer** is pink's thinking indicator. It is one bare line under the last item:
+**The working trailer** is Pink's thinking indicator. It is one bare line under the last item:
 no card, no spinner ring, no progress bar.
 
 ```rust
@@ -449,7 +450,7 @@ snap, the orb rests full, and shimmer becomes plain text. For any loop of your o
 | Rendering | `svg().path(p).size(px(icon_size::SM)).flex_none().text_color(tone)`. Always set the color, because SVGs don't inherit it. In controls, `pink::glyph(p, size)` sizes the icon and applies `glyph_tone()`. For check, chevrons, close and plus, `pink::line_glyph(pink::glyphs::CHECK, 14., color)` needs no asset. |
 | Sizes | 12 beside caption text, 14 in toolbars, chips and chevrons, 16 in buttons, menus and tiles, 20 in the titlebar, 28 in an empty state |
 
-## 7. Review checklist: what pink avoids
+## 7. Review checklist: what Pink avoids
 
 | Check | Pink avoids | Do instead |
 |---|---|---|
