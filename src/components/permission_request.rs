@@ -4,12 +4,14 @@
 //! The request takes the composer's place in the same rounded pill: a
 //! tracked uppercase header, the question, the approval context (the exact
 //! command, where it runs, why, and how long the request waits), one
-//! numbered row per choice naming its grant scope, and a single Send.
-//! Picking a row answers after a short beat; the request then folds into the
-//! transcript's passive "Question" record (pink: transcript.rs `input_chip`).
+//! numbered row per choice naming its grant scope, pink's free answer field
+//! and a single Send. Picking a row answers after a short beat; a typed
+//! answer wins over a pick and goes back as a Deny. The request then folds
+//! into the transcript's passive "Question" record (pink: transcript.rs
+//! `input_chip`).
 //!
 //! Keys while the request has focus: `1`–`9` pick a choice, `Enter` sends
-//! the picked one.
+//! the picked one (in the answer field, `Enter` sends the typed answer).
 //!
 //! ```ignore
 //! PermissionRequest::new("publish", "Codex", "publish @acme/charts 2.4.0")
@@ -22,18 +24,20 @@
 use std::{rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
-    AnyView, App, ElementId, FocusHandle, FontWeight, IntoElement, KeyDownEvent, MouseButton, Role,
-    SharedString, Task, Toggled, WeakEntity, Window, div, phi, prelude::*, px, svg,
+    AnyView, App, Context, Div, ElementId, Entity, FocusHandle, FontWeight, IntoElement,
+    KeyDownEvent, MouseButton, Role, SharedString, Subscription, Task, Toggled, Window, div, phi,
+    prelude::*, px, svg,
 };
 
 use crate::{
     motion,
     pink::{self, ButtonKind, ControlSize, Pink, layout, radius, space, text},
+    primitives::{InputEvent, TextInput},
     story,
 };
 
 pub const NAME: &str = "Permission Request";
-pub const DESCRIPTION: &str = "An agent stops to ask before it acts – the composer becomes the request, with the exact command, where and why, numbered choices that each name their grant scope, and a quiet Question record once you answer";
+pub const DESCRIPTION: &str = "An agent stops to ask before it acts – the composer becomes the request, with the exact command, where and why, numbered choices that each name their grant scope, room to type your own answer, and a quiet Question record once you answer";
 
 const ICON_QUESTION: &str = "icons/permission-request/chat-round-line.svg";
 
@@ -43,6 +47,16 @@ const AUTO_ADVANCE: Duration = Duration::from_millis(220);
 
 /// The answer rows' corner (pink: composer.rs `render_wizard`, `rounded(12)`).
 const OPTION_RADIUS: f32 = 12.0;
+
+/// The answer field's copy before and after a pick (pink: composer.rs
+/// `answer_placeholder`).
+const PLACEHOLDER: &str = "Type your own answer, or pick an option above";
+const PLACEHOLDER_PICKED: &str =
+    "Type your own answer, or leave this blank to use the selected option";
+/// pink composer input: `text-[14px] leading-relaxed`; `ANSWER_PADDING_Y`.
+const INPUT_TEXT_SIZE: f32 = 14.0;
+const INPUT_LINE_HEIGHT: f32 = 22.75;
+const ANSWER_PADDING_Y: f32 = 12.0;
 
 /// What the person decided (pink: proto `ApprovalDecision`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -135,6 +149,7 @@ impl PermissionChoice {
 }
 
 type OutcomeHandler = Rc<dyn Fn(PermissionOutcome, &mut Window, &mut App)>;
+type ReplyHandler = Rc<dyn Fn(SharedString, &mut Window, &mut App)>;
 
 #[derive(IntoElement)]
 pub struct PermissionRequest {
@@ -154,6 +169,7 @@ pub struct PermissionRequest {
     autofocus: bool,
     resolved: bool,
     on_decide: Option<OutcomeHandler>,
+    on_reply: Option<ReplyHandler>,
 }
 
 impl PermissionRequest {
@@ -186,6 +202,7 @@ impl PermissionRequest {
             autofocus: false,
             resolved: false,
             on_decide: None,
+            on_reply: None,
         }
     }
 
@@ -282,6 +299,16 @@ impl PermissionRequest {
         self
     }
 
+    /// A typed answer, sent instead of a choice (it decides as a Deny, as
+    /// pink's `approval_decision` finds no choice in it).
+    pub fn on_reply(
+        mut self,
+        handler: impl Fn(SharedString, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_reply = Some(Rc::new(handler));
+        self
+    }
+
     /// The approval context rows in pink's order (pink: proto
     /// `ApprovalDetails::display_rows`, then composer.rs
     /// `approval_expiry_row`).
@@ -325,17 +352,114 @@ impl PermissionRequest {
 
 struct PermState {
     focus: FocusHandle,
+    /// pink's free answer (`answer_input`).
+    reply: Entity<TextInput>,
     picked: Option<usize>,
     resolved: bool,
+    /// The rows and callbacks, refreshed every render.
+    choices: Rc<[PermissionChoice]>,
+    on_decide: Option<OutcomeHandler>,
+    on_reply: Option<ReplyHandler>,
     /// The pending answer after a pick (pink: composer.rs
     /// `schedule_auto_advance`); a new pick replaces it.
     advance: Option<Task<()>>,
+    _reply_events: Subscription,
 }
 
-#[derive(Clone, Copy)]
-enum Command {
-    Pick(usize),
-    Send,
+impl PermState {
+    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let reply = cx.new(|cx| TextInput::new(window, cx).placeholder(PLACEHOLDER));
+        let reply_events = cx.subscribe_in(&reply, window, |this, _, event, window, cx| {
+            match event {
+                // The field's Enter is its own submit (pink: Enter in the
+                // answer input runs `wizard_advance`).
+                InputEvent::Submit(_) => this.submit(window, cx),
+                InputEvent::Change(_) => cx.notify(),
+                _ => {}
+            }
+        });
+        PermState {
+            focus: cx.focus_handle(),
+            reply,
+            picked: None,
+            resolved: false,
+            choices: Rc::new([]),
+            on_decide: None,
+            on_reply: None,
+            advance: None,
+            _reply_events: reply_events,
+        }
+    }
+
+    /// pink `wizard_select`: the row reads picked, the field's copy changes,
+    /// and the answer goes after `AUTO_ADVANCE`.
+    fn pick(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if self.resolved || ix >= self.choices.len() {
+            return;
+        }
+        self.picked = Some(ix);
+        self.reply.update(cx, |input, cx| {
+            input.set_placeholder(PLACEHOLDER_PICKED, cx)
+        });
+        self.advance = Some(cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor().timer(AUTO_ADVANCE).await;
+            this.update_in(cx, |s, window, cx| s.submit(window, cx))
+                .ok();
+        }));
+        cx.notify();
+    }
+
+    /// Send (pink `wizard_advance` and `approval_decision`): a typed answer
+    /// names no choice, so it goes back as a Deny; otherwise the picked row;
+    /// without either, nothing.
+    fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.resolved {
+            return;
+        }
+        let typed = self.reply.read(cx).text();
+        let typed = (!typed.trim().is_empty()).then_some(typed);
+        let outcome = match (&typed, self.picked.and_then(|ix| self.choices.get(ix))) {
+            (Some(_), _) => PermissionOutcome::Deny,
+            (None, Some(choice)) => choice.outcome,
+            (None, None) => return,
+        };
+        self.resolved = true;
+        cx.notify();
+        if let Some(f) = self.on_decide.clone() {
+            f(outcome, window, cx);
+        }
+        if let (Some(f), Some(typed)) = (self.on_reply.clone(), typed) {
+            f(typed, window, cx);
+        }
+    }
+
+    fn on_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let reply_focused = self.reply.read(cx).is_focused(window);
+        let k = &event.keystroke;
+        if let Some(ix) = number_shortcut(&k.key, k.modifiers.modified(), reply_focused) {
+            self.pick(ix, window, cx);
+            cx.stop_propagation();
+        } else if k.key == "enter" {
+            if !reply_focused {
+                self.submit(window, cx);
+                cx.stop_propagation();
+            }
+        } else if k.key == "escape" {
+            // Pink's Esc steps back a page; a request has one page.
+            cx.stop_propagation();
+        }
+    }
+}
+
+/// The pill the composer and the request share (pink: composer.rs
+/// `composer_surface`, opaque treatment).
+fn composer_surface(t: &Pink) -> Div {
+    div()
+        .rounded(px(radius::COMPOSER))
+        .border_1()
+        .border_color(t.border)
+        .bg(t.input_glass_bg())
+        .shadow(pink::shadow_lg())
 }
 
 impl RenderOnce for PermissionRequest {
@@ -347,22 +471,38 @@ impl RenderOnce for PermissionRequest {
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |window, cx| {
-                let focus = cx.focus_handle();
+                let state = PermState::new(window, cx);
                 if autofocus {
-                    window.focus(&focus, cx);
+                    window.focus(&state.focus, cx);
                 }
-                PermState {
-                    focus,
-                    picked: None,
-                    resolved: false,
-                    advance: None,
-                }
+                state
             },
         );
-        let (picked, resolved, focus) = {
+        let choices: Rc<[PermissionChoice]> = self.choices.clone().into();
+        let (on_decide, on_reply) = (self.on_decide.clone(), self.on_reply.clone());
+        state.update(cx, |s, cx| {
+            s.choices = choices.clone();
+            s.on_decide = on_decide;
+            s.on_reply = on_reply;
+            // pink composer input: `placeholder` text, accent caret.
+            s.reply.update(cx, |input, _| {
+                input.set_colors(Some(t.placeholder), Some(t.caret), Some(t.selection))
+            });
+        });
+        let (reply, typed_empty, picked, resolved, focus) = {
             let s = state.read(cx);
-            (s.picked, s.resolved || self.resolved, s.focus.clone())
+            let typed_empty = s.reply.read(cx).text().trim().is_empty();
+            (
+                s.reply.clone(),
+                typed_empty,
+                s.picked,
+                s.resolved || self.resolved,
+                s.focus.clone(),
+            )
         };
+        let can_advance = picked.is_some() || !typed_empty;
+        // Selection reads on the row only while no typed answer overrides it.
+        let picked = picked.filter(|_| typed_empty);
 
         let root = div()
             .w_full()
@@ -378,16 +518,6 @@ impl RenderOnce for PermissionRequest {
                 record(self.header.clone(), &t),
             ));
         }
-
-        let choices: Rc<[PermissionChoice]> = self.choices.clone().into();
-        let act: Rc<dyn Fn(Command, &mut Window, &mut App)> = {
-            let state = state.downgrade();
-            let choices = choices.clone();
-            let on_decide = self.on_decide.clone();
-            Rc::new(move |command, window, cx| {
-                run(&state, command, &choices, &on_decide, window, cx)
-            })
-        };
 
         // ---- body: header, question, context, choices ------------------
         let header = div()
@@ -438,17 +568,41 @@ impl RenderOnce for PermissionRequest {
                             .child(value),
                     )
             }));
-        let options = div()
-            .id(SharedString::from(format!("{key}-options")))
-            .max_h(px(220.))
-            .overflow_y_scroll()
+        let options =
+            div()
+                .id(SharedString::from(format!("{key}-options")))
+                .max_h(px(220.))
+                .overflow_y_scroll()
+                .mt(px(space::S12))
+                .flex()
+                .flex_col()
+                .gap(px(space::S4))
+                .children(choices.iter().enumerate().map(|(ix, choice)| {
+                    option_row(&key, ix, choice, picked == Some(ix), &state, &t)
+                }));
+        // The free answer: a composer surface nested in the request.
+        let answer = div()
             .mt(px(space::S12))
-            .flex()
-            .flex_col()
-            .gap(px(space::S4))
-            .children(choices.iter().enumerate().map(|(ix, choice)| {
-                option_row(&key, ix, choice, picked == Some(ix), act.clone(), &t)
-            }));
+            .pb(px(space::S4))
+            .px(px(space::S4))
+            .child(
+                composer_surface(&t)
+                    .id(SharedString::from(format!("{key}-answer")))
+                    .w_full()
+                    .overflow_hidden()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .min_w_0()
+                            .px(px(space::S8))
+                            .py(px(ANSWER_PADDING_Y))
+                            .text_size(px(INPUT_TEXT_SIZE))
+                            .line_height(px(INPUT_LINE_HEIGHT))
+                            .text_color(t.text)
+                            .child(div().flex_1().min_w_0().child(reply)),
+                    ),
+            );
         let body = div()
             .px(px(space::S16))
             .pt(px(space::S16))
@@ -457,7 +611,8 @@ impl RenderOnce for PermissionRequest {
             .child(header)
             .child(question)
             .child(context)
-            .child(options);
+            .child(options)
+            .child(answer);
 
         // ---- footer: one Primary Send ------------------------------------
         let footer = div()
@@ -480,7 +635,7 @@ impl RenderOnce for PermissionRequest {
                     .gap(px(space::S8)),
             )
             .child({
-                let act = act.clone();
+                let state = state.clone();
                 pink::button(
                     format!("{key}-send"),
                     ButtonKind::Primary,
@@ -490,35 +645,19 @@ impl RenderOnce for PermissionRequest {
                 .aria_label("Send")
                 .child("Send")
                 .px(px(space::S16))
-                .when(picked.is_none(), |el| el.opacity(0.4))
-                .on_click(move |_, window, cx| act(Command::Send, window, cx))
+                .when(!can_advance, |el| el.opacity(0.4))
+                .on_click(move |_, window, cx| state.update(cx, |s, cx| s.submit(window, cx)))
             });
 
         let on_key = {
-            let act = act.clone();
+            let state = state.clone();
             move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {
-                let k = &event.keystroke;
-                if let Some(ix) = number_shortcut(&k.key, k.modifiers.modified()) {
-                    act(Command::Pick(ix), window, cx);
-                    cx.stop_propagation();
-                } else if k.key == "enter" {
-                    act(Command::Send, window, cx);
-                    cx.stop_propagation();
-                } else if k.key == "escape" {
-                    // Pink's Esc steps back a page; a request has one page.
-                    cx.stop_propagation();
-                }
+                state.update(cx, |s, cx| s.on_key(event, window, cx))
             }
         };
 
-        // pink: composer.rs `composer_surface`, opaque treatment.
-        let panel = div()
+        let panel = composer_surface(&t)
             .id(SharedString::from(format!("{key}-panel")))
-            .rounded(px(radius::COMPOSER))
-            .border_1()
-            .border_color(t.border)
-            .bg(t.input_glass_bg())
-            .shadow(pink::shadow_lg())
             .track_focus(&focus)
             .on_key_down(on_key)
             .on_mouse_down(MouseButton::Left, {
@@ -542,78 +681,14 @@ impl RenderOnce for PermissionRequest {
     }
 }
 
-/// 1–9 pick a choice; modified digits belong to app shortcuts (pink:
-/// composer.rs `wizard_number_shortcut`).
-fn number_shortcut(key: &str, modified: bool) -> Option<usize> {
-    if modified {
+/// 1–9 pick a choice, unless a modifier is held (app shortcuts) or the
+/// answer field has focus (pink: composer.rs `wizard_number_shortcut`).
+fn number_shortcut(key: &str, modified: bool, reply_focused: bool) -> Option<usize> {
+    if modified || reply_focused {
         return None;
     }
     let digit = key.parse::<usize>().ok()?;
     (1..=9).contains(&digit).then(|| digit - 1)
-}
-
-fn run(
-    state: &WeakEntity<PermState>,
-    command: Command,
-    choices: &Rc<[PermissionChoice]>,
-    on_decide: &Option<OutcomeHandler>,
-    window: &mut Window,
-    cx: &mut App,
-) {
-    let Some(entity) = state.upgrade() else {
-        return;
-    };
-    match command {
-        Command::Pick(ix) => {
-            if ix >= choices.len() || entity.read(cx).resolved {
-                return;
-            }
-            let advance = {
-                let state = state.clone();
-                let choices = choices.clone();
-                let on_decide = on_decide.clone();
-                window.spawn(cx, async move |cx| {
-                    cx.background_executor().timer(AUTO_ADVANCE).await;
-                    cx.update(|window, cx| submit(&state, &choices, &on_decide, window, cx))
-                        .ok();
-                })
-            };
-            entity.update(cx, |s, cx| {
-                s.picked = Some(ix);
-                s.advance = Some(advance);
-                cx.notify();
-            });
-        }
-        Command::Send => submit(state, choices, on_decide, window, cx),
-    }
-}
-
-/// Answers with the picked row; without a pick Send does nothing (pink:
-/// composer.rs `wizard_advance`).
-fn submit(
-    state: &WeakEntity<PermState>,
-    choices: &Rc<[PermissionChoice]>,
-    on_decide: &Option<OutcomeHandler>,
-    window: &mut Window,
-    cx: &mut App,
-) {
-    let Some(entity) = state.upgrade() else {
-        return;
-    };
-    let mut outcome = None;
-    entity.update(cx, |s, cx| {
-        if s.resolved {
-            return;
-        }
-        if let Some(choice) = s.picked.and_then(|ix| choices.get(ix)) {
-            s.resolved = true;
-            outcome = Some(choice.outcome);
-            cx.notify();
-        }
-    });
-    if let (Some(f), Some(outcome)) = (on_decide, outcome) {
-        f(outcome, window, cx);
-    }
 }
 
 /// One answer row (pink: composer.rs `render_wizard` "wizard-option"): r12
@@ -626,11 +701,12 @@ fn option_row(
     ix: usize,
     choice: &PermissionChoice,
     picked: bool,
-    act: Rc<dyn Fn(Command, &mut Window, &mut App)>,
+    state: &Entity<PermState>,
     t: &Pink,
 ) -> impl IntoElement {
     let hover_key = format!("{key}-option-{ix}");
     let accent = t.accent;
+    let state = state.clone();
     div()
         .id(SharedString::from(hover_key.clone()))
         .role(Role::RadioButton)
@@ -665,7 +741,7 @@ fn option_row(
         // The click rides GPUI's key-up keyboard click; the key-down must not
         // also reach the request's Enter.
         .on_key_down(pink::swallow_activation_key)
-        .on_click(move |_, window, cx| act(Command::Pick(ix), window, cx))
+        .on_click(move |_, window, cx| state.update(cx, |s, cx| s.pick(ix, window, cx)))
         .child(
             div()
                 .flex_1()
@@ -712,7 +788,7 @@ fn option_row(
 /// The answered request as the transcript keeps it (pink: transcript.rs
 /// `input_chip`): a 34 px neutral chip with the question glyph, "Question"
 /// and the request's header. Resolution never recolors it.
-fn record(header: SharedString, t: &Pink) -> gpui::Div {
+fn record(header: SharedString, t: &Pink) -> Div {
     div().py(px(space::S4)).w_full().child(
         div()
             .h(px(34.))
