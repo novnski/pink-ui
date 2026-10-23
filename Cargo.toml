@@ -45,11 +45,11 @@ debug = "line-tables-only"
 debug = false
 
 # The browser build: smaller and faster to download than plain release.
+# (LTO would save another 4% of the download but redo all codegen on every
+# deploy.)
 [profile.web]
 inherits = "release"
 opt-level = "s"
-lto = true
-codegen-units = 1
 # Function names alone are a third of the module; panics still print their
 # message.
 strip = true

@@ -173,13 +173,18 @@ the library compiles to `wasm32-unknown-unknown` unchanged.
 
 - [`web/`](web) is a small wasm-bindgen crate that opens one GPUI window on
   the page and exposes `start`, `show`, `set_theme`, `set_look` and `replay` to
-  JavaScript, plus a `catalog` binary that prints the component list as JSON.
+  JavaScript, plus `catalog()`, the component list as JSON, which the site's
+  build reads from Node.
 - [`site/`](site) is the static showcase: plain HTML, CSS and JS. Each
   component page embeds `play.html`, which hosts the wasm module; switching
   components calls `show` instead of reloading it.
 - [`scripts/build-site.sh`](scripts/build-site.sh) builds both into
   `site/dist/`, and [`.github/workflows/pages.yml`](.github/workflows/pages.yml)
-  deploys that to GitHub Pages on every push to `main`.
+  deploys that to GitHub Pages on every push to `main`. The catalog's
+  thumbnails are committed in `site/thumbs/`; after changing how a component
+  looks, rerender them with `node scripts/site/thumbnails.mjs site/dist`
+  (needs Playwright), which also fails if any component panics in the
+  browser.
 
 ```sh
 rustup target add wasm32-unknown-unknown

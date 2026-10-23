@@ -1,8 +1,9 @@
 // Renders a light and a dark thumbnail of every component with the built
-// player in headless Chromium, and fails if any component panics in the
-// browser – so this doubles as the web build's smoke test.
+// player in headless Chromium, into site/thumbs (committed, so the site's
+// build needs no browser), and fails if any component panics in the browser.
+// Rerun it after changing how a component looks:
 //
-//   node scripts/site/thumbnails.mjs site/dist
+//   scripts/build-site.sh && node scripts/site/thumbnails.mjs site/dist
 //
 // Needs Playwright with Chromium (`npm install playwright && npx playwright
 // install chromium`). Set PLAYWRIGHT to load it from elsewhere, WAIT to change
@@ -19,7 +20,7 @@ const wait = Number(process.env.WAIT ?? 3000);
 const VIEW = { width: 900, height: 640 };
 const ASPECT = 900 / 640;
 const catalog = JSON.parse(fs.readFileSync(path.join(root, 'catalog.json'), 'utf8'));
-const out = path.join(root, 'thumbs');
+const out = path.resolve(process.argv[3] ?? 'site/thumbs');
 fs.mkdirSync(out, { recursive: true });
 
 const types = {
