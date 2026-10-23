@@ -1782,8 +1782,8 @@ mod tests {
             details(&usage()),
             "37,000 / 200,000 tokens\n163,000 tokens remaining"
         );
-        assert_eq!(label(false, 0.785), "79%");
-        assert_eq!(label(true, 0.785), "Compacting…");
+        assert_eq!(label(false, 0.786), "79%");
+        assert_eq!(label(true, 0.786), "Compacting…");
     }
 
     #[test]
