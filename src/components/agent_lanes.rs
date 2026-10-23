@@ -1,11 +1,14 @@
 //! Agent Lanes – what every agent is doing, as columns of time.
 //!
-//! One column per agent; time runs down the page into a **now** line at the
-//! bottom, so running work grows downward into the present while the past
-//! scrolls up and away. Dashed connectors show hand-offs from one agent's
-//! finished block to the next agent's work, and a block that waits on a
-//! person carries its Approve / Deny right on it. The window switch (5, 15 or
-//! 30 minutes) rescales the whole picture with a glide.
+//! One lane per agent, drawn as pink's board columns (`shell/board`): a quiet
+//! well headed by the agent's name, role and status. Time runs down each lane
+//! into a **now** line near the bottom, so running work grows into the present
+//! while the past rises and fades out under the lane heads. Each block of work
+//! is a board card sized by its time; hand-offs are pink's activity-rail
+//! ribbon (1 px, rounded elbows) from one agent's finished card to the next
+//! agent's, and a card that waits on a person carries its Approve / Deny. The
+//! window switch (5, 15 or 30 minutes) is a segmented control and rescales the
+//! whole picture over `DISCLOSURE`.
 //!
 //! ```ignore
 //! AgentLanes::new("lanes")
@@ -19,33 +22,47 @@ use std::{rc::Rc, sync::Arc};
 use web_time::{Duration, Instant};
 
 use gpui::{
-    Animation, AnimationExt, AnyView, App, ElementId, FontWeight, Hsla, IntoElement, PathBuilder,
-    Pixels, Point, SharedString, Task, Window, canvas, div, point, prelude::*, px, svg,
+    AnimationExt, AnyElement, AnyView, App, Bounds, ElementId, FillOptions, FillRule, FontWeight,
+    Hsla, IntoElement, PathBuilder, PathStyle, Pixels, Point, Role, SharedString, Task, Window,
+    canvas, div, fill, linear_color_stop, linear_gradient, point, prelude::*, px, size, svg,
 };
 
 use crate::{
     HoverFill,
-    motion::{self, EASE_IN_OUT, GLIDE, MotionSpec},
-    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, radius, space, text},
-    primitives::ring,
+    motion::{self, DISCLOSURE, TOOL_ROW_REVEAL},
+    pink::{
+        self, ButtonKind, ControlSize, FillTier, Pink, Segment, loaders, radius, tabular_figures,
+    },
     story,
 };
 
 pub const NAME: &str = "Agent Lanes";
-pub const DESCRIPTION: &str = "A live column of time for each agent – work grows down into now, hand-offs link one agent's output to the next, and approvals wait right on the block";
+pub const DESCRIPTION: &str = "Every agent's work as a board column of time – cards grow down into a now line, hand-offs step across lanes on a hairline rail, a 5, 15 or 30 minute switch rescales it all, and an approval waits on its card with Approve and Deny";
 
-const ICON_LANES: &str = "icons/agent-lanes/lanes.svg";
+const ICON_SHIELD: &str = "icons/agent-lanes/shield-warning.svg";
 const ICON_CHECK: &str = "icons/agent-lanes/check.svg";
 const ICON_CLOSE: &str = "icons/agent-lanes/close.svg";
-const ICON_ATTENTION: &str = "icons/agent-lanes/attention.svg";
-const ICON_HANDOFF: &str = "icons/agent-lanes/handoff.svg";
 
 const WIDTH: f32 = 780.0;
-const GUTTER: f32 = 58.0;
-const PAD_R: f32 = 10.0;
-const BODY_H: f32 = 340.0;
+/// Side and bottom inset of the lanes area.
+const INSET: f32 = 12.0;
+/// The time labels' column, left of the first lane.
+const GUTTER: f32 = 48.0;
+/// Between two lane wells (pink board columns: `gap 12`).
+const LANE_GAP: f32 = 12.0;
+/// Around the cards inside a well (pink board column: `p 8`).
+const WELL_PAD: f32 = 8.0;
+/// Card padding (pink board card: `px 10`).
+const CARD_PAD_X: f32 = 10.0;
+const BODY_H: f32 = 320.0;
 /// The now line sits a little above the bottom, over a sliver of future.
-const NOW_Y: f32 = BODY_H - 22.0;
+const NOW_Y: f32 = BODY_H - 24.0;
+/// The past fades out under the lane heads (pink's results fade band).
+const FADE_BAND: f32 = 18.0;
+/// Hand-off elbow radius (pink `ACTIVITY_BEND_RADIUS`).
+const BEND: f32 = 6.0;
+/// A waiting card is always tall enough for its title, wait and buttons.
+const WAITING_MIN_H: f32 = 80.0;
 const WINDOWS: [(f32, &str, f32); 3] = [
     (300.0, "5m", 60.0),
     (900.0, "15m", 300.0),
@@ -54,7 +71,7 @@ const WINDOWS: [(f32, &str, f32); 3] = [
 /// Seconds of wall time at "now" when the component mounts (10:42:20).
 const WALL_START: f32 = 10.0 * 3600.0 + 42.0 * 60.0 + 20.0;
 
-/// An agent, one column.
+/// An agent, one lane.
 #[derive(Clone, Debug)]
 pub struct LaneAgent {
     pub name: SharedString,
@@ -369,12 +386,13 @@ impl LanesState {
         }
     }
 
-    fn lane_state(&self, lane: usize) -> Phase {
-        let mut state = Phase::Hidden;
+    /// What a lane's agent is doing now: waiting beats working beats idle.
+    fn lane_state(&self, lane: usize) -> Status {
+        let mut state = Status::Idle;
         for live in self.blocks.iter().filter(|b| b.block.lane == lane) {
             match live.phase(self.clock) {
-                Phase::Waiting => return Phase::Waiting,
-                Phase::Running => state = Phase::Running,
+                Phase::Waiting => return Status::Waiting,
+                Phase::Running => state = Status::Working,
                 _ => {}
             }
         }
@@ -383,7 +401,7 @@ impl LanesState {
 }
 
 // ---------------------------------------------------------------------------
-// Rendering
+// Pieces
 // ---------------------------------------------------------------------------
 
 fn wall(seconds: f32) -> String {
@@ -391,64 +409,206 @@ fn wall(seconds: f32) -> String {
     format!("{}:{:02}", s / 3600, (s % 3600) / 60)
 }
 
-fn span_label(seconds: f32) -> String {
-    let s = seconds.max(0.0) as u32;
-    if s < 60 {
-        format!("{s}s")
-    } else {
-        format!("{}m {:02}s", s / 60, s % 60)
+/// A status as a badge shows it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Status {
+    Working,
+    Waiting,
+    Approved,
+    Denied,
+    Done,
+    Idle,
+    Scheduled,
+}
+
+impl Status {
+    fn of(phase: Phase) -> Self {
+        match phase {
+            Phase::Running => Status::Working,
+            Phase::Waiting => Status::Waiting,
+            Phase::Approved => Status::Approved,
+            Phase::Denied => Status::Denied,
+            Phase::Done => Status::Done,
+            Phase::Hidden => Status::Scheduled,
+        }
     }
 }
 
-/// A stable hue per agent name, from Pink's palette family.
-fn agent_hue(name: &str, t: &Pink) -> Hsla {
-    const HUES: [f32; 5] = [277.0, 200.0, 155.0, 60.0, 330.0];
-    let ix = name
-        .bytes()
-        .fold(0usize, |a, b| a.wrapping_mul(31).wrapping_add(b as usize))
-        % HUES.len();
-    let (l, c) = if t.dark { (0.74, 0.13) } else { (0.56, 0.17) };
-    pink::oklch(l, c, HUES[ix])
+/// One status badge, shape before color: running work gets pink's mini
+/// spinner and a medium `content_muted` word, finished work a 6 px dot (pink:
+/// transcript.rs subagent status badge); a decision gets its glyph and word
+/// in the tone (pink: board/card.rs `badge`); waiting on a person is pink's
+/// sidebar status pill with the approval shield (pink: shell.rs status pill).
+fn status_badge(status: Status, key: &str, t: &Pink) -> AnyElement {
+    let row = |color: Hsla, gap: f32| {
+        div()
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(px(gap))
+            .text_size(px(11.))
+            .line_height(px(14.))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(color)
+    };
+    let dot = |color: Hsla| div().size(px(6.)).flex_none().rounded_full().bg(color);
+    let glyph = |path: &'static str, color: Hsla| {
+        svg().path(path).size(px(12.)).flex_none().text_color(color)
+    };
+    match status {
+        Status::Working => row(t.content_muted, 6.)
+            .child(loaders::mini_glyph_spinner(
+                format!("{key}-spin"),
+                2.0,
+                t.glyph,
+            ))
+            .child("Working")
+            .into_any_element(),
+        Status::Waiting => {
+            pink::status_pill("Waiting", t.warning, Some(ICON_SHIELD.into()), t).into_any_element()
+        }
+        Status::Approved => {
+            let tone = t.readable_tone(t.success, 0.95);
+            row(tone, 4.)
+                .child(glyph(ICON_CHECK, tone))
+                .child("Approved")
+                .into_any_element()
+        }
+        Status::Denied => {
+            let tone = t.readable_tone(t.danger, 0.95);
+            row(tone, 4.)
+                .child(glyph(ICON_CLOSE, tone))
+                .child("Denied")
+                .into_any_element()
+        }
+        Status::Done => row(t.content_muted, 6.)
+            .child(dot(t.readable_tone(t.success, 1.0)))
+            .child("Done")
+            .into_any_element(),
+        Status::Idle => row(t.content_muted, 6.)
+            .child(dot(t.content_faint))
+            .child("Idle")
+            .into_any_element(),
+        // A ring, never a filled dot: nothing has run yet (pink board).
+        Status::Scheduled => row(t.readable_muted(0.9), 6.)
+            .child(
+                div()
+                    .size(px(8.))
+                    .flex_none()
+                    .rounded_full()
+                    .border(px(1.5))
+                    .border_color(t.readable_muted(0.8)),
+            )
+            .child("Scheduled")
+            .into_any_element(),
+    }
 }
 
-fn monogram(name: &str, size: f32, t: &Pink) -> gpui::Div {
-    let hue = agent_hue(name, t);
+/// A lane head (pink: board/columns.rs `column_header`): the name 12/16
+/// semibold `text` with the agent's status on the right, the role 11/14 in
+/// `readable_muted(0.8)` under it, gap 2.
+fn lane_head(agent: &LaneAgent, status: Status, width: f32, key: &str, t: &Pink) -> gpui::Div {
     div()
-        .size(px(size))
+        .w(px(width))
         .flex_none()
+        .px(px(WELL_PAD + 2.))
         .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(radius::SM))
-        .bg(hue.opacity(if t.dark { 0.2 } else { 0.13 }))
-        .text_size(px(size * 0.5))
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(hue)
-        .child(name.chars().next().unwrap_or('?').to_string())
-}
-
-fn pulse_dot(id: impl Into<ElementId>, color: Hsla, live: bool) -> gpui::AnyElement {
-    let dot = div().size(px(6.)).flex_none().rounded_full().bg(color);
-    if live {
-        dot.with_animation(
-            id,
-            Animation::new(Duration::from_millis(1400))
-                .repeat()
-                .with_easing(EASE_IN_OUT.easing()),
-            |el, t| el.opacity(0.35 + 0.65 * (1.0 - (t * 2.0 - 1.0).abs())),
+        .flex_col()
+        .gap(px(2.))
+        .child(
+            div()
+                .h(px(16.))
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(px(12.))
+                        .line_height(px(16.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(t.text)
+                        .child(agent.name.clone()),
+                )
+                .child(status_badge(status, key, t)),
         )
-        .into_any_element()
-    } else {
-        dot.into_any_element()
-    }
+        .child(
+            div().flex().child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(px(11.))
+                    .line_height(px(14.))
+                    .text_color(t.readable_muted(0.8))
+                    .child(agent.role.clone()),
+            ),
+        )
 }
 
-/// A hand-off connector in body coordinates.
-struct Link {
-    from: Point<Pixels>,
-    to: Point<Pixels>,
-    color: Hsla,
+/// A clockwise ribbon contour, 1 px wide (pink: transcript.rs
+/// `activity_ribbon`). Nonzero fill unions crossing ribbons so a crossing
+/// never paints twice.
+fn ribbon(path: &mut PathBuilder, points: &[Point<Pixels>]) {
+    if points.len() < 2 {
+        return;
+    }
+    let mut left = Vec::with_capacity(points.len());
+    let mut right = Vec::with_capacity(points.len());
+    for (ix, p) in points.iter().enumerate() {
+        let a = points[ix.saturating_sub(1)];
+        let b = points[(ix + 1).min(points.len() - 1)];
+        let dx = f32::from(b.x - a.x);
+        let dy = f32::from(b.y - a.y);
+        let length = dx.hypot(dy).max(0.0001);
+        let normal = point(px(-dy / length * 0.5), px(dx / length * 0.5));
+        left.push(*p + normal);
+        right.push(*p - normal);
+    }
+    path.move_to(left[0]);
+    for p in left.iter().skip(1).chain(right.iter().rev()) {
+        path.line_to(*p);
+    }
+    path.close();
 }
+
+/// A hand-off's course: down from the source card, across with a rounded
+/// elbow (pink's activity-rail bend, a quadratic sampled 12 times), and down
+/// into the target card.
+fn elbow(from: (f32, f32), to: (f32, f32)) -> Vec<(f32, f32)> {
+    let ((sx, sy), (tx, ty)) = (from, to);
+    let dx = tx - sx;
+    if dx.abs() < 0.5 {
+        return vec![from, to];
+    }
+    let my = (sy + ty) / 2.0;
+    let r = BEND.min((ty - sy) / 2.0).min(dx.abs() / 2.0).max(0.0);
+    let dir = dx.signum();
+    let quad = |a: (f32, f32), c: (f32, f32), b: (f32, f32), t: f32| {
+        let u = 1.0 - t;
+        (
+            u * u * a.0 + 2.0 * u * t * c.0 + t * t * b.0,
+            u * u * a.1 + 2.0 * u * t * c.1 + t * t * b.1,
+        )
+    };
+    let mut points = vec![from];
+    for step in 0..=12 {
+        let t = step as f32 / 12.0;
+        points.push(quad((sx, my - r), (sx, my), (sx + dir * r, my), t));
+    }
+    for step in 0..=12 {
+        let t = step as f32 / 12.0;
+        points.push(quad((tx - dir * r, my), (tx, my), (tx, my + r), t));
+    }
+    points.push(to);
+    points
+}
+
+// ---------------------------------------------------------------------------
+// Rendering
+// ---------------------------------------------------------------------------
 
 impl RenderOnce for AgentLanes {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
@@ -464,203 +624,129 @@ impl RenderOnce for AgentLanes {
         let s = state.read(cx);
         let clock = s.clock;
         let lanes = s.agents.len().max(1);
-        let lane_w = (WIDTH - 2.0 - GUTTER - PAD_R) / lanes as f32;
+        let area_w = WIDTH - 2.0 - 2.0 * INSET - GUTTER;
+        let lane_w = (area_w - LANE_GAP * (lanes - 1) as f32) / lanes as f32;
+        let lanes_right = GUTTER + area_w;
         let (window_secs, _, grid_step) = WINDOWS[s.window];
-        let pps = motion::follow(&format!("{key}-pps"), NOW_Y / window_secs, GLIDE);
+        let pps = motion::follow(&format!("{key}-pps"), NOW_Y / window_secs, DISCLOSURE);
         let y_of = |time: f32| NOW_Y - (clock - time) * pps;
-        let lane_x = |lane: usize| GUTTER + lane as f32 * lane_w;
+        let lane_x = |lane: usize| GUTTER + lane as f32 * (lane_w + LANE_GAP);
+        let card_bg = t.card_glass_bg();
+        let well = t.fill(FillTier::Quaternary).opacity(0.5);
+        // The well as painted: cards and the fade band sit on it opaquely.
+        let plate = pink::flatten(well, card_bg);
 
-        // -- Header ---------------------------------------------------------------
-        let working = (0..s.agents.len())
-            .filter(|lane| s.lane_state(*lane) == Phase::Running)
-            .count();
-        let waiting = (0..s.agents.len())
-            .filter(|lane| s.lane_state(*lane) == Phase::Waiting)
-            .count();
-        let summary = |color: Hsla, label: String| {
-            div()
-                .flex()
-                .items_center()
-                .gap(px(space::S6))
-                .text_size(px(text::FOOTNOTE))
-                .text_color(t.text_muted)
-                .child(div().size(px(6.)).rounded_full().bg(color))
-                .child(label)
+        // -- Header: pink's section header with the window switch -------------------
+        let statuses: Vec<Status> = (0..s.agents.len()).map(|l| s.lane_state(l)).collect();
+        let working = statuses.iter().filter(|s| **s == Status::Working).count();
+        let waiting = statuses.iter().filter(|s| **s == Status::Waiting).count();
+        let summary = match (working, waiting) {
+            (0, 0) => "Every agent is idle".to_string(),
+            (w, 0) => format!("{w} working"),
+            (0, n) => format!("{n} waiting on you"),
+            (w, n) => format!("{w} working · {n} waiting on you"),
         };
-        let window_chips = WINDOWS.iter().enumerate().map(|(ix, (_, label, _))| {
-            pink::chip(
-                format!("{key}-window-{ix}"),
-                s.window == ix,
-                ControlSize::Sm,
-                &t,
-            )
-            .child(*label)
-            .on_click({
+        let switch = pink::segmented(
+            format!("{key}-window"),
+            WINDOWS
+                .iter()
+                .map(|(_, label, _)| Segment::new(*label, *label))
+                .collect(),
+            s.window,
+            132.0,
+            ControlSize::Sm,
+            &t,
+            {
                 let state = state.clone();
-                move |_, _, cx| {
+                move |ix, _, cx| {
+                    let ix = *ix;
                     state.update(cx, |s, cx| {
                         s.window = ix;
                         cx.notify();
                     })
                 }
-            })
-        });
-        let header = div()
-            .flex()
-            .items_center()
-            .gap(px(space::S12))
-            .px(px(space::S16))
-            .py(px(space::S12))
-            .child(
-                div()
-                    .size(px(32.))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(radius::MD))
-                    .bg(t.fill(FillTier::Tertiary))
-                    .child(svg().path(ICON_LANES).size(px(16.)).text_color(t.text)),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_w_0()
-                    .child(
-                        div()
-                            .text_size(px(text::CALLOUT))
-                            .line_height(px(20.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("Agent lanes"),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(space::S12))
-                            .child(summary(t.accent, format!("{working} working")))
-                            .when(waiting > 0, |el| {
-                                el.child(summary(t.warning, format!("{waiting} waiting on you")))
-                            }),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(space::S4))
-                    .p(px(2.))
-                    .rounded(px(radius::MD))
-                    .bg(t.fill(FillTier::Quaternary))
-                    .children(window_chips),
-            );
+            },
+        );
+        let header = pink::section_header("Agent lanes", Some(summary.into()), &t)
+            .child(pink::row_controls().child(switch));
 
-        // -- Lane headers -----------------------------------------------------------
-        let lane_heads = s.agents.iter().enumerate().map(|(lane, agent)| {
-            let phase = s.lane_state(lane);
-            let (label, color) = match phase {
-                Phase::Running => ("Working", t.accent),
-                Phase::Waiting => ("Waiting on you", t.warning),
-                _ => ("Idle", t.text_faint),
-            };
+        // -- Lane wells and heads (pink board columns) -------------------------------
+        let wells = (0..lanes).map(|lane| {
             div()
+                .absolute()
+                .left(px(INSET + lane_x(lane)))
+                .top_0()
+                .bottom(px(INSET))
                 .w(px(lane_w))
-                .flex_none()
-                .flex()
-                .items_center()
-                .gap(px(space::S8))
-                .px(px(space::S8))
-                .child(monogram(&agent.name, 26.0, &t))
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .flex_1()
-                        .min_w_0()
-                        .child(
-                            div().flex().child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_size(px(text::BODY))
-                                    .line_height(px(18.))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .child(agent.name.clone()),
-                            ),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(5.))
-                                .text_size(px(text::CAPTION))
-                                .line_height(px(14.))
-                                .text_color(color)
-                                .child(pulse_dot(
-                                    ElementId::Name(format!("{key}-lane-dot-{lane}").into()),
-                                    color,
-                                    phase == Phase::Running || phase == Phase::Waiting,
-                                ))
-                                .child(label),
-                        ),
-                )
+                .rounded(px(radius::LG))
+                .bg(well)
         });
-        let lane_header = div()
+        let heads = s.agents.iter().enumerate().map(|(lane, agent)| {
+            lane_head(
+                agent,
+                statuses[lane],
+                lane_w,
+                &format!("{key}-lane-{lane}"),
+                &t,
+            )
+        });
+        let head_row = div()
+            .relative()
             .flex()
-            .items_center()
-            .h(px(52.))
             .pl(px(GUTTER))
-            .border_t_1()
-            .border_b_1()
-            .border_color(t.border)
-            .children(lane_heads);
+            .pt(px(WELL_PAD))
+            .gap(px(LANE_GAP))
+            .children(heads);
 
-        // -- Body: grid, blocks, hand-offs, now -------------------------------------
+        // -- Body: grid, cards, hand-offs, now ---------------------------------------
         let wall_now = WALL_START + clock;
         let first_tick = ((wall_now - window_secs * 1.2) / grid_step).ceil() * grid_step;
         let mut grid = Vec::new();
         let mut tick_time = first_tick;
         while tick_time <= wall_now {
             let y = y_of(tick_time - WALL_START);
-            if y > 8.0 && y < NOW_Y - 14.0 {
+            if y > FADE_BAND && y < NOW_Y - 16.0 {
                 grid.push((y, wall(tick_time - WALL_START)));
             }
             tick_time += grid_step;
         }
+        // Wall times in the gutter: 11 px tabular `content_faint`, as pink sets
+        // its timers.
         let grid_labels = grid.iter().map(|(y, label)| {
             div()
                 .absolute()
                 .left_0()
-                .w(px(GUTTER - 10.))
-                .top(px(y - 8.))
-                .h(px(16.))
+                .w(px(GUTTER - 8.))
+                .top(px(y - 7.))
+                .h(px(14.))
                 .flex()
                 .items_center()
                 .justify_end()
-                .font_family(pink::MONO)
-                .text_size(px(text::CAPTION))
-                .text_color(t.text_faint)
+                .text_size(px(11.))
+                .line_height(px(14.))
+                .font_features(tabular_figures())
+                .text_color(t.content_faint)
                 .child(label.clone())
         });
 
         let mut links = Vec::new();
         let mut link_labels = Vec::new();
-        let mut block_els = Vec::new();
+        let mut cards = Vec::new();
         for (ix, live) in s.blocks.iter().enumerate() {
             let phase = live.phase(clock);
             if phase == Phase::Hidden {
                 continue;
             }
             let block = &live.block;
-            let x = lane_x(block.lane) + 6.0;
-            let w = lane_w - 12.0;
-            let top = y_of(live.start);
+            let x = lane_x(block.lane) + WELL_PAD;
+            let w = lane_w - 2.0 * WELL_PAD;
             let bottom = y_of(live.shown_end(clock));
-            let min_h = if phase == Phase::Waiting { 62.0 } else { 4.0 };
-            let top = top.min(bottom - min_h);
+            let min_h = if phase == Phase::Waiting {
+                WAITING_MIN_H
+            } else {
+                4.0
+            };
+            let top = y_of(live.start).min(bottom - min_h);
             let h = bottom - top;
             if bottom < -4.0 {
                 continue;
@@ -673,271 +759,75 @@ impl RenderOnce for AgentLanes {
                 let sx = lane_x(src.block.lane) + lane_w / 2.0;
                 let sy = y_of(src.shown_end(clock));
                 let tx = x + w / 2.0;
-                links.push(Link {
-                    from: point(px(sx), px(sy)),
-                    to: point(px(tx), px(top)),
-                    color: t.text_faint,
-                });
-                let mid_y = (sy + top) / 2.0;
-                if mid_y > 12.0 && (top - sy) > 34.0 {
-                    link_labels.push(
-                        div()
-                            .absolute()
-                            .left(px((sx + tx) / 2.0 - 52.0))
-                            .w(px(104.))
-                            .top(px(mid_y - 10.))
-                            .flex()
-                            .justify_center()
-                            .child(
-                                div()
-                                    .h(px(20.))
-                                    .px(px(6.))
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(4.))
-                                    .rounded(px(radius::SM))
-                                    .bg(t.surface_card)
-                                    .border_1()
-                                    .border_color(t.border)
-                                    .font_family(pink::MONO)
-                                    .text_size(px(10.5))
-                                    .text_color(t.text_muted)
-                                    .child(
-                                        svg()
-                                            .path(ICON_HANDOFF)
-                                            .size(px(11.))
-                                            .text_color(t.text_faint),
-                                    )
-                                    .child(label.clone()),
-                            ),
-                    );
-                }
-            }
-
-            let (bg, border, title_color) = match phase {
-                Phase::Running => (
-                    t.accent.opacity(if t.dark { 0.16 } else { 0.08 }),
-                    t.accent.opacity(0.45),
-                    t.text,
-                ),
-                Phase::Waiting => (
-                    t.warning.opacity(if t.dark { 0.14 } else { 0.09 }),
-                    t.warning.opacity(0.55),
-                    t.text,
-                ),
-                Phase::Approved => (
-                    t.success.opacity(if t.dark { 0.12 } else { 0.07 }),
-                    t.success.opacity(0.35),
-                    t.text_muted,
-                ),
-                Phase::Denied => (
-                    t.danger.opacity(if t.dark { 0.12 } else { 0.07 }),
-                    t.danger.opacity(0.35),
-                    t.text_muted,
-                ),
-                _ => (t.fill(FillTier::Tertiary), t.border, t.text_muted),
-            };
-            let selected = s.selected == Some(ix);
-            let block_key = format!("{key}-block-{ix}");
-            let icon = match phase {
-                Phase::Waiting => Some((ICON_ATTENTION, t.warning)),
-                Phase::Approved => Some((ICON_CHECK, t.success)),
-                Phase::Denied => Some((ICON_CLOSE, t.danger)),
-                _ => None,
-            };
-            // Keep the label in view when the block starts above the window.
-            let hidden_top = (-top).max(0.0);
-            let visible_h = h - hidden_top;
-            let title_row = (visible_h >= 20.0).then(|| {
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(5.))
-                    .when_some(icon, |el, (path, color)| {
-                        el.child(svg().path(path).size(px(12.)).flex_none().text_color(color))
-                    })
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .text_size(px(text::FOOTNOTE))
-                            .line_height(px(16.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(title_color)
-                            .child(block.title.clone()),
-                    )
-            });
-            let sub = match phase {
-                Phase::Approved => Some("Approved".into()),
-                Phase::Denied => Some("Denied".into()),
-                Phase::Waiting => Some(format!("waiting {}", span_label(clock - live.start))),
-                _ => block.tool.as_ref().map(|tool| tool.to_string()),
-            };
-            let sub_row = (visible_h >= 38.0).then_some(sub).flatten().map(|sub| {
-                div().flex().child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .font_family(pink::MONO)
-                        .text_size(px(10.5))
-                        .line_height(px(14.))
-                        .text_color(t.text_faint)
-                        .child(sub),
-                )
-            });
-            let actions = (phase == Phase::Waiting && visible_h >= 60.0).then(|| {
-                let decide = |approve: bool| {
-                    let state = state.clone();
-                    move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
-                        let handler = state.update(cx, |s, cx| {
-                            s.loop_after = None;
-                            s.decide(ix, approve);
-                            s.selected = Some(ix);
-                            cx.notify();
-                            s.on_decide.clone()
-                        });
-                        if let Some(handler) = handler {
-                            handler(ix, approve, window, cx);
-                        }
-                    }
-                };
-                div()
-                    .mt(px(6.))
-                    .flex()
-                    .gap(px(4.))
-                    .child(
-                        pink::button(
-                            format!("{block_key}-approve"),
-                            ButtonKind::Accent,
-                            ControlSize::Sm,
-                            &t,
-                        )
-                        .h(px(22.))
-                        .child("Approve")
-                        .on_click(decide(true)),
-                    )
-                    .child(
-                        pink::button(
-                            format!("{block_key}-deny"),
-                            ButtonKind::Secondary,
-                            ControlSize::Sm,
-                            &t,
-                        )
-                        .h(px(22.))
-                        .child("Deny")
-                        .on_click(decide(false)),
-                    )
-            });
-            block_els.push(
-                div()
-                    .id(ElementId::Name(block_key.clone().into()))
-                    .absolute()
-                    .left(px(x))
-                    .top(px(top))
-                    .w(px(w))
-                    .h(px(h))
-                    .overflow_hidden()
-                    .rounded(px(if h < 12.0 { 3.0 } else { radius::MD }))
-                    .bg(bg)
-                    .border_1()
-                    .when(selected, |el| el.shadow(vec![ring(1.5, t.focus_ring())]))
-                    .hover_border(block_key.clone(), border, title_color.opacity(0.6))
-                    .cursor_pointer()
-                    .px(px(space::S8))
-                    .pt(px(5. + hidden_top))
-                    .on_click({
-                        let state = state.clone();
-                        move |_, _, cx| {
-                            state.update(cx, |s, cx| {
-                                s.selected = Some(ix);
-                                cx.notify();
-                            })
-                        }
-                    })
-                    .children(title_row)
-                    .children(sub_row)
-                    .children(actions)
-                    // The growing edge of running work.
-                    .when(phase == Phase::Running, |el| {
-                        el.child(
+                if top - sy >= 1.0 {
+                    links.push(elbow((sx, sy), (tx, top)));
+                    let mid_y = (sy + top) / 2.0;
+                    if top - sy >= 28.0 && mid_y > FADE_BAND + 8.0 {
+                        // What was handed over, on the rail's crossing: a
+                        // neutral status pill on an opaque plate so the rail
+                        // stops at its edges.
+                        link_labels.push(
                             div()
                                 .absolute()
-                                .left_0()
-                                .right_0()
-                                .bottom_0()
-                                .h(px(2.))
-                                .bg(t.accent),
-                        )
-                    })
-                    .with_animation(
-                        ElementId::Name(format!("{block_key}-in-{}", s.generation).into()),
-                        MotionSpec::new(360, motion::EASE).animation(),
-                        |el, p| el.opacity(p),
-                    ),
-            );
+                                .left(px((sx + tx) / 2.0 - 60.0))
+                                .w(px(120.))
+                                .top(px(mid_y - 8.))
+                                .flex()
+                                .justify_center()
+                                .child(div().rounded(px(radius::XS)).bg(card_bg).child(
+                                    pink::status_pill(label.clone(), t.text_muted, None, &t),
+                                )),
+                        );
+                    }
+                }
+            }
+            cards.push(block_card(
+                &state,
+                ix,
+                live,
+                phase,
+                s.selected == Some(ix),
+                Bounds::new(point(x, top), size(w, h)),
+                plate,
+                clock,
+                &key,
+                s.generation,
+                &t,
+            ));
         }
 
-        let lane_lines: Vec<f32> = (1..lanes).map(lane_x).collect();
         let grid_ys: Vec<f32> = grid.iter().map(|(y, _)| *y).collect();
-        let (line_color, now_color) = (t.border, t.accent);
-        let overlay = canvas(
+        let (grid_color, rail_color) = (t.hairline(0.05), t.hairline(0.16));
+        let lines = canvas(
             |_, _, _| {},
             move |bounds, _, window, _| {
                 let o = bounds.origin;
-                let at = |x: f32, y: f32| point(o.x + px(x), o.y + px(y));
-                for x in &lane_lines {
-                    let mut line = PathBuilder::stroke(px(1.));
-                    line.move_to(at(*x, 0.0));
-                    line.line_to(at(*x, BODY_H));
-                    if let Ok(path) = line.build() {
-                        window.paint_path(path, line_color);
-                    }
-                }
                 for y in &grid_ys {
-                    let mut line = PathBuilder::stroke(px(1.)).dash_array(&[px(2.), px(4.)]);
-                    line.move_to(at(GUTTER, *y));
-                    line.line_to(at(WIDTH - 2.0 - PAD_R, *y));
-                    if let Ok(path) = line.build() {
-                        window.paint_path(path, line_color);
-                    }
+                    window.paint_quad(fill(
+                        Bounds::new(
+                            point(o.x + px(GUTTER), o.y + px(y.round())),
+                            size(px(lanes_right - GUTTER), px(1.)),
+                        ),
+                        grid_color,
+                    ));
                 }
+                if links.is_empty() {
+                    return;
+                }
+                // pink: transcript.rs activity_rail – all ribbons in one
+                // nonzero path, painted once in `hairline`.
+                let mut tree = PathBuilder::fill().with_style(PathStyle::Fill(
+                    FillOptions::default().with_fill_rule(FillRule::NonZero),
+                ));
                 for link in &links {
-                    let (from, to) = (link.from + o, link.to + o);
-                    let dy = px(f32::from(to.y - from.y).max(24.0) * 0.5);
-                    let mut curve = PathBuilder::stroke(px(1.25)).dash_array(&[px(3.), px(3.)]);
-                    curve.move_to(from);
-                    curve.cubic_bezier_to(
-                        to - point(px(0.), px(4.)),
-                        from + point(px(0.), dy),
-                        to - point(px(0.), dy),
-                    );
-                    if let Ok(path) = curve.build() {
-                        window.paint_path(path, link.color);
-                    }
-                    let mut head = PathBuilder::fill();
-                    head.move_to(to);
-                    head.line_to(to + point(px(-3.5), px(-5.)));
-                    head.line_to(to + point(px(3.5), px(-5.)));
-                    head.close();
-                    if let Ok(path) = head.build() {
-                        window.paint_path(path, link.color);
-                    }
-                    let mut dot = PathBuilder::fill();
-                    let r = px(2.5);
-                    dot.move_to(from + point(r, px(0.)));
-                    dot.arc_to(point(r, r), px(0.), false, true, from - point(r, px(0.)));
-                    dot.arc_to(point(r, r), px(0.), false, true, from + point(r, px(0.)));
-                    if let Ok(path) = dot.build() {
-                        window.paint_path(path, link.color);
-                    }
+                    let points: Vec<Point<Pixels>> = link
+                        .iter()
+                        .map(|(x, y)| point(o.x + px(*x), o.y + px(*y)))
+                        .collect();
+                    ribbon(&mut tree, &points);
                 }
-                let mut now = PathBuilder::stroke(px(1.));
-                now.move_to(at(GUTTER - 4.0, NOW_Y));
-                now.line_to(at(WIDTH - 2.0 - PAD_R, NOW_Y));
-                if let Ok(path) = now.build() {
-                    window.paint_path(path, now_color);
+                if let Ok(path) = tree.build() {
+                    window.paint_path(path, rail_color);
                 }
             },
         )
@@ -946,122 +836,331 @@ impl RenderOnce for AgentLanes {
         .left_0()
         .size_full();
 
+        // The past fades out under the lane heads: a band of the well's own
+        // (flattened) color at the top of each lane.
+        let fades = (0..lanes).map(|lane| {
+            div()
+                .absolute()
+                .left(px(lane_x(lane)))
+                .top_0()
+                .w(px(lane_w))
+                .h(px(FADE_BAND))
+                .bg(linear_gradient(
+                    180.,
+                    linear_color_stop(plate, 0.),
+                    linear_color_stop(plate.opacity(0.), 1.),
+                ))
+        });
+        // Now: a 1 px accent line (time's caret) and the wall time on an
+        // accent status pill in the gutter.
+        let now_line = div()
+            .absolute()
+            .left(px(GUTTER - 4.))
+            .top(px(NOW_Y))
+            .w(px(lanes_right - GUTTER + 4.))
+            .h(px(1.))
+            .bg(t.accent);
         let now_label = div()
             .absolute()
-            .left(px(6.))
-            .top(px(NOW_Y - 9.))
-            .h(px(18.))
-            .px(px(6.))
+            .left_0()
+            .w(px(GUTTER - 4.))
+            .top(px(NOW_Y - 7.5))
             .flex()
-            .items_center()
-            .rounded(px(radius::SM))
-            .bg(t.accent_strong)
-            .font_family(pink::MONO)
-            .text_size(px(10.5))
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(t.on_accent)
-            .child(wall(clock));
-        let future = div()
-            .absolute()
-            .left(px(GUTTER))
-            .right(px(PAD_R))
-            .top(px(NOW_Y))
-            .bottom_0()
-            .bg(t.fill(FillTier::Quaternary));
+            .justify_end()
+            .child(
+                pink::status_pill(wall(clock), t.accent, None, &t).font_features(tabular_figures()),
+            );
 
         let body = div()
             .relative()
+            .mt(px(WELL_PAD))
             .h(px(BODY_H))
             .overflow_hidden()
-            .child(future)
-            .child(overlay)
+            .child(lines)
             .children(grid_labels)
-            .children(block_els)
+            .children(cards)
             .children(link_labels)
+            .children(fades)
+            .child(now_line)
             .child(now_label);
 
-        // -- Footer: the selected block ----------------------------------------------
-        let footer = s.selected.and_then(|ix| s.blocks.get(ix)).map(|live| {
-            let phase = live.phase(clock);
-            let agent = s
-                .agents
-                .get(live.block.lane)
-                .map(|a| a.name.clone())
-                .unwrap_or_default();
-            let (label, tone) = match phase {
-                Phase::Running => ("Running", Tone::Accent),
-                Phase::Waiting => ("Waiting on you", Tone::Warning),
-                Phase::Approved => ("Approved", Tone::Success),
-                Phase::Denied => ("Denied", Tone::Danger),
-                Phase::Done => ("Done", Tone::Neutral),
-                Phase::Hidden => ("Scheduled", Tone::Neutral),
-            };
-            div()
-                .flex()
-                .items_center()
-                .gap(px(space::S10))
-                .px(px(space::S16))
-                .h(px(48.))
-                .border_t_1()
-                .border_color(t.border)
-                .text_size(px(text::BODY))
-                .child(monogram(&agent, 22.0, &t))
-                .child(div().text_color(t.text_muted).child(agent.clone()))
-                .child(div().text_color(t.text_faint).child("·"))
-                .child(
-                    div().flex_1().min_w_0().flex().child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .font_weight(FontWeight::MEDIUM)
-                            .child(live.block.title.clone()),
-                    ),
-                )
-                .when_some(live.block.tool.clone(), |el, tool| {
-                    el.child(
-                        div()
-                            .h(px(20.))
-                            .px(px(6.))
-                            .flex()
-                            .items_center()
-                            .rounded(px(radius::XS))
-                            .bg(t.fill(FillTier::Tertiary))
-                            .font_family(pink::MONO)
-                            .text_size(px(text::CAPTION))
-                            .text_color(t.text_muted)
-                            .child(tool),
-                    )
-                })
-                .child(
-                    div()
-                        .font_family(pink::MONO)
-                        .text_size(px(text::FOOTNOTE))
-                        .text_color(t.text_muted)
-                        .child(format!(
-                            "{} – {}",
-                            wall(live.start),
-                            if matches!(phase, Phase::Running | Phase::Waiting) {
-                                "now".to_string()
-                            } else {
-                                wall(live.shown_end(clock))
-                            }
-                        )),
-                )
-                .child(pink::badge(label, tone, &t))
-        });
+        let lanes_area = div()
+            .relative()
+            .px(px(INSET))
+            .pb(px(INSET))
+            .children(wells)
+            .child(head_row)
+            .child(body);
+
+        // -- Footer: the selected card, as a settings row -----------------------------
+        let footer = s
+            .selected
+            .and_then(|ix| s.blocks.get(ix).map(|l| (ix, l)))
+            .map(|(ix, live)| {
+                let phase = live.phase(clock);
+                let agent = s
+                    .agents
+                    .get(live.block.lane)
+                    .map(|a| a.name.to_string())
+                    .unwrap_or_default();
+                let mut meta = vec![agent];
+                if let Some(tool) = &live.block.tool {
+                    meta.push(tool.to_string());
+                }
+                if let Some((from, label)) = &live.block.handoff
+                    && let Some(src) = s.blocks.get(*from)
+                    && let Some(source) = s.agents.get(src.block.lane)
+                {
+                    meta.push(format!("{label} from {}", source.name));
+                }
+                if phase != Phase::Hidden {
+                    meta.push(format!(
+                        "{} – {}",
+                        wall(live.start),
+                        if matches!(phase, Phase::Running | Phase::Waiting) {
+                            "now".to_string()
+                        } else {
+                            wall(live.shown_end(clock))
+                        }
+                    ));
+                }
+                pink::card_row(false, &t)
+                    .child(motion::status_swap(
+                        ElementId::Name(format!("{key}-detail-{ix}-{}", s.generation).into()),
+                        pink::row_text(live.block.title.clone(), Some(meta.join(" · ").into()), &t),
+                    ))
+                    .child(pink::row_controls().child(status_badge(
+                        Status::of(phase),
+                        &format!("{key}-detail"),
+                        &t,
+                    )))
+            });
 
         motion::keep_alive(window);
         pink::card(&t)
+            .id(self.id.clone())
+            .role(Role::Group)
+            .aria_label("Agent lanes")
             .w(px(WIDTH))
             .overflow_hidden()
             .font_family(pink::SANS)
             .text_color(t.text)
             .child(header)
-            .child(lane_header)
-            .child(body)
+            .child(lanes_area)
             .children(footer)
     }
+}
+
+/// One block of work: pink's board card (board/card.rs `render_card`) sized
+/// by its time – radius 10 (less when thin), a `separator` edge over
+/// `fill(Quaternary)`, the edge easing to `accent @ 0.45` on hover; selected
+/// is `accent_wash` inside an `accent @ 0.7` edge. Finished work recedes to
+/// the quieter `separator(false)` edge with its title in `content_muted`
+/// until hovered. A card waiting on a person is pink's notice wash
+/// (`warning @ 0.08` inside `warning @ 0.24`, transcript.rs notice) with the
+/// shield, its wait and Approve / Deny. Fills are flattened onto the well
+/// (`under`) so the grid and the hand-off rail pass beneath a card.
+#[allow(clippy::too_many_arguments)]
+fn block_card(
+    state: &gpui::Entity<LanesState>,
+    ix: usize,
+    live: &Live,
+    phase: Phase,
+    selected: bool,
+    frame: Bounds<f32>,
+    under: Hsla,
+    clock: f32,
+    key: &str,
+    generation: usize,
+    t: &Pink,
+) -> AnyElement {
+    let block = &live.block;
+    let (x, top, w, h) = (
+        frame.origin.x,
+        frame.origin.y,
+        frame.size.width,
+        frame.size.height,
+    );
+    let block_key = format!("{key}-block-{ix}");
+    let waiting = phase == Phase::Waiting;
+    let finished = matches!(phase, Phase::Done | Phase::Approved | Phase::Denied);
+    let (rest_fill, rest_edge) = if waiting {
+        (t.warning.opacity(0.08), t.warning.opacity(0.24))
+    } else if finished {
+        (t.fill(FillTier::Quaternary), t.separator(false))
+    } else {
+        (t.fill(FillTier::Quaternary), t.separator(true))
+    };
+    let (bg, edge, hover_edge) = if selected {
+        let edge = t.accent.opacity(0.7);
+        (if waiting { rest_fill } else { t.accent_wash }, edge, edge)
+    } else {
+        (rest_fill, rest_edge, t.accent.opacity(0.45))
+    };
+    let title_color = if finished && !selected {
+        motion::hover_blend(&block_key, t.content_muted, t.text)
+    } else {
+        t.text
+    };
+    // Keep the title in view while the card's top has scrolled away, just
+    // below the fade band.
+    let pad_top = (FADE_BAND - 6.0 - top).max(6.0);
+    let visible_h = h - (pad_top - 6.0);
+    let title_row = (visible_h >= 22.0).then(|| {
+        div()
+            .h(px(16.))
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .when(waiting, |el| {
+                el.child(
+                    svg()
+                        .path(ICON_SHIELD)
+                        .size(px(12.))
+                        .flex_none()
+                        .text_color(t.readable_tone(t.warning, 0.95)),
+                )
+            })
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(px(12.))
+                    .line_height(px(16.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(title_color)
+                    .child(block.title.clone()),
+            )
+            .when(phase == Phase::Running, |el| {
+                el.child(loaders::mini_glyph_spinner(
+                    format!("{block_key}-spin"),
+                    2.0,
+                    t.glyph,
+                ))
+            })
+    });
+    let sub = match phase {
+        Phase::Approved => Some(status_badge(Status::Approved, &block_key, t)),
+        Phase::Denied => Some(status_badge(Status::Denied, &block_key, t)),
+        Phase::Waiting => Some(
+            div()
+                .text_size(px(11.))
+                .line_height(px(14.))
+                .font_features(tabular_figures())
+                .text_color(t.readable_tone(t.warning, 0.95))
+                .child(format!(
+                    "Waiting {}",
+                    loaders::format_elapsed((clock - live.start) as i64)
+                ))
+                .into_any_element(),
+        ),
+        // Tool ids are machine text: Geist Mono 11, faint.
+        _ => block.tool.as_ref().map(|tool| {
+            div()
+                .flex()
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .font_family(pink::MONO)
+                        .text_size(px(11.))
+                        .line_height(px(14.))
+                        .text_color(t.content_faint)
+                        .child(tool.clone()),
+                )
+                .into_any_element()
+        }),
+    };
+    let sub_row = (visible_h >= 40.0)
+        .then_some(sub)
+        .flatten()
+        .map(|sub| div().mt(px(2.)).flex().child(sub));
+    let actions = (waiting && visible_h >= 72.0).then(|| {
+        let decide = |approve: bool| {
+            let state = state.clone();
+            move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
+                let handler = state.update(cx, |s, cx| {
+                    s.loop_after = None;
+                    s.decide(ix, approve);
+                    s.selected = Some(ix);
+                    cx.notify();
+                    s.on_decide.clone()
+                });
+                if let Some(handler) = handler {
+                    handler(ix, approve, window, cx);
+                }
+            }
+        };
+        // One Primary per group; the refusal is a ghost (pink's question
+        // wizard footer).
+        div()
+            .mt(px(8.))
+            .flex()
+            .gap(px(6.))
+            .child(
+                pink::button(
+                    format!("{block_key}-approve"),
+                    ButtonKind::Primary,
+                    ControlSize::Sm,
+                    t,
+                )
+                .child("Approve")
+                .on_click(decide(true)),
+            )
+            .child(
+                pink::button(
+                    format!("{block_key}-deny"),
+                    ButtonKind::Ghost,
+                    ControlSize::Sm,
+                    t,
+                )
+                .child("Deny")
+                .on_click(decide(false)),
+            )
+    });
+    let ring = t.focus_ring();
+    div()
+        .id(ElementId::Name(block_key.clone().into()))
+        .role(Role::Button)
+        .aria_label(block.title.clone())
+        .aria_selected(selected)
+        .tab_index(0)
+        .absolute()
+        .left(px(x))
+        .top(px(top))
+        .w(px(w))
+        .h(px(h))
+        .overflow_hidden()
+        .rounded(px(radius::LG.min(h / 2.0)))
+        .bg(pink::flatten(bg, under))
+        .border_1()
+        .hover_border(block_key.clone(), edge, hover_edge)
+        .focus_visible(move |style| pink::focus_ring(style, ring))
+        .cursor_pointer()
+        .px(px(CARD_PAD_X))
+        .pt(px(pad_top))
+        .flex()
+        .flex_col()
+        .on_click({
+            let state = state.clone();
+            move |_, _, cx| {
+                state.update(cx, |s, cx| {
+                    s.selected = Some(ix);
+                    cx.notify();
+                })
+            }
+        })
+        .children(title_row)
+        .children(sub_row)
+        .children(actions)
+        .with_animation(
+            ElementId::Name(format!("{block_key}-in-{generation}").into()),
+            TOOL_ROW_REVEAL.animation(),
+            |el, p| el.opacity(p),
+        )
+        .into_any_element()
 }
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
