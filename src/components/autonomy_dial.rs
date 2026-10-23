@@ -1,63 +1,69 @@
 //! Autonomy Dial – how much an agent may do without asking.
 //!
-//! A rotary dial with three detents (Supervised, Balanced, Autopilot) sits
-//! next to two lanes, "Unattended" and "Needs approval". Every
-//! action the agent can take lives in one lane; turning the dial makes the
-//! actions glide across, and a lock pins an action to "Needs approval" at
-//! any setting.
+//! An agent's card in pink's settings language: the agent's name and scope
+//! over its actions, sorted into "Unattended" and "Needs approval". The
+//! level is pink's access setting (pink: pickers.rs `access_chip_content`
+//! and `render_permission_popover`): a ghost chip with the level's glyph
+//! (closed lock, shield check, open lock in the warning tone) opens the
+//! "Permission mode" menu, and picking a level makes the actions glide to
+//! their new group. A lock pins an action to "Needs approval" at any level.
 //!
-//! Drag the knob along the arc (it snaps to the nearest detent when you let
-//! go), click a stop label, or focus the dial and use the arrow keys, Home,
-//! End or 1–3.
+//! Open the menu with a click or Enter/Space on the chip; Up/Down move its
+//! cursor, Enter picks, Escape closes.
 //!
 //! ```ignore
 //! AutonomyDial::new("repo-agent", "Repo agent", vec![
-//!     AgentAction::new("read", "Read code", Risk::Read).icon("icons/autonomy-dial/read.svg"),
+//!     AgentAction::new("read", "Read code", Risk::Read).icon("icons/autonomy-dial/file-text.svg"),
 //!     AgentAction::new("merge", "Merge to main", Risk::Risky),
 //! ])
 //! .level(1)
 //! .on_change(|level, _, _| println!("level {level}"))
 //! ```
 
-use std::{collections::HashSet, f32::consts::PI, rc::Rc, sync::Arc};
+use std::{collections::HashSet, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
-    AnyView, App, Bounds, DispatchPhase, ElementId, Entity, FocusHandle, FontWeight, Hsla,
-    KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PathBuilder, Pixels,
-    Point, SharedString, Window, canvas, div, point, prelude::*, px, size, svg,
+    Anchor, AnimationExt, AnyElement, AnyView, App, Bounds, Context, Div, ElementId, Entity,
+    FocusHandle, FontWeight, Hsla, KeyDownEvent, MouseDownEvent, Pixels, Render, Role,
+    SharedString, Stateful, Task, Window, anchored, canvas, deferred, div, prelude::*, px, svg,
 };
+use web_time::Instant;
 
 use crate::{
     HoverFill,
-    motion::{self, GLIDE, MotionSpec},
-    pink::{self, FillTier, Pink, Tone, oklch, radius, text},
+    motion::{self, FADE_QUICK, MENU_OUT, MENU_RISE_DOWN, RESORT},
+    pink::{self, FillTier, Pink, TextStyle, TypeStyleExt, chrome, layout},
     story,
 };
 
 pub const NAME: &str = "Autonomy Dial";
-pub const DESCRIPTION: &str = "A rotary dial for how freely an agent may act – turn it and the agent's actions glide between an unattended lane and a needs-approval lane, with locks for actions that must always wait for you";
+pub const DESCRIPTION: &str = "An agent's access card – a quiet level chip opens the Permission mode menu (Limited access, Approve for me, Full access) and the agent's actions glide between Unattended and Needs approval, with a lock for any action that must always ask";
 
-const ICON_LOCK: &str = "icons/autonomy-dial/lock.svg";
-const ICON_UNLOCK: &str = "icons/autonomy-dial/unlock.svg";
+const ICON_LOCK: &str = "icons/autonomy-dial/lock-keyhole-minimalistic.svg";
+const ICON_UNLOCK: &str = "icons/autonomy-dial/lock-keyhole-minimalistic-unlocked.svg";
+const ICON_SHIELD_CHECK: &str = "icons/autonomy-dial/shield-check.svg";
 
-// Dial geometry (inside a DIAL_W × DIAL_H box).
-const DIAL_W: f32 = 216.;
-const DIAL_H: f32 = 190.;
-const CX: f32 = DIAL_W / 2.;
-const CY: f32 = 114.;
-const R: f32 = 72.;
-const START_DEG: f32 = 150.;
-const SWEEP_DEG: f32 = 240.;
 const STOPS: usize = 3;
 
-// Lanes.
-const PANEL_W: f32 = 248.;
-const LANE_W: f32 = 240.;
-const LANE_GAP: f32 = 10.;
-const LANE_HEAD: f32 = 42.;
-const LANE_PAD: f32 = 6.;
-const ROW_H: f32 = 34.;
-const ROW_GAP: f32 = 2.;
+/// The card's width.
+const CARD_W: f32 = 480.;
+/// The permission menu's width (pink: pickers.rs `popover_frame(340.0, ..)`).
+const MENU_W: f32 = 340.;
+/// The chip's glyph (pink: pickers.rs `CHIP_ICON`).
+const CHIP_ICON: f32 = 16.;
+/// Control tooltips wrap past this many characters (pink: pickers.rs
+/// `TOOLTIP_WRAP_CHARS`).
+const TOOLTIP_WRAP_CHARS: usize = 40;
+/// A group heading and the gap above the second one (pink: spaces.rs
+/// `SIDEBAR_DISCLOSURE_HEADER_HEIGHT`, `SIDEBAR_SECTION_GAP`).
+const HEAD_H: f32 = 28.;
+const SECTION_GAP: f32 = 12.;
+/// One action row (pink: shell.rs `compact_chat_row_height`) and its leading
+/// grid, a 16 glyph slot then an 8 gap (`SIDEBAR_MARK_SLOT`,
+/// `SIDEBAR_MARK_GAP`).
+const ROW_H: f32 = 32.;
+const MARK_SLOT: f32 = 16.;
+const MARK_GAP: f32 = 8.;
 
 type LevelHandler = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 type LockHandler = Rc<dyn Fn(&SharedString, bool, &mut Window, &mut App)>;
@@ -78,7 +84,7 @@ pub enum Risk {
 }
 
 impl Risk {
-    /// The lowest dial level at which this action goes ahead unattended.
+    /// The lowest level at which this action goes ahead unattended.
     fn runs_from(self) -> usize {
         match self {
             Risk::Read => 0,
@@ -87,11 +93,13 @@ impl Risk {
         }
     }
 
-    fn badge(self) -> (&'static str, Tone) {
+    /// The row's meta word and its tone: quiet, except an irreversible
+    /// action, which wears the warning tone Full access does.
+    fn meta(self, t: &Pink) -> (&'static str, Hsla) {
         match self {
-            Risk::Read => ("read", Tone::Neutral),
-            Risk::Write => ("write", Tone::Warning),
-            Risk::Risky => ("critical", Tone::Danger),
+            Risk::Read => ("Read only", t.readable_muted(0.55)),
+            Risk::Write => ("Reversible", t.readable_muted(0.55)),
+            Risk::Risky => ("Irreversible", t.readable_tone(t.warning, 0.9)),
         }
     }
 }
@@ -103,7 +111,7 @@ pub struct AgentAction {
     pub label: SharedString,
     pub risk: Risk,
     pub icon: Option<SharedString>,
-    /// Always asks, whatever the dial says.
+    /// Always asks, whatever the level says.
     pub locked: bool,
 }
 
@@ -129,41 +137,124 @@ impl AgentAction {
     }
 }
 
-/// The three detents.
+/// The three levels, cautious to unattended, with pink's names
+/// (pink: execution_view.rs `permission_title`).
 pub const LEVELS: [(&str, &str); STOPS] = [
-    ("Supervised", "Only reads happen without you"),
-    ("Balanced", "Routine writes go ahead, critical ones wait"),
-    ("Autopilot", "Everything goes ahead except what you lock"),
+    (
+        "Limited access",
+        "Reads go ahead; every change asks you first.",
+    ),
+    (
+        "Approve for me",
+        "A reviewer approves reversible changes; anything irreversible still asks you.",
+    ),
+    (
+        "Full access",
+        "Skip approval prompts; only locked actions ask.",
+    ),
 ];
+
+/// The level's chip glyph and tint (pink: pickers.rs `access_chip_content`):
+/// Limited is a closed lock, Approve for me a shield check, Full access an
+/// open lock in the warning tone.
+fn level_mark(level: usize, t: &Pink) -> (&'static str, Option<Hsla>) {
+    match level {
+        0 => (ICON_LOCK, None),
+        1 => (ICON_SHIELD_CHECK, None),
+        _ => (ICON_UNLOCK, Some(t.warning)),
+    }
+}
+
+/// Whether `action` goes ahead without asking at `level`.
+fn unattended(action: &AgentAction, level: usize, locked: &HashSet<SharedString>) -> bool {
+    !locked.contains(&action.id) && action.risk.runs_from() <= level
+}
+
+/// The menu cursor one step up or down, wrapping (pink: popover.rs
+/// `menu_step`).
+fn step(active: usize, down: bool) -> usize {
+    if down {
+        (active + 1) % STOPS
+    } else {
+        (active + STOPS - 1) % STOPS
+    }
+}
 
 struct DialState {
     level: usize,
-    /// Continuous dial position (0..=2) while dragging.
-    value: f32,
-    dragging: bool,
     locked: HashSet<SharedString>,
+    /// Bumped whenever the groups change, to replay the empty-group fade.
+    rev: u64,
+    /// The chip's focus: the menu's keys are read while it holds it.
     focus: FocusHandle,
+    open: bool,
+    /// The cursor row while the menu is open.
+    active: usize,
+    closing: Option<Instant>,
+    _close_task: Option<Task<()>>,
+    /// Counts openings, so each entrance animation gets a fresh id.
+    opened: u64,
+    /// The chip's bounds: a press on it toggles instead of dismissing.
+    trigger: Bounds<Pixels>,
 }
 
 impl DialState {
-    /// Moves the dial; returns the new level when it crossed a detent.
-    fn set_value(&mut self, value: f32) -> Option<usize> {
-        self.value = value.clamp(0., (STOPS - 1) as f32);
-        self.dragging = true;
-        self.set_level(self.value.round() as usize)
-    }
-
     fn set_level(&mut self, level: usize) -> Option<usize> {
         let level = level.min(STOPS - 1);
         if level == self.level {
             return None;
         }
         self.level = level;
+        self.rev += 1;
         Some(level)
+    }
+
+    /// pink: `toggle` opening the access picker, the cursor on the current
+    /// level.
+    fn open_menu(&mut self) {
+        self.open = true;
+        self.closing = None;
+        self._close_task = None;
+        self.opened += 1;
+        self.active = self.level;
+    }
+
+    /// Starts the exit fade; the menu unmounts when it ends.
+    fn close_menu(&mut self, cx: &mut Context<Self>) {
+        if !self.open {
+            return;
+        }
+        self.open = false;
+        self.closing = Some(Instant::now());
+        let wait = MENU_OUT.total().mul_f32(motion::speed_scale()) + Duration::from_millis(16);
+        self._close_task = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(wait).await;
+            let _ = this.update(cx, |s, cx| {
+                s.closing = None;
+                cx.notify();
+            });
+        }));
+    }
+
+    /// pink: `pick_permission`: the level applies and the menu closes.
+    fn pick(&mut self, level: usize, cx: &mut Context<Self>) -> Option<usize> {
+        self.close_menu(cx);
+        self.set_level(level)
+    }
+
+    fn toggle_lock(&mut self, id: &SharedString) -> bool {
+        self.rev += 1;
+        if self.locked.remove(id) {
+            false
+        } else {
+            self.locked.insert(id.clone());
+            true
+        }
     }
 }
 
-/// A dial for an agent's autonomy, with its actions sorted into two lanes.
+/// An agent's access card: its level chip and menu, and its actions sorted
+/// into those that run unattended and those that need approval.
 #[derive(IntoElement)]
 pub struct AutonomyDial {
     id: ElementId,
@@ -172,6 +263,7 @@ pub struct AutonomyDial {
     hue: f32,
     actions: Vec<AgentAction>,
     level: usize,
+    menu_open: bool,
     on_change: Option<LevelHandler>,
     on_lock: Option<LockHandler>,
 }
@@ -186,9 +278,10 @@ impl AutonomyDial {
             id: id.into(),
             agent: agent.into(),
             detail: SharedString::default(),
-            hue: 277.,
+            hue: 250.,
             actions,
             level: 1,
+            menu_open: false,
             on_change: None,
             on_lock: None,
         }
@@ -200,15 +293,22 @@ impl AutonomyDial {
         self
     }
 
-    /// Hue (OKLCH degrees) of the agent's monogram.
+    /// Hue (degrees) of the agent's monogram tile, on pink's project-tint
+    /// ramp.
     pub fn hue(mut self, degrees: f32) -> Self {
         self.hue = degrees;
         self
     }
 
-    /// Initial detent, 0 (Supervised) to 2 (Autopilot).
+    /// Initial level, 0 (Limited access) to 2 (Full access).
     pub fn level(mut self, level: usize) -> Self {
         self.level = level.min(STOPS - 1);
+        self
+    }
+
+    /// Starts with the Permission mode menu open, its cursor on the level.
+    pub fn menu_open(mut self, open: bool) -> Self {
+        self.menu_open = open;
         self
     }
 
@@ -227,74 +327,6 @@ impl AutonomyDial {
     }
 }
 
-/// Screen angle (degrees, clockwise from +x) of dial position `v`.
-fn angle_of(v: f32) -> f32 {
-    START_DEG + v / (STOPS - 1) as f32 * SWEEP_DEG
-}
-
-fn on_arc(center: Point<Pixels>, radius: f32, deg: f32) -> Point<Pixels> {
-    let a = deg.to_radians();
-    point(
-        center.x + px(radius * a.cos()),
-        center.y + px(radius * a.sin()),
-    )
-}
-
-/// Dial position under the pointer; the gap at the bottom snaps to the
-/// nearer end.
-fn value_at(pos: Point<Pixels>, center: Point<Pixels>) -> f32 {
-    let dx = f32::from(pos.x - center.x);
-    let dy = f32::from(pos.y - center.y);
-    let deg = dy.atan2(dx) * 180. / PI;
-    let rel = (deg - START_DEG).rem_euclid(360.);
-    let max = (STOPS - 1) as f32;
-    if rel <= SWEEP_DEG {
-        rel / SWEEP_DEG * max
-    } else if rel - SWEEP_DEG < (360. - SWEEP_DEG) / 2. {
-        max
-    } else {
-        0.
-    }
-}
-
-fn arc_path(
-    center: Point<Pixels>,
-    radius: f32,
-    from: f32,
-    to: f32,
-    width: f32,
-) -> Option<gpui::Path<Pixels>> {
-    let sweep = to - from;
-    if sweep.abs() < 0.01 {
-        return None;
-    }
-    let steps = ((sweep.abs() / 3.).ceil() as usize).max(2);
-    let mut b = PathBuilder::stroke(px(width));
-    for i in 0..=steps {
-        let p = on_arc(center, radius, from + sweep * i as f32 / steps as f32);
-        if i == 0 {
-            b.move_to(p);
-        } else {
-            b.line_to(p);
-        }
-    }
-    b.build().ok()
-}
-
-fn dot(window: &mut Window, at: Point<Pixels>, diameter: f32, color: Hsla) {
-    let r = diameter / 2.;
-    window.paint_quad(
-        gpui::fill(
-            Bounds::new(
-                point(at.x - px(r), at.y - px(r)),
-                size(px(diameter), px(diameter)),
-            ),
-            color,
-        )
-        .corner_radii(px(r)),
-    );
-}
-
 fn emit(handler: &Option<LevelHandler>, level: Option<usize>, window: &mut Window, cx: &mut App) {
     if let (Some(f), Some(level)) = (handler, level) {
         f(level, window, cx);
@@ -305,714 +337,674 @@ impl RenderOnce for AutonomyDial {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Pink::get(cx);
         let key = self.id.to_string();
-        let (initial, initial_locked) = (
-            self.level,
-            self.actions
-                .iter()
-                .filter(|a| a.locked)
-                .map(|a| a.id.clone())
-                .collect::<HashSet<_>>(),
-        );
+        let initial = self.level;
+        let initially_open = self.menu_open;
+        let initial_locked = self
+            .actions
+            .iter()
+            .filter(|a| a.locked)
+            .map(|a| a.id.clone())
+            .collect::<HashSet<_>>();
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, cx| DialState {
                 level: initial,
-                value: initial as f32,
-                dragging: false,
                 locked: initial_locked,
-                focus: cx.focus_handle(),
+                rev: 0,
+                focus: cx.focus_handle().tab_stop(true),
+                open: initially_open,
+                active: initial,
+                closing: None,
+                _close_task: None,
+                opened: 0,
+                trigger: Bounds::default(),
             },
         );
-        let s = state.read(cx);
-        let (level, value, dragging, focus) = (s.level, s.value, s.dragging, s.focus.clone());
-        let locked = s.locked.clone();
-        let focused = focus.is_focused(window);
 
-        // While dragging the knob tracks the pointer; afterwards it glides
-        // from wherever it was let go to the detent.
-        let shown = if dragging {
-            motion::follow(
-                &format!("{key}-knob"),
-                value,
-                MotionSpec::new(0, motion::LINEAR),
-            )
-        } else {
-            motion::follow(&format!("{key}-knob"), level as f32, GLIDE)
-        };
-
-        let run_count = self
-            .actions
-            .iter()
-            .filter(|a| !locked.contains(&a.id) && a.risk.runs_from() <= level)
-            .count();
-        let dial = dial_view(
-            &key,
-            shown,
-            level,
-            run_count,
-            self.actions.len(),
-            focused,
-            &state,
-            self.on_change.clone(),
-            &t,
-        );
-
+        // The open menu reads its keys before the focused chip does, so
+        // Enter picks the cursor row instead of clicking the chip.
         let key_state = state.clone();
         let key_change = self.on_change.clone();
         let on_key = move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {
-            let current = key_state.read(cx).level;
-            let next = match event.keystroke.key.as_str() {
-                "left" | "down" => current.saturating_sub(1),
-                "right" | "up" => (current + 1).min(STOPS - 1),
-                "home" => 0,
-                "end" => STOPS - 1,
-                "1" => 0,
-                "2" => 1,
-                "3" => 2,
+            if !key_state.read(cx).open || event.keystroke.modifiers.modified() {
+                return;
+            }
+            let changed = match event.keystroke.key.as_str() {
+                dir @ ("up" | "down") => {
+                    key_state.update(cx, |s, cx| {
+                        s.active = step(s.active, dir == "down");
+                        cx.notify();
+                    });
+                    None
+                }
+                "enter" => key_state.update(cx, |s, cx| {
+                    let changed = s.pick(s.active, cx);
+                    cx.notify();
+                    changed
+                }),
+                "escape" => {
+                    key_state.update(cx, |s, cx| {
+                        s.close_menu(cx);
+                        cx.notify();
+                    });
+                    None
+                }
                 _ => return,
             };
-            let changed = key_state.update(cx, |s, cx| {
-                s.dragging = false;
-                let changed = s.set_level(next);
-                s.value = s.level as f32;
-                cx.notify();
-                changed
-            });
-            emit(&key_change, changed, window, cx);
+            window.prevent_default();
             cx.stop_propagation();
+            emit(&key_change, changed, window, cx);
         };
 
-        let (wash, ink) = if t.dark {
-            (oklch(0.30, 0.055, self.hue), oklch(0.86, 0.10, self.hue))
-        } else {
-            (oklch(0.945, 0.035, self.hue), oklch(0.47, 0.13, self.hue))
-        };
-        let initials: String = self
-            .agent
-            .split_whitespace()
-            .filter_map(|w| w.chars().next())
-            .take(2)
-            .map(|c| c.to_ascii_uppercase())
-            .collect();
-
-        let panel = div()
-            .id("dial-panel")
-            .track_focus(&focus)
-            .on_key_down(on_key)
-            .flex_none()
-            .w(px(PANEL_W))
-            .p(px(16.))
-            .border_r_1()
-            .border_color(t.border)
-            .bg(t.fill(FillTier::Quaternary))
+        let s = state.read(cx);
+        let (level, locked, rev) = (s.level, s.locked.clone(), s.rev);
+        let tint = gpui::hsla(self.hue.rem_euclid(360.) / 360., 0.62, 0.68, 1.);
+        let header = div()
+            .px(px(layout::ROW_PAD_X))
+            .pt(px(14.))
+            .pb(px(12.))
             .flex()
-            .flex_col()
+            .flex_row()
             .items_center()
+            .gap(px(12.))
+            .child(pink::monogram_tile(tint, &self.agent, 28., &t))
             .child(
                 div()
-                    .w_full()
+                    .flex_1()
+                    .min_w_0()
                     .flex()
-                    .items_center()
-                    .gap(px(10.))
+                    .flex_col()
+                    .gap(px(3.))
                     .child(
                         div()
-                            .flex_none()
-                            .size(px(32.))
-                            .rounded(px(radius::MD))
-                            .bg(wash)
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .text_size(px(12.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(ink)
-                            .child(initials),
+                            .type_style(TextStyle::Title3)
+                            .text_color(t.text)
+                            .child(self.agent.clone()),
                     )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .min_w_0()
-                            .child(
-                                div()
-                                    .text_size(px(text::CALLOUT))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .line_height(px(18.))
-                                    .child(self.agent.clone()),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(text::FOOTNOTE))
-                                    .line_height(px(16.))
-                                    .text_color(t.text_faint)
-                                    .truncate()
-                                    .child(self.detail.clone()),
-                            ),
-                    ),
+                    .when(!self.detail.is_empty(), |column| {
+                        column.child(pink::row_description(self.detail.clone(), &t))
+                    }),
             )
-            .child(div().mt(px(14.)).child(dial))
-            .child(
-                div()
-                    .mt(px(10.))
-                    .flex()
-                    .items_center()
-                    .gap(px(4.))
-                    .text_size(px(text::CAPTION))
-                    .text_color(t.text_faint)
-                    .child(pink::kbd("←", &t))
-                    .child(pink::kbd("→", &t))
-                    .child(div().ml(px(2.)).child("or drag the knob")),
-            );
+            .child(access_chip(&key, s, &t, &state, self.on_change.clone()));
 
-        let lanes = lanes_view(
+        let lanes = lanes(
             &key,
             &self.actions,
             level,
             &locked,
+            rev,
             &state,
             self.on_lock.clone(),
             &t,
         );
 
-        let right = div()
-            .flex_1()
-            .p(px(16.))
+        motion::keep_alive(window);
+        pink::card(&t)
+            .id(self.id.clone())
+            .w(px(CARD_W))
             .flex()
             .flex_col()
+            .font_family(pink::SANS)
+            .text_color(t.text)
+            .capture_key_down(on_key)
+            .child(header)
             .child(
                 div()
-                    .flex()
-                    .items_baseline()
-                    .justify_between()
-                    .mb(px(12.))
-                    .child(
-                        div()
-                            .text_size(px(text::CALLOUT))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("What it may do"),
-                    )
-                    .child(motion::fade_in(
-                        eid(format!("{key}-blurb-{level}")),
-                        div()
-                            .text_size(px(text::FOOTNOTE))
-                            .text_color(t.text_muted)
-                            .child(LEVELS[level].1),
-                    )),
+                    .border_t_1()
+                    .border_color(t.border)
+                    .px(px(8.))
+                    .pt(px(6.))
+                    .pb(px(8.))
+                    .child(lanes),
             )
-            .child(lanes);
-
-        let el = pink::card(&t)
-            .id(self.id.clone())
-            .font_family(pink::SANS)
-            .text_size(px(text::BODY))
-            .text_color(t.text)
-            .overflow_hidden()
-            .flex()
-            .child(panel)
-            .child(right);
-        motion::keep_alive(window);
-        el
     }
 }
 
-/// The arc, its ticks, the knob, the stop labels and the readout.
-#[allow(clippy::too_many_arguments)]
-fn dial_view(
+/// The access chip and its menu layer (pink: pickers.rs `trigger_chip` for
+/// `PickerKind::Permission`, opened with `anchored_menu_below_end` since the
+/// chip ends the header). Pink's composer shows the chip icon-only for room;
+/// here it carries the level's title as the model chip does.
+fn access_chip(
     key: &str,
-    shown: f32,
-    level: usize,
-    runs: usize,
-    total: usize,
-    focused: bool,
+    s: &DialState,
+    t: &Pink,
     state: &Entity<DialState>,
     on_change: Option<LevelHandler>,
-    t: &Pink,
-) -> impl IntoElement {
-    let (track, fill, tick, tick_on) = (
-        t.fill(FillTier::Primary),
-        t.accent,
-        t.text_faint.opacity(0.35),
-        t.accent.opacity(0.7),
-    );
-    let paint_state = state.clone();
-    let paint_change = on_change.clone();
-    let arc = canvas(
-        |_, _, _| {},
-        move |bounds, _, window, _| {
-            let center = point(bounds.origin.x + px(CX), bounds.origin.y + px(CY));
-            let end = START_DEG + SWEEP_DEG;
-            let at = angle_of(shown);
-            if let Some(p) = arc_path(center, R, START_DEG, end, 6.) {
-                window.paint_path(p, track);
-            }
-            dot(window, on_arc(center, R, START_DEG), 6., fill);
-            dot(window, on_arc(center, R, end), 6., track);
-            if let Some(p) = arc_path(center, R, START_DEG, at, 6.) {
-                window.paint_path(p, fill);
-            }
-            // Minute ticks outside the arc, longer at the detents.
-            let mut lit = PathBuilder::stroke(px(1.25));
-            let mut dim = PathBuilder::stroke(px(1.25));
-            let count = 24;
-            for i in 0..=count {
-                let deg = START_DEG + SWEEP_DEG * i as f32 / count as f32;
-                let detent = i % (count / (STOPS - 1)) == 0;
-                let (r0, r1) = if detent {
-                    (R + 9., R + 16.)
+) -> Div {
+    let (icon, tint) = level_mark(s.level, t);
+    let (title, detail) = LEVELS[s.level];
+    let toggler = state.clone();
+    let measurer = state.clone();
+    let chip = pink::trigger_chip(format!("{key}-access"), true, s.open, t)
+        .relative()
+        .flex_none()
+        .track_focus(&s.focus)
+        .aria_label(SharedString::from(title))
+        .on_click(move |_, _, cx| {
+            toggler.update(cx, |s, cx| {
+                if s.open {
+                    s.close_menu(cx);
                 } else {
-                    (R + 10., R + 13.)
-                };
-                let b = if deg <= at + 0.5 { &mut lit } else { &mut dim };
-                b.move_to(on_arc(center, r0, deg));
-                b.line_to(on_arc(center, r1, deg));
-            }
-            if let Ok(p) = lit.build() {
-                window.paint_path(p, tick_on);
-            }
-            if let Ok(p) = dim.build() {
-                window.paint_path(p, tick);
-            }
-
-            // Pointer: press on the ring band, drag along it, let go to snap.
-            let down_state = paint_state.clone();
-            let down_change = paint_change.clone();
-            window.on_mouse_event(move |ev: &MouseDownEvent, phase, window, cx| {
-                if phase != DispatchPhase::Bubble || ev.button != MouseButton::Left {
-                    return;
+                    s.open_menu();
                 }
-                let dx = f32::from(ev.position.x - center.x);
-                let dy = f32::from(ev.position.y - center.y);
-                let d = (dx * dx + dy * dy).sqrt();
-                if !(R - 26. ..=R + 22.).contains(&d) || !bounds.contains(&ev.position) {
-                    return;
-                }
-                let v = value_at(ev.position, center);
-                let changed = down_state.update(cx, |s, cx| {
-                    window.focus(&s.focus, cx);
-                    let changed = s.set_value(v);
-                    cx.notify();
-                    changed
-                });
-                emit(&down_change, changed, window, cx);
-            });
-            let move_state = paint_state.clone();
-            let move_change = paint_change.clone();
-            window.on_mouse_event(move |ev: &MouseMoveEvent, phase, window, cx| {
-                if phase != DispatchPhase::Bubble || !move_state.read(cx).dragging {
-                    return;
-                }
-                if ev.pressed_button != Some(MouseButton::Left) {
-                    move_state.update(cx, |s, cx| {
-                        s.dragging = false;
-                        s.value = s.level as f32;
-                        cx.notify();
-                    });
-                    return;
-                }
-                let v = value_at(ev.position, center);
-                let changed = move_state.update(cx, |s, cx| {
-                    let changed = s.set_value(v);
-                    cx.notify();
-                    changed
-                });
-                emit(&move_change, changed, window, cx);
-            });
-            let up_state = paint_state.clone();
-            window.on_mouse_event(move |_: &MouseUpEvent, phase, _, cx| {
-                if phase != DispatchPhase::Bubble || !up_state.read(cx).dragging {
-                    return;
-                }
-                up_state.update(cx, |s, cx| {
-                    s.dragging = false;
-                    s.value = s.level as f32;
-                    cx.notify();
-                });
-            });
-        },
-    )
-    .absolute()
-    .top_0()
-    .left_0()
-    .size_full();
-
-    let knob_at = on_arc(point(px(CX), px(CY)), R, angle_of(shown));
-    let knob = div()
-        .absolute()
-        .left(knob_at.x - px(11.))
-        .top(knob_at.y - px(11.))
-        .size(px(22.))
-        .rounded_full()
-        .bg(if t.dark {
-            t.surface_raised
-        } else {
-            t.surface_card
-        })
-        .border_1()
-        .border_color(if focused { t.accent } else { t.border_strong })
-        .shadow(if focused {
-            vec![
-                crate::primitives::ring(3., t.focus_ring().opacity(0.35)),
-                crate::primitives::shadow(0., 1., 3., 0., gpui::hsla(0., 0., 0., 0.25)),
-            ]
-        } else {
-            vec![crate::primitives::shadow(
-                0.,
-                1.,
-                3.,
-                0.,
-                gpui::hsla(0., 0., 0., if t.dark { 0.5 } else { 0.18 }),
-            )]
-        })
-        .cursor_grab()
-        .flex()
-        .items_center()
-        .justify_center()
-        .child(div().size(px(8.)).rounded_full().bg(t.accent));
-
-    // Stop labels: the top one above the arc, the ends below them.
-    let labels = (0..STOPS).map(|i| {
-        let deg = angle_of(i as f32);
-        let anchor = on_arc(point(px(CX), px(CY)), R + 22., deg);
-        let top = if i == STOPS / 2 {
-            anchor.y - px(16.)
-        } else {
-            anchor.y + px(6.)
-        };
-        let label_key = format!("{key}-stop-{i}");
-        let state = state.clone();
-        let on_change = on_change.clone();
-        let active = i == level;
-        div()
-            .id(eid(format!("stop-{i}")))
-            .absolute()
-            .left(anchor.x - px(44.))
-            .top(top)
-            .w(px(88.))
-            .h(px(18.))
-            .flex()
-            .justify_center()
-            .text_size(px(text::CAPTION))
-            .font_weight(if active {
-                FontWeight::SEMIBOLD
-            } else {
-                FontWeight::MEDIUM
+                cx.notify();
             })
-            .cursor_pointer()
-            .when(active, |d| d.text_color(t.text))
-            .when(!active, |d| d.hover_fg(label_key, t.text_faint, t.text))
+        })
+        // The open menu already says everything the tooltip would.
+        .when(!s.open, |el| {
+            el.tooltip(move |_, cx| ControlTooltip::view(title.into(), Some(detail.into()), cx))
+                .tooltip_show_delay(layout::TOOLTIP_DELAY)
+        })
+        .child(
+            svg()
+                .path(icon)
+                .size(px(CHIP_ICON))
+                .flex_none()
+                .text_color(tint.unwrap_or(t.text_muted)),
+        )
+        .child(div().min_w_0().truncate().child(title))
+        .child(
+            canvas(
+                move |bounds, _, cx| measurer.update(cx, |s, _| s.trigger = bounds),
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .size_full(),
+        );
+
+    let layer = (s.open || s.closing.is_some()).then(|| {
+        let exit = (!s.open)
+            .then(|| s.closing.map(motion::menu_exit_progress))
+            .flatten();
+        let inner = div()
+            .occlude()
+            .pt(px(layout::POPOVER_GAP))
+            .child(permission_menu(key, s, t, state, on_change));
+        let inner: AnyElement = match exit {
+            // A dying menu takes no clicks (pink: `menu_motion`).
+            Some(progress) => motion::menu_out(
+                ElementId::NamedInteger(format!("{key}-menu-out").into(), s.opened),
+                progress,
+                inner.relative().child(div().absolute().inset_0().occlude()),
+            )
+            .into_any_element(),
+            None => motion::menu_in_from(
+                ElementId::NamedInteger(format!("{key}-menu-in").into(), s.opened),
+                MENU_RISE_DOWN,
+                inner,
+            )
+            .into_any_element(),
+        };
+        div().absolute().bottom_0().right_0().size_0().child(
+            deferred(
+                anchored()
+                    .anchor(Anchor::TopRight)
+                    .snap_to_window_with_margin(px(layout::WINDOW_MARGIN))
+                    .child(inner),
+            )
+            .with_priority(1),
+        )
+    });
+
+    div().relative().flex_none().child(chip).children(layer)
+}
+
+/// The level menu (pink: pickers.rs `render_permission_popover` in
+/// `popover_frame`): a "Permission mode" heading over one `menu_row_nav`
+/// per level, each with its explanation; Full access reads in the warning
+/// tone.
+fn permission_menu(
+    key: &str,
+    s: &DialState,
+    t: &Pink,
+    state: &Entity<DialState>,
+    on_change: Option<LevelHandler>,
+) -> Div {
+    let closer = state.clone();
+    let rows = LEVELS.iter().enumerate().map(|(ix, (label, description))| {
+        let warning = ix == STOPS - 1;
+        let mover = state.clone();
+        let picker = state.clone();
+        let on_change = on_change.clone();
+        pink::menu_row_nav(ix == s.level, ix == s.active, t)
+            .id(eid(format!("{key}-level-{ix}")))
+            .role(Role::MenuItemRadio)
+            .on_mouse_move(move |_, _, cx| {
+                mover.update(cx, |s, cx| {
+                    if s.active != ix {
+                        s.active = ix;
+                        cx.notify();
+                    }
+                })
+            })
+            .when(warning, |row| {
+                row.text_color(t.readable_tone(t.warning, 1.0))
+            })
             .on_click(move |_, window, cx| {
-                let changed = state.update(cx, |s, cx| {
-                    window.focus(&s.focus, cx);
-                    s.dragging = false;
-                    let changed = s.set_level(i);
-                    s.value = s.level as f32;
+                let changed = picker.update(cx, |s, cx| {
+                    let changed = s.pick(ix, cx);
                     cx.notify();
                     changed
                 });
                 emit(&on_change, changed, window, cx);
             })
-            .child(LEVELS[i].0)
+            .child(
+                div()
+                    .w_full()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.))
+                    .child(div().flex().items_center().justify_between().child(*label))
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(if warning {
+                                t.warning.opacity(0.72)
+                            } else {
+                                t.text_faint
+                            })
+                            .child(*description),
+                    ),
+            )
     });
-
-    let readout = div()
-        .absolute()
-        .left(px(CX - 60.))
-        .top(px(CY - 24.))
-        .w(px(120.))
+    pink::popover_card(t)
+        .w(px(MENU_W))
+        .max_h(px(640.))
         .flex()
         .flex_col()
-        .items_center()
+        .on_mouse_down_out(move |event: &MouseDownEvent, _, cx| {
+            closer.update(cx, |s, cx| {
+                if !s.open || s.trigger.contains(&event.position) {
+                    return;
+                }
+                s.close_menu(cx);
+                cx.notify();
+            })
+        })
         .child(
             div()
                 .flex()
-                .items_baseline()
-                .gap(px(2.))
+                .flex_col()
+                .p(px(4.))
                 .child(
                     div()
-                        .text_size(px(26.))
+                        .px(px(10.))
+                        .pt(px(8.))
+                        .pb(px(6.))
+                        .text_size(px(11.))
                         .font_weight(FontWeight::SEMIBOLD)
-                        .line_height(px(30.))
-                        .child(runs.to_string()),
+                        .text_color(t.text_muted)
+                        .child("Permission mode"),
                 )
-                .child(
-                    div()
-                        .text_size(px(text::CALLOUT))
-                        .text_color(t.text_faint)
-                        .child(format!("/{total}")),
-                ),
+                .children(rows),
         )
-        .child(
-            div()
-                .text_size(px(text::CAPTION))
-                .line_height(px(15.))
-                .text_color(t.text_muted)
-                .child("act unattended"),
-        );
-
-    div()
-        .relative()
-        .w(px(DIAL_W))
-        .h(px(DIAL_H))
-        .child(arc)
-        .child(readout)
-        .children(labels)
-        .child(knob)
 }
 
-fn lanes_view(
-    key: &str,
-    actions: &[AgentAction],
-    level: usize,
-    locked: &HashSet<SharedString>,
-    state: &Entity<DialState>,
-    on_lock: Option<LockHandler>,
-    t: &Pink,
-) -> impl IntoElement {
-    let runs_on_own = |a: &AgentAction| !locked.contains(&a.id) && a.risk.runs_from() <= level;
-    let counts = [
-        actions.iter().filter(|a| runs_on_own(a)).count(),
-        actions.iter().filter(|a| !runs_on_own(a)).count(),
-    ];
-    // Tall enough for the fuller lane at any setting, so turning the dial
-    // never resizes the card; only a lock can.
-    let fullest = (0..STOPS)
-        .map(|lvl| {
-            let runs = actions
-                .iter()
-                .filter(|a| !locked.contains(&a.id) && a.risk.runs_from() <= lvl)
-                .count();
-            runs.max(actions.len() - runs)
-        })
-        .max()
-        .unwrap_or(0)
-        .max(3);
-    let height = motion::follow(
-        &format!("{key}-lanes-h"),
-        LANE_HEAD + fullest as f32 * (ROW_H + ROW_GAP) + LANE_PAD,
-        GLIDE,
-    );
-
-    let lane = |i: usize, title: &'static str, color: Hsla| {
-        div()
-            .absolute()
-            .top_0()
-            .left(px(i as f32 * (LANE_W + LANE_GAP)))
-            .w(px(LANE_W))
-            .h(px(height))
-            .rounded(px(radius::LG))
-            .border_1()
-            .border_color(t.border)
-            .bg(t.fill(FillTier::Quaternary))
-            .child(
-                div()
-                    .h(px(LANE_HEAD - 4.))
-                    .px(px(12.))
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .child(div().size(px(6.)).rounded_full().bg(color))
-                    .child(
-                        div()
-                            .flex_1()
-                            .text_size(px(text::FOOTNOTE))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(t.text_muted)
-                            .child(title),
-                    )
-                    .child(
-                        div()
-                            .min_w(px(20.))
-                            .h(px(18.))
-                            .px(px(5.))
-                            .rounded(px(radius::XS))
-                            .bg(t.fill(FillTier::Tertiary))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .font_family(pink::MONO)
-                            .text_size(px(text::CAPTION))
-                            .text_color(t.text_muted)
-                            .child(counts[i].to_string()),
-                    ),
-            )
-            .when(counts[i] == 0, |d| {
-                d.child(
-                    div()
-                        .mt(px(12.))
-                        .flex()
-                        .justify_center()
-                        .text_size(px(text::FOOTNOTE))
-                        .text_color(t.text_faint)
-                        .child(if i == 0 {
-                            "Every action waits for you"
-                        } else {
-                            "Nothing needs approval"
-                        }),
-                )
-            })
-    };
-
-    let mut slot = [0usize; 2];
-    let rows = actions.iter().enumerate().map(|(ix, action)| {
-        let lane_ix = usize::from(!runs_on_own(action));
-        let pos = slot[lane_ix];
-        slot[lane_ix] += 1;
-        // A gentle cascade: later rows take a little longer to arrive.
-        let spec = GLIDE.with_duration(380 + ix as u64 * 35);
-        let x = motion::follow(
-            &format!("{key}-x-{}", action.id),
-            lane_ix as f32 * (LANE_W + LANE_GAP) + LANE_PAD,
-            spec,
-        );
-        let y = motion::follow(
-            &format!("{key}-y-{}", action.id),
-            LANE_HEAD + pos as f32 * (ROW_H + ROW_GAP),
-            spec,
-        );
-        action_row(
-            key,
-            action,
-            x,
-            y,
-            locked.contains(&action.id),
-            state,
-            on_lock.clone(),
-            t,
-        )
-    });
-
-    div()
-        .relative()
-        .w(px(LANE_W * 2. + LANE_GAP))
-        .h(px(height))
-        .child(lane(0, "Unattended", t.success))
-        .child(lane(1, "Needs approval", t.warning))
-        .children(rows)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn action_row(
-    key: &str,
-    action: &AgentAction,
-    x: f32,
+/// A group heading (pink: activity_center.rs `activity_section_heading`):
+/// 28 tall, `px 8`, the name 11 semibold in `readable_faint(0.9)` and the
+/// count 11 in `readable_faint(0.7)`.
+fn group_heading(
+    id: impl Into<String>,
+    label: &'static str,
+    count: usize,
     y: f32,
-    is_locked: bool,
-    state: &Entity<DialState>,
-    on_lock: Option<LockHandler>,
     t: &Pink,
-) -> impl IntoElement {
-    let row_key = format!("{key}-row-{}", action.id);
-    let lock_key = format!("{key}-lock-{}", action.id);
-    let row_t = motion::hover_t(&row_key);
-    let (badge, tone) = action.risk.badge();
-    let id = action.id.clone();
-    let state = state.clone();
-    let lock_color = if is_locked {
-        t.text
-    } else {
-        motion::hover_blend(&lock_key, t.text_faint, t.text)
-    };
+) -> Stateful<Div> {
+    let noun = if count == 1 { "action" } else { "actions" };
     div()
-        .id(eid(format!("action-{}", action.id)))
+        .id(eid(id))
         .absolute()
-        .left(px(x))
+        .left_0()
+        .right_0()
         .top(px(y))
-        .w(px(LANE_W - LANE_PAD * 2.))
-        .h(px(ROW_H))
-        .pl(px(8.))
-        .pr(px(4.))
+        .h(px(HEAD_H))
+        .px(px(8.))
         .flex()
+        .flex_row()
         .items_center()
         .gap(px(8.))
-        .rounded(px(radius::MD))
-        .hover_fill(
-            row_key,
-            t.fill(FillTier::Tertiary).opacity(0.),
-            t.fill(FillTier::Tertiary),
-        )
-        .when_some(action.icon.clone(), |d, icon| {
-            d.child(
-                svg()
-                    .path(icon)
-                    .size(px(15.))
-                    .flex_none()
-                    .text_color(t.text_muted),
-            )
-        })
+        .role(Role::Heading)
+        .aria_label(SharedString::from(format!("{label}, {count} {noun}")))
         .child(
             div()
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_size(px(text::BODY))
-                .child(action.label.clone()),
+                .text_size(px(11.))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(t.readable_faint(0.9))
+                .child(label),
         )
-        .child(pink::badge(badge, tone, t))
         .child(
             div()
-                .id(eid(format!("lock-{}", action.id)))
                 .flex_none()
-                .size(px(24.))
-                .rounded(px(radius::SM))
+                .text_size(px(11.))
+                .text_color(t.readable_faint(0.7))
+                .child(count.to_string()),
+        )
+}
+
+/// The two groups. Every action sits in one of them, and a level change or
+/// a lock makes rows glide to their new place (pink: `RESORT`, the sidebar's
+/// list reorder). The block keeps one height while the level turns; only an
+/// emptied group, which holds a quiet line instead, can change it.
+#[allow(clippy::too_many_arguments)]
+fn lanes(
+    key: &str,
+    actions: &[AgentAction],
+    level: usize,
+    locked: &HashSet<SharedString>,
+    rev: u64,
+    state: &Entity<DialState>,
+    on_lock: Option<LockHandler>,
+    t: &Pink,
+) -> Div {
+    let runs = actions
+        .iter()
+        .filter(|a| unattended(a, level, locked))
+        .count();
+    let asks = actions.len() - runs;
+    let second = HEAD_H + runs.max(1) as f32 * ROW_H + SECTION_GAP;
+    let second_y = motion::follow(&format!("{key}-head-b"), second, RESORT);
+    let height = motion::follow(
+        &format!("{key}-lanes-h"),
+        second + HEAD_H + asks.max(1) as f32 * ROW_H,
+        RESORT,
+    );
+
+    // Shown once the departing rows have cleared the slot.
+    let empty = |ix: usize, copy: &'static str, y: f32| {
+        div()
+            .absolute()
+            .left_0()
+            .right_0()
+            .top(px(y))
+            .h(px(ROW_H))
+            .px(px(8.))
+            .flex()
+            .items_center()
+            .text_size(px(12.))
+            .text_color(t.text_muted)
+            .child(copy)
+            .with_animation(
+                ElementId::NamedInteger(format!("{key}-empty-{ix}").into(), rev),
+                FADE_QUICK.with_delay(RESORT.duration_ms).animation(),
+                |el, p| el.opacity(p),
+            )
+    };
+
+    let mut slot = [0usize; 2];
+    let rows = actions
+        .iter()
+        .map(|action| {
+            let group = usize::from(!unattended(action, level, locked));
+            let pos = slot[group];
+            slot[group] += 1;
+            let top = if group == 0 { 0. } else { second };
+            let y = motion::follow(
+                &format!("{key}-y-{}", action.id),
+                top + HEAD_H + pos as f32 * ROW_H,
+                RESORT,
+            );
+            action_row(
+                key,
+                action,
+                y,
+                locked.contains(&action.id),
+                state,
+                on_lock.clone(),
+                t,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    div()
+        .relative()
+        .w_full()
+        .h(px(height))
+        .child(group_heading(
+            format!("{key}-head-0"),
+            "Unattended",
+            runs,
+            0.,
+            t,
+        ))
+        .child(group_heading(
+            format!("{key}-head-1"),
+            "Needs approval",
+            asks,
+            second_y,
+            t,
+        ))
+        .when(runs == 0, |el| {
+            el.child(empty(0, "Every action waits for you", HEAD_H))
+        })
+        .when(asks == 0, |el| {
+            el.child(empty(1, "Nothing needs approval", second_y + HEAD_H))
+        })
+        .children(rows)
+}
+
+/// One action on pink's sidebar leading grid: the glyph in `text_muted` in
+/// its 16 slot (kept empty without one, so labels line up), the 13 label, an
+/// 11 meta word, and the lock in the corner.
+fn action_row(
+    key: &str,
+    action: &AgentAction,
+    y: f32,
+    is_locked: bool,
+    state: &Entity<DialState>,
+    on_lock: Option<LockHandler>,
+    t: &Pink,
+) -> Div {
+    let group: SharedString = format!("{key}-row-{}", action.id).into();
+    let (meta, tone) = action.risk.meta(t);
+    div()
+        .absolute()
+        .left_0()
+        .right_0()
+        .top(px(y))
+        .h(px(ROW_H))
+        .px(px(8.))
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(MARK_GAP))
+        .group(group.clone())
+        .child(
+            div()
+                .size(px(MARK_SLOT))
+                .flex_none()
                 .flex()
                 .items_center()
                 .justify_center()
-                .cursor_pointer()
-                .opacity(if is_locked {
-                    1.
-                } else {
-                    motion::lerp(0.45, 1., row_t)
-                })
-                .hover_fill(
-                    lock_key,
-                    t.fill(FillTier::Tertiary).opacity(0.),
-                    t.fill(FillTier::Secondary),
-                )
-                .when(is_locked, |d| d.bg(t.fill(FillTier::Secondary)))
-                .child(
-                    svg()
-                        .path(if is_locked { ICON_LOCK } else { ICON_UNLOCK })
-                        .size(px(14.))
-                        .text_color(lock_color),
-                )
-                .on_click(move |_, window, cx| {
-                    cx.stop_propagation();
-                    let now_locked = state.update(cx, |s, cx| {
-                        let now_locked = if s.locked.remove(&id) {
-                            false
-                        } else {
-                            s.locked.insert(id.clone());
-                            true
-                        };
-                        cx.notify();
-                        now_locked
-                    });
-                    if let Some(f) = on_lock.as_ref() {
-                        f(&id, now_locked, window, cx);
-                    }
+                .when_some(action.icon.clone(), |slot, icon| {
+                    slot.child(
+                        svg()
+                            .path(icon)
+                            .size(px(MARK_SLOT))
+                            .flex_none()
+                            .text_color(t.text_muted),
+                    )
                 }),
         )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_size(px(13.))
+                .text_color(t.text)
+                .child(action.label.clone()),
+        )
+        .child(
+            div()
+                .flex_none()
+                .text_size(px(11.))
+                .text_color(tone)
+                .child(meta),
+        )
+        .child(lock_button(
+            key, action, is_locked, group, state, on_lock, t,
+        ))
+}
+
+/// The row's lock (pink: shell.rs the sidebar row's pin): 20 square, radius
+/// 4, the quiet hover wash, a 12 px glyph. Locked, it stays in the accent;
+/// otherwise it shows in `text_muted` while the row is hovered or the button
+/// focused.
+fn lock_button(
+    key: &str,
+    action: &AgentAction,
+    is_locked: bool,
+    group: SharedString,
+    state: &Entity<DialState>,
+    on_lock: Option<LockHandler>,
+    t: &Pink,
+) -> Stateful<Div> {
+    let id = format!("{key}-lock-{}", action.id);
+    let label = if is_locked {
+        "Unlock"
+    } else {
+        "Always ask first"
+    };
+    let ring = t.focus_ring();
+    let action_id = action.id.clone();
+    let state = state.clone();
+    div()
+        .id(eid(id.clone()))
+        .role(Role::Button)
+        .aria_label(SharedString::from(format!("{label}: {}", action.label)))
+        .tab_index(0)
+        .flex_none()
+        .size(px(chrome::CONTROL_S))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(chrome::RADIUS_S))
+        .cursor_pointer()
+        .hover_wash(id, t.fill(FillTier::Tertiary))
+        .when(!is_locked, |el| {
+            el.opacity(0.).group_hover(group, |style| style.opacity(1.))
+        })
+        .focus_visible(move |style| pink::focus_ring(style, ring).opacity(1.))
+        .on_key_down(pink::swallow_activation_key)
+        .tooltip(pink::text_tooltip(label))
+        .tooltip_show_delay(layout::TOOLTIP_DELAY)
+        .on_click(move |_, window, cx| {
+            cx.stop_propagation();
+            let now_locked = state.update(cx, |s, cx| {
+                let now_locked = s.toggle_lock(&action_id);
+                cx.notify();
+                now_locked
+            });
+            if let Some(f) = on_lock.as_ref() {
+                f(&action_id, now_locked, window, cx);
+            }
+        })
+        .child(
+            svg()
+                .path(ICON_LOCK)
+                .size(px(chrome::ICON_S))
+                .flex_none()
+                .text_color(if is_locked {
+                    t.readable_icon(t.accent)
+                } else {
+                    t.text_muted
+                }),
+        )
+}
+
+/// The chip's tooltip: the level over its explanation (pink: pickers.rs
+/// `ControlTooltip`).
+struct ControlTooltip {
+    title: SharedString,
+    detail: Option<SharedString>,
+}
+
+impl ControlTooltip {
+    fn view(title: SharedString, detail: Option<SharedString>, cx: &mut App) -> AnyView {
+        cx.new(|_| Self { title, detail }).into()
+    }
+}
+
+impl Render for ControlTooltip {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = Pink::get(cx);
+        let wraps = self.detail.as_ref().is_some_and(|detail| {
+            detail
+                .split('\n')
+                .any(|line| line.chars().count() > TOOLTIP_WRAP_CHARS)
+        });
+        pink::tooltip_card(&t)
+            .when(wraps, |card| card.w(px(layout::TOOLTIP_MAX_WIDTH)))
+            .when(!wraps, |card| card.whitespace_nowrap())
+            .px(px(10.))
+            .py(px(7.))
+            .flex()
+            .flex_col()
+            .gap(px(2.))
+            .text_size(px(12.))
+            .child(
+                div()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(t.text)
+                    .child(self.title.clone()),
+            )
+            .when_some(self.detail.clone(), |card, detail| {
+                card.children(detail.split('\n').map(|line| {
+                    div()
+                        .text_size(px(11.))
+                        .text_color(t.text_muted)
+                        .child(SharedString::from(line.to_string()))
+                }))
+            })
+    }
 }
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     let icon = |name: &str| SharedString::from(format!("icons/autonomy-dial/{name}.svg"));
     let actions = vec![
-        AgentAction::new("read", "Read code", Risk::Read).icon(icon("read")),
-        AgentAction::new("tests", "Run tests", Risk::Read).icon(icon("test")),
-        AgentAction::new("comment", "Comment on PRs", Risk::Write).icon(icon("comment")),
-        AgentAction::new("push", "Push branches", Risk::Write).icon(icon("push")),
-        AgentAction::new("merge", "Merge to main", Risk::Risky).icon(icon("merge")),
-        AgentAction::new("prune", "Delete branches", Risk::Risky).icon(icon("delete")),
+        AgentAction::new("read", "Read code", Risk::Read).icon(icon("file-text")),
+        AgentAction::new("tests", "Run tests", Risk::Read).icon(icon("terminal")),
+        AgentAction::new("comment", "Comment on PRs", Risk::Write).icon(icon("chat-round-line")),
+        AgentAction::new("push", "Push branches", Risk::Write).icon(icon("git-branch")),
+        AgentAction::new("merge", "Merge to main", Risk::Risky).icon(icon("git-pull-request")),
+        AgentAction::new("prune", "Delete branches", Risk::Risky)
+            .icon(icon("trash-bin-minimalistic")),
         AgentAction::new("keys", "Rotate keys", Risk::Risky)
-            .icon(icon("key"))
+            .icon(icon("key-minimalistic"))
+            .locked(true),
+    ];
+    let release = vec![
+        AgentAction::new("notes", "Draft release notes", Risk::Write).icon(icon("file-text")),
+        AgentAction::new("tag", "Tag the release", Risk::Write).icon(icon("git-branch")),
+        AgentAction::new("publish", "Publish to the registry", Risk::Risky)
+            .icon(icon("git-pull-request")),
+        AgentAction::new("yank", "Yank a version", Risk::Risky)
+            .icon(icon("trash-bin-minimalistic"))
             .locked(true),
     ];
     story::view(cx, move |_, _| {
-        AutonomyDial::new("autonomy-dial", "Repo agent", actions.clone())
-            .detail("lumen-4 · acme/billing-api")
-            .hue(200.)
-            .level(1)
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(16.))
+            .child(
+                AutonomyDial::new("autonomy-dial", "Repo agent", actions.clone())
+                    .detail("lumen-4 · acme/billing-api")
+                    .hue(205.)
+                    .level(1)
+                    .menu_open(true),
+            )
+            .child(
+                AutonomyDial::new("autonomy-dial-release", "Release bot", release.clone())
+                    .detail("lumen-4-mini · acme/billing-api")
+                    .hue(150.)
+                    .level(2),
+            )
     })
 }
 
@@ -1020,25 +1012,27 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
 mod tests {
     use super::*;
 
-    fn at(deg: f32) -> Point<Pixels> {
-        on_arc(point(px(100.), px(100.)), 50., deg)
-    }
-
     #[test]
-    fn pointer_angle_maps_to_detents() {
-        let center = point(px(100.), px(100.));
-        assert!(value_at(at(START_DEG + 0.01), center).abs() < 1e-3);
-        assert!((value_at(at(270.), center) - 1.).abs() < 1e-3);
-        assert!((value_at(at(START_DEG + SWEEP_DEG - 0.01), center) - 2.).abs() < 1e-3);
-        // The gap at the bottom snaps to the nearer end.
-        assert_eq!(value_at(at(120.), center), 0.);
-        assert_eq!(value_at(at(60.), center), 2.);
-    }
-
-    #[test]
-    fn detents_unlock_by_risk() {
+    fn levels_unlock_by_risk() {
         assert_eq!(Risk::Read.runs_from(), 0);
         assert_eq!(Risk::Write.runs_from(), 1);
         assert_eq!(Risk::Risky.runs_from(), 2);
+    }
+
+    #[test]
+    fn a_lock_always_asks() {
+        let merge = AgentAction::new("merge", "Merge to main", Risk::Risky);
+        let mut locked = HashSet::new();
+        assert!(!unattended(&merge, 1, &locked));
+        assert!(unattended(&merge, 2, &locked));
+        locked.insert(merge.id.clone());
+        assert!(!unattended(&merge, 2, &locked));
+    }
+
+    #[test]
+    fn menu_cursor_wraps() {
+        assert_eq!(step(STOPS - 1, true), 0);
+        assert_eq!(step(0, false), STOPS - 1);
+        assert_eq!(step(0, true), 1);
     }
 }
