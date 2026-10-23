@@ -1,34 +1,20 @@
 # Building components
 
-Every component is **one Rust file**, `src/components/<slug>.rs`. A file
-depends only on GPUI
-and the shared modules in this crate (`motion`, `interaction`, `primitives`,
-`pink`, `theme`, `story`), and exports `NAME`, `DESCRIPTION` and `story`.
-Icons live in `assets/icons/<slug>/`.
+Every component is **one Rust file**, `src/components/<slug>.rs`, drawn in
+the Pink app's design language. A file depends only on GPUI and the shared
+modules in this crate (`pink`, `motion`, `interaction`, `primitives`, `theme`,
+`story`), and exports `NAME`, `DESCRIPTION` and `story`. Icons live in
+`assets/icons/<slug>/`.
 
-There are two kinds (`components::Kind`):
+Read [`docs/pink-design.md`](docs/pink-design.md) first: it is the design
+language (tokens, ladders, recipes, motion, what Pink avoids) with the kit call
+for each piece. When Pink already has the thing you are building, copy it: read
+its render code in the [Pink app](https://github.com/novnski/pink)
+(`crates/ui/src`) and reproduce it value for value, naming the Pink source in
+the doc comments. `src/components/thinking_loader.rs` (Pink's working line) and
+`src/components/tool_call_card.rs` (its tool group) are good references.
 
-- **Core** components come in two looks, Clean and Classic.
-  `src/components/profile_menu.rs` is the reference: read it first.
-- **Pink** components are drawn in Pink's design language. See
-  [Pink components](#pink-components).
-
-The looks section applies to core components; the API, state, motion and GPUI
-notes apply to both.
-
-## Looks
-
-Each core component comes in two **looks**, and each look in light and dark:
-
-| Look      | Idea                                                         |
-| --------- | ------------------------------------------------------------ |
-| `Clean`   | One flat card; edges are 0.5px hairline shadows. The default. |
-| `Classic` | White cards on a gray tray.                                  |
-
-Build both. Share the structure and logic, and switch tokens and sizes on the
-look. The module's `story` is its demo, with realistic sample data.
-
-## API shape (Pink style)
+## API shape
 
 Components are builders you drop into any element tree:
 
@@ -40,14 +26,15 @@ div().child(
 )
 ```
 
-- `#[derive(IntoElement)] pub struct Name { id: ElementId, …, look: Option<Look> }`
-  implementing `RenderOnce`. `Name::new(id, required…)`, chained setters for
-  everything optional, and a `.look(Look)` override (default `cx.look()`).
+- `#[derive(IntoElement)] pub struct Name { id: ElementId, … }` implementing
+  `RenderOnce`. `Name::new(id, required…)` and chained setters for everything
+  optional.
 - Callbacks: `on_*(impl Fn(…, &mut Window, &mut App) + 'static)`, stored as `Rc<dyn Fn>`.
 - Small, reusable pieces (pills, buttons, rows) can be free functions that
   return `Stateful<Div>` or `Div`, so callers keep chaining (`.child`, `.on_click`).
 - Make the public data types (`ProfileMenuItem`, `ProfileSetup`, …) plain
   structs with `new` and setters.
+- The module's `story` is its demo, with realistic sample data.
 
 ### State
 
@@ -81,34 +68,43 @@ The entity lives as long as the component keeps rendering.
 
 ### Colors and sizes
 
-- One `Palette` per look × mode, written like CSS colors (`#171717` →
-  `ink: hex(0x171717)`, `rgba(0,0,0,.06)` → `black_a(0.06)`). A `Metrics`
-  struct when sizes differ.
-- Use exact px values: `px(13.5)`, `.line_height(px(20.))`,
-  `.rounded(px(10.))`. Font weights: 400 `NORMAL`, 500 `MEDIUM`,
-  600 `SEMIBOLD`, 650 → `FontWeight(650.)`, 700 `BOLD`.
-- `font-family: Inter` is already set by the story wrapper and the gallery
-  (`primitives::SANS`); use `primitives::MONO` for monospace.
-- `box-shadow` → `.shadow(shadows([shadow(x, y, blur, spread, color), …]))`
-  with CSS-style values; `0 0 0 1px c` → `ring(1., c)`. For an inset edge,
-  use a border.
-- `color-mix(in srgb, a 20%, b)` → `color_mix(a, b, 0.2)`.
+- Start a render with `let t = Pink::get(cx);`: the app's tokens for the active
+  light/dark mode (surfaces, text tiers, borders, fills, accent, status). Never
+  hard-code colors; secondary text goes through `t.readable_muted(..)` and
+  friends, fills through `t.fill(FillTier::…)`, edges through `t.border`,
+  `t.separator(..)` or `t.hairline(..)`.
+- Sizes come from Pink's ladders: `pink::radius`, `pink::space`, `pink::text`
+  and `TextStyle`, `pink::icon_size`, `ControlSize`, and the `layout`
+  constants. Use exact px only when Pink's source does.
+- Set `.font_family(pink::SANS)` (Geist) on the component's root; `pink::MONO`
+  for code and figures that need it.
+- Elevation is Pink's: `t.menu_shadows()`, `t.tooltip_shadows()`,
+  `pink::shadow_sm/md/lg()`. In-flow cards have none. Focus is
+  `.focus_visible(move |s| pink::focus_ring(s, ring))` with
+  `let ring = t.focus_ring();`.
+- Reach for the kit before building a control: `button`, `icon_button`,
+  `chip`, `badge`, `segmented`, `toggle_switch`, `checkbox`, `status_pill`,
+  `kbd_hint`, `popover_card`, `menu_row`, `menu_heading`, `section_card`,
+  `card_row`, `search_input_frame`, `tooltip_card`, `dialog_card` and more.
 
 ### Hover, focus and motion
 
-- Hover colors **ease** like the CSS `transition`: use `HoverFill`
-  (`.hover_fill`, `.hover_fill_fg`, `.hover_fg`, `.hover_border`,
-  `.hover_opacity`) on an element with an `.id(…)`, keyed uniquely
-  (`format!("{id}-row-{ix}")`). For child colors that follow the row's hover
-  (an icon brightening), read `motion::hover_blend(&key, rest, hover)`.
-  Plain `.hover(|s| …)` is fine for things the CSS doesn't transition.
-- Keyframe entrances: `motion::rise_in`, `motion::fade_in`, `motion::pop_in`
-  or `.with_animation(id, spec.animation(), |el, t| …)`. Ids must be stable.
+- Hover colors **ease** like Pink's: use `HoverFill` (`.hover_fill`,
+  `.hover_fill_fg`, `.hover_fg`, `.hover_border`, `.hover_opacity`) on an
+  element with an `.id(…)`, keyed uniquely (`format!("{id}-row-{ix}")`). For
+  child colors that follow the row's hover (an icon brightening), read
+  `motion::hover_blend(&key, rest, hover)`.
+- Use Pink's presets for the job: `HOVER_FADE` for hovers, `menu_in_from` /
+  `menu_out` for menus, `DISCLOSURE` for folds, `QUICK` for thumbs and
+  chevrons, `STATUS_SWAP` for a changing label, `TOOL_ROW_REVEAL` for rows that
+  arrive, `RESORT` for rows that move. Pink never overshoots: no
+  `EASE_OUT_BACK`.
 - Values that glide when they change (thumb positions, heights, fills):
   `motion::follow(key, target, spec)` / `follow_from(key, from, target, spec)`.
-- Loops (shimmer, spinners, pulses): `.with_animation(id, Animation::new(d).repeat(), …)`.
-- Curves: `motion::EASE_OUT_QUINT` is `cubic-bezier(.22, 1, .36, 1)`, the
-  library's standard ease; `EASE`, `EASE_OUT`, `EASE_IN_OUT` match CSS keywords.
+- Loops run on Pink's pulse clock, not `with_animation(..repeat())`: use the
+  loaders in `pink::loaders` (`breathing_orb`, `mini_glyph_spinner`,
+  `gradient_spinner`, `shimmer_text`, `working_status`…) or
+  `motion::pulse_phase` for your own.
 - Hosts keep fades and followers moving: the story wrapper adds
   `motion::driver()`, an invisible element that requests frames after
   layout, once every builder has rendered. Add it to any view that hosts
@@ -135,14 +131,13 @@ The entity lives as long as the component keeps rendering.
 
 Things every component ran into, with the fix that works:
 
-- **Shadows**: use `primitives::shadow`/`ring` with CSS values; they convert
-  to GPUI's Gaussian sigma (CSS blur ÷ 2), keep crisp rings drawable (a
-  sigma of 0 paints nothing) and turn sub-pixel rings into one pixel. GPUI
-  paints a shadow list last-on-top – build CSS-ordered lists with
-  `primitives::shadows([...])` – and paints shadows under the whole element,
-  so they show through translucent fills.
-- **Hairlines**: a `0.5px` border can vanish at 1x; use
-  `.border_b(primitives::hairline(window))`.
+- **Shadows**: GPUI's `blur_radius` is a Gaussian sigma, which is how Pink
+  writes its elevations, so use the kit's shadows as they are.
+  `primitives::shadow` converts CSS values instead (CSS blur ÷ 2) and would
+  halve Pink's numbers. GPUI paints a shadow list last-on-top and under the
+  whole element, so shadows show through translucent fills.
+- **Hairlines**: a `0.5px` border can vanish at 1x; Pink's edges are 1px in
+  a translucent color (`t.border`, `t.hairline(..)`).
 - **One hover listener per element**: `on_hover` (and so `HoverFill`) can be
   set once. To react to hover yourself as well, combine
   `motion::hover_listener(key)` with your own logic in a single `on_hover`.
@@ -165,13 +160,14 @@ Things every component ran into, with the fix that works:
 
 ### Icons and images
 
-Put each icon in `assets/icons/<slug>/<name>.svg` with
-`xmlns="http://www.w3.org/2000/svg"`, `stroke="currentColor"` /
-`fill="currentColor"`, and render it with `svg().path(…).size(..).text_color(..)`
-(GPUI tints SVGs as a mask). Strokes with `vector-effect: non-scaling-stroke`
-need their width scaled by `viewBox / rendered size` (1.1px at 16px on a
-24 viewBox → `stroke-width="1.65"`); keep such variants in a `clean/`
-subfolder. Multi-color logos go through `img("icons/<slug>/logo.svg")`.
+Pink's interface icons are Solar Icons (Linear, 24 viewBox, 1.5 stroke).
+When Pink has the glyph, copy its SVG from the app's `crates/ui/assets/icons`
+into `assets/icons/<slug>/`; otherwise take it from the same set or draw it in
+that style. Icons use `stroke="currentColor"` / `fill="currentColor"` and
+render with `svg().path(…).size(..).text_color(..)` (GPUI tints SVGs as a
+mask), at Pink's sizes (`pink::icon_size`). Multi-color art (file-type icons,
+logos) goes through `img("icons/<slug>/logo.svg")`. Credit the source in
+`THIRD_PARTY_NOTICES.md`.
 
 ## Checking your component
 
@@ -179,13 +175,13 @@ subfolder. Multi-color logos go through `img("icons/<slug>/logo.svg")`.
 cargo build && cargo test
 cargo clippy --lib --target wasm32-unknown-unknown -- -A clippy::all \
   -D clippy::disallowed_types -D clippy::disallowed_methods
-scripts/screenshot.sh <slug> light shots/<slug>.gpui.light.png 894x<stage-height> clean
-scripts/screenshot.sh <slug> dark  shots/<slug>.gpui.dark.png  894x<stage-height> classic
+scripts/screenshot.sh <slug> light shots/<slug>.gpui.light.png 894x<stage-height>
+scripts/screenshot.sh <slug> dark  shots/<slug>.gpui.dark.png  894x<stage-height>
 ```
 
 The script renders the gallery stage headlessly (Xvfb + openbox, see the
-script). `cargo run -- <slug>` opens the gallery on your component, with
-switches for light/dark and Clean/Classic.
+script). `cargo run -- <slug>` opens the gallery on your component, with a
+light/dark switch.
 
 A new component shows up on the showcase site by itself: add it to
 `components::COMPONENTS` and the catalog, the player and the site pick it up.
@@ -193,19 +189,16 @@ Check it in the browser with `scripts/build-site.sh` and
 `python3 -m http.server -d site/dist`, then give it a catalog card picture
 with `node scripts/site/thumbnails.mjs site/dist` and commit `site/thumbs/`.
 
-## Pink components
+## Before you open a pull request
 
-- Style with [`crate::pink`](src/pink.rs): `Pink::get(cx)` tokens (surfaces,
-  text, borders, fills, accent, status colors), the radius and spacing
-  ladders, `pink::SANS` (Geist) / `pink::MONO`, and the control kit
-  (`button`, `icon_button`, `chip`, `badge`, `kbd`, `card`, `overlay`).
-  Pink components follow light/dark; the Clean/Classic look doesn't apply.
-- Use Pink's motion presets (`motion::MENU_IN`, `GLIDE`, `HOVER_FADE`, …)
-  and `HoverFill` for hovers.
-- Write your own demo content and `DESCRIPTION`; draw icons as simple 24×24
-  strokes, `stroke-width="1.5"`.
-- Keep the component useful on its own: a clean builder API, real callbacks,
-  keyboard support where it makes sense.
+- Pink's source wins: if the app has the component, the pink-ui one matches it
+  value for value, and its doc comments name the Pink code it follows.
+- Run the review checklist in [`docs/pink-design.md`](docs/pink-design.md)
+  over your component: no private palettes, no off-ladder sizes, no shadows on
+  in-flow surfaces, no bounce, no saturated fills.
+- Write your own demo content and `DESCRIPTION`, and keep the component useful
+  on its own: a clean builder API, real callbacks, keyboard support where it
+  makes sense.
 
 ## Licensing
 
