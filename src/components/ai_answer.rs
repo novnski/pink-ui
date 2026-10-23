@@ -59,7 +59,8 @@ use crate::{
         loaders::{
             LIVE_STATUS_OBJECT_CHARS, TOOL_LABEL_LINE_HEIGHT, TOOL_LABEL_SIZE,
             WORKING_STATUS_LINE_HEIGHT, WORKING_TIMER_SIZE, ellipsize_chars, fnv1a,
-            mini_glyph_spinner, orb_slot, shimmer_text, working_status, working_timer,
+            mini_glyph_spinner, orb_slot, shimmer_overlay, shimmer_phase_since, working_status,
+            working_timer,
         },
         radius, space,
     },
@@ -109,8 +110,10 @@ const ACTIVITY_BRANCH_END_X: f32 = 28.;
 const ACTIVITY_ICON_LEFT: f32 = 32.;
 const ACTIVITY_ICON_SIZE: f32 = 14.;
 const DISCLOSURE_CHEVRON_SIZE: f32 = 12.;
-/// pink: `chip_header_row`'s trailing tile.
+/// pink: `chip_header_row`'s trailing tile, and the hover group its row's
+/// text and tile brighten with.
 const TRAIL_TILE: f32 = 18.;
+const HEADER_GROUP: &str = "tool-header";
 /// pink: `badges.rs` `BadgeCard`.
 const CARD_WIDTH: f32 = 320.;
 /// pink: `markdown/veil.rs`.
@@ -1044,7 +1047,8 @@ struct Ctx<'a> {
 
 /// pink: `meta_action` – one action in a message's hover lane: a 24px icon
 /// button, transparent → `ink(0.08)` on the shared hover fade, a 14px glyph
-/// in `content_muted`, a text tooltip and the inset focus ring.
+/// in `content_muted`, a text tooltip on GPUI's default delay (pink sets
+/// none) and the inset focus ring.
 fn meta_action(
     id: SharedString,
     icon: &'static str,
@@ -1066,7 +1070,6 @@ fn meta_action(
         .hover_fill(format!("tl-{id}"), gpui::transparent_black(), t.ink(0.08))
         .focus_visible(move |style| pink::focus_ring(style, ring))
         .tooltip(pink::text_tooltip(label))
-        .tooltip_show_delay(pink::layout::TOOLTIP_DELAY)
         .child(
             svg()
                 .path(icon)
@@ -1333,14 +1336,23 @@ fn activity_rail(
 }
 
 /// pink: `chip_header_row` for an activity row – label and detail at 12/18
-/// in `content_muted`, the detail truncating. A row that opens its page
-/// (`hover` names its fade) gets the trailing open-arrow tile, half strength
-/// until the row is hovered, and its text brightens to `text` with it.
-fn chip_header_row(row: &ToolRow, hover: Option<&str>, t: &Pink) -> Div {
-    let tone = hover.map_or(t.content_muted, |key| {
-        motion::hover_blend(key, t.content_muted, t.text)
-    });
+/// in `content_muted`, the detail truncating. A row that opens its page gets
+/// pink's open-arrow trail tile, half strength until the row is hovered,
+/// and its label and detail brighten to `text` with it (pink's
+/// `group_hover`, keyed by stable child ids so text keeps its hover state).
+fn chip_header_row(row: &ToolRow, link: bool, t: &Pink) -> Div {
+    let text = t.text;
+    let brighten = |el: Div, id: &'static str| -> AnyElement {
+        if link {
+            el.id(id)
+                .group_hover(HEADER_GROUP, move |style| style.text_color(text))
+                .into_any_element()
+        } else {
+            el.into_any_element()
+        }
+    };
     div()
+        .group(HEADER_GROUP)
         .h(px(CHIP_CARD_HEIGHT))
         .w_full()
         .min_w_0()
@@ -1350,16 +1362,17 @@ fn chip_header_row(row: &ToolRow, hover: Option<&str>, t: &Pink) -> Div {
         .gap(px(space::SM))
         .text_size(px(TOOL_LABEL_SIZE))
         .line_height(px(TOOL_LABEL_LINE_HEIGHT))
-        .text_color(tone)
-        .child(
+        .text_color(t.content_muted)
+        .child(brighten(
             div()
                 .flex_none()
                 .h(px(TOOL_LABEL_LINE_HEIGHT))
                 .flex()
                 .items_center()
                 .child(row.label),
-        )
-        .child(
+            "tool-label",
+        ))
+        .child(brighten(
             div()
                 .min_w_0()
                 .h(px(TOOL_LABEL_LINE_HEIGHT))
@@ -1367,14 +1380,16 @@ fn chip_header_row(row: &ToolRow, hover: Option<&str>, t: &Pink) -> Div {
                 .items_center()
                 .truncate()
                 .child(div().min_w_0().truncate().child(row.detail.clone())),
-        )
+            "tool-detail",
+        ))
         .child(div().flex_1().min_w(px(4.)))
-        .when_some(hover, |el, key| {
+        .when(link, |el| {
             el.child(
                 div()
                     .size(px(TRAIL_TILE))
                     .flex_none()
-                    .opacity(0.5 + 0.5 * motion::hover_t(key))
+                    .opacity(0.5)
+                    .group_hover(HEADER_GROUP, |style| style.opacity(1.))
                     .flex()
                     .items_center()
                     .justify_center()
@@ -1552,24 +1567,38 @@ impl AiAnswer {
     /// pink: `render_tool_group` – the summary plate (24px, r6, Quaternary →
     /// Tertiary with its text and glyph brightening, a chevron turning 90°
     /// as it opens) over the fold of rail rows.
-    fn render_group(&self, cx: &Ctx, rows: &[ToolRow], frame: &GroupFrame) -> AnyElement {
+    fn render_group(
+        &self,
+        cx: &Ctx,
+        rows: &[ToolRow],
+        frame: &GroupFrame,
+        shimmer_phase: Option<f32>,
+    ) -> AnyElement {
         let t = cx.t;
         let key = cx.key;
         let ring = t.focus_ring();
         let searches = usize::from(self.query.is_some());
         let summary: SharedString = tool_group_summary(searches, self.sources.len()).into();
         let hover_key = format!("tl-{key}-hdr");
-        let title = match frame.shimmer_start.filter(|_| frame.active) {
-            Some(start) => shimmer_text(
-                summary.clone(),
-                TOOL_LABEL_SIZE,
-                TOOL_LABEL_LINE_HEIGHT,
-                t.content_muted,
-                t.text,
-            )
-            .started_at(start)
-            .flex_none()
-            .into_any_element(),
+        // pink: `tool_group_title` – while live, the sweep is laid over the
+        // summary, whose own color follows the plate's hover fade
+        let title = match shimmer_phase {
+            Some(phase) => div()
+                .relative()
+                .h_full()
+                .min_w_0()
+                .flex_1()
+                .overflow_hidden()
+                .child(summary.clone())
+                .child(shimmer_overlay(
+                    summary.clone(),
+                    TOOL_LABEL_SIZE,
+                    TOOL_LABEL_LINE_HEIGHT,
+                    t.content_muted,
+                    t.text,
+                    phase,
+                ))
+                .into_any_element(),
             None => summary.clone().into_any_element(),
         };
         let toggle = {
@@ -1667,13 +1696,10 @@ impl AiAnswer {
                         t,
                     );
                     let link = row.source.zip(cx.on_open_source.clone());
-                    let hover_key = format!("tl-{key}-tool-{ix}");
-                    let header =
-                        chip_header_row(row, link.is_some().then_some(hover_key.as_str()), t);
+                    let header = chip_header_row(row, link.is_some(), t);
                     let header = match link {
                         Some((source, on_open)) => div()
                             .id(SharedString::from(format!("{key}-tool-btn-{ix}")))
-                            .on_hover(motion::hover_listener(hover_key.clone()))
                             .role(Role::Button)
                             .aria_label(SharedString::from(format!(
                                 "{}: {}",
@@ -1997,9 +2023,16 @@ impl RenderOnce for AiAnswer {
 
         // ---- the assistant entry -------------------------------------------
         let has_group = group.is_some();
+        let shimmer_phase = group
+            .as_ref()
+            .and_then(|frame| frame.shimmer_start.filter(|_| frame.active && !reduced))
+            .map(|start| {
+                motion::pulse_keep(window, cx);
+                shimmer_phase_since(start, now)
+            });
         let group_el = group
             .as_ref()
-            .map(|frame| self.render_group(&ctx, &rows, frame));
+            .map(|frame| self.render_group(&ctx, &rows, frame, shimmer_phase));
         // pink: `top_gap_for` – 16 opens a turn, 12 follows a tool group and
         // separates markdown blocks.
         let first_gap = if has_group { space::MD } else { space::LG };
@@ -2155,9 +2188,9 @@ fn answer() -> Vec<Block> {
 }
 
 /// When each page comes back, in seconds after the question.
-const FETCHED_AT: [f32; 4] = [0.6, 1.05, 1.45, 1.85];
+const FETCHED_AT: [f32; 4] = [0.9, 1.6, 2.2, 2.8];
 /// When the reply starts streaming.
-const WRITE_AT: f32 = 2.4;
+const WRITE_AT: f32 = 3.5;
 /// Words and citations streamed per second.
 const PIECES_PER_SEC: f32 = 28.;
 /// The stream closes a beat after its last word, so that word's veil lands.
