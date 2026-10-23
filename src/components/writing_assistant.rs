@@ -887,6 +887,8 @@ impl RenderOnce for WritingAssistant {
         // pink: composer.rs Attach – a 28 pt circle, transparent →
         // `ink(0.10)`, a 16 pt glyph in `text_muted`. While listening it holds
         // the wash with the glyph in `text`, the composer row's open state.
+        // Pink bundles no microphone, so the glyph is Solar's own
+        // `microphone-linear`, from the set pink draws its icons from.
         let mic_key = format!("{key}-mic");
         let mic_label = if listening {
             "Stop dictation"
@@ -1206,6 +1208,8 @@ struct Demo {
     /// It stops as soon as the reader takes over.
     step: u8,
     touched: bool,
+    /// Something moved on the last tick, so the next one paints its end.
+    live: bool,
     _ticker: Task<()>,
 }
 
@@ -1219,7 +1223,9 @@ impl Demo {
                     .await;
                 let alive = this.update(cx, |demo, cx| {
                     let at = mounted.elapsed().as_secs_f32();
+                    let mut changed = false;
                     if !demo.touched {
+                        changed = true;
                         match demo.step {
                             0 if at > 1.4 => {
                                 demo.step = 1;
@@ -1233,7 +1239,7 @@ impl Demo {
                                 demo.step = 3;
                                 demo.listening = Some(Instant::now());
                             }
-                            _ => {}
+                            _ => changed = false,
                         }
                     }
                     // Dictation sends itself once the sentence is heard.
@@ -1242,9 +1248,20 @@ impl Demo {
                         if started.elapsed().as_secs_f32() > total * WORD_HEARD + 0.9 {
                             demo.listening = None;
                             demo.request(DICTATION.into());
+                            changed = true;
                         }
                     }
-                    cx.notify();
+                    // Repaint only while words arrive or are heard (and once
+                    // after), not forever.
+                    let moving = demo.listening.is_some()
+                        || demo.versions.iter().any(|(_, text, started)| {
+                            started.elapsed().as_secs_f32() * WORDS_PER_SEC
+                                < text.split_whitespace().count() as f32
+                        });
+                    if changed || moving || demo.live {
+                        cx.notify();
+                    }
+                    demo.live = moving;
                 });
                 if alive.is_err() {
                     break;
@@ -1257,6 +1274,7 @@ impl Demo {
             listening: None,
             step: 0,
             touched: false,
+            live: false,
             _ticker: ticker,
         }
     }
