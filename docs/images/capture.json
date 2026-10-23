@@ -1,0 +1,7 @@
+{
+  "source": "https://novnski.github.io/pink-ui/",
+  "captured_on": "2026-10-23",
+  "kind": "unaltered browser screenshots of the live showcase",
+  "images": ["gallery-light.jpg", "gallery-dark.jpg"],
+  "reproduce": "Open the source URL at a 1280 by 720 viewport and capture each state of the Switch light or dark theme button."
+}

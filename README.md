@@ -30,7 +30,7 @@
 
 ---
 
-![The gallery](docs/images/gallery-light.png)
+![The live Pink UI showcase in light mode](docs/images/gallery-light.jpg)
 
 - **17 core components** in two looks, **Clean** and **Classic**, light and dark.
 - **39 Pink components** in Pink's design language (Geist, neutral surfaces,
@@ -137,7 +137,7 @@ The header switches light/dark (and Clean/Classic for core components);
 Ctrl+↑/↓ steps through the components and Ctrl+R replays the current demo.
 Dark mode:
 
-![The gallery in dark mode](docs/images/gallery-dark.png)
+![The live Pink UI showcase in dark mode](docs/images/gallery-dark.jpg)
 
 ## Using it in an app
 
