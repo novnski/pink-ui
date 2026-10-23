@@ -1,108 +1,135 @@
-//! Command Menu – one field to search and run everything.
+//! Command Menu – a ⌘K palette: one search field over everything you can run.
 //!
-//! A pink component. App actions sit on a strip of
-//! tiles you can fire with Ctrl/⌘ 1–5; everyday commands follow in groups
-//! with their own shortcuts. Typing folds the strip away and filters every
-//! command at once, lighting up the matched letters. Scope chips narrow the
-//! list (Tab cycles them), a plate glides to the active row, the list eases
-//! to its new height, and a run confirms itself in the footer.
+//! pink: `shell/command_palette.rs` `Shell::render_command_palette`. A card
+//! 560 wide (radius 16, `border`, the popover plate, `shadow_lg`) that
+//! arrives as one object, a 160ms fade with a 6pt rise. On top, a 44px search
+//! row: the 16px palette glyph, a 14px field and a ⌘K hint over a 0.06
+//! hairline. Below it the results: ungrouped actions first, then each group
+//! under an 11px heading with a rule above it. A footer of key hints closes
+//! the card. Rows are pink's `menu_row` at radius 8 with a 16px glyph in
+//! `text_muted`. The keyboard's row wears the selected wash and the pointer a
+//! lighter one. Typed words light up in `code_text` on rounded `code_wash`
+//! plates. The list stops at the window height minus 180 (100–360) and fades
+//! whichever edge has more to scroll.
+//!
+//! Quick actions are an app's commands, named beside their label like pink's
+//! extension commands. They come first and run with ⌘1–⌘9 from anywhere in
+//! the menu. A command with a `detail` gets pink's two-line result row. Enter
+//! runs the highlighted row. Esc, ⌘K or a click outside the card calls
+//! `on_dismiss`. Pink closes the palette after a run, so hosts usually hide it
+//! from `on_run` too. The host lays the scrim (pink: `scrim(0.35)`) and keeps
+//! the card's top fixed (pink: 20% down the window) so results grow downward.
 //!
 //! ```ignore
 //! CommandMenu::new("palette")
-//!     .quick_actions(vec![Command::new("pr", "Open a pull request").app("GitHub")])
-//!     .commands(vec![Command::new("inbox", "Go to Inbox").group("Navigate")])
+//!     .quick_actions(vec![Command::new("pr", "Open a pull request").icon(PR_ICON).app("GitHub")])
+//!     .commands(vec![Command::new("inbox", "Go to Inbox").icon(INBOX_ICON).group("Navigate")])
 //!     .on_run(|command, _, _| println!("{}", command.label))
+//!     .on_dismiss(|_, cx| close_palette(cx))
 //! ```
 
-use std::{ops::Range, rc::Rc, sync::Arc, time::Duration};
+use std::{ops::Range, rc::Rc, sync::Arc};
 
 use gpui::{
-    AnimationExt, AnyView, App, Context, ElementId, Entity, Focusable, FontWeight, HighlightStyle,
-    IntoElement, KeyDownEvent, ScrollHandle, SharedString, StyledText, Subscription, Task, Window,
-    div, prelude::*, px, svg,
+    AnyElement, AnyView, App, BorderStyle, Bounds, Context, ElementId, Entity, FocusHandle,
+    Focusable, HighlightStyle, Hsla, IntoElement, KeyDownEvent, Pixels, ScrollHandle, SharedString,
+    StyledText, Subscription, TextLayout, Window, canvas, div, fill, linear_color_stop,
+    linear_gradient, point, prelude::*, px, quad, size, svg, transparent_black,
 };
 
 use crate::{
-    HoverFill,
-    motion::{self, EASE_OUT_QUINT, MotionSpec, ROW_IN},
-    pink::{self, ControlSize, FillTier, Pink, radius, text},
+    motion,
+    pink::{self, ButtonKind, ControlSize, Pink, radius},
     primitives::{InputEvent, TextInput},
     story,
 };
 
 pub const NAME: &str = "Command Menu";
-pub const DESCRIPTION: &str = "One field to search and run everything – app actions on numbered tiles, everyday commands in groups, scopes on Tab and matched letters lit as you type";
+pub const DESCRIPTION: &str = "A ⌘K palette for running anything – one search field over app actions and grouped commands, typed words lit as you type, shortcuts on every row and a footer of key hints";
 
-const ICON_SEARCH: &str = "icons/command-menu/search.svg";
-const ICON_CHECK: &str = "icons/command-menu/check.svg";
-const ICON_INBOX: &str = "icons/command-menu/inbox.svg";
-const ICON_FOLDER: &str = "icons/command-menu/folder.svg";
+const ICON_SEARCH: &str = "icons/command-menu/palette-search.svg";
+/// pink: `contributions::icon_for`'s fallback for a command without a glyph.
+const ICON_DEFAULT: &str = "icons/command-menu/widget.svg";
+const ICON_PULL_REQUEST: &str = "icons/command-menu/git-pull-request.svg";
+const ICON_CALENDAR: &str = "icons/command-menu/calendar.svg";
+const ICON_TICKET: &str = "icons/command-menu/ticket.svg";
+const ICON_CLOUD: &str = "icons/command-menu/cloud.svg";
+const ICON_CHAT: &str = "icons/command-menu/chat-round-line.svg";
+const ICON_INBOX: &str = "icons/command-menu/inbox-in.svg";
+const ICON_PROJECTS: &str = "icons/command-menu/folder-with-files.svg";
 const ICON_CHART: &str = "icons/command-menu/chart.svg";
-const ICON_DOC: &str = "icons/command-menu/doc.svg";
-const ICON_FOLDER_PLUS: &str = "icons/command-menu/folder-plus.svg";
-const ICON_USER_PLUS: &str = "icons/command-menu/user-plus.svg";
+const ICON_NEW_DOC: &str = "icons/command-menu/pen-new-square.svg";
+const ICON_FOLDER: &str = "icons/command-menu/folder.svg";
+const ICON_ADD: &str = "icons/command-menu/add-circle.svg";
+const ICON_SUN: &str = "icons/command-menu/sun.svg";
 const ICON_MOON: &str = "icons/command-menu/moon.svg";
 const ICON_KEYBOARD: &str = "icons/command-menu/keyboard.svg";
-const ICON_SLIDERS: &str = "icons/command-menu/sliders.svg";
-const ICON_LOGOUT: &str = "icons/command-menu/logout.svg";
-const ICON_COMPASS: &str = "icons/command-menu/compass.svg";
+const ICON_SETTINGS: &str = "icons/command-menu/settings-minimalistic.svg";
+const ICON_LOGOUT: &str = "icons/command-menu/logout-2.svg";
+const ICON_DOCUMENT: &str = "icons/command-menu/document.svg";
 
-const WIDTH: f32 = 600.;
-const ROW_H: f32 = 36.;
-const HEADER_H: f32 = 28.;
-const LIST_PAD: f32 = 6.;
-const LIST_MAX: f32 = 216.;
-const EMPTY_H: f32 = 132.;
-const STRIP_H: f32 = 112.;
-/// Five tiles across the menu: its width less padding and gaps.
-const TILE_W: f32 = (WIDTH - 2. - 24. - 4. * 8.) / 5.;
-/// The scope that shows everything.
-const ALL: &str = "All";
-/// The group quick actions join once you type.
-const ACTIONS: &str = "Actions";
+/// pink: the card's `560 × ui_scale`, kept 16px clear of each window edge.
+const WIDTH: f32 = 560.;
+const WINDOW_CLEARANCE: f32 = 32.;
+/// pink: the search row's `min_h`.
+const FIELD_MIN_H: f32 = 44.;
+/// pink: `ComposerInput`'s default metrics, which the palette field keeps.
+const FIELD_TEXT: f32 = 14.;
+const FIELD_LINE_HEIGHT: f32 = 22.75;
+/// pink: the result list is the window height less 180, clamped to 100–360.
+const LIST_VIEWPORT_INSET: f32 = 180.;
+const LIST_MIN: f32 = 100.;
+const LIST_MAX: f32 = 360.;
+/// pink: `RESULTS_FADE_BAND`.
+const RESULTS_FADE_BAND: f32 = 18.;
+/// pink: the action row's `min_h`, and the two-line result row's.
+const ROW_MIN_H: f32 = 32.;
+const RESULT_ROW_MIN_H: f32 = 44.;
+/// Quick actions with a ⌘ digit.
+const QUICK_SLOTS: usize = 9;
 
 type RunHandler = Rc<dyn Fn(&Command, &mut Window, &mut App)>;
+type DismissHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 
-/// Shown in a command's leading slot.
-#[derive(Clone, Debug)]
-pub enum CommandIcon {
-    /// An SVG path under `assets/`.
-    Glyph(SharedString),
-    /// A neutral lettered tile standing in for an app's logo.
-    Monogram(SharedString),
-}
-
+/// One runnable row.
 #[derive(Clone)]
 pub struct Command {
     pub id: SharedString,
     pub label: SharedString,
-    /// Faint text after the label (an app, a count, a place).
+    /// A second line under the label (pink's two-line result row), e.g.
+    /// "Document · Product · Edited 2h ago".
+    pub detail: Option<SharedString>,
+    /// Faint text at the row's end: the app a command belongs to, a count.
     pub hint: Option<SharedString>,
-    pub icon: CommandIcon,
-    /// Keys shown on the right, space separated: `"G I"` → G, I.
+    /// An SVG path under `assets/`, drawn 16px in `text_muted`.
+    pub icon: SharedString,
+    /// The keys on the right, as printed: `⇧⌘N`.
     pub shortcut: Option<SharedString>,
-    pub group: SharedString,
+    /// The heading the row sits under; ungrouped rows lead the list.
+    pub group: Option<SharedString>,
     /// Extra words the search matches.
     pub keywords: Vec<SharedString>,
-    /// Footer confirmation once it ran, e.g. "Opened Inbox".
-    pub done: Option<SharedString>,
     pub on_run: Option<RunHandler>,
 }
 
 impl Command {
     pub fn new(id: impl Into<SharedString>, label: impl Into<SharedString>) -> Self {
-        let label = label.into();
         Self {
             id: id.into(),
-            icon: CommandIcon::Monogram(label.chars().next().unwrap_or('?').to_string().into()),
-            label,
+            label: label.into(),
+            detail: None,
             hint: None,
+            icon: ICON_DEFAULT.into(),
             shortcut: None,
-            group: "Commands".into(),
+            group: None,
             keywords: Vec::new(),
-            done: None,
             on_run: None,
         }
+    }
+
+    pub fn detail(mut self, detail: impl Into<SharedString>) -> Self {
+        self.detail = Some(detail.into());
+        self
     }
 
     pub fn hint(mut self, hint: impl Into<SharedString>) -> Self {
@@ -111,15 +138,14 @@ impl Command {
     }
 
     pub fn icon(mut self, path: impl Into<SharedString>) -> Self {
-        self.icon = CommandIcon::Glyph(path.into());
+        self.icon = path.into();
         self
     }
 
-    /// The app a quick action belongs to: its name becomes the hint and its
-    /// initial the monogram tile.
+    /// The app a command belongs to: named at the row's end (pink
+    /// `render_contributed_command_row`) and matched by the search.
     pub fn app(mut self, name: impl Into<SharedString>) -> Self {
         let name: SharedString = name.into();
-        self.icon = CommandIcon::Monogram(name.chars().next().unwrap_or('?').to_string().into());
         self.keywords.push(name.clone());
         self.hint = Some(name);
         self
@@ -131,7 +157,7 @@ impl Command {
     }
 
     pub fn group(mut self, group: impl Into<SharedString>) -> Self {
-        self.group = group.into();
+        self.group = Some(group.into());
         self
     }
 
@@ -141,383 +167,283 @@ impl Command {
         self
     }
 
-    pub fn done(mut self, text: impl Into<SharedString>) -> Self {
-        self.done = Some(text.into());
-        self
-    }
-
     pub fn on_run(mut self, handler: impl Fn(&Command, &mut Window, &mut App) + 'static) -> Self {
         self.on_run = Some(Rc::new(handler));
         self
     }
 
-    fn done_text(&self) -> SharedString {
-        self.done
-            .clone()
-            .unwrap_or_else(|| format!("Ran “{}”", self.label).into())
+    /// Everything the search reads: label, detail, hint and keywords.
+    fn search_text(&self) -> String {
+        let mut text = self.label.to_string();
+        for word in self
+            .detail
+            .iter()
+            .chain(self.hint.iter())
+            .chain(self.keywords.iter())
+        {
+            text.push(' ');
+            text.push_str(word);
+        }
+        text
     }
 }
 
-/// Five app actions for the numbered strip.
+/// Five app actions for the top of the list.
 pub fn default_quick_actions() -> Vec<Command> {
     vec![
-        Command::new("pull-request", "Open a PR")
+        Command::new("pull-request", "Open a pull request")
+            .icon(ICON_PULL_REQUEST)
             .app("GitHub")
-            .done("Pull request draft opened in GitHub"),
-        Command::new("meeting", "Start a call")
-            .app("Zoom")
-            .keywords(["meeting", "video"])
-            .done("Meeting room ready in Zoom"),
+            .keywords(["pr", "review"]),
+        Command::new("meeting", "Schedule a meeting")
+            .icon(ICON_CALENDAR)
+            .app("Calendar")
+            .keywords(["call", "event", "invite"]),
         Command::new("ticket", "File a ticket")
+            .icon(ICON_TICKET)
             .app("Jira")
-            .keywords(["bug", "issue"])
-            .done("New ticket started in Jira"),
+            .keywords(["bug", "issue"]),
         Command::new("share-file", "Share a file")
+            .icon(ICON_CLOUD)
             .app("Dropbox")
-            .keywords(["upload", "send"])
-            .done("Share sheet opened in Dropbox"),
+            .keywords(["upload", "send"]),
         Command::new("post", "Post an update")
+            .icon(ICON_CHAT)
             .app("Slack")
-            .keywords(["message", "announce", "channel"])
-            .done("Composer opened in Slack"),
+            .keywords(["message", "announce", "channel"]),
     ]
 }
 
-/// Navigate, Create and Preferences.
-pub fn default_commands() -> Vec<Command> {
+/// Navigate, Create, Preferences and Recent documents. `dark` is the current
+/// appearance: the theme command offers the other one (pink: `ToggleTheme`
+/// targets the opposite resolved appearance).
+pub fn default_commands(dark: bool) -> Vec<Command> {
+    let (theme_label, theme_icon) = if dark {
+        ("Switch to light theme", ICON_SUN)
+    } else {
+        ("Switch to dark theme", ICON_MOON)
+    };
     vec![
         Command::new("inbox", "Go to Inbox")
             .icon(ICON_INBOX)
             .hint("12 unread")
-            .shortcut("G I")
-            .group("Navigate")
-            .done("Opened Inbox"),
+            .group("Navigate"),
         Command::new("projects", "Go to Projects")
-            .icon(ICON_FOLDER)
-            .shortcut("G P")
-            .group("Navigate")
-            .done("Opened Projects"),
+            .icon(ICON_PROJECTS)
+            .shortcut(combo(true, "P"))
+            .group("Navigate"),
         Command::new("reports", "Go to Reports")
             .icon(ICON_CHART)
             .hint("Updated hourly")
-            .shortcut("G R")
             .group("Navigate")
-            .keywords(["analytics", "metrics"])
-            .done("Opened Reports"),
-        Command::new("explore", "Browse templates")
-            .icon(ICON_COMPASS)
-            .group("Navigate")
-            .done("Opened the template gallery"),
+            .keywords(["analytics", "metrics"]),
         Command::new("new-doc", "New document")
-            .icon(ICON_DOC)
-            .shortcut("N")
+            .icon(ICON_NEW_DOC)
+            .shortcut(combo(false, "N"))
             .group("Create")
-            .keywords(["page", "write"])
-            .done("Created “Untitled document”"),
+            .keywords(["page", "write"]),
         Command::new("new-project", "New project")
-            .icon(ICON_FOLDER_PLUS)
-            .shortcut("⇧ N")
-            .group("Create")
-            .done("Created “Untitled project”"),
+            .icon(ICON_FOLDER)
+            .shortcut(combo(true, "N"))
+            .group("Create"),
         Command::new("invite", "Invite a teammate")
-            .icon(ICON_USER_PLUS)
+            .icon(ICON_ADD)
             .hint("2 seats left")
             .group("Create")
-            .keywords(["member", "people"])
-            .done("Invite link copied"),
-        Command::new("theme", "Switch theme")
-            .icon(ICON_MOON)
-            .hint("Light · Dark · System")
-            .shortcut("⇧ T")
+            .keywords(["member", "people"]),
+        Command::new("theme", theme_label)
+            .icon(theme_icon)
             .group("Preferences")
-            .keywords(["dark", "light", "appearance"])
-            .done("Theme switched"),
+            .keywords(["appearance", "mode"]),
         Command::new("shortcuts", "Keyboard shortcuts")
             .icon(ICON_KEYBOARD)
-            .shortcut("?")
-            .group("Preferences")
-            .done("Showing keyboard shortcuts"),
+            .shortcut(combo(false, "/"))
+            .group("Preferences"),
         Command::new("settings", "Workspace settings")
-            .icon(ICON_SLIDERS)
+            .icon(ICON_SETTINGS)
+            .shortcut(combo(false, ","))
             .group("Preferences")
-            .keywords(["preferences", "billing"])
-            .done("Opened workspace settings"),
+            .keywords(["preferences", "billing"]),
         Command::new("logout", "Log out")
             .icon(ICON_LOGOUT)
             .group("Preferences")
-            .keywords(["sign out"])
-            .done("Signed out"),
+            .keywords(["sign out"]),
+        Command::new("q3-notes", "Q3 planning notes")
+            .icon(ICON_DOCUMENT)
+            .detail("Document · Product · Edited 2h ago")
+            .group("Recent documents"),
+        Command::new("launch", "Launch checklist")
+            .icon(ICON_DOCUMENT)
+            .detail("Document · Marketing · Edited yesterday")
+            .group("Recent documents"),
+        Command::new("hiring", "Hiring plan 2027")
+            .icon(ICON_DOCUMENT)
+            .detail("Document · People · Edited Oct 12")
+            .group("Recent documents"),
     ]
 }
 
-/// The platform's primary modifier, as printed on the keycap.
-fn primary_key() -> &'static str {
+/// A primary-modifier chord as printed on a key hint: pink's `badge_combo`
+/// (`⌘K`, `⇧⌘N`) on macOS, `Ctrl+K` / `Ctrl+Shift+N` elsewhere.
+fn combo(shift: bool, key: &str) -> SharedString {
     if cfg!(target_os = "macos") {
-        "⌘"
+        format!("{}⌘{key}", if shift { "⇧" } else { "" }).into()
     } else {
-        "Ctrl"
+        format!("Ctrl+{}{key}", if shift { "Shift+" } else { "" }).into()
     }
 }
 
-/// A command placed in the visible list, with its matched letters.
-#[derive(Clone)]
-struct Hit {
-    command: Command,
-    /// Its slot on the quick strip (for the Ctrl/⌘ digit).
-    quick: Option<usize>,
-    group: SharedString,
-    highlights: Vec<Range<usize>>,
+/// pink: `matches_query`: every word of the (lowercased) query appears in
+/// the text.
+fn matches_query(query: &str, text: &str) -> bool {
+    let text = text.to_lowercase();
+    query.split_whitespace().all(|word| text.contains(word))
 }
 
-/// Case-insensitive match of `query` in `label`: a substring first, then the
-/// letters in order. Returns a score (higher is better) and the byte ranges to light.
-fn match_label(label: &str, query: &str) -> Option<(i32, Vec<Range<usize>>)> {
-    let query: Vec<char> = query.chars().flat_map(char::to_lowercase).collect();
-    if query.is_empty() {
-        return Some((0, Vec::new()));
-    }
-    let chars: Vec<(usize, char)> = label.char_indices().collect();
-    let lower: Vec<char> = chars
-        .iter()
-        .map(|(_, c)| c.to_lowercase().next().unwrap_or(*c))
-        .collect();
-    let end_of = |i: usize| chars.get(i).map_or(label.len(), |(b, _)| *b);
-
-    // Contiguous run, preferring word starts.
-    let mut best: Option<(i32, usize)> = None;
-    for start in 0..lower.len() {
-        if lower.len() - start < query.len() {
-            break;
+/// pink: `popover::search_match_ranges`: every occurrence of each query word
+/// in `text`, case-insensitively, as merged byte ranges of the original text.
+fn match_ranges(text: &str, query: &str) -> Vec<Range<usize>> {
+    // Fold char by char so each folded byte maps back to its source char.
+    let mut folded = String::with_capacity(text.len());
+    let mut original = Vec::with_capacity(text.len());
+    for (start, ch) in text.char_indices() {
+        let range = start..start + ch.len_utf8();
+        for lower in ch.to_lowercase() {
+            folded.push(lower);
+            original.extend(std::iter::repeat_n(range.clone(), lower.len_utf8()));
         }
-        if lower[start..start + query.len()] == query[..] {
-            let word_start = start == 0 || lower[start - 1] == ' ';
-            let score = 200 - start as i32 + if word_start { 50 } else { 0 };
-            if best.is_none_or(|(s, _)| score > s) {
-                best = Some((score, start));
+    }
+    let mut ranges = Vec::new();
+    for word in query.to_lowercase().split_whitespace() {
+        for (start, _) in folded.match_indices(word) {
+            if let (Some(first), Some(last)) =
+                (original.get(start), original.get(start + word.len() - 1))
+            {
+                ranges.push(first.start..last.end);
             }
         }
     }
-    if let Some((score, start)) = best {
-        return Some((score, vec![chars[start].0..end_of(start + query.len())]));
-    }
-
-    // Letters in order, skipping spaces in the query.
-    let mut ranges: Vec<Range<usize>> = Vec::new();
-    let mut at = 0;
-    let mut gaps = 0;
-    for q in query.iter().filter(|c| !c.is_whitespace()) {
-        let found = (at..lower.len()).find(|&i| lower[i] == *q)?;
-        if found > at {
-            gaps += 1;
+    ranges.sort_by_key(|range| range.start);
+    let mut merged: Vec<Range<usize>> = Vec::new();
+    for range in ranges {
+        match merged.last_mut() {
+            Some(last) if range.start <= last.end => last.end = last.end.max(range.end),
+            _ => merged.push(range),
         }
-        let range = chars[found].0..end_of(found + 1);
-        match ranges.last_mut() {
-            Some(last) if last.end == range.start => last.end = range.end,
-            _ => ranges.push(range),
-        }
-        at = found + 1;
     }
-    Some((100 - gaps * 8, ranges))
+    merged
 }
 
-fn search(quick: &[Command], commands: &[Command], query: &str, scope: &str) -> Vec<Hit> {
-    let query = query.trim();
-    let in_scope = |group: &str| scope == ALL || scope == group;
-    let mut hits: Vec<(i32, usize, Hit)> = Vec::new();
-    let quick_hits = quick
+/// A command placed in the visible list.
+#[derive(Clone)]
+struct Entry {
+    command: Command,
+    /// Its quick-action slot (for the ⌘ digit).
+    quick: Option<usize>,
+}
+
+/// pink: `command_entries`: actions in their given order, quick actions
+/// first, keeping the ones whose text holds every typed word.
+fn visible(quick: &[Command], commands: &[Command], query: &str) -> Vec<Entry> {
+    let query = query.trim().to_lowercase();
+    quick
         .iter()
         .enumerate()
-        .map(|(ix, c)| (Some(ix), ACTIONS.into(), c));
-    let other_hits = commands.iter().map(|c| (None, c.group.clone(), c));
-    for (order, (slot, group, command)) in quick_hits.chain(other_hits).enumerate() {
-        if !in_scope(&group) {
-            continue;
-        }
-        // With an empty query in "All", the actions live on the strip instead.
-        if query.is_empty() && slot.is_some() && scope == ALL {
-            continue;
-        }
-        let found = match_label(&command.label, query).or_else(|| {
-            let q = query.to_lowercase();
-            let extra = command.keywords.iter().chain(command.hint.iter());
-            extra
-                .into_iter()
-                .any(|w| w.to_lowercase().contains(&q))
-                .then_some((10, Vec::new()))
-        });
-        if let Some((score, highlights)) = found {
-            hits.push((
-                score,
-                order,
-                Hit {
-                    command: command.clone(),
-                    quick: slot,
-                    group,
-                    highlights,
-                },
-            ));
-        }
-    }
-    if !query.is_empty() {
-        // Best group first (by its best hit), then best hits within each group.
-        let mut group_best: Vec<(SharedString, i32, usize)> = Vec::new();
-        for (score, order, hit) in &hits {
-            match group_best.iter_mut().find(|(g, _, _)| *g == hit.group) {
-                Some(entry) => entry.1 = entry.1.max(*score),
-                None => group_best.push((hit.group.clone(), *score, *order)),
-            }
-        }
-        let rank = |group: &SharedString| {
-            group_best
-                .iter()
-                .find(|(g, _, _)| g == group)
-                .map_or((0, 0), |(_, s, o)| (*s, *o))
-        };
-        hits.sort_by(|a, b| {
-            let (ga, gb) = (rank(&a.2.group), rank(&b.2.group));
-            gb.0.cmp(&ga.0)
-                .then(ga.1.cmp(&gb.1))
-                .then(b.0.cmp(&a.0))
-                .then(a.1.cmp(&b.1))
-        });
-    }
-    hits.into_iter().map(|(_, _, hit)| hit).collect()
-}
-
-/// Groups in first-seen order, as `(group, hits)`.
-fn grouped(hits: &[Hit]) -> Vec<(SharedString, Vec<(usize, &Hit)>)> {
-    let mut groups: Vec<(SharedString, Vec<(usize, &Hit)>)> = Vec::new();
-    for (ix, hit) in hits.iter().enumerate() {
-        match groups.iter_mut().find(|(g, _)| *g == hit.group) {
-            Some((_, rows)) => rows.push((ix, hit)),
-            None => groups.push((hit.group.clone(), vec![(ix, hit)])),
-        }
-    }
-    groups
-}
-
-struct Ran {
-    id: SharedString,
-    text: SharedString,
-    count: u32,
+        .map(|(ix, command)| (Some(ix).filter(|ix| *ix < QUICK_SLOTS), command))
+        .chain(commands.iter().map(|command| (None, command)))
+        .filter(|(_, command)| matches_query(&query, &command.search_text()))
+        .map(|(quick, command)| Entry {
+            command: command.clone(),
+            quick,
+        })
+        .collect()
 }
 
 struct MenuState {
     input: Entity<TextInput>,
     _subscription: Subscription,
     query: SharedString,
-    scope: usize,
-    active: usize,
+    /// The row the arrows bound (pink `PaletteSelection::Bound`); `None` is
+    /// the default, the first row.
+    selected: Option<SharedString>,
     scroll: ScrollHandle,
-    ran: Option<Ran>,
-    runs: u32,
-    _ran_timer: Option<Task<()>>,
-    // Refreshed every render, so input events can act on the current props.
+    // Refreshed every render, so input events act on the current props.
     quick: Rc<Vec<Command>>,
     commands: Rc<Vec<Command>>,
-    scopes: Rc<Vec<SharedString>>,
     on_run: Option<RunHandler>,
-    on_dismiss: Option<Rc<dyn Fn(&mut Window, &mut App)>>,
+    on_dismiss: Option<DismissHandler>,
 }
 
 impl MenuState {
-    fn hits(&self) -> Vec<Hit> {
-        let scope = self.scopes.get(self.scope).map_or(ALL, |s| s.as_ref());
-        search(&self.quick, &self.commands, &self.query, scope)
+    fn entries(&self) -> Vec<Entry> {
+        visible(&self.quick, &self.commands, &self.query)
+    }
+
+    /// The highlighted row: the bound one while it is listed, else the first.
+    fn active(&self, entries: &[Entry]) -> Option<usize> {
+        if entries.is_empty() {
+            return None;
+        }
+        let bound = self
+            .selected
+            .as_ref()
+            .and_then(|id| entries.iter().position(|entry| entry.command.id == *id));
+        Some(bound.unwrap_or(0))
     }
 
     fn on_input(&mut self, event: &InputEvent, window: &mut Window, cx: &mut Context<Self>) {
         match event {
+            // pink: an edit resets the selection and scrolls back to the top.
             InputEvent::Change(text) => {
                 self.query = text.clone();
-                self.set_active(0);
+                self.selected = None;
+                self.scroll.set_offset(point(px(0.), px(0.)));
             }
             InputEvent::MoveDown | InputEvent::MoveUp => {
-                let len = self.hits().len();
-                if len > 0 {
-                    let next = if *event == InputEvent::MoveDown {
-                        (self.active + 1) % len
-                    } else {
-                        (self.active + len - 1) % len
-                    };
-                    self.set_active(next);
+                let entries = self.entries();
+                if entries.is_empty() {
+                    return;
                 }
-            }
-            InputEvent::Tab => {
-                self.scope = (self.scope + 1) % self.scopes.len().max(1);
-                self.set_active(0);
+                let down = *event == InputEvent::MoveDown;
+                let len = entries.len();
+                let next = match self.active(&entries) {
+                    Some(active) if down => (active + 1) % len,
+                    Some(active) => (active + len - 1) % len,
+                    None if down => 0,
+                    None => len - 1,
+                };
+                self.selected = Some(entries[next].command.id.clone());
+                // Each entry is one child of the list, heading included.
+                self.scroll.scroll_to_item(next);
             }
             InputEvent::Submit(_) => {
-                if let Some(hit) = self.hits().get(self.active).cloned() {
-                    self.run(hit.command, window, cx);
+                let entries = self.entries();
+                if let Some(entry) = self.active(&entries).and_then(|ix| entries.get(ix)) {
+                    self.run(entry.command.clone(), window, cx);
                 }
             }
-            InputEvent::Escape => {
-                if !self.query.is_empty() {
-                    self.input.update(cx, |input, cx| input.clear(cx));
-                    self.query = SharedString::default();
-                    self.set_active(0);
-                } else if let Some(f) = self.on_dismiss.clone() {
-                    window.defer(cx, move |window, cx| f(window, cx));
-                }
-            }
+            InputEvent::Escape => self.dismiss(window, cx),
             _ => return,
         }
         cx.notify();
     }
 
-    fn set_active(&mut self, ix: usize) {
-        self.active = ix;
-        if ix == 0 {
-            // Show the first group's header too.
-            self.scroll.set_offset(gpui::point(px(0.), px(0.)));
-            return;
-        }
-        // Child 0 of the list is the plate; headers and rows follow in order.
-        let hits = self.hits();
-        let mut child = 1;
-        for (_, rows) in grouped(&hits) {
-            child += 1;
-            for (row, _) in rows {
-                if row == ix {
-                    self.scroll.scroll_to_item(child);
-                    return;
-                }
-                child += 1;
-            }
+    fn dismiss(&mut self, window: &mut Window, cx: &mut App) {
+        if let Some(dismiss) = self.on_dismiss.clone() {
+            window.defer(cx, move |window, cx| dismiss(window, cx));
         }
     }
 
-    fn run(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
-        self.runs += 1;
-        self.ran = Some(Ran {
-            id: command.id.clone(),
-            text: command.done_text(),
-            count: self.runs,
-        });
-        let runs = self.runs;
-        self._ran_timer = Some(cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(2200))
-                .await;
-            this.update(cx, |s, cx| {
-                if s.runs == runs {
-                    s.ran = None;
-                    cx.notify();
-                }
-            })
-            .ok();
-        }));
+    fn run(&mut self, command: Command, window: &mut Window, cx: &mut App) {
         let on_run = self.on_run.clone();
         window.defer(cx, move |window, cx| {
-            if let Some(f) = command.on_run.as_ref() {
-                f(&command, window, cx);
+            if let Some(run) = command.on_run.as_ref() {
+                run(&command, window, cx);
             }
-            if let Some(f) = on_run.as_ref() {
-                f(&command, window, cx);
+            if let Some(run) = on_run.as_ref() {
+                run(&command, window, cx);
             }
         });
-        cx.notify();
     }
 }
 
@@ -529,7 +455,7 @@ pub struct CommandMenu {
     placeholder: SharedString,
     autofocus: bool,
     on_run: Option<RunHandler>,
-    on_dismiss: Option<Rc<dyn Fn(&mut Window, &mut App)>>,
+    on_dismiss: Option<DismissHandler>,
 }
 
 impl CommandMenu {
@@ -545,13 +471,13 @@ impl CommandMenu {
         }
     }
 
-    /// Up to five app actions for the numbered strip (Ctrl/⌘ 1–5).
+    /// App actions for the top of the list; the first nine run with ⌘1–⌘9.
     pub fn quick_actions(mut self, actions: Vec<Command>) -> Self {
         self.quick = actions;
         self
     }
 
-    /// Everyday commands, shown by group in the order given.
+    /// Everyday commands, in the order given, under their groups' headings.
     pub fn commands(mut self, commands: Vec<Command>) -> Self {
         self.commands = commands;
         self
@@ -574,7 +500,7 @@ impl CommandMenu {
         self
     }
 
-    /// Escape on an empty field.
+    /// Esc, ⌘K or a click outside the card (pink closes the palette).
     pub fn on_dismiss(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_dismiss = Some(Rc::new(handler));
         self
@@ -605,67 +531,38 @@ impl RenderOnce for CommandMenu {
                     input,
                     _subscription: subscription,
                     query: SharedString::default(),
-                    scope: 0,
-                    active: 0,
+                    selected: None,
                     scroll: ScrollHandle::new(),
-                    ran: None,
-                    runs: 0,
-                    _ran_timer: None,
                     quick: Rc::new(Vec::new()),
                     commands: Rc::new(Vec::new()),
-                    scopes: Rc::new(Vec::new()),
                     on_run: None,
                     on_dismiss: None,
                 }
             },
         );
 
-        // Scopes: All, Actions (when there are quick actions), then each group.
-        let mut scopes: Vec<SharedString> = vec![ALL.into()];
-        if !self.quick.is_empty() {
-            scopes.push(ACTIONS.into());
-        }
-        for command in &self.commands {
-            if !scopes.contains(&command.group) {
-                scopes.push(command.group.clone());
-            }
-        }
         let quick = Rc::new(self.quick);
         let commands = Rc::new(self.commands);
-        let scopes = Rc::new(scopes);
         let input = state.update(cx, |s, _| {
             s.quick = quick.clone();
             s.commands = commands.clone();
-            s.scopes = scopes.clone();
             s.on_run = self.on_run.clone();
             s.on_dismiss = self.on_dismiss.clone();
-            s.scope = s.scope.min(scopes.len() - 1);
             s.input.clone()
         });
+        // pink: the palette field's placeholder is `text_faint`.
         input.update(cx, |input, _| {
-            input.set_colors(Some(t.text_faint), Some(t.accent), Some(t.selection))
+            input.set_colors(Some(t.text_faint), Some(t.caret), Some(t.selection))
         });
 
         let s = state.read(cx);
         let query = s.query.clone();
-        let scope = s.scope;
-        let hits = s.hits();
-        let active = s.active.min(hits.len().saturating_sub(1));
+        let entries = s.entries();
+        let active = s.active(&entries);
         let scroll = s.scroll.clone();
-        let ran = s
-            .ran
-            .as_ref()
-            .map(|r| (r.id.clone(), r.text.clone(), r.count));
-        let scope_name = scopes[scope].clone();
 
-        let show_strip = query.trim().is_empty() && scope_name.as_ref() == ALL && !quick.is_empty();
-        let strip_t = motion::follow(
-            &format!("{key}-strip"),
-            if show_strip { 1. } else { 0. },
-            MotionSpec::new(320, EASE_OUT_QUINT),
-        );
-
-        // Ctrl/⌘ + digit runs a quick action from anywhere in the menu.
+        // ⌘ + digit runs a quick action, ⌘K closes (pink: the shortcut
+        // toggles the palette).
         let on_key = {
             let state = state.clone();
             let quick = quick.clone();
@@ -674,653 +571,552 @@ impl RenderOnce for CommandMenu {
                 if !keystroke.modifiers.secondary() {
                     return;
                 }
-                let Some(slot) = keystroke
+                if keystroke.key == "k" {
+                    state.update(cx, |s, cx| s.dismiss(window, cx));
+                    cx.stop_propagation();
+                    return;
+                }
+                let slot = keystroke
                     .key
                     .parse::<usize>()
                     .ok()
-                    .and_then(|d| d.checked_sub(1))
-                else {
-                    return;
-                };
-                if let Some(command) = quick.get(slot).cloned() {
+                    .and_then(|digit| digit.checked_sub(1))
+                    .filter(|slot| *slot < QUICK_SLOTS);
+                if let Some(command) = slot.and_then(|slot| quick.get(slot)).cloned() {
                     state.update(cx, |s, cx| s.run(command, window, cx));
                     cx.stop_propagation();
                 }
             }
         };
+        let on_outside = {
+            let state = state.clone();
+            move |_: &gpui::MouseDownEvent, window: &mut Window, cx: &mut App| {
+                state.update(cx, |s, cx| s.dismiss(window, cx))
+            }
+        };
 
+        // pink: the search row.
         let search_row = div()
-            .h(px(52.))
+            .min_h(px(FIELD_MIN_H))
+            .flex_none()
             .px(px(16.))
+            .py(px(8.))
             .flex()
             .items_center()
             .gap(px(10.))
-            .child(
-                svg()
-                    .path(ICON_SEARCH)
-                    .size(px(18.))
-                    .flex_none()
-                    .text_color(t.text_faint),
-            )
+            .border_b_1()
+            .border_color(t.hairline(0.06))
+            .child(palette_search_icon(&t))
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
-                    .text_size(px(15.))
-                    .line_height(px(22.))
-                    .text_color(t.text)
-                    .child(input.clone()),
+                    .text_size(px(FIELD_TEXT))
+                    .line_height(px(FIELD_LINE_HEIGHT))
+                    .child(input),
             )
-            .when(!query.is_empty(), |el| {
-                let clearer = state.clone();
-                el.child(
-                    div()
-                        .id("clear")
-                        .flex_none()
-                        .h(px(22.))
-                        .px(px(7.))
-                        .flex()
-                        .items_center()
-                        .rounded(px(radius::SM))
-                        .cursor_pointer()
-                        .text_size(px(text::CAPTION))
-                        .hover_fill_fg(
-                            format!("{key}-clear"),
-                            t.fill(FillTier::Quaternary),
-                            t.fill(FillTier::Secondary),
-                            t.text_muted,
-                            t.text,
-                        )
-                        .on_click(move |_, _, cx| {
-                            clearer.update(cx, |s, cx| {
-                                s.input.update(cx, |input, cx| input.clear(cx));
-                                s.query = SharedString::default();
-                                s.set_active(0);
-                                cx.notify();
-                            })
-                        })
-                        .child("Clear"),
-                )
-            });
+            .child(pink::kbd_hint(combo(false, "K"), &t));
 
-        let scope_row = div()
-            .px(px(12.))
-            .pb(px(10.))
+        let mut rows = Vec::with_capacity(entries.len());
+        let mut previous_group: Option<&SharedString> = None;
+        for (ix, entry) in entries.iter().enumerate() {
+            // pink: end spacing belongs to the content, so it scrolls out of
+            // the fade instead of leaving a gutter beside the chrome.
+            let mut row = div()
+                .id(("command-result", ix))
+                .flex_none()
+                .when(ix == 0, |row| row.pt(px(8.)))
+                .when(ix + 1 == entries.len(), |row| row.pb(px(8.)));
+            if let Some(group) = entry.command.group.as_ref()
+                && previous_group != Some(group)
+            {
+                if ix > 0 {
+                    row = row.child(group_rule(&t));
+                }
+                row = row.child(group_heading(group.clone(), &t));
+                previous_group = Some(group);
+            }
+            rows.push(row.child(div().px(px(8.)).child(command_row(
+                &key,
+                entry,
+                active == Some(ix),
+                &query,
+                &state,
+                &t,
+            ))));
+        }
+
+        let viewport = window.viewport_size();
+        let list_h = (f32::from(viewport.height) - LIST_VIEWPORT_INSET).clamp(LIST_MIN, LIST_MAX);
+        let body = div()
+            .id("command-results")
+            .min_h_0()
+            .max_h(px(list_h))
+            .overflow_y_scroll()
+            .track_scroll(&scroll)
             .flex()
+            .flex_col()
+            .children(rows)
+            .when(entries.is_empty(), |el| el.child(no_results(&t)));
+        let body = div()
+            .relative()
+            .flex()
+            .flex_col()
+            .min_h_0()
+            .child(body)
+            .child(results_fade(scroll, t.surface_bg()));
+
+        // pink: the footer of key hints.
+        let footer = div()
+            .flex_none()
+            .px(px(16.))
+            .py(px(7.))
+            .border_t_1()
+            .border_color(t.hairline(0.06))
+            .flex()
+            .flex_wrap()
             .items_center()
-            .gap(px(4.))
-            .children(scopes.iter().enumerate().map(|(ix, name)| {
-                let picker = state.clone();
-                pink::chip(
-                    SharedString::from(format!("{key}-scope-{name}")),
-                    ix == scope,
-                    ControlSize::Sm,
-                    &t,
-                )
-                .on_click(move |_, _, cx| {
-                    picker.update(cx, |s, cx| {
-                        s.scope = ix;
-                        s.set_active(0);
-                        cx.notify();
-                    })
-                })
-                .child(name.clone())
-            }))
-            .child(div().flex_1())
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .text_size(px(text::CAPTION))
-                    .text_color(t.text_faint)
-                    .child(pink::kbd("Tab", &t))
-                    .child("next scope"),
-            );
+            .gap(px(12.))
+            .child(key_hint("↑ ↓", "Navigate", &t))
+            .child(key_hint("↵", "Select", &t))
+            .child(key_hint("Esc", "Close", &t));
 
-        let strip = div()
-            .h(px(STRIP_H * strip_t))
-            .overflow_hidden()
-            .opacity(strip_t)
-            .child(quick_strip(&key, &quick, &state, ran.as_ref(), &t));
-
-        let body = results(
-            &key,
-            &hits,
-            active,
-            &query,
-            &state,
-            &scroll,
-            ran.as_ref(),
-            &t,
-        );
-
-        let footer = footer(&key, ran.as_ref(), hits.len(), &query, &t);
-
-        motion::keep_alive(window);
-        div()
+        let width = px(WIDTH).min(viewport.width - px(WINDOW_CLEARANCE));
+        let card = div()
             .id(self.id)
-            .w(px(WIDTH))
-            .font_family(pink::SANS)
-            .text_color(t.text)
-            .bg(t.surface_overlay)
+            .w(width)
+            .flex()
+            .flex_col()
+            .rounded(px(radius::PALETTE))
             .border_1()
             .border_color(t.border)
-            .rounded(px(radius::XL))
-            .shadow(t.menu_shadow())
-            .overflow_hidden()
+            .shadow(pink::shadow_lg())
+            .bg(t.surface_bg())
+            .font_family(pink::SANS)
+            .text_color(t.text)
             .on_key_down(on_key)
+            .on_mouse_down_out(on_outside)
             .child(search_row)
-            .child(scope_row)
-            .child(pink::divider(&t))
-            .child(strip)
             .child(body)
-            .child(footer)
-            .with_animation("command-menu-in", ROW_IN.animation(), |el, k| {
-                el.opacity(k).mt(px(8. * (1. - k)))
-            })
+            .child(footer);
+
+        motion::keep_alive(window);
+        // pink: arrive as one object, a short fade and a 6pt rise.
+        motion::rise_in(
+            SharedString::from(format!("{key}-in")),
+            motion::PALETTE_IN,
+            motion::PALETTE_IN_RISE,
+            card,
+        )
     }
 }
 
-/// The five numbered app tiles.
-fn quick_strip(
-    key: &str,
-    quick: &Rc<Vec<Command>>,
-    state: &Entity<MenuState>,
-    ran: Option<&(SharedString, SharedString, u32)>,
-    t: &Pink,
-) -> impl IntoElement {
-    let tiles = quick.iter().take(9).enumerate().map(|(slot, command)| {
-        let hover_key = format!("{key}-tile-{}", command.id);
-        let lift = motion::hover_t(&hover_key);
-        let runner = state.clone();
-        let run_command = command.clone();
-        let just_ran = ran.is_some_and(|(id, _, _)| *id == command.id);
-        div()
-            .id(SharedString::from(format!("tile-{}", command.id)))
-            .flex_none()
-            .w(px(TILE_W))
-            .h(px(78.))
-            .p(px(10.))
-            .flex()
-            .flex_col()
-            .justify_between()
-            .rounded(px(radius::LG))
-            .border_1()
-            .border_color(motion::mix(t.border, t.border_strong, lift))
-            .cursor_pointer()
-            .hover_fill(
-                hover_key,
-                t.fill(FillTier::Quaternary),
-                t.fill(FillTier::Tertiary),
-            )
-            .on_click(move |_, window, cx| {
-                let command = run_command.clone();
-                runner.update(cx, |s, cx| s.run(command, window, cx));
-            })
-            .child(
-                div()
-                    .flex()
-                    .items_start()
-                    .justify_between()
-                    .child(if just_ran {
-                        check_tile(t).into_any_element()
-                    } else {
-                        monogram(&command.icon, 24., t).into_any_element()
-                    })
-                    .child(
-                        div()
-                            .text_size(px(10.))
-                            .font_family(pink::MONO)
-                            .text_color(t.text_faint)
-                            .child(chord(slot + 1)),
-                    ),
-            )
-            .child(
-                div()
-                    // Explicit, so the labels truncate against the tile's inner width.
-                    .w(px(TILE_W - 22.))
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .truncate()
-                            .text_size(px(text::FOOTNOTE))
-                            .line_height(px(16.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .child(command.label.clone()),
-                    )
-                    .child(
-                        div()
-                            .truncate()
-                            .text_size(px(text::CAPTION))
-                            .line_height(px(14.))
-                            .text_color(t.text_faint)
-                            .child(command.hint.clone().unwrap_or_default()),
-                    ),
-            )
-    });
+/// pink: `popover::palette_search_icon`, the search glyph in the same 16px
+/// slot as the row glyphs.
+fn palette_search_icon(t: &Pink) -> gpui::Div {
     div()
-        .px(px(12.))
-        .pt(px(10.))
-        .flex()
-        .flex_col()
-        .gap(px(6.))
-        .child(section_label("Quick actions", t).px(px(2.)).h(px(18.)))
-        .child(div().flex().gap(px(8.)).children(tiles))
-}
-
-fn check_tile(t: &Pink) -> impl IntoElement {
-    div()
-        .size(px(24.))
+        .size(px(16.))
+        .flex_none()
         .flex()
         .items_center()
         .justify_center()
-        .rounded(px(radius::SM))
-        .bg(t.success.opacity(if t.dark { 0.18 } else { 0.12 }))
-        .child(svg().path(ICON_CHECK).size(px(14.)).text_color(t.success))
-        .with_animation(
-            "tile-check",
-            MotionSpec::new(260, EASE_OUT_QUINT).animation(),
-            |el, k| el.opacity(k),
+        .child(
+            svg()
+                .path(ICON_SEARCH)
+                .size(px(16.))
+                .text_color(t.text_muted),
         )
 }
 
-/// `⌘1` on macOS, `Ctrl+1` elsewhere.
-fn chord(digit: usize) -> String {
-    if cfg!(target_os = "macos") {
-        format!("⌘{digit}")
-    } else {
-        format!("Ctrl+{digit}")
-    }
-}
-
-/// A command's leading glyph, or a neutral lettered tile for an app.
-fn monogram(icon: &CommandIcon, size: f32, t: &Pink) -> gpui::Div {
-    match icon {
-        CommandIcon::Glyph(path) => div()
-            .size(px(size))
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .child(
-                svg()
-                    .path(path.clone())
-                    .size(px(16.))
-                    .text_color(t.text_muted),
-            ),
-        CommandIcon::Monogram(letter) => div()
-            .size(px(size))
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(px(if size >= 24. { radius::SM } else { radius::XS }))
-            .bg(if t.dark {
-                t.surface_raised
-            } else {
-                t.surface_overlay
-            })
-            .border_1()
-            .border_color(t.border_strong)
-            .text_size(px(if size >= 24. { 12. } else { 10. }))
-            .font_weight(FontWeight::BOLD)
-            .text_color(t.text)
-            .child(letter.clone()),
-    }
-}
-
-fn section_label(label: impl Into<SharedString>, t: &Pink) -> gpui::Div {
+/// pink: `spaces::sidebar_separator` at `my 7`, the rule above a group.
+fn group_rule(t: &Pink) -> gpui::Div {
     div()
-        .flex()
-        .items_center()
-        .text_size(px(text::CAPTION))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(t.text_faint)
-        .child(label.into())
+        .h(px(1.))
+        .w_full()
+        .my(px(7.))
+        .bg(t.border.opacity(0.6))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn results(
-    key: &str,
-    hits: &[Hit],
-    active: usize,
-    query: &SharedString,
-    state: &Entity<MenuState>,
-    scroll: &ScrollHandle,
-    ran: Option<&(SharedString, SharedString, u32)>,
-    t: &Pink,
-) -> impl IntoElement {
-    let groups = grouped(hits);
-
-    // Row tops, for the plate, and the content height, for the glide.
-    let mut y = LIST_PAD;
-    let mut active_top = LIST_PAD + HEADER_H;
-    for (_, rows) in &groups {
-        y += HEADER_H;
-        for (ix, _) in rows {
-            if *ix == active {
-                active_top = y;
-            }
-            y += ROW_H;
-        }
-    }
-    let content = if hits.is_empty() {
-        EMPTY_H
-    } else {
-        y + LIST_PAD
-    };
-    let height = motion::follow(
-        &format!("{key}-height"),
-        content.min(LIST_MAX),
-        MotionSpec::new(300, EASE_OUT_QUINT),
-    );
-    let plate_top = motion::follow(
-        &format!("{key}-plate"),
-        active_top,
-        MotionSpec::new(180, EASE_OUT_QUINT),
-    );
-
-    let mut list = div()
-        .id("results")
-        .relative()
-        .h(px(height))
-        .px(px(LIST_PAD))
-        .py(px(LIST_PAD))
-        .overflow_y_scroll()
-        .track_scroll(scroll)
-        .child(
-            div()
-                .absolute()
-                .left(px(LIST_PAD))
-                .right(px(LIST_PAD))
-                .top(px(plate_top))
-                .h(px(ROW_H))
-                .rounded(px(radius::MD))
-                .bg(t.fill(FillTier::Tertiary))
-                .when(hits.is_empty(), |el| el.opacity(0.)),
-        );
-
-    if hits.is_empty() {
-        return list.child(empty_state(query, t));
-    }
-
-    for (group, rows) in groups {
-        list = list.child(
-            section_label(group.clone(), t)
-                .h(px(HEADER_H))
-                .px(px(10.))
-                .pt(px(4.)),
-        );
-        for (ix, hit) in rows {
-            list = list.child(row(key, ix, hit, ix == active, state, ran, t));
-        }
-    }
-    list
-}
-
-fn row(
-    key: &str,
-    ix: usize,
-    hit: &Hit,
-    active: bool,
-    state: &Entity<MenuState>,
-    ran: Option<&(SharedString, SharedString, u32)>,
-    t: &Pink,
-) -> impl IntoElement {
-    let command = &hit.command;
-    let lit = motion::follow(
-        &format!("{key}-lit-{}", command.id),
-        if active { 1. } else { 0. },
-        MotionSpec::new(160, EASE_OUT_QUINT),
-    );
-    let pointer = state.clone();
-    let runner = state.clone();
-    let run_command = command.clone();
-    let just_ran = ran.filter(|(id, _, _)| *id == command.id);
-
-    let label = StyledText::new(command.label.clone()).with_highlights(hit.highlights.iter().map(
-        |range| {
-            (
-                range.clone(),
-                HighlightStyle {
-                    color: Some(t.accent),
-                    font_weight: Some(FontWeight::SEMIBOLD),
-                    ..Default::default()
-                },
-            )
-        },
-    ));
-
-    let keys: Vec<SharedString> = match (&hit.quick, &command.shortcut) {
-        (Some(slot), _) => vec![primary_key().into(), (slot + 1).to_string().into()],
-        (None, Some(shortcut)) => shortcut
-            .split_whitespace()
-            .map(|k| SharedString::from(k.to_string()))
-            .collect(),
-        _ => Vec::new(),
-    };
-
-    let trailing = match just_ran {
-        Some((_, _, count)) => div()
-            .flex()
-            .items_center()
-            .gap(px(4.))
-            .text_size(px(text::CAPTION))
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(t.success)
-            .child(svg().path(ICON_CHECK).size(px(14.)).text_color(t.success))
-            .child("Done")
-            .with_animation(
-                ElementId::NamedInteger("done".into(), u64::from(*count)),
-                MotionSpec::new(280, EASE_OUT_QUINT).animation(),
-                |el, k| el.opacity(k).ml(px(6. * (1. - k))),
-            )
-            .into_any_element(),
-        None => div()
-            .flex()
-            .items_center()
-            .gap(px(3.))
-            .children(keys.into_iter().map(|k| pink::kbd(k, t)))
-            .into_any_element(),
-    };
-
+/// pink: a result group's heading, 11 medium `text_faint`, sentence case.
+fn group_heading(label: SharedString, t: &Pink) -> gpui::Div {
     div()
-        .id(SharedString::from(format!("row-{}", command.id)))
-        .relative()
-        .h(px(ROW_H))
         .px(px(10.))
-        .flex()
-        .items_center()
-        .gap(px(10.))
-        .cursor_pointer()
-        .on_mouse_move(move |_, _, cx| {
-            pointer.update(cx, |s, cx| {
-                if s.active != ix {
-                    s.active = ix;
-                    cx.notify();
-                }
-            })
-        })
+        .pb(px(4.))
+        .text_size(px(11.))
+        .font_weight(gpui::FontWeight::MEDIUM)
+        .text_color(t.text_faint)
+        .child(label)
+}
+
+/// One row. pink: the action row of `render_command_palette` (a 16px glyph,
+/// the highlighted label and a `kbd_hint`), `render_contributed_command_row`
+/// for the faint name at its end, and `render_command_history_row` for a
+/// command with a detail line.
+fn command_row(
+    key: &str,
+    entry: &Entry,
+    active: bool,
+    query: &str,
+    state: &Entity<MenuState>,
+    t: &Pink,
+) -> impl IntoElement {
+    let command = &entry.command;
+    let keys = match (entry.quick, &command.shortcut) {
+        (Some(slot), _) => Some(combo(false, &(slot + 1).to_string())),
+        (None, shortcut) => shortcut.clone(),
+    };
+    let runner = state.clone();
+    let run = command.clone();
+    let label = search_highlight(command.label.clone(), query, t);
+    let two_line = command.detail.is_some();
+
+    pink::menu_row(format!("{key}-row-{}", command.id), active, t)
+        .rounded(px(radius::PALETTE_ITEM))
+        .min_h(px(if two_line {
+            RESULT_ROW_MIN_H
+        } else {
+            ROW_MIN_H
+        }))
+        .py(px(if two_line { 5. } else { 4. }))
         .on_click(move |_, window, cx| {
-            let command = run_command.clone();
-            runner.update(cx, |s, cx| {
-                s.active = ix;
-                s.run(command, window, cx)
-            });
+            let command = run.clone();
+            runner.update(cx, |s, cx| s.run(command, window, cx));
         })
         .child(
-            div()
-                .w(px(20.))
+            svg()
+                .path(command.icon.clone())
+                .size(px(16.))
                 .flex_none()
-                .flex()
-                .justify_center()
-                .child(match &command.icon {
-                    CommandIcon::Glyph(path) => svg()
-                        .path(path.clone())
-                        .size(px(16.))
-                        .text_color(motion::mix(t.text_faint, t.text, lit))
-                        .into_any_element(),
-                    icon => monogram(icon, 20., t).into_any_element(),
-                }),
+                .text_color(t.text_muted),
         )
-        .child(
-            div()
+        .child(match &command.detail {
+            None => div().flex_1().min_w_0().child(label),
+            Some(detail) => div()
                 .flex_1()
                 .min_w_0()
                 .flex()
-                .items_center()
-                .gap(px(8.))
-                .overflow_hidden()
-                .whitespace_nowrap()
+                .flex_col()
+                .gap(px(2.))
                 .child(
                     div()
-                        .flex_none()
-                        .text_size(px(text::BODY))
+                        .truncate()
+                        .text_size(px(12.))
                         .text_color(t.text)
                         .child(label),
                 )
-                .when_some(command.hint.clone(), |el, hint| {
-                    el.child(
-                        div()
-                            .min_w_0()
-                            .truncate()
-                            .text_size(px(text::FOOTNOTE))
-                            .text_color(t.text_faint)
-                            .child(hint),
-                    )
-                }),
-        )
-        .child(trailing)
-        .with_animation(
-            SharedString::from(format!("row-in-{}", command.id)),
-            MotionSpec::new(260, EASE_OUT_QUINT).animation(),
-            |el, k| el.opacity(k).top(px(3. * (1. - k))),
-        )
+                .child(
+                    div()
+                        .truncate()
+                        .text_size(px(11.))
+                        .text_color(t.text_faint)
+                        .child(detail.clone()),
+                ),
+        })
+        .when_some(command.hint.clone(), |row, hint| {
+            row.child(
+                div()
+                    .flex_none()
+                    .text_size(px(11.))
+                    .text_color(t.text_faint)
+                    .child(hint),
+            )
+        })
+        .when_some(keys, |row, keys| row.child(pink::kbd_hint(keys, t)))
 }
 
-fn empty_state(query: &SharedString, t: &Pink) -> impl IntoElement {
+/// pink: the palette's "No results" line and its muted hint.
+fn no_results(t: &Pink) -> impl IntoElement {
     div()
-        .h(px(EMPTY_H - 2. * LIST_PAD))
+        .w_full()
+        .py(px(24.))
+        .px(px(16.))
         .flex()
         .flex_col()
         .items_center()
-        .justify_center()
         .gap(px(6.))
+        .text_size(px(13.))
+        .child("No results")
         .child(
             div()
-                .size(px(32.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(radius::LG))
-                .bg(t.fill(FillTier::Tertiary))
-                .child(
-                    svg()
-                        .path(ICON_SEARCH)
-                        .size(px(16.))
-                        .text_color(t.text_muted),
-                ),
-        )
-        .child(
-            div()
-                .text_size(px(text::BODY))
-                .font_weight(FontWeight::MEDIUM)
-                .child(format!("Nothing matches “{}”", query.trim())),
-        )
-        .child(
-            div()
-                .text_size(px(text::FOOTNOTE))
-                .text_color(t.text_faint)
-                .child("Try a page, an app or an action, or press Tab to change scope"),
+                .text_color(t.text_muted)
+                .child("Try a command, a page or an app."),
         )
 }
 
-fn footer(
-    key: &str,
-    ran: Option<&(SharedString, SharedString, u32)>,
-    count: usize,
-    query: &SharedString,
-    t: &Pink,
-) -> impl IntoElement {
-    let hint = |keys: &[&'static str], label: &'static str| {
-        div()
-            .flex()
-            .items_center()
-            .gap(px(5.))
-            .child(
-                div()
-                    .flex()
-                    .gap(px(2.))
-                    .children(keys.iter().map(|k| pink::kbd(*k, t))),
-            )
-            .child(label)
-    };
-    let status = match ran {
-        Some((_, text, count)) => div()
-            .flex()
-            .items_center()
-            .gap(px(6.))
-            .text_color(t.text)
-            .child(
-                div()
-                    .size(px(16.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_full()
-                    .bg(t.success.opacity(if t.dark { 0.2 } else { 0.14 }))
-                    .child(svg().path(ICON_CHECK).size(px(11.)).text_color(t.success)),
-            )
-            .child(text.clone())
-            .with_animation(
-                ElementId::NamedInteger(format!("{key}-ran").into(), u64::from(*count)),
-                MotionSpec::new(320, EASE_OUT_QUINT).animation(),
-                |el, k| el.relative().opacity(k).top(px(6. * (1. - k))),
-            )
-            .into_any_element(),
-        None => div()
-            .flex()
-            .items_center()
-            .gap(px(14.))
-            .child(hint(&["↑", "↓"], "move"))
-            .child(hint(&["↵"], "run"))
-            .with_animation(
-                SharedString::from(format!("{key}-hints")),
-                MotionSpec::new(320, EASE_OUT_QUINT).animation(),
-                |el, k| el.relative().opacity(k).top(px(6. * (1. - k))),
-            )
-            .into_any_element(),
-    };
-    let right = if query.trim().is_empty() {
-        hint(&["Esc"], "close").into_any_element()
-    } else if count == 1 {
-        div().child("1 result").into_any_element()
-    } else {
-        div().child(format!("{count} results")).into_any_element()
-    };
+/// pink: `command_key_hint`, a `kbd_hint` and its 11px verb.
+fn key_hint(keys: &'static str, label: &'static str, t: &Pink) -> gpui::Div {
     div()
-        .h(px(38.))
-        .px(px(14.))
         .flex()
         .items_center()
-        .justify_between()
-        .overflow_hidden()
-        .border_t_1()
-        .border_color(t.border)
-        .bg(t.fill(FillTier::Quaternary))
-        .text_size(px(text::FOOTNOTE))
-        .text_color(t.text_faint)
-        .child(status)
-        .child(right)
+        .gap(px(5.))
+        .child(pink::kbd_hint(keys, t))
+        .child(
+            div()
+                .text_size(px(11.))
+                .text_color(t.text_muted)
+                .child(label),
+        )
 }
 
+/// pink: `popover::search_highlight`. Matched words are recolored
+/// `code_text` over rounded (r3) `code_wash` plates painted beneath the
+/// shaped glyphs; the row keeps its font and spacing.
+fn search_highlight(text: SharedString, query: &str, t: &Pink) -> AnyElement {
+    if query.trim().is_empty() {
+        return text.into_any_element();
+    }
+    let ranges = match_ranges(&text, query);
+    if ranges.is_empty() {
+        return text.into_any_element();
+    }
+    let styled = StyledText::new(text).with_highlights(ranges.iter().cloned().map(|range| {
+        (
+            range,
+            HighlightStyle {
+                color: Some(t.code_text),
+                ..Default::default()
+            },
+        )
+    }));
+    let layout = styled.layout().clone();
+    let wash = t.code_wash;
+    let underlay = canvas(
+        |_, _, _| (),
+        move |_, _, window, _| {
+            for range in &ranges {
+                for mut bounds in range_rects(&layout, range, 1.0, 1.5) {
+                    // Glyphs sit below the line box's optical center.
+                    bounds.origin.y += px(0.5);
+                    window.paint_quad(quad(
+                        bounds,
+                        px(3.),
+                        wash,
+                        px(0.),
+                        transparent_black(),
+                        BorderStyle::default(),
+                    ));
+                }
+            }
+        },
+    )
+    .absolute()
+    .size_full();
+    div()
+        .relative()
+        .child(underlay)
+        .child(styled)
+        .into_any_element()
+}
+
+/// pink: `markdown::render::range_rects`: one rectangle per visual row of
+/// `range`, widened by `pad_x` and inset by `inset_y` from the line box.
+fn range_rects(
+    layout: &TextLayout,
+    range: &Range<usize>,
+    pad_x: f32,
+    inset_y: f32,
+) -> Vec<Bounds<Pixels>> {
+    let bounds = layout.bounds();
+    let line_height = layout.line_height();
+    let position = |ix: usize| layout.position_for_index(ix);
+    let mut rects = Vec::new();
+    let mut cur = range.start;
+    let mut guard = 0;
+    while cur < range.end && guard < 256 {
+        guard += 1;
+        let Some(mut start) = position(cur) else {
+            break;
+        };
+        // A soft-wrap boundary reports the end of the row before it.
+        if let Some(after) = position(cur + 1)
+            && after.y > start.y
+        {
+            start = point(bounds.left(), after.y);
+        }
+        let (seg_end, next) = match position(range.end) {
+            Some(end) if end.y == start.y => (range.end, range.end),
+            _ => {
+                let (mut lo, mut hi) = (cur, range.end);
+                while hi - lo > 1 {
+                    let mid = lo + (hi - lo) / 2;
+                    match position(mid) {
+                        Some(at) if at.y == start.y => lo = mid,
+                        _ => hi = mid,
+                    }
+                }
+                (lo, lo)
+            }
+        };
+        if let Some(end) = position(seg_end)
+            && end.x > start.x
+        {
+            rects.push(Bounds::new(
+                point(start.x - px(pad_x), start.y + px(inset_y)),
+                size(
+                    end.x - start.x + px(2. * pad_x),
+                    line_height - px(2. * inset_y),
+                ),
+            ));
+        }
+        if next <= cur {
+            break;
+        }
+        cur = next;
+    }
+    rects
+}
+
+/// pink: `edge_fade::edge_faded(RESULTS_FADE_BAND, true, true, ..)
+/// .fade_overflow_y(..)`. GPUI here has no per-pixel edge fade, so the
+/// opaque plate is painted over each edge that has more to scroll, from
+/// solid at the edge to clear, gated on the handle at paint time.
+fn results_fade(scroll: ScrollHandle, plate: Hsla) -> impl IntoElement {
+    canvas(
+        |_, _, _| (),
+        move |bounds, _, window, _| {
+            let scrolled = -f32::from(scroll.offset().y);
+            let max = f32::from(scroll.max_offset().y);
+            let band = px(RESULTS_FADE_BAND).min(bounds.size.height / 2.);
+            let clear = plate.opacity(0.);
+            if scrolled > 0.5 {
+                window.paint_quad(fill(
+                    Bounds::new(bounds.origin, size(bounds.size.width, band)),
+                    linear_gradient(
+                        180.,
+                        linear_color_stop(plate, 0.),
+                        linear_color_stop(clear, 1.),
+                    ),
+                ));
+            }
+            if scrolled < max - 0.5 {
+                window.paint_quad(fill(
+                    Bounds::new(
+                        point(bounds.left(), bounds.bottom() - band),
+                        size(bounds.size.width, band),
+                    ),
+                    linear_gradient(
+                        0.,
+                        linear_color_stop(plate, 0.),
+                        linear_color_stop(clear, 1.),
+                    ),
+                ));
+            }
+        },
+    )
+    .absolute()
+    .top_0()
+    .left_0()
+    .size_full()
+}
+
+/// The story's host: the palette while it is open, and a quiet way back once
+/// a run or a dismissal closes it (pink closes the palette on both).
+struct Stage {
+    open: bool,
+    ran: Option<SharedString>,
+    focus: FocusHandle,
+}
+
+/// The stage keeps the card's top fixed, as pink anchors it, so the results
+/// grow and shrink below the field.
+const STAGE_W: f32 = 600.;
+const STAGE_H: f32 = 480.;
+
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
-    story::view(cx, |_, _| {
-        CommandMenu::new("command-menu")
-            .quick_actions(default_quick_actions())
-            .commands(default_commands())
+    story::view(cx, |window, cx| {
+        let t = Pink::get(cx);
+        let stage = window.use_keyed_state("command-menu-stage", cx, |_, cx| Stage {
+            open: true,
+            ran: None,
+            focus: cx.focus_handle(),
+        });
+        let (open, ran, focus) = {
+            let s = stage.read(cx);
+            (s.open, s.ran.clone(), s.focus.clone())
+        };
+        let set_open = {
+            let stage = stage.clone();
+            let focus = focus.clone();
+            Rc::new(
+                move |open: bool, ran: Option<SharedString>, window: &mut Window, cx: &mut App| {
+                    if !open {
+                        // Keep ⌘K working once the palette's field is gone.
+                        window.focus(&focus, cx);
+                    }
+                    stage.update(cx, |s, cx| {
+                        s.open = open;
+                        if ran.is_some() {
+                            s.ran = ran;
+                        }
+                        cx.notify();
+                    })
+                },
+            )
+        };
+
+        let content = if open {
+            let on_run = set_open.clone();
+            let on_dismiss = set_open.clone();
+            CommandMenu::new("command-menu")
+                .quick_actions(default_quick_actions())
+                .commands(default_commands(t.dark))
+                .on_run(move |command, window, cx| {
+                    on_run(false, Some(command.label.clone()), window, cx)
+                })
+                .on_dismiss(move |window, cx| on_dismiss(false, None, window, cx))
+                .into_any_element()
+        } else {
+            let reopen = set_open.clone();
+            let title: SharedString = match &ran {
+                Some(label) => format!("Ran “{label}”").into(),
+                None => "Command palette closed".into(),
+            };
+            div()
+                .pt(px(120.))
+                .child(
+                    pink::surface_state(
+                        svg()
+                            .path(ICON_SEARCH)
+                            .size(px(28.))
+                            .text_color(t.text_faint),
+                        title,
+                        Some(format!("Press {} to search again.", combo(false, "K")).into()),
+                        &t,
+                    )
+                    .child(
+                        div().mt(px(6.)).child(
+                            pink::button(
+                                "command-menu-reopen",
+                                ButtonKind::Secondary,
+                                ControlSize::Md,
+                                &t,
+                            )
+                            .on_click(move |_, window, cx| reopen(true, None, window, cx))
+                            .child("Open command palette"),
+                        ),
+                    ),
+                )
+                .into_any_element()
+        };
+
+        let reopen = set_open.clone();
+        div()
+            .w(px(STAGE_W))
+            .h(px(STAGE_H))
+            .flex()
+            .flex_col()
+            .items_center()
+            .font_family(pink::SANS)
+            .text_color(t.text)
+            .track_focus(&focus)
+            .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                let keystroke = &event.keystroke;
+                if !open && keystroke.modifiers.secondary() && keystroke.key == "k" {
+                    reopen(true, None, window, cx);
+                    cx.stop_propagation();
+                }
+            })
+            .child(content)
     })
 }
 
@@ -1329,30 +1125,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn matches_runs_then_letters() {
-        let (_, ranges) = match_label("Go to Reports", "re").unwrap();
-        assert_eq!(ranges, vec![6..8]);
-        let (_, ranges) = match_label("Go to Reports", "gtr").unwrap();
-        assert_eq!(ranges, vec![0..1, 3..4, 6..7]);
-        assert!(match_label("Go to Reports", "xyz").is_none());
+    fn every_word_must_appear() {
+        assert!(matches_query("go rep", "Go to Reports"));
+        assert!(matches_query("", "Go to Reports"));
+        assert!(!matches_query("gtr", "Go to Reports"));
     }
 
     #[test]
-    fn word_starts_score_higher() {
-        let (start, _) = match_label("Projects", "pro").unwrap();
-        let (inside, _) = match_label("Improve", "pro").unwrap();
-        assert!(start > inside);
+    fn highlights_every_case_insensitive_word() {
+        assert_eq!(
+            match_ranges("New chat, new project", "NEW"),
+            vec![0..3, 10..13]
+        );
+        assert_eq!(
+            match_ranges("authentication", "auth authentication"),
+            vec![0..14]
+        );
+        assert!(match_ranges("New chat", "  ").is_empty());
+        assert!(match_ranges("New chat", "settings").is_empty());
+        assert_eq!(match_ranges("İstanbul café", "i CAFÉ"), vec![0..2, 10..15]);
     }
 
     #[test]
-    fn quick_actions_join_the_list_once_searching() {
+    fn quick_actions_lead_and_filter_with_the_rest() {
         let quick = default_quick_actions();
-        let commands = default_commands();
-        let idle = search(&quick, &commands, "", ALL);
-        assert!(idle.iter().all(|hit| hit.quick.is_none()));
-        let typed = search(&quick, &commands, "ticket", ALL);
-        assert_eq!(typed.first().map(|hit| hit.quick), Some(Some(2)));
-        let scoped = search(&quick, &commands, "", ACTIONS);
-        assert_eq!(scoped.len(), quick.len());
+        let commands = default_commands(true);
+        let idle = visible(&quick, &commands, "");
+        assert_eq!(idle.len(), quick.len() + commands.len());
+        assert_eq!(idle[0].quick, Some(0));
+        let typed = visible(&quick, &commands, "ticket");
+        assert_eq!(typed.len(), 1);
+        assert_eq!(typed[0].quick, Some(2));
+        // Keywords and the app name match too.
+        assert_eq!(visible(&quick, &commands, "slack")[0].command.id, "post");
+        assert!(visible(&quick, &commands, "zzz").is_empty());
     }
 }
