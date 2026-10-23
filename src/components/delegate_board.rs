@@ -1,13 +1,20 @@
 //! Delegate Board – hand work to agents by dropping it on them.
 //!
-//! The backlog runs along the top; each agent is a column with its queue
-//! and a load bar on a shared 90-minute horizon that says when it is free
-//! again. Dragging a task over a column previews the result before you let
-//! go: the load bar grows a ghost segment, the free-at time moves, and a
-//! dashed slot opens at the end of the queue. Queued tasks can be dragged on
-//! to another agent or back to the backlog. With Auto on, the host hands each
-//! new task to whoever is free first ([`first_free`]) and the board pulses
-//! that column and says why.
+//! Drawn as pink's Board page (`shell/board`): a page title with its count
+//! and help, a toolbar, then borderless column wells side by side. The first
+//! column is the Backlog; every other column is an agent and its queue (at
+//! most [`QUEUE_LIMIT`] tasks, the first one running). An agent column also
+//! carries a load meter on a shared 90-minute horizon and says when the agent
+//! is free again.
+//!
+//! Dragging a task over a column previews the drop before you let go: the
+//! column takes pink's accent wash, the meter grows an accent segment, the
+//! free-at time moves and pink's 2 px insertion line marks where the card
+//! lands. A full queue refuses with a danger wash. Queued tasks can be
+//! dragged on to another agent or back to the Backlog, or moved with
+//! Alt+Left / Alt+Right from the keyboard. With Auto-assign on, the host
+//! hands each new task to whoever is free first ([`first_free`]); the column
+//! that took it flashes the accent wash and a notice says why.
 //!
 //! ```ignore
 //! DelegateBoard::new("board", agents, backlog, 14 * 60 + 5)
@@ -19,39 +26,44 @@ use std::{rc::Rc, sync::Arc};
 use web_time::{Duration, Instant};
 
 use gpui::{
-    Animation, AnimationExt, AnyView, App, Context, ElementId, Entity, FontWeight, IntoElement,
-    Render, SharedString, Task, Transformation, Window, div, percentage, prelude::*, px, relative,
-    svg,
+    AnimationExt, AnyElement, AnyView, App, Context, Div, ElementId, Entity, FocusHandle,
+    FontWeight, Hsla, IntoElement, KeyDownEvent, Render, Role, SharedString, Stateful, Task,
+    Window, div, prelude::*, px, relative, svg,
 };
 
 use crate::{
-    HoverFill,
-    motion::{self, GLIDE, MENU_IN},
-    pink::{self, FillTier, Pink, oklch, radius, text},
+    motion::{self, CURVE_STANDARD, EMPHASIZED, MotionSpec, QUICK, TOOL_ROW_REVEAL},
+    pink::{
+        self, ControlSize, FillTier, Pink, TextStyle, TypeStyleExt, layout, loaders, radius,
+        tabular_figures,
+    },
     story,
 };
 
 pub const NAME: &str = "Delegate Board";
-pub const DESCRIPTION: &str = "Assign work by dropping tasks on agent columns – each column previews its new free-at time before you let go, and Auto hands new work to whoever frees up first";
+pub const DESCRIPTION: &str = "Hand work to agents by dragging tasks from the Backlog onto their columns – each column previews the agent's new free-at time before you let go, and Auto-assign gives new work to whoever frees up first";
 
-const ICON_BOARD: &str = "icons/delegate-board/board.svg";
-const ICON_GRIP: &str = "icons/delegate-board/grip.svg";
-const ICON_SPINNER: &str = "icons/delegate-board/spinner.svg";
-const ICON_CLOCK: &str = "icons/delegate-board/clock.svg";
-const ICON_AUTO: &str = "icons/delegate-board/auto.svg";
+const ICON_TICKET: &str = "icons/delegate-board/ticket.svg";
+const ICON_QUEUED: &str = "icons/delegate-board/clock-circle.svg";
+const ICON_WORKING: &str = "icons/delegate-board/bolt-fast.svg";
+const ICON_REFUSED: &str = "icons/delegate-board/danger-circle.svg";
+const ICON_INFO: &str = "icons/delegate-board/info-circle.svg";
+const ICON_AUTO: &str = "icons/delegate-board/stopwatch-play.svg";
 
-const BOARD_W: f32 = 784.;
-const PAD: f32 = 16.;
-const COL_GAP: f32 = 10.;
-const CARD_W: f32 = 178.;
-const CARD_H: f32 = 58.;
-const CARD_GAP: f32 = 10.;
-const CHIP_H: f32 = 44.;
-const CHIP_GAP: f32 = 6.;
+/// A column's width (pink: board/columns.rs `COLUMN_MIN_WIDTH`).
+const COLUMN_W: f32 = 220.;
+/// Between columns (pink: `render_columns`).
+const COLUMN_GAP: f32 = 12.;
+/// Between the header, the notice and the columns (pink: the Board page's
+/// scroll column).
+const PAGE_GAP: f32 = 14.;
 /// Tasks an agent holds at most, the running one included.
 pub const QUEUE_LIMIT: usize = 3;
-/// Minutes the load bars span.
+/// Minutes the load meters span.
 const HORIZON: f32 = 90.;
+/// The flash on a column Auto-assign just fed: the accent wash holds, then
+/// eases back to the resting well.
+const PULSE: MotionSpec = MotionSpec::new(600, CURVE_STANDARD).with_delay(400);
 
 type AssignHandler = Rc<dyn Fn(&SharedString, &DropTarget, &mut Window, &mut App)>;
 type ToggleHandler = Rc<dyn Fn(bool, &mut Window, &mut App)>;
@@ -104,7 +116,6 @@ pub struct BoardAgent {
     pub id: SharedString,
     pub name: SharedString,
     pub model: SharedString,
-    pub hue: f32,
     pub queue: Vec<BoardTask>,
 }
 
@@ -118,14 +129,8 @@ impl BoardAgent {
             id: id.into(),
             name: name.into(),
             model: model.into(),
-            hue: 277.,
             queue: Vec::new(),
         }
-    }
-
-    pub fn hue(mut self, degrees: f32) -> Self {
-        self.hue = degrees;
-        self
     }
 
     pub fn task(mut self, task: BoardTask) -> Self {
@@ -137,6 +142,10 @@ impl BoardAgent {
     pub fn busy(&self) -> u32 {
         self.queue.iter().map(BoardTask::left).sum()
     }
+
+    fn has_room(&self) -> bool {
+        self.queue.len() < QUEUE_LIMIT
+    }
 }
 
 /// The agent with room in its queue that frees up first (ties go to the
@@ -144,7 +153,7 @@ impl BoardAgent {
 pub fn first_free(agents: &[BoardAgent]) -> Option<&BoardAgent> {
     agents
         .iter()
-        .filter(|a| a.queue.len() < QUEUE_LIMIT)
+        .filter(|a| a.has_room())
         .min_by_key(|a| a.busy())
 }
 
@@ -162,28 +171,51 @@ struct DraggedTask {
     from: DropTarget,
 }
 
-/// The card that follows the pointer.
+/// What follows the pointer while a task is dragged: its tag and title
+/// (pink: board/card.rs `BoardCardGhost`).
 struct Ghost {
-    task: BoardTask,
+    tag: SharedString,
+    title: SharedString,
 }
 
 impl Render for Ghost {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = Pink::get(cx);
-        task_card(&self.task, &t)
-            .w(px(CARD_W))
-            .bg(t.surface_overlay)
-            .border_color(t.accent.opacity(0.5))
-            .shadow(t.menu_shadow())
+        div()
             .font_family(pink::SANS)
-            .text_color(t.text)
-            .opacity(0.96)
+            .max_w(px(260.))
+            .px(px(10.))
+            .py(px(7.))
+            .rounded(px(radius::LG))
+            .border_1()
+            .border_color(t.accent.opacity(0.6))
+            .bg(t.surface_raised)
+            .shadow(t.menu_shadows())
+            .flex()
+            .flex_col()
+            .gap(px(2.))
+            .child(
+                div()
+                    .text_size(px(11.))
+                    .text_color(t.readable_muted(0.85))
+                    .child(self.tag.clone()),
+            )
+            .child(
+                div()
+                    .text_size(px(13.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(t.text)
+                    .truncate()
+                    .child(self.title.clone()),
+            )
     }
 }
 
+#[derive(Default)]
 struct BoardState {
     over: Option<DropTarget>,
     dragging: Option<SharedString>,
+    selected: Option<SharedString>,
 }
 
 /// A board for handing tasks to agents.
@@ -221,13 +253,13 @@ impl DelegateBoard {
         }
     }
 
-    /// Whether the Auto switch is on.
+    /// Whether Auto-assign is on.
     pub fn auto(mut self, on: bool) -> Self {
         self.auto = on;
         self
     }
 
-    /// A line under the header, e.g. why Auto picked an agent.
+    /// A notice under the header, e.g. why Auto-assign picked an agent.
     pub fn note(mut self, note: impl Into<SharedString>) -> Self {
         self.note = Some(note.into());
         self
@@ -239,7 +271,8 @@ impl DelegateBoard {
         self
     }
 
-    /// A task was dropped on an agent or back on the backlog.
+    /// A task was dropped (or moved with Alt+arrows) on an agent or back on
+    /// the Backlog.
     pub fn on_assign(
         mut self,
         f: impl Fn(&SharedString, &DropTarget, &mut Window, &mut App) + 'static,
@@ -258,94 +291,523 @@ fn clock_label(minutes: u32) -> String {
     format!("{:02}:{:02}", (minutes / 60) % 24, minutes % 60)
 }
 
-fn monogram(name: &str, hue: f32, size: f32, t: &Pink) -> impl IntoElement {
-    let (wash, ink) = if t.dark {
-        (oklch(0.30, 0.055, hue), oklch(0.86, 0.10, hue))
-    } else {
-        (oklch(0.945, 0.035, hue), oklch(0.47, 0.13, hue))
-    };
-    div()
-        .flex_none()
-        .size(px(size))
-        .rounded(px(radius::SM))
-        .bg(wash)
-        .flex()
-        .items_center()
-        .justify_center()
-        .text_size(px(11.))
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(ink)
-        .child(
-            name.chars()
-                .next()
-                .map(|c| c.to_ascii_uppercase().to_string())
-                .unwrap_or_default(),
-        )
+// ---------------------------------------------------------------------------
+// Pieces (pink: board/card.rs, board/columns.rs, board/page.rs)
+// ---------------------------------------------------------------------------
+
+/// How a badge is toned (pink: board/card.rs `Tone`). Tone is a secondary
+/// cue only: the glyph and the word carry the meaning.
+#[derive(Clone, Copy)]
+enum BadgeTone {
+    /// Nothing is running.
+    Quiet,
+    /// An agent is working on it.
+    Running,
+    Danger,
 }
 
-/// Title, tag and estimate – shared by backlog cards and the drag ghost.
-fn task_card(task: &BoardTask, t: &Pink) -> gpui::Div {
+impl BadgeTone {
+    fn color(self, t: &Pink) -> Hsla {
+        match self {
+            BadgeTone::Quiet => t.readable_muted(0.9),
+            BadgeTone::Running => t.readable_tone(t.accent, 1.0),
+            BadgeTone::Danger => t.readable_tone(t.danger, 0.95),
+        }
+    }
+}
+
+/// A small glyph + word badge; a ring, never a filled dot, when nothing has
+/// started (pink: board/card.rs `badge`).
+fn badge(
+    glyph: Option<&'static str>,
+    label: impl Into<SharedString>,
+    tone: BadgeTone,
+    t: &Pink,
+) -> Div {
+    let color = tone.color(t);
     div()
-        .h(px(CARD_H))
-        .pl(px(6.))
-        .pr(px(10.))
-        .rounded(px(radius::MD))
-        .border_1()
-        .border_color(t.border)
-        .bg(t.surface_card)
+        .flex_none()
         .flex()
+        .flex_row()
         .items_center()
         .gap(px(4.))
-        .child(
-            svg()
-                .path(ICON_GRIP)
-                .size(px(14.))
+        .min_w_0()
+        .type_style(TextStyle::Caption)
+        .text_color(color)
+        .child(match glyph {
+            Some(path) => svg()
+                .path(path)
+                .size(px(12.))
                 .flex_none()
-                .text_color(t.text_faint.opacity(0.7)),
+                .text_color(color)
+                .into_any_element(),
+            None => div()
+                .flex_none()
+                .size(px(8.))
+                .rounded_full()
+                .border_1()
+                .border_color(color)
+                .into_any_element(),
+        })
+        .child(div().min_w_0().child(label.into()))
+}
+
+/// The status mark beside a column title: a muted ring while nothing runs
+/// (pink's Backlog), a filled accent dot while the agent works (pink's
+/// Ready). Pink: board/card.rs `column_mark`.
+fn column_mark(running: bool, t: &Pink) -> Div {
+    let mark = div()
+        .flex_none()
+        .size(px(8.))
+        .rounded_full()
+        .border(px(1.5));
+    if running {
+        mark.border_color(t.accent).bg(t.accent)
+    } else {
+        mark.border_color(t.readable_muted(0.8))
+    }
+}
+
+/// A column's title, count and help (pink: board/columns.rs `column_header`).
+fn column_header(
+    running: bool,
+    label: SharedString,
+    count: String,
+    help: SharedString,
+    t: &Pink,
+) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(2.))
+        .px(px(2.))
+        .child(
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(6.))
+                .text_size(px(12.))
+                .line_height(px(16.))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(t.text)
+                .child(column_mark(running, t))
+                .child(label)
+                .child(
+                    div()
+                        .font_weight(FontWeight::NORMAL)
+                        .text_color(t.readable_muted(0.7))
+                        .child(count),
+                ),
         )
         .child(
             div()
+                .type_style(TextStyle::Caption)
+                .text_color(t.readable_muted(0.8))
+                .child(help),
+        )
+}
+
+/// A column well: borderless, `fill(Quaternary)` at half strength, radius
+/// 10, `p 8`, its parts 8 apart (pink: board/columns.rs `render_column`).
+fn column_well(id: ElementId, aria: String, wash: Hsla) -> Stateful<Div> {
+    div()
+        .id(id)
+        .role(Role::Group)
+        .aria_label(aria)
+        .flex_1()
+        .min_w(px(COLUMN_W))
+        .flex()
+        .flex_col()
+        .gap(px(8.))
+        .p(px(8.))
+        .rounded(px(radius::LG))
+        .bg(wash)
+}
+
+/// The resting well and the washes it takes under a drag: accent where the
+/// drop lands, danger at 6% where it is refused.
+fn well_washes(t: &Pink) -> (Hsla, Hsla, Hsla) {
+    (
+        t.fill(FillTier::Quaternary).opacity(0.5),
+        t.accent_wash,
+        t.danger.opacity(0.06),
+    )
+}
+
+/// An empty column's hint (pink: board/columns.rs `render_column`).
+fn empty_hint(copy: &'static str, t: &Pink) -> Div {
+    div()
+        .px(px(4.))
+        .py(px(14.))
+        .text_size(px(11.))
+        .line_height(px(15.))
+        .text_color(t.readable_muted(0.7))
+        .child(copy)
+}
+
+/// The insertion line where a dragged card would land (pink: board/card.rs
+/// `drop_indicator`).
+fn drop_indicator(t: &Pink) -> Div {
+    div().w_full().h(px(2.)).rounded_full().bg(t.accent)
+}
+
+/// A status strip under the header (pink: board/page.rs `notice_strip`,
+/// Info tone).
+fn notice_strip(key: &str, note: SharedString, t: &Pink) -> impl IntoElement {
+    let color = t.readable_muted(0.95);
+    motion::status_swap(
+        loaders::label_id(&format!("{key}-notice"), &note),
+        div()
+            .id(eid(format!("{key}-notice")))
+            .role(Role::Status)
+            .aria_label(note.clone())
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(8.))
+            .px(px(12.))
+            .py(px(6.))
+            .rounded(px(radius::MD))
+            .bg(t.fill(FillTier::Quaternary))
+            .text_size(px(12.))
+            .line_height(px(16.))
+            .text_color(color)
+            .child(
+                svg()
+                    .path(ICON_INFO)
+                    .size(px(14.))
+                    .flex_none()
+                    .text_color(color),
+            )
+            .child(div().flex_1().min_w_0().child(note)),
+    )
+}
+
+/// An agent's load on the shared horizon: pink's usage meter (a 6 px
+/// capsule, `fill(Secondary)` track, neutral `text_muted` fill; shell/usage.rs
+/// `usage_meter`), with the incoming task as an accent segment while a drag
+/// previews it. `label` trails the bar.
+fn load_meter(busy: f32, extra: f32, label: impl IntoElement, t: &Pink) -> Div {
+    let used = (busy / HORIZON).clamp(0., 1.);
+    let with_extra = ((busy + extra) / HORIZON).clamp(0., 1.);
+    let segment = |w: f32, color: Hsla| {
+        div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .h_full()
+            .w(relative(w))
+            .rounded_full()
+            .bg(color)
+    };
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(8.))
+        .px(px(2.))
+        .child(
+            div()
+                .relative()
+                .h(px(6.))
                 .flex_1()
                 .min_w_0()
-                .flex()
-                .flex_col()
-                .gap(px(4.))
-                .child(
-                    // Explicit width: GPUI truncates nowrap text at the first
-                    // width it measures, which in nested flex isn't the final one.
-                    div()
-                        .w(px(CARD_W - 38.))
-                        .truncate()
-                        .text_size(px(text::BODY))
-                        .font_weight(FontWeight::MEDIUM)
-                        .line_height(px(18.))
-                        .child(task.title.clone()),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(6.))
-                        .text_size(px(text::CAPTION))
-                        .child(
-                            div()
-                                .h(px(18.))
-                                .px(px(6.))
-                                .flex()
-                                .items_center()
-                                .rounded(px(radius::XS))
-                                .bg(t.fill(FillTier::Tertiary))
-                                .text_color(t.text_muted)
-                                .child(task.tag.clone()),
-                        )
-                        .child(
-                            div()
-                                .font_family(pink::MONO)
-                                .text_color(t.text_faint)
-                                .child(format!("~{}m", task.minutes)),
-                        ),
-                ),
+                .rounded_full()
+                .bg(t.fill(FillTier::Secondary))
+                // Nothing drawn below 0.5% (pink: no false stub).
+                .when(with_extra - used >= 0.005, |bar| {
+                    bar.child(segment(with_extra, t.accent))
+                })
+                .when(used >= 0.005, |bar| bar.child(segment(used, t.text_muted))),
         )
+        .child(div().flex_none().child(label))
+}
+
+/// Where a card sits, which decides its badge and footer.
+enum Phase {
+    /// In the Backlog.
+    NotStarted,
+    /// In an agent's queue behind other work.
+    Queued { agent: SharedString, starts: u32 },
+    /// The agent's current task.
+    Working { agent: SharedString, left: u32 },
+}
+
+struct CardArgs<'a> {
+    key: &'a str,
+    task: &'a BoardTask,
+    phase: Phase,
+    column: DropTarget,
+    lifted: bool,
+    selected: bool,
+    focus: FocusHandle,
+    /// Where Alt+Left / Alt+Right send the card.
+    moves: [Option<DropTarget>; 2],
+    state: &'a Entity<BoardState>,
+    on_assign: Option<AssignHandler>,
+}
+
+/// One task card (pink: board/card.rs `render_card`): `px 10 py 9`, gap 8,
+/// radius 10, a `separator(true)` edge on `fill(Quaternary)` (accent edge and
+/// wash when selected, an accent edge under the pointer), the top line with
+/// the ticket glyph, a 13 pt medium title clamped to three lines, the phase
+/// badge and a hairline footer. 45% while it is being dragged.
+fn task_card(a: CardArgs, t: &Pink) -> AnyElement {
+    let task = a.task;
+    let id = task.id.clone();
+    let ring = t.focus_ring();
+    let muted = t.readable_muted(0.85);
+    let (phase_badge, description, location, when) = match &a.phase {
+        Phase::NotStarted => (
+            badge(None, "Not started", BadgeTone::Quiet, t),
+            "Not handed to an agent yet",
+            "No agent yet".to_string(),
+            None,
+        ),
+        Phase::Queued { agent, starts } => (
+            badge(Some(ICON_QUEUED), "Queued", BadgeTone::Quiet, t),
+            "Waiting for the agent to finish the work ahead of it",
+            format!("With {agent}"),
+            Some(format!("Starts {}", clock_label(*starts))),
+        ),
+        Phase::Working { agent, left } => (
+            badge(Some(ICON_WORKING), "Working", BadgeTone::Running, t),
+            "The agent is working on it",
+            format!("With {agent}"),
+            Some(format!("{left}m left")),
+        ),
+    };
+    let draggable = !matches!(a.phase, Phase::Working { .. });
+    let label = format!("{}, {}, {}", task.tag, task.title, location);
+
+    let top = div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(5.))
+        .type_style(TextStyle::Caption)
+        .text_color(muted)
+        .child(
+            svg()
+                .path(ICON_TICKET)
+                .size(px(12.))
+                .flex_none()
+                .text_color(t.readable_muted(0.8)),
+        )
+        .child(div().flex_none().child(task.tag.clone()))
+        .child(div().flex_1())
+        .child(
+            div()
+                .flex_none()
+                .font_features(tabular_figures())
+                .child(format!("Est. {}m", task.minutes)),
+        );
+
+    let title = div()
+        .min_w_0()
+        .text_size(px(13.))
+        .line_height(px(18.))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(t.text)
+        .line_clamp(3)
+        .child(task.title.clone());
+
+    let status = div()
+        .flex()
+        .flex_row()
+        .flex_wrap()
+        .items_center()
+        .gap_x(px(10.))
+        .gap_y(px(4.))
+        .child(
+            phase_badge
+                .id(eid(format!("{}-phase-{id}", a.key)))
+                .tooltip(pink::text_tooltip(description))
+                .tooltip_show_delay(layout::TOOLTIP_DELAY),
+        );
+
+    let footer = div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(8.))
+        .pt(px(6.))
+        .border_t_1()
+        .border_color(t.separator(false))
+        .type_style(TextStyle::Caption)
+        .text_color(t.readable_muted(0.8))
+        .child(div().flex_1().min_w_0().child(location))
+        .when_some(when, |row, when| {
+            row.child(
+                div()
+                    .flex_none()
+                    .font_features(tabular_figures())
+                    .child(when),
+            )
+        });
+
+    let click_state = a.state.clone();
+    let click_id = id.clone();
+    let key_state = a.state.clone();
+    let key_id = id.clone();
+    let [left, right] = a.moves;
+    let on_assign = a.on_assign.clone();
+    let hover_edge = t.accent.opacity(0.45);
+    let card = div()
+        .id(eid(format!("{}-card-{id}", a.key)))
+        .role(Role::Button)
+        .aria_label(label)
+        .aria_description(description)
+        .aria_selected(a.selected)
+        .when(draggable, |card| {
+            card.aria_keyshortcuts("Alt+Right moves to the next column; Alt+Left moves back")
+        })
+        .track_focus(&a.focus)
+        .w_full()
+        .flex()
+        .flex_col()
+        .gap(px(8.))
+        .px(px(10.))
+        .py(px(9.))
+        .rounded(px(radius::LG))
+        .border_1()
+        .border_color(if a.selected {
+            t.accent.opacity(0.7)
+        } else {
+            t.separator(true)
+        })
+        .bg(if a.selected {
+            t.accent_wash
+        } else {
+            t.fill(FillTier::Quaternary)
+        })
+        .cursor_pointer()
+        .hover(move |style| style.border_color(hover_edge))
+        .focus_visible(move |style| pink::focus_ring(style, ring))
+        .on_click(move |_, _, cx| {
+            click_state.update(cx, |s, cx| {
+                s.selected = Some(click_id.clone());
+                cx.notify();
+            });
+        })
+        .on_key_down(move |event: &KeyDownEvent, window, cx| {
+            let keystroke = &event.keystroke;
+            if keystroke.key == "escape" {
+                key_state.update(cx, |s, cx| {
+                    if s.selected.take().is_some() {
+                        cx.notify();
+                    }
+                });
+                return;
+            }
+            if !keystroke.modifiers.alt {
+                return;
+            }
+            let target = match keystroke.key.as_str() {
+                "left" => left.clone(),
+                "right" => right.clone(),
+                _ => None,
+            };
+            let Some(target) = target else { return };
+            cx.stop_propagation();
+            key_state.update(cx, |s, cx| {
+                s.selected = Some(key_id.clone());
+                cx.notify();
+            });
+            if let Some(f) = on_assign.as_ref() {
+                f(&key_id, &target, window, cx);
+            }
+        })
+        .when(draggable, |card| {
+            let drag_state = a.state.clone();
+            let payload = DraggedTask {
+                task: task.clone(),
+                from: a.column.clone(),
+            };
+            card.on_drag(payload, move |dragged: &DraggedTask, _, _, cx| {
+                cx.stop_propagation();
+                drag_state.update(cx, |s, _| {
+                    s.dragging = Some(dragged.task.id.clone());
+                    s.over = None;
+                });
+                let (tag, title) = (dragged.task.tag.clone(), dragged.task.title.clone());
+                cx.new(|_| Ghost { tag, title })
+            })
+        })
+        .child(top)
+        .child(title)
+        .child(status)
+        .child(footer);
+
+    // A card arriving in a column (first mount, a drop, Auto-assign) reveals
+    // like pink's new rows: TOOL_ROW_REVEAL with a 4 px rise.
+    let column = match &a.column {
+        DropTarget::Backlog => SharedString::from("backlog"),
+        DropTarget::Agent(agent) => agent.clone(),
+    };
+    let rest_opacity = if a.lifted { 0.45 } else { 1. };
+    card.with_animation(
+        eid(format!("{}-in-{column}-{id}", a.key)),
+        TOOL_ROW_REVEAL.animation(),
+        move |el, p| {
+            el.relative()
+                .opacity(rest_opacity * p)
+                .top(px(4. * (1. - p)))
+        },
+    )
+    .into_any_element()
+}
+
+// ---------------------------------------------------------------------------
+// The board
+// ---------------------------------------------------------------------------
+
+/// Drag-move tracking shared by every column: `target` becomes the column
+/// under the pointer, or stops being it.
+fn track_over(
+    state: &Entity<BoardState>,
+    target: DropTarget,
+) -> impl Fn(&gpui::DragMoveEvent<DraggedTask>, &mut Window, &mut App) + 'static {
+    let state = state.clone();
+    move |ev, _, cx| {
+        let inside = ev.bounds.contains(&ev.event.position);
+        state.update(cx, |s, cx| {
+            if inside && s.over.as_ref() != Some(&target) {
+                s.over = Some(target.clone());
+                cx.notify();
+            } else if !inside && s.over.as_ref() == Some(&target) {
+                s.over = None;
+                cx.notify();
+            }
+        });
+    }
+}
+
+/// The drop on `target`: clears the drag, selects the card (pink selects
+/// what was just moved) and reports the move unless it changes nothing or
+/// is refused.
+fn drop_on(
+    state: &Entity<BoardState>,
+    target: DropTarget,
+    accepts: bool,
+    on_assign: Option<AssignHandler>,
+) -> impl Fn(&DraggedTask, &mut Window, &mut App) + 'static {
+    let state = state.clone();
+    move |dragged, window, cx| {
+        let moves = dragged.from != target && accepts;
+        state.update(cx, |s, cx| {
+            s.over = None;
+            s.dragging = None;
+            if moves {
+                s.selected = Some(dragged.task.id.clone());
+            }
+            cx.notify();
+        });
+        if moves && let Some(f) = on_assign.as_ref() {
+            f(&dragged.task.id, &target, window, cx);
+        }
+    }
 }
 
 impl RenderOnce for DelegateBoard {
@@ -355,19 +817,16 @@ impl RenderOnce for DelegateBoard {
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
-            |_, _| BoardState {
-                over: None,
-                dragging: None,
-            },
+            |_, _| BoardState::default(),
         );
         let dragging_now = cx.has_active_drag();
         let reduced = motion::reduced_motion(cx);
-        let (over, dragging) = {
+        let (over, dragging, selected) = {
             let s = state.read(cx);
             if dragging_now {
-                (s.over.clone(), s.dragging.clone())
+                (s.over.clone(), s.dragging.clone(), s.selected.clone())
             } else {
-                (None, None)
+                (None, None, s.selected.clone())
             }
         };
         // The dragged task, wherever it currently sits.
@@ -386,82 +845,266 @@ impl RenderOnce for DelegateBoard {
                 })
         });
 
-        let header = header_view(&key, self.clock, self.auto, self.on_auto.clone(), &t);
-        let note = self.note.clone().map(|note| {
-            motion::rise_in(
-                eid(format!("{key}-note-{note}")),
-                MENU_IN,
-                -4.,
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .px(px(PAD))
-                    .h(px(30.))
-                    .border_b_1()
-                    .border_color(t.border)
-                    .bg(t.accent_wash.opacity(if t.dark { 0.35 } else { 0.6 }))
-                    .text_size(px(text::FOOTNOTE))
-                    .text_color(t.text_muted)
-                    .child(svg().path(ICON_AUTO).size(px(13.)).text_color(t.accent))
-                    .child(note),
+        // Column order for Alt+arrow moves, and whether each takes a card.
+        let targets: Vec<(DropTarget, bool)> = std::iter::once((DropTarget::Backlog, true))
+            .chain(
+                self.agents
+                    .iter()
+                    .map(|a| (DropTarget::Agent(a.id.clone()), a.has_room())),
             )
-        });
+            .collect();
+        let moves_from = |column: usize| -> [Option<DropTarget>; 2] {
+            let open = |ix: Option<usize>| {
+                ix.and_then(|ix| targets.get(ix))
+                    .filter(|(_, room)| *room)
+                    .map(|(target, _)| target.clone())
+            };
+            [open(column.checked_sub(1)), open(Some(column + 1))]
+        };
+        // One focus handle per task, keyed by the task so focus follows a
+        // card that moves to another column.
+        let focus_for = |task: &BoardTask, window: &mut Window, cx: &mut App| {
+            window
+                .use_keyed_state(
+                    ElementId::NamedChild(
+                        Arc::new(self.id.clone()),
+                        format!("focus-{}", task.id).into(),
+                    ),
+                    cx,
+                    |_, cx| cx.focus_handle().tab_stop(true),
+                )
+                .read(cx)
+                .clone()
+        };
 
-        let backlog = backlog_view(
-            &key,
-            &self.backlog,
-            dragging.as_ref(),
-            over.as_ref(),
-            dragged.as_ref(),
-            &state,
-            self.on_assign.clone(),
-            &t,
-        );
-        let col_w = (BOARD_W - 2. * PAD - 3. * COL_GAP) / 4.;
-        let columns = self
-            .agents
+        let (rest, accept_wash, refuse_wash) = well_washes(&t);
+
+        // Backlog column.
+        let backlog_over = over == Some(DropTarget::Backlog)
+            && dragged
+                .as_ref()
+                .is_some_and(|(_, from)| from != &DropTarget::Backlog);
+        let backlog_cards = self
+            .backlog
             .iter()
-            .map(|agent| {
-                agent_column(
-                    &key,
-                    agent,
-                    col_w,
-                    self.clock,
-                    over.as_ref(),
-                    dragged.as_ref(),
-                    dragging.as_ref(),
-                    self.pulse
-                        .as_ref()
-                        .filter(|(id, _)| id == &agent.id)
-                        .map(|(_, at)| *at),
-                    &state,
-                    self.on_assign.clone(),
-                    reduced,
-                    window,
+            .map(|task| {
+                let focus = focus_for(task, window, cx);
+                task_card(
+                    CardArgs {
+                        key: &key,
+                        task,
+                        phase: Phase::NotStarted,
+                        column: DropTarget::Backlog,
+                        lifted: dragging.as_ref() == Some(&task.id),
+                        selected: selected.as_ref() == Some(&task.id),
+                        focus,
+                        moves: moves_from(0),
+                        state: &state,
+                        on_assign: self.on_assign.clone(),
+                    },
                     &t,
                 )
             })
             .collect::<Vec<_>>();
+        let backlog_column = column_well(
+            eid(format!("{key}-col-backlog")),
+            format!("Backlog, {} tasks waiting for an agent", self.backlog.len()),
+            if backlog_over { accept_wash } else { rest },
+        )
+        .on_drag_move::<DraggedTask>(track_over(&state, DropTarget::Backlog))
+        .on_drop::<DraggedTask>(drop_on(
+            &state,
+            DropTarget::Backlog,
+            true,
+            self.on_assign.clone(),
+        ))
+        .child(column_header(
+            false,
+            "Backlog".into(),
+            self.backlog.len().to_string(),
+            "Waiting for an agent".into(),
+            &t,
+        ))
+        .when(!backlog_cards.is_empty(), |col| {
+            col.child(
+                div()
+                    .w_full()
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.))
+                    .children(backlog_cards),
+            )
+        })
+        .when(backlog_over, |col| col.child(drop_indicator(&t)))
+        .when(self.backlog.is_empty(), |col| {
+            col.child(empty_hint("Everything is assigned", &t))
+        })
+        .into_any_element();
 
-        let el = pink::card(&t)
+        // Agent columns.
+        let mut columns = vec![backlog_column];
+        for (ix, agent) in self.agents.iter().enumerate() {
+            let target = DropTarget::Agent(agent.id.clone());
+            let incoming = dragged.as_ref().filter(|(_, from)| from != &target);
+            let full = !agent.has_room();
+            let hovered = over.as_ref() == Some(&target) && incoming.is_some();
+            let previewing = hovered && !full;
+            let refusing = hovered && full;
+            let extra = if previewing {
+                incoming.map_or(0, |(task, _)| task.left())
+            } else {
+                0
+            };
+            let busy = agent.busy();
+            let busy_v =
+                motion::follow(&format!("{key}-busy-{}", agent.id), busy as f32, EMPHASIZED);
+            let extra_v = motion::follow(&format!("{key}-extra-{}", agent.id), extra as f32, QUICK);
+            let free_at = self.clock + busy + extra;
+
+            // Auto-assign flash: the accent wash holds, then eases back.
+            let pulse = self
+                .pulse
+                .as_ref()
+                .filter(|(id, _)| id == &agent.id && !reduced)
+                .map(|(_, at)| at.elapsed())
+                .filter(|elapsed| *elapsed < PULSE.total().mul_f32(motion::speed_scale()))
+                .map_or(0., |elapsed| {
+                    window.request_animation_frame();
+                    1. - PULSE.progress_at(elapsed)
+                });
+            let wash = if previewing {
+                accept_wash
+            } else if refusing {
+                refuse_wash
+            } else {
+                motion::mix(rest, accept_wash, pulse)
+            };
+
+            let meter_label = if refusing {
+                badge(Some(ICON_REFUSED), "Queue full", BadgeTone::Danger, &t).into_any_element()
+            } else {
+                let copy = if busy + extra == 0 {
+                    "Free now".to_string()
+                } else {
+                    format!("Free at {}", clock_label(free_at))
+                };
+                div()
+                    .type_style(TextStyle::Caption)
+                    .font_features(tabular_figures())
+                    .text_color(if previewing {
+                        BadgeTone::Running.color(&t)
+                    } else {
+                        t.readable_muted(0.8)
+                    })
+                    .child(copy)
+                    .into_any_element()
+            };
+
+            let mut starts = self.clock;
+            let cards = agent
+                .queue
+                .iter()
+                .enumerate()
+                .map(|(i, task)| {
+                    let phase = if i == 0 {
+                        Phase::Working {
+                            agent: agent.name.clone(),
+                            left: task.left(),
+                        }
+                    } else {
+                        Phase::Queued {
+                            agent: agent.name.clone(),
+                            starts,
+                        }
+                    };
+                    starts += task.left();
+                    let focus = focus_for(task, window, cx);
+                    task_card(
+                        CardArgs {
+                            key: &key,
+                            task,
+                            moves: if i == 0 {
+                                [None, None]
+                            } else {
+                                moves_from(ix + 1)
+                            },
+                            phase,
+                            column: target.clone(),
+                            lifted: dragging.as_ref() == Some(&task.id),
+                            selected: selected.as_ref() == Some(&task.id),
+                            focus,
+                            state: &state,
+                            on_assign: self.on_assign.clone(),
+                        },
+                        &t,
+                    )
+                })
+                .collect::<Vec<_>>();
+
+            let count = format!("{} of {QUEUE_LIMIT}", agent.queue.len());
+            let aria = format!(
+                "{}, {}, {} tasks, {}",
+                agent.name,
+                agent.model,
+                agent.queue.len(),
+                if busy == 0 {
+                    "free now".to_string()
+                } else {
+                    format!("free at {}", clock_label(self.clock + busy))
+                }
+            );
+            columns.push(
+                column_well(eid(format!("{key}-col-{}", agent.id)), aria, wash)
+                    .on_drag_move::<DraggedTask>(track_over(&state, target.clone()))
+                    .on_drop::<DraggedTask>(drop_on(
+                        &state,
+                        target.clone(),
+                        !full,
+                        self.on_assign.clone(),
+                    ))
+                    .child(column_header(
+                        !agent.queue.is_empty(),
+                        agent.name.clone(),
+                        count,
+                        agent.model.clone(),
+                        &t,
+                    ))
+                    .child(load_meter(busy_v, extra_v, meter_label, &t))
+                    .when(!cards.is_empty(), |col| {
+                        col.child(div().w_full().flex().flex_col().gap(px(8.)).children(cards))
+                    })
+                    .when(previewing, |col| col.child(drop_indicator(&t)))
+                    .when(agent.queue.is_empty(), |col| {
+                        col.child(empty_hint("Drop a task here to start it", &t))
+                    })
+                    .into_any_element(),
+            );
+        }
+
+        let total = self.backlog.len() + self.agents.iter().map(|a| a.queue.len()).sum::<usize>();
+        let header = page_header(&key, total, self.clock, self.auto, self.on_auto.clone(), &t);
+        let notice = self.note.clone().map(|note| notice_strip(&key, note, &t));
+        let n = columns.len() as f32;
+        let el = div()
             .id(self.id.clone())
-            .w(px(BOARD_W))
+            .role(Role::Group)
+            .aria_label("Delegate board")
+            .w(px(n * COLUMN_W + (n - 1.) * COLUMN_GAP))
             .font_family(pink::SANS)
-            .text_size(px(text::BODY))
+            .type_style(TextStyle::Body)
             .text_color(t.text)
-            .overflow_hidden()
             .flex()
             .flex_col()
+            .gap(px(PAGE_GAP))
             .child(header)
-            .children(note)
-            .child(backlog)
+            .children(notice)
             .child(
                 div()
-                    .px(px(PAD))
-                    .pb(px(PAD))
+                    .w_full()
                     .flex()
-                    .gap(px(COL_GAP))
+                    .flex_row()
+                    .items_start()
+                    .gap(px(COLUMN_GAP))
                     .children(columns),
             );
         motion::keep_alive(window);
@@ -469,698 +1112,102 @@ impl RenderOnce for DelegateBoard {
     }
 }
 
-fn header_view(
+/// The page title with its count, the help line and the toolbar (pink:
+/// board/filters.rs `render_header`: settings `page_title_bar` – Title1 over
+/// a 13 pt count on its baseline – then `page_subtitle`, then a toolbar of
+/// chips 8 apart). Auto-assign is a toolbar chip like pink's "Needs
+/// attention".
+fn page_header(
     key: &str,
+    total: usize,
     clock: u32,
     auto: bool,
     on_auto: Option<ToggleHandler>,
     t: &Pink,
 ) -> impl IntoElement {
-    let knob = motion::follow(&format!("{key}-auto"), if auto { 1. } else { 0. }, MENU_IN);
-    let switch_key = format!("{key}-switch");
+    let auto_chip = pink::chip(format!("{key}-auto"), auto, ControlSize::Md, t)
+        .aria_label("Auto-assign")
+        .gap(px(6.))
+        .child(pink::glyph(ICON_AUTO, ControlSize::Md))
+        .child("Auto-assign")
+        .on_click(move |_, window, cx| {
+            if let Some(f) = on_auto.as_ref() {
+                f(!auto, window, cx);
+            }
+        });
     div()
-        .h(px(56.))
-        .px(px(PAD))
         .flex()
-        .items_center()
-        .gap(px(10.))
-        .border_b_1()
-        .border_color(t.border)
+        .flex_col()
+        .gap(px(12.))
         .child(
             div()
-                .flex_none()
-                .size(px(30.))
-                .rounded(px(radius::MD))
-                .bg(t.fill(FillTier::Tertiary))
-                .border_1()
-                .border_color(t.border)
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(
-                    svg()
-                        .path(ICON_BOARD)
-                        .size(px(16.))
-                        .text_color(t.text_muted),
-                ),
-        )
-        .child(
-            div()
-                .flex_1()
                 .flex()
                 .flex_col()
                 .child(
                     div()
-                        .text_size(px(text::CALLOUT))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .line_height(px(20.))
-                        .child("Delegate"),
-                )
-                .child(
-                    div()
-                        .text_size(px(text::FOOTNOTE))
-                        .line_height(px(16.))
-                        .text_color(t.text_faint)
-                        .child("Drop a task on an agent to queue it there"),
-                ),
-        )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(5.))
-                .text_size(px(text::FOOTNOTE))
-                .font_family(pink::MONO)
-                .text_color(t.text_muted)
-                .child(
-                    svg()
-                        .path(ICON_CLOCK)
-                        .size(px(13.))
-                        .text_color(t.text_faint),
-                )
-                .child(clock_label(clock)),
-        )
-        .child(div().w(px(1.)).h(px(18.)).mx(px(4.)).bg(t.border))
-        .child(
-            div()
-                .id(eid(format!("{key}-auto-toggle")))
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .h(px(28.))
-                .pl(px(8.))
-                .pr(px(6.))
-                .rounded(px(radius::MD))
-                .cursor_pointer()
-                .hover_fill(
-                    switch_key,
-                    t.fill(FillTier::Tertiary).opacity(0.),
-                    t.fill(FillTier::Tertiary),
-                )
-                .on_click(move |_, window, cx| {
-                    if let Some(f) = on_auto.as_ref() {
-                        f(!auto, window, cx);
-                    }
-                })
-                .child(
-                    div()
-                        .text_size(px(text::FOOTNOTE))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(if auto { t.text } else { t.text_muted })
-                        .child("Auto-assign"),
-                )
-                .child(
-                    div()
-                        .relative()
-                        .w(px(30.))
-                        .h(px(18.))
-                        .rounded_full()
-                        .bg(motion::mix(
-                            t.fill(FillTier::Primary),
-                            t.accent_strong,
-                            knob,
-                        ))
+                        .flex()
+                        .flex_row()
+                        .items_baseline()
+                        .gap(px(10.))
                         .child(
                             div()
-                                .absolute()
-                                .top(px(2.))
-                                .left(px(2. + 12. * knob))
-                                .size(px(14.))
-                                .rounded_full()
-                                .bg(gpui::white())
-                                .shadow(vec![crate::primitives::shadow(
-                                    0.,
-                                    1.,
-                                    2.,
-                                    0.,
-                                    gpui::hsla(0., 0., 0., 0.25),
-                                )]),
-                        ),
-                ),
-        )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn backlog_view(
-    key: &str,
-    backlog: &[BoardTask],
-    dragging: Option<&SharedString>,
-    over: Option<&DropTarget>,
-    dragged: Option<&(BoardTask, DropTarget)>,
-    state: &Entity<BoardState>,
-    on_assign: Option<AssignHandler>,
-    t: &Pink,
-) -> impl IntoElement {
-    let target_over = over == Some(&DropTarget::Backlog)
-        && dragged.is_some_and(|(_, from)| from != &DropTarget::Backlog);
-    let cards = backlog.iter().enumerate().map(|(i, task)| {
-        let x = motion::follow(
-            &format!("{key}-b-{}", task.id),
-            i as f32 * (CARD_W + CARD_GAP),
-            GLIDE,
-        );
-        let lifted = dragging == Some(&task.id);
-        let card_key = format!("{key}-card-{}", task.id);
-        let drag_state = state.clone();
-        let payload = DraggedTask {
-            task: task.clone(),
-            from: DropTarget::Backlog,
-        };
-        let el = task_card(task, t)
-            .id(eid(format!("card-{}", task.id)))
-            .absolute()
-            .left(px(x))
-            .top_0()
-            .w(px(CARD_W))
-            .cursor_grab()
-            .when(lifted, |d| {
-                d.opacity(0.35)
-                    .border_dashed()
-                    .border_color(t.border_strong)
-            })
-            .when(!lifted, |d| {
-                d.hover_border(card_key, t.border, t.border_strong)
-            })
-            .on_drag(payload, move |dragged: &DraggedTask, _, _, cx| {
-                drag_state.update(cx, |s, _| s.dragging = Some(dragged.task.id.clone()));
-                let task = dragged.task.clone();
-                cx.new(|_| Ghost { task })
-            });
-        el.with_animation(
-            eid(format!("{key}-in-{}", task.id)),
-            MENU_IN.with_duration(280).animation(),
-            |el, p| el.opacity(p).top(px(6. * (1. - p))),
-        )
-    });
-
-    let move_state = state.clone();
-    let drop_state = state.clone();
-    div()
-        .id("backlog")
-        .px(px(PAD))
-        .pt(px(12.))
-        .pb(px(14.))
-        .flex()
-        .flex_col()
-        .gap(px(8.))
-        .bg(if target_over {
-            t.accent_wash.opacity(0.5)
-        } else {
-            gpui::transparent_black()
-        })
-        .on_drag_move::<DraggedTask>(move |ev, _, cx| {
-            let inside = ev.bounds.contains(&ev.event.position);
-            move_state.update(cx, |s, cx| {
-                if inside && s.over.as_ref() != Some(&DropTarget::Backlog) {
-                    s.over = Some(DropTarget::Backlog);
-                    cx.notify();
-                } else if !inside && s.over.as_ref() == Some(&DropTarget::Backlog) {
-                    s.over = None;
-                    cx.notify();
-                }
-            });
-        })
-        .on_drop::<DraggedTask>(move |dragged, window, cx| {
-            drop_state.update(cx, |s, cx| {
-                s.over = None;
-                s.dragging = None;
-                cx.notify();
-            });
-            if dragged.from != DropTarget::Backlog
-                && let Some(f) = on_assign.as_ref()
-            {
-                f(&dragged.task.id, &DropTarget::Backlog, window, cx);
-            }
-        })
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .text_size(px(text::FOOTNOTE))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(t.text_muted)
-                .child("Backlog")
-                .child(
-                    div()
-                        .min_w(px(18.))
-                        .h(px(16.))
-                        .px(px(4.))
-                        .rounded(px(radius::XS))
-                        .bg(t.fill(FillTier::Tertiary))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .font_family(pink::MONO)
-                        .text_size(px(10.5))
-                        .child(backlog.len().to_string()),
-                )
-                .when(target_over, |d| {
-                    d.child(
-                        div()
-                            .text_color(t.accent)
-                            .font_weight(FontWeight::NORMAL)
-                            .child("· drop to unassign"),
-                    )
-                }),
-        )
-        .child(
-            div()
-                .relative()
-                .h(px(CARD_H))
-                .children(cards)
-                .when(backlog.is_empty(), |d| {
-                    d.child(
-                        div()
-                            .h_full()
-                            .rounded(px(radius::MD))
-                            .border_1()
-                            .border_dashed()
-                            .border_color(t.border_strong)
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .text_size(px(text::FOOTNOTE))
-                            .text_color(t.text_faint)
-                            .child("Everything is assigned"),
-                    )
-                }),
-        )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn agent_column(
-    key: &str,
-    agent: &BoardAgent,
-    width: f32,
-    clock: u32,
-    over: Option<&DropTarget>,
-    dragged: Option<&(BoardTask, DropTarget)>,
-    dragging: Option<&SharedString>,
-    pulse: Option<Instant>,
-    state: &Entity<BoardState>,
-    on_assign: Option<AssignHandler>,
-    reduced: bool,
-    window: &mut Window,
-    t: &Pink,
-) -> gpui::AnyElement {
-    let target = DropTarget::Agent(agent.id.clone());
-    let incoming = dragged.filter(|(_, from)| from != &target);
-    let full = agent.queue.len() >= QUEUE_LIMIT;
-    let hovered = over == Some(&target) && incoming.is_some();
-    let previewing = hovered && !full;
-    let refusing = hovered && full;
-    let extra = if previewing {
-        incoming.map_or(0, |(task, _)| task.left())
-    } else {
-        0
-    };
-    let busy = agent.busy();
-    let busy_v = motion::follow(&format!("{key}-busy-{}", agent.id), busy as f32, GLIDE);
-    let extra_v = motion::follow(&format!("{key}-extra-{}", agent.id), extra as f32, MENU_IN);
-    let free_at = clock + busy + extra;
-
-    // Auto-assign pulse: the border lights up and fades back.
-    let pulse_t = pulse
-        .map(|at| at.elapsed().as_secs_f32() / (1.1 * motion::speed_scale()))
-        .filter(|p| *p < 1.);
-    if pulse_t.is_some() {
-        window.request_animation_frame();
-    }
-    let pulse_amount = pulse_t.map_or(0., |p| (1. - p).powf(1.5));
-    let border = if previewing {
-        t.accent.opacity(0.7)
-    } else if refusing {
-        t.danger.opacity(0.6)
-    } else {
-        motion::mix(t.border, t.accent.opacity(0.8), pulse_amount)
-    };
-
-    let bar_w = width - 20.;
-    let fill_w = (busy_v / HORIZON).clamp(0., 1.) * bar_w;
-    let ghost_w = ((busy_v + extra_v) / HORIZON).clamp(0., 1.) * bar_w - fill_w;
-    let load = div()
-        .mt(px(10.))
-        .flex()
-        .flex_col()
-        .gap(px(6.))
-        .child(
-            div()
-                .relative()
-                .h(px(6.))
-                .w(px(bar_w))
-                .rounded(px(3.))
-                .bg(t.fill(FillTier::Secondary))
-                .overflow_hidden()
-                .child(
-                    div()
-                        .absolute()
-                        .left_0()
-                        .top_0()
-                        .h_full()
-                        .w(px(fill_w))
-                        .bg(t.accent),
-                )
-                .when(ghost_w > 0.5, |d| {
-                    d.child(
-                        div()
-                            .absolute()
-                            .left(px(fill_w))
-                            .top_0()
-                            .h_full()
-                            .w(px(ghost_w))
-                            .bg(t.accent.opacity(0.38)),
-                    )
-                })
-                // Half-hour ticks.
-                .children((1..3).map(|i| {
-                    div()
-                        .absolute()
-                        .left(px(bar_w * i as f32 * 30. / HORIZON))
-                        .top_0()
-                        .h_full()
-                        .w(px(1.))
-                        .bg(t.surface_card.opacity(0.9))
-                })),
-        )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .text_size(px(text::CAPTION))
-                .child(if refusing {
-                    div().text_color(t.danger).child("Queue is full")
-                } else if busy + extra == 0 {
-                    div().text_color(t.success).child("Free now")
-                } else {
-                    div()
-                        .text_color(if previewing { t.text } else { t.text_muted })
-                        .child(format!("Free at {}", clock_label(free_at)))
-                })
-                .when(previewing, |d| {
-                    d.child(
-                        div()
-                            .h(px(16.))
-                            .px(px(5.))
-                            .rounded(px(radius::XS))
-                            .bg(t.accent_wash)
-                            .flex()
-                            .items_center()
-                            .font_family(pink::MONO)
-                            .text_color(if t.dark { t.text } else { t.accent })
-                            .child(format!("+{extra}m")),
-                    )
-                }),
-        );
-
-    let chips = agent.queue.iter().enumerate().map(|(i, task)| {
-        let y = motion::follow_from(
-            &format!("{key}-q-{}-{}", agent.id, task.id),
-            i as f32 * (CHIP_H + CHIP_GAP) + 8.,
-            i as f32 * (CHIP_H + CHIP_GAP),
-            GLIDE,
-        );
-        queue_chip(
-            key,
-            agent,
-            task,
-            i == 0,
-            y,
-            width - 20. - 2. - 18. - 12. - 6.,
-            dragging,
-            state,
-            reduced,
-            t,
-        )
-    });
-    let slot = previewing.then(|| {
-        let n = agent.queue.len().min(QUEUE_LIMIT - 1);
-        let title = incoming
-            .map(|(task, _)| task.title.clone())
-            .unwrap_or_default();
-        motion::fade_in(
-            eid(format!("{key}-slot-{}", agent.id)),
-            div()
-                .absolute()
-                .left_0()
-                .right_0()
-                .top(px(n as f32 * (CHIP_H + CHIP_GAP)))
-                .h(px(CHIP_H))
-                .px(px(10.))
-                .rounded(px(radius::MD))
-                .border_1()
-                .border_dashed()
-                .border_color(t.accent.opacity(0.6))
-                .bg(t.accent_wash.opacity(0.4))
-                .flex()
-                .items_center()
-                .text_size(px(text::FOOTNOTE))
-                .text_color(t.text_muted)
-                .child(div().truncate().child(title)),
-        )
-    });
-
-    let move_state = state.clone();
-    let drop_state = state.clone();
-    let move_target = target.clone();
-    let drop_target = target.clone();
-    div()
-        .id(eid(format!("col-{}", agent.id)))
-        .flex_none()
-        .w(px(width))
-        .p(px(10.))
-        .rounded(px(radius::LG))
-        .border_1()
-        .border_color(border)
-        .bg(if previewing {
-            t.accent_wash.opacity(if t.dark { 0.35 } else { 0.5 })
-        } else {
-            t.fill(FillTier::Quaternary)
-        })
-        .on_drag_move::<DraggedTask>(move |ev, _, cx| {
-            let inside = ev.bounds.contains(&ev.event.position);
-            move_state.update(cx, |s, cx| {
-                if inside && s.over.as_ref() != Some(&move_target) {
-                    s.over = Some(move_target.clone());
-                    cx.notify();
-                } else if !inside && s.over.as_ref() == Some(&move_target) {
-                    s.over = None;
-                    cx.notify();
-                }
-            });
-        })
-        .on_drop::<DraggedTask>(move |dragged, window, cx| {
-            drop_state.update(cx, |s, cx| {
-                s.over = None;
-                s.dragging = None;
-                cx.notify();
-            });
-            if dragged.from != drop_target
-                && !full
-                && let Some(f) = on_assign.as_ref()
-            {
-                f(&dragged.task.id, &drop_target, window, cx);
-            }
-        })
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .child(monogram(&agent.name, agent.hue, 26., t))
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .min_w_0()
-                        .child(
-                            div()
-                                .text_size(px(text::BODY))
-                                .font_weight(FontWeight::MEDIUM)
-                                .line_height(px(16.))
-                                .child(agent.name.clone()),
+                                .type_style(TextStyle::Title1)
+                                .text_color(t.text)
+                                .child("Delegate"),
                         )
                         .child(
                             div()
-                                .text_size(px(text::CAPTION))
-                                .line_height(px(14.))
-                                .text_color(t.text_faint)
-                                .truncate()
-                                .child(agent.model.clone()),
+                                .text_size(px(13.))
+                                .text_color(t.readable_muted(0.7))
+                                .child(total.to_string()),
                         ),
-                ),
-        )
-        .child(load)
-        .child(
-            div()
-                .mt(px(12.))
-                .relative()
-                .h(px(QUEUE_LIMIT as f32 * (CHIP_H + CHIP_GAP) - CHIP_GAP))
-                .children(chips)
-                .children(slot)
-                .when(agent.queue.is_empty() && !previewing, |d| {
-                    d.child(
-                        div()
-                            .h(px(CHIP_H))
-                            .rounded(px(radius::MD))
-                            .border_1()
-                            .border_dashed()
-                            .border_color(t.border_strong)
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .text_size(px(text::FOOTNOTE))
-                            .text_color(t.text_faint)
-                            .child("Idle · drop work here"),
-                    )
-                }),
-        )
-        .into_any_element()
-}
-
-#[allow(clippy::too_many_arguments)]
-fn queue_chip(
-    key: &str,
-    agent: &BoardAgent,
-    task: &BoardTask,
-    running: bool,
-    y: f32,
-    title_w: f32,
-    dragging: Option<&SharedString>,
-    state: &Entity<BoardState>,
-    reduced: bool,
-    t: &Pink,
-) -> impl IntoElement {
-    let lifted = dragging == Some(&task.id);
-    let progress = motion::follow(
-        &format!("{key}-p-{}", task.id),
-        task.done as f32 / task.minutes as f32,
-        GLIDE,
-    );
-    let chip_key = format!("{key}-chip-{}", task.id);
-    let chip = div()
-        .id(eid(format!("chip-{}-{}", agent.id, task.id)))
-        .absolute()
-        .left_0()
-        .right_0()
-        .top(px(y))
-        .h(px(CHIP_H))
-        .pl(px(8.))
-        .pr(px(10.))
-        .rounded(px(radius::MD))
-        .border_1()
-        .border_color(t.border)
-        .bg(t.surface_card)
-        .overflow_hidden()
-        .flex()
-        .items_center()
-        .gap(px(6.))
-        .when(running, |d| {
-            let spinner = svg()
-                .path(ICON_SPINNER)
-                .size(px(12.))
-                .flex_none()
-                .text_color(t.accent);
-            d.child(if reduced {
-                spinner.into_any_element()
-            } else {
-                spinner
-                    .with_animation(
-                        eid(format!("{key}-spin-{}", task.id)),
-                        Animation::new(Duration::from_millis(900)).repeat(),
-                        |s, p| s.with_transformation(Transformation::rotate(percentage(p))),
-                    )
-                    .into_any_element()
-            })
-        })
-        .when(!running, |d| {
-            d.child(
-                svg()
-                    .path(ICON_GRIP)
-                    .size(px(12.))
-                    .flex_none()
-                    .text_color(t.text_faint.opacity(0.7)),
-            )
-        })
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .child(
-                    div()
-                        .w(px(title_w))
-                        .truncate()
-                        .text_size(px(text::FOOTNOTE))
-                        .line_height(px(16.))
-                        .text_color(if running { t.text } else { t.text_muted })
-                        .child(task.title.clone()),
                 )
                 .child(
                     div()
-                        .flex()
-                        .gap(px(6.))
-                        .text_size(px(10.5))
-                        .line_height(px(14.))
-                        .text_color(t.text_faint)
-                        .child(task.tag.clone())
-                        .child(div().font_family(pink::MONO).child(if running {
-                            format!("{}m left", task.left())
-                        } else {
-                            format!("~{}m", task.left())
-                        })),
+                        .mt(px(6.))
+                        .max_w(px(600.))
+                        .text_size(px(13.))
+                        .line_height(px(19.))
+                        .text_color(t.readable_muted(0.9))
+                        .child(
+                            "Drag a task onto an agent to queue it, three at most; drag it \
+                             back to the Backlog to unassign it.",
+                        ),
                 ),
         )
-        .when(running, |d| {
-            d.child(
-                div()
-                    .absolute()
-                    .left_0()
-                    .bottom_0()
-                    .h(px(2.))
-                    .w(relative(progress.clamp(0., 1.)))
-                    .bg(t.accent),
-            )
-        })
-        .when(lifted, |d| {
-            d.opacity(0.35)
-                .border_dashed()
-                .border_color(t.border_strong)
-        });
-    let chip = if running {
-        chip
-    } else {
-        let drag_state = state.clone();
-        let payload = DraggedTask {
-            task: task.clone(),
-            from: DropTarget::Agent(agent.id.clone()),
-        };
-        chip.cursor_grab()
-            .when(!lifted, |d| {
-                d.hover_border(chip_key, t.border, t.border_strong)
-            })
-            .on_drag(payload, move |dragged: &DraggedTask, _, _, cx| {
-                drag_state.update(cx, |s, _| s.dragging = Some(dragged.task.id.clone()));
-                let task = dragged.task.clone();
-                cx.new(|_| Ghost { task })
-            })
-    };
-    chip.with_animation(
-        eid(format!("{key}-chip-in-{}-{}", agent.id, task.id)),
-        MENU_IN.with_duration(280).animation(),
-        |el, p| el.opacity(p),
-    )
+        .child(
+            div()
+                .w_full()
+                .flex()
+                .flex_row()
+                .flex_wrap()
+                .items_center()
+                .gap(px(8.))
+                .child(auto_chip)
+                .child(
+                    div()
+                        .text_size(px(12.))
+                        .line_height(px(16.))
+                        .font_features(tabular_figures())
+                        .text_color(t.readable_muted(0.8))
+                        .child(format!(
+                            "Now {} · meters show the next {} minutes",
+                            clock_label(clock),
+                            HORIZON as u32
+                        )),
+                ),
+        )
 }
 
 // ---------------------------------------------------------------------------
-// Story: four agents, a short backlog and a clock that runs a minute a tick
+// Story: three agents, a backlog and a clock that runs a minute a tick
 // ---------------------------------------------------------------------------
 
 struct Sim {
     agents: Vec<BoardAgent>,
     backlog: Vec<BoardTask>,
+    /// Work that arrives in the Backlog later.
+    incoming: Vec<BoardTask>,
     clock: u32,
     auto: bool,
     note: Option<SharedString>,
@@ -1173,22 +1220,26 @@ impl Sim {
     fn new(cx: &mut Context<Self>) -> Self {
         let agents = vec![
             BoardAgent::new("kit", "Kit", "lumen-4 mini")
-                .hue(150.)
-                .task(BoardTask::new("crash", "Triage crash reports", "ops", 15).done(6)),
+                .task(BoardTask::new("crash", "Triage overnight crash reports", "ops", 15).done(6)),
             BoardAgent::new("ivo", "Ivo", "lumen-4 large")
-                .hue(32.)
-                .task(BoardTask::new("auth", "Refactor auth middleware", "api", 30).done(8))
-                .task(BoardTask::new("tls", "Bump TLS library", "infra", 12)),
-            BoardAgent::new("noor", "Noor", "lumen-4 large")
-                .hue(277.)
-                .task(BoardTask::new("changelog", "Draft Q3 changelog", "docs", 25).done(10)),
-            BoardAgent::new("sol", "Sol", "lumen-4 mini").hue(200.),
+                .task(BoardTask::new("auth", "Refactor the auth middleware", "api", 30).done(8))
+                .task(BoardTask::new("tls", "Bump the TLS library", "infra", 12)),
+            BoardAgent::new("noor", "Noor", "lumen-4 large"),
         ];
         let backlog = vec![
-            BoardTask::new("flaky", "Fix flaky cart test", "tests", 20),
-            BoardTask::new("tickets", "Summarize tickets", "research", 15),
+            BoardTask::new("flaky", "Fix the flaky cart checkout test", "tests", 20),
+            BoardTask::new(
+                "tickets",
+                "Summarize this week's support tickets",
+                "research",
+                15,
+            ),
             BoardTask::new("paging", "Paginate /invoices", "api", 25),
-            BoardTask::new("onboard", "Edit onboarding copy", "docs", 10),
+        ];
+        let incoming = vec![
+            BoardTask::new("changelog", "Draft the Q3 changelog", "docs", 25),
+            BoardTask::new("onboard", "Tighten the onboarding copy", "docs", 10),
+            BoardTask::new("index", "Add an index for slow order lookups", "db", 18),
         ];
         let task = cx.spawn(async move |this, cx| {
             loop {
@@ -1209,8 +1260,9 @@ impl Sim {
         Sim {
             agents,
             backlog,
+            incoming,
             clock: 14 * 60 + 5,
-            auto: false,
+            auto: true,
             note: None,
             pulse: None,
             tick: 0,
@@ -1218,8 +1270,8 @@ impl Sim {
         }
     }
 
-    /// Every 400ms: a sim minute passes every third tick, Auto hands out
-    /// work every fourth.
+    /// Every 400ms: a sim minute passes every third tick, new work arrives
+    /// every 25th, and Auto-assign hands out work every 10th.
     fn step(&mut self) {
         self.tick += 1;
         if self.tick.is_multiple_of(3) {
@@ -1228,23 +1280,39 @@ impl Sim {
                 if let Some(task) = agent.queue.first_mut() {
                     task.done += 1;
                     if task.done >= task.minutes {
-                        agent.queue.remove(0);
+                        // Finished work comes back later as a new ticket.
+                        let mut again = agent.queue.remove(0);
+                        again.id = format!("{}-{}", again.id, self.tick).into();
+                        again.done = 0;
+                        self.incoming.push(again);
                     }
                 }
             }
         }
-        if self.auto && self.tick.is_multiple_of(4) && !self.backlog.is_empty() {
+        if self.tick.is_multiple_of(25) && self.backlog.len() < 4 && !self.incoming.is_empty() {
+            self.backlog.push(self.incoming.remove(0));
+        }
+        if self.auto && self.tick.is_multiple_of(10) && !self.backlog.is_empty() {
             let Some(agent_id) = first_free(&self.agents).map(|a| a.id.clone()) else {
                 return;
             };
             let task = self.backlog.remove(0);
             if let Some(agent) = self.agents.iter_mut().find(|a| a.id == agent_id) {
-                let free_at = clock_label(self.clock + agent.busy());
+                let busy = agent.busy();
                 self.note = Some(
-                    format!(
-                        "Auto sent \u{201c}{}\u{201d} to {} – free first, at {free_at}",
-                        task.title, agent.name
-                    )
+                    if busy == 0 {
+                        format!(
+                            "Auto-assign sent \u{201c}{}\u{201d} to {}, who was free.",
+                            task.title, agent.name
+                        )
+                    } else {
+                        format!(
+                            "Auto-assign sent \u{201c}{}\u{201d} to {}, free first at {}.",
+                            task.title,
+                            agent.name,
+                            clock_label(self.clock + busy)
+                        )
+                    }
                     .into(),
                 );
                 agent.queue.push(task);
@@ -1267,7 +1335,7 @@ impl Sim {
             DropTarget::Backlog => self.backlog.push(task),
             DropTarget::Agent(id) => {
                 if let Some(agent) = self.agents.iter_mut().find(|a| &a.id == id) {
-                    if agent.queue.len() < QUEUE_LIMIT {
+                    if agent.has_room() {
                         agent.queue.push(task);
                     } else {
                         self.backlog.push(task);
