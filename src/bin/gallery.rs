@@ -17,9 +17,9 @@ use affectui::{
     primitives::{SANS, hex, hexa},
 };
 use gpui::{
-    AnyView, App, Application, Bounds, Context, FontWeight, Hsla, KeyBinding, ScrollHandle,
-    SharedString, TitlebarOptions, Window, WindowBounds, WindowOptions, actions, div, point,
-    prelude::*, px, size,
+    AnyView, App, Bounds, Context, FontWeight, Hsla, KeyBinding, ScrollHandle, SharedString,
+    TitlebarOptions, Window, WindowBounds, WindowOptions, actions, div, point, prelude::*, px,
+    size,
 };
 
 actions!(gallery, [Next, Previous, ToggleTheme, Replay, Quit]);
@@ -442,7 +442,7 @@ fn main() {
         eprintln!("gallery: unknown component `{slug}`, try --list");
     }
 
-    Application::new()
+    gpui_platform::application()
         .with_assets(Assets)
         .run(move |cx: &mut App| {
             affectui::init(cx);

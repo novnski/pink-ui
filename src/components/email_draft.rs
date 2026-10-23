@@ -17,6 +17,7 @@
 //!     .on_send(|email, _, _| println!("to {}", email.to.email))
 //! ```
 
+use std::sync::Arc;
 use std::{
     cell::Cell,
     f32::consts::PI,
@@ -671,7 +672,7 @@ impl DraftState {
         self.editing = true;
         self.menu = false;
         self.input.update(cx, |input, cx| input.set_text(body, cx));
-        self.input.read(cx).focus(window);
+        TextInput::focus(&self.input, window, cx);
         cx.notify();
     }
 
@@ -960,7 +961,7 @@ impl RenderOnce for EmailDraft {
         };
 
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "email-draft-state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "email-draft-state".into()),
             cx,
             {
                 let to = contacts[0].clone();
@@ -1438,7 +1439,7 @@ fn recipient(ctx: &Ctx, p: &Palette, contacts: &Rc<[DraftContact]>, cx: &mut App
                 s.menu
             });
             if opened {
-                window.focus(&menu_focus);
+                window.focus(&menu_focus, cx);
             }
         }
     };
@@ -1600,7 +1601,7 @@ fn recipient(ctx: &Ctx, p: &Palette, contacts: &Rc<[DraftContact]>, cx: &mut App
                     "end" => len - 1,
                     _ => return,
                 };
-                window.focus(&options[next]);
+                window.focus(&options[next], cx);
                 cx.stop_propagation();
             }
         };

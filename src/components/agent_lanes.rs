@@ -15,6 +15,7 @@
 //!     .block(LaneBlock::new(1, "Patch partial refunds").span(-530.0, 40.0).handoff(0, "spec.md"))
 //! ```
 
+use std::sync::Arc;
 use std::{
     rc::Rc,
     time::{Duration, Instant},
@@ -457,7 +458,7 @@ impl RenderOnce for AgentLanes {
         let t = Luna::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "lanes".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "lanes".into()),
             cx,
             |_, cx| LanesState::new(&self, cx),
         );

@@ -14,6 +14,7 @@
 //! .on_decide(|decision, answer, _, _| println!("{}: {answer:?}", decision.id))
 //! ```
 
+use std::sync::Arc;
 use std::{
     cell::{Cell, RefCell},
     collections::HashMap,
@@ -330,6 +331,7 @@ fn mix_shadows(rest: &[BoxShadow], hover: &[BoxShadow], t: f32) -> Vec<BoxShadow
             offset: a.offset + (b.offset - a.offset) * t,
             blur_radius: a.blur_radius + (b.blur_radius - a.blur_radius) * t,
             spread_radius: a.spread_radius + (b.spread_radius - a.spread_radius) * t,
+            inset: a.inset,
         })
         .collect()
 }
@@ -512,7 +514,7 @@ impl RenderOnce for DecisionInbox {
         let key = self.id.to_string();
         let decisions = self.decisions;
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, _| InboxState::new(&decisions),
         );
@@ -868,7 +870,7 @@ impl RenderOnce for DecisionInbox {
                     (None, true) => len - 1,
                 };
                 keyboard.set(true);
-                window.focus(&tab_order[next]);
+                window.focus(&tab_order[next], cx);
                 cx.stop_propagation();
             }
         };
@@ -1059,7 +1061,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                     .await;
                 left.set(demo_decisions().len());
                 round.set(round.get() + 1);
-                cx.refresh().ok();
+                cx.refresh();
             })
             .detach();
         })

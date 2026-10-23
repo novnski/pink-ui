@@ -13,6 +13,7 @@
 //!     .on_change(|change, _, _| println!("{change:?}"))
 //! ```
 
+use std::sync::Arc;
 use std::{
     rc::Rc,
     time::{Duration, Instant},
@@ -245,7 +246,7 @@ impl MemoryState {
             InputEvent::Escape => this.cancel(cx),
             _ => {}
         });
-        input.read(cx).focus(window);
+        TextInput::focus(&input, window, cx);
         self.editing = Some(Editor {
             id,
             input,
@@ -389,7 +390,7 @@ impl RenderOnce for MemoryPanel {
         let key = self.id.to_string();
         let initial = self.memories.clone();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             move |_, _| MemoryState {
                 items: initial

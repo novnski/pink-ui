@@ -18,6 +18,7 @@
 //!     })
 //! ```
 
+use std::sync::Arc;
 use std::{
     cell::{Cell, RefCell},
     collections::{HashMap, HashSet},
@@ -588,7 +589,7 @@ impl ThreadState {
                     let next = if this.has_draft { "send" } else { "first" };
                     if let Some(handle) = this.focus.get(next) {
                         this.keyboard.set(true);
-                        window.focus(handle);
+                        window.focus(handle, cx);
                     }
                 }
                 _ => {}
@@ -796,7 +797,7 @@ impl RenderOnce for CommentThread {
         };
         let initial = self.messages;
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |window, cx| ThreadState::new(initial, placeholder, window, cx),
         );
@@ -850,7 +851,7 @@ impl RenderOnce for CommentThread {
         let mut scrolled = false;
         if let Some((from, started)) = s.scroll_anim {
             let t = progress(started, now, SCROLL);
-            let target = -f32::from(scroll.max_offset().height);
+            let target = -f32::from(scroll.max_offset().y);
             scroll.set_offset(point(px(0.), px(motion::lerp(from, target, t))));
             moving = t < 1.;
             scrolled = t >= 1.;
@@ -1206,7 +1207,7 @@ impl RenderOnce for CommentThread {
                     (None, true) => len - 1,
                 };
                 keyboard.set(true);
-                window.focus(&tab_order[next]);
+                window.focus(&tab_order[next], cx);
                 cx.stop_propagation();
             }
         };

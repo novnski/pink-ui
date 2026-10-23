@@ -19,6 +19,7 @@
 //! ])
 //! ```
 
+use std::sync::Arc;
 use std::{
     cell::Cell,
     f32::consts::TAU,
@@ -255,7 +256,7 @@ impl RenderOnce for ThinkingState {
         let now = Instant::now();
 
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, cx: &mut Context<State>| State {
                 focus: cx.focus_handle(),

@@ -14,6 +14,7 @@
 //!     .on_steer(|note, _, _| println!("{} (interrupt: {})", note.text, note.interrupt))
 //! ```
 
+use std::sync::Arc;
 use std::{
     rc::Rc,
     time::{Duration, Instant},
@@ -562,7 +563,7 @@ impl RenderOnce for AgentSteering {
         let t = Luna::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "steer".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "steer".into()),
             cx,
             |window, cx| SteerState::new(&self, window, cx),
         );

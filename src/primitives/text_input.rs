@@ -9,7 +9,7 @@
 //! Render it inside a styled parent: font family, size, line height and text
 //! color are inherited from there, just like a native `<input>` would.
 
-use std::ops::Range;
+use std::{ops::Range, rc::Rc};
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, ElementId, ElementInputHandler, Entity,
@@ -129,7 +129,7 @@ struct InputLayout {
     bounds: Bounds<Pixels>,
     line_height: Pixels,
     /// Hard lines with their starting byte offset and top edge.
-    lines: Vec<(usize, Pixels, WrappedLine)>,
+    lines: Rc<[(usize, Pixels, WrappedLine)]>,
 }
 
 impl EventEmitter<InputEvent> for TextInput {}
@@ -257,8 +257,11 @@ impl TextInput {
         self.selection_color = selection;
     }
 
-    pub fn focus(&self, window: &mut Window) {
-        window.focus(&self.focus_handle);
+    /// Focuses `input`; an associated function because focusing needs the app
+    /// mutably while `input.read(cx)` would hold it.
+    pub fn focus(input: &Entity<Self>, window: &mut Window, cx: &mut App) {
+        let handle = input.read(cx).focus_handle.clone();
+        window.focus(&handle, cx);
     }
 
     pub fn is_focused(&self, window: &Window) -> bool {
@@ -468,7 +471,7 @@ impl TextInput {
             return;
         }
         self.is_selecting = true;
-        window.focus(&self.focus_handle);
+        window.focus(&self.focus_handle, cx);
         let index = self.index_for_mouse_position(event.position);
         if event.modifiers.shift {
             self.select_to(index, cx);
@@ -514,7 +517,7 @@ impl TextInput {
             return 0;
         }
         let mut target = None;
-        for (start, top, line) in &layout.lines {
+        for (start, top, line) in layout.lines.iter() {
             let height = layout.line_height * (line.wrap_boundaries().len() + 1) as f32;
             if local.y < *top + height {
                 target = Some((*start, *top, line));
@@ -532,7 +535,7 @@ impl TextInput {
     }
 
     fn caret_point(&self, layout: &InputLayout, offset: usize) -> Option<Point<Pixels>> {
-        for (start, top, line) in &layout.lines {
+        for (start, top, line) in layout.lines.iter() {
             if offset >= *start && offset <= start + line.len() {
                 let p = line.position_for_index(offset - start, layout.line_height)?;
                 return Some(point(p.x, p.y + *top));
@@ -773,7 +776,7 @@ struct TextElement {
 }
 
 struct PrepaintState {
-    lines: Vec<(usize, Pixels, WrappedLine)>,
+    lines: Rc<[(usize, Pixels, WrappedLine)]>,
     line_height: Pixels,
     cursor: Option<PaintQuad>,
     selections: Vec<PaintQuad>,
@@ -816,7 +819,7 @@ fn shape(
     text: &InheritedText,
     window: &mut Window,
     wrap_width: Option<Pixels>,
-) -> (Vec<(usize, Pixels, WrappedLine)>, Pixels) {
+) -> (Rc<[(usize, Pixels, WrappedLine)]>, Pixels) {
     let style = &text.style;
     let line_height = text.line_height;
     let font_size = text.font_size;
@@ -879,7 +882,7 @@ fn shape(
         start += len + 1;
         top += line_height * rows as f32;
     }
-    (lines, line_height)
+    (lines.into(), line_height)
 }
 
 impl Element for TextElement {
@@ -981,7 +984,7 @@ impl Element for TextElement {
         let mut selections = Vec::new();
         let range = input.selected_range.clone();
         if !range.is_empty() && !input.content.is_empty() {
-            for (start, top, line) in &lines {
+            for (start, top, line) in lines.iter() {
                 let line_end = start + line.len();
                 let s = range.start.max(*start);
                 let e = range.end.min(line_end);
@@ -1064,7 +1067,7 @@ impl Element for TextElement {
             for selection in prepaint.selections.drain(..) {
                 window.paint_quad(selection);
             }
-            for (_, top, line) in &prepaint.lines {
+            for (_, top, line) in prepaint.lines.iter() {
                 line.paint(
                     point(origin.x, origin.y + *top),
                     line_height,
@@ -1082,7 +1085,7 @@ impl Element for TextElement {
             }
         });
 
-        let lines = std::mem::take(&mut prepaint.lines);
+        let lines = prepaint.lines.clone();
         self.input.update(cx, |input, _| {
             input.layout = Some(InputLayout {
                 bounds,

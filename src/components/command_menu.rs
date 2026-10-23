@@ -14,6 +14,7 @@
 //!     .on_run(|command, _, _| println!("{}", command.label))
 //! ```
 
+use std::sync::Arc;
 use std::{ops::Range, rc::Rc, time::Duration};
 
 use gpui::{
@@ -589,7 +590,7 @@ impl RenderOnce for CommandMenu {
         let autofocus = self.autofocus;
 
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             move |window, cx| {
                 let input = cx.new(|cx| TextInput::new(window, cx).placeholder(placeholder));
@@ -599,7 +600,7 @@ impl RenderOnce for CommandMenu {
                     });
                 if autofocus {
                     let handle = input.read(cx).focus_handle(cx);
-                    window.defer(cx, move |window, _| window.focus(&handle));
+                    window.defer(cx, move |window, cx| window.focus(&handle, cx));
                 }
                 MenuState {
                     input,

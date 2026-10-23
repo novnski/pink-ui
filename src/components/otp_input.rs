@@ -25,7 +25,8 @@
 
 use std::cell::Cell;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use web_time::{Duration, Instant};
 
 use gpui::{
     AnyView, App, BoxShadow, Context, CursorStyle, ElementId, FocusHandle, FontWeight, Hsla,
@@ -701,7 +702,7 @@ impl OtpState {
     fn new(props: &OtpInput, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
         if props.auto_focus && !props.disabled {
-            window.focus(&focus);
+            window.focus(&focus, cx);
         }
         let code = clean_code(
             props.value.as_ref().unwrap_or(&props.default_value),
@@ -1353,7 +1354,7 @@ impl RenderOnce for OtpInput {
         let key = self.id.to_string();
 
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |window, cx| OtpState::new(&self, window, cx),
         );
@@ -1672,7 +1673,7 @@ impl RenderOnce for OtpInput {
             if disabled {
                 return;
             }
-            window.focus(&pick_focus);
+            window.focus(&pick_focus, cx);
             let x = f32::from(event.position.x - pick_origin.get().x);
             pick_state.update(cx, |s, cx| {
                 if let Some(layout) = &s.layout {
@@ -1706,9 +1707,9 @@ impl RenderOnce for OtpInput {
             })
             .on_key_down(on_key)
             .on_mouse_down(MouseButton::Left, on_pick)
-            .on_mouse_down_out(move |_, window, _| {
+            .on_mouse_down_out(move |_, window, cx| {
                 if blur_focus.is_focused(window) {
-                    window.blur();
+                    window.blur(cx);
                 }
             })
             .children(boxes)

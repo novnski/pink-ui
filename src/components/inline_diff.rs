@@ -17,6 +17,7 @@
 //! ```
 
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui::{
     AnyElement, AnyView, App, Div, ElementId, FocusHandle, FontWeight, Hsla, IntoElement,
@@ -461,12 +462,12 @@ impl RenderOnce for InlineDiff {
         let n = self.edits.len();
         let autofocus = self.autofocus;
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |window, cx| {
                 let focus = cx.focus_handle();
                 if autofocus {
-                    window.focus(&focus);
+                    window.focus(&focus, cx);
                 }
                 DiffState {
                     focus,
@@ -990,7 +991,7 @@ impl RenderOnce for InlineDiff {
             .on_key_down(on_key)
             .on_mouse_down(MouseButton::Left, {
                 let focus = focus.clone();
-                move |_, window, _| window.focus(&focus)
+                move |_, window, cx| window.focus(&focus, cx)
             })
             .w(px(self.width))
             .overflow_hidden()

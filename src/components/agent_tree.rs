@@ -17,6 +17,7 @@
 //!     .on_retry(|id, _, _| println!("retry {id}"))
 //! ```
 
+use std::sync::Arc;
 use std::{collections::HashSet, rc::Rc, time::Duration};
 
 use gpui::{
@@ -373,7 +374,7 @@ impl RenderOnce for AgentTree {
         let key = self.id.to_string();
         let initial = self.selected.clone();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, cx| TreeState {
                 folded: HashSet::new(),
@@ -832,7 +833,7 @@ fn row(node: &AgentNode, depth: usize, row_ix: usize, c: &Ctx) -> impl IntoEleme
         .on_click(move |_, window, cx| {
             state.update(cx, |s, cx| {
                 s.selected = Some(select_id.clone());
-                window.focus(&s.focus);
+                window.focus(&s.focus, cx);
                 cx.notify();
             });
         })

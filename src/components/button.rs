@@ -21,6 +21,7 @@
 //!     .loading(uploading);
 //! ```
 
+use std::sync::Arc;
 use std::{collections::HashMap, f32::consts::TAU, ops::Range, rc::Rc, time::Duration};
 
 use gpui::{
@@ -680,6 +681,7 @@ fn mix_shadows(rest: &[BoxShadow], hover: &[BoxShadow], t: f32) -> Vec<BoxShadow
                 f32::from(b.spread_radius),
                 t,
             )),
+            inset: a.inset,
         })
         .collect()
 }
@@ -760,7 +762,7 @@ impl RenderOnce for Button {
         let reduced = motion::reduced_motion(cx);
 
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "button".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "button".into()),
             cx,
             |_, cx| ButtonState {
                 focus: cx.focus_handle().tab_stop(true),
@@ -872,9 +874,9 @@ impl RenderOnce for Button {
                 .on_key_down(|event, window, cx| {
                     if event.keystroke.key == "tab" {
                         if event.keystroke.modifiers.shift {
-                            window.focus_prev();
+                            window.focus_prev(cx);
                         } else {
-                            window.focus_next();
+                            window.focus_next(cx);
                         }
                         cx.stop_propagation();
                     }

@@ -19,6 +19,7 @@
 //!     .on_ship(|ix, _, _| println!("ship variant {ix}"))
 //! ```
 
+use std::sync::Arc;
 use std::{rc::Rc, time::Duration};
 
 use gpui::{
@@ -271,7 +272,7 @@ impl RenderOnce for ExperimentCard {
         let key = self.id.to_string();
         let (expanded, shipped) = (self.expanded, self.shipped);
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, cx| State {
                 hovered: false,
@@ -971,8 +972,8 @@ impl RenderOnce for ExperimentCard {
                     cx.notify();
                 })
             })
-            .on_mouse_down(MouseButton::Left, move |_, window, _| {
-                window.focus(&focus_click)
+            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                window.focus(&focus_click, cx)
             })
             .on_key_down(move |ev: &KeyDownEvent, window, cx| {
                 let k = ev.keystroke.key.as_str();

@@ -20,6 +20,7 @@
 //! records its bounds when painted) and move on a critically damped spring,
 //! so they keep up with targets that shift while the page reflows.
 
+use std::sync::Arc;
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -611,7 +612,7 @@ impl RenderOnce for AgentCursors {
         let t = Luna::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "cursors".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "cursors".into()),
             cx,
             |_, cx| CursorsState::new(&self, cx),
         );

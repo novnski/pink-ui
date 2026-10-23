@@ -27,7 +27,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnimationElement, App, ElementId, Global, Hsla, IntoElement, Rgba, SharedString,

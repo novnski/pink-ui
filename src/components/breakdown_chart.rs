@@ -15,6 +15,7 @@
 //!     .segment(2) // dimension stacked inside each column
 //! ```
 
+use std::sync::Arc;
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
@@ -296,7 +297,7 @@ impl RenderOnce for BreakdownChart {
         let cube = self.cube.clone();
         let (m0, s0, g0) = (self.measure, self.slice, self.segment);
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, cx| State {
                 measure: m0,
@@ -592,7 +593,7 @@ impl RenderOnce for BreakdownChart {
                             })
                         })
                         .on_click(move |_, window, cx| {
-                            window.focus(&focus);
+                            window.focus(&focus, cx);
                             click_state.update(cx, |s, cx| {
                                 if s.open == Some(picker) {
                                     s.open = None;
@@ -1103,8 +1104,8 @@ impl RenderOnce for BreakdownChart {
             .gap(px(space::S16))
             .font_family(luna::SANS)
             .track_focus(&focus)
-            .on_mouse_down(MouseButton::Left, move |_, window, _| {
-                window.focus(&focus_click)
+            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                window.focus(&focus_click, cx)
             })
             .on_key_down(on_key)
             .child(header)

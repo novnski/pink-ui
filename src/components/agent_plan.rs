@@ -16,6 +16,7 @@
 //! The run is simulated from each step's estimate (use [`AgentPlan::fail_once`]
 //! to rehearse a failure), so the component works on its own in a demo.
 
+use std::sync::Arc;
 use std::{
     f32::consts::{PI, TAU},
     rc::Rc,
@@ -466,7 +467,7 @@ impl PlanState {
         self.editing = Some(key);
         self.rename
             .update(cx, |input, cx| input.set_text(title, cx));
-        self.rename.read(cx).focus(window);
+        TextInput::focus(&self.rename, window, cx);
         cx.notify();
     }
 
@@ -695,7 +696,7 @@ impl RenderOnce for AgentPlan {
         let failure = self.failure.clone();
         let autoplay = self.autoplay;
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "plan".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "plan".into()),
             cx,
             move |window, cx| PlanState::new(initial, failure, autoplay, window, cx),
         );
@@ -1193,7 +1194,7 @@ impl RenderOnce for AgentPlan {
                             state.update(cx, |s, cx| {
                                 s.take_over();
                                 s.adding = true;
-                                s.add.read(cx).focus(window);
+                                TextInput::focus(&s.add, window, cx);
                                 cx.notify();
                             })
                         }

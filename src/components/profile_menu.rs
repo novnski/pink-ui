@@ -12,6 +12,7 @@
 //! ```
 
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui::{
     AnyView, App, BoxShadow, ElementId, FocusHandle, FontWeight, Hsla, IntoElement, KeyDownEvent,
@@ -351,7 +352,7 @@ impl RenderOnce for ProfileMenu {
         // One focus handle per action, kept across frames.
         let count = items.len();
         let focus = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "focus".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "focus".into()),
             cx,
             |_, cx| {
                 (0..count)
@@ -435,7 +436,7 @@ impl RenderOnce for ProfileMenu {
                 "end" => len - 1,
                 _ => return,
             };
-            window.focus(&handles[next]);
+            window.focus(&handles[next], cx);
             cx.stop_propagation();
         };
 

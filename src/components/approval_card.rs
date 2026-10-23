@@ -15,6 +15,7 @@
 //!     .on_resolve(|decision, _, _| println!("{decision:?}"))
 //! ```
 
+use std::sync::Arc;
 use std::{
     cell::Cell,
     rc::Rc,
@@ -362,12 +363,12 @@ impl RenderOnce for ApprovalCard {
             self.autofocus,
         );
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |window, cx| {
                 let state = CardState::new(timeout, resolved, undo_window, window, cx);
                 if autofocus {
-                    window.focus(&state.focus);
+                    window.focus(&state.focus, cx);
                 }
                 state
             },

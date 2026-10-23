@@ -129,6 +129,7 @@ fn shadow(x: f32, y: f32, sigma: f32, spread: f32, color: Hsla) -> BoxShadow {
         offset: gpui::point(px(x), px(y)),
         blur_radius: px(sigma),
         spread_radius: px(spread),
+        inset: false,
     }
 }
 

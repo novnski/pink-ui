@@ -18,6 +18,7 @@
 //! .on_dismiss(|notice, _, _| println!("dismissed {}", notice.id))
 //! ```
 
+use std::sync::Arc;
 use std::{
     collections::{HashMap, HashSet},
     f32::consts::PI,
@@ -317,6 +318,7 @@ fn mix_shadows(from: &[BoxShadow], to: &[BoxShadow], t: f32) -> Vec<BoxShadow> {
             ),
             blur_radius: a.blur_radius + (b.blur_radius - a.blur_radius) * t,
             spread_radius: a.spread_radius + (b.spread_radius - a.spread_radius) * t,
+            inset: a.inset,
         })
         .collect()
 }
@@ -406,7 +408,7 @@ impl RenderOnce for NotificationStack {
         let state = {
             let notices = self.notices.clone();
             window.use_keyed_state(
-                ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+                ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
                 cx,
                 move |_, _| StackState {
                     items: notices,

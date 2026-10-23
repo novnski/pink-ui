@@ -19,6 +19,7 @@
 //! .on_accept(|option, _, _| println!("{}", option.label))
 //! ```
 
+use std::sync::Arc;
 use std::{f32::consts::FRAC_PI_2, ops::Range, rc::Rc};
 
 use gpui::{
@@ -474,6 +475,7 @@ fn mix_shadows(rest: &[BoxShadow], hover: &[BoxShadow], t: f32) -> Vec<BoxShadow
                 f32::from(b.spread_radius),
                 t,
             )),
+            inset: a.inset,
         })
         .collect()
 }
@@ -596,7 +598,7 @@ impl RenderOnce for SmartRecommendation {
         let default_open = self.default_open;
         let count = options.len();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, cx| State {
                 chosen: first,
@@ -867,7 +869,7 @@ impl RenderOnce for SmartRecommendation {
                                 && event.is_keyboard()
                                 && let Some(handle) = &first_option
                             {
-                                window.focus(handle);
+                                window.focus(handle, cx);
                             }
                         }
                     })
@@ -1063,7 +1065,7 @@ impl RenderOnce for SmartRecommendation {
                             s.menu = false;
                             cx.notify();
                         });
-                        window.focus(&focus_alt);
+                        window.focus(&focus_alt, cx);
                         cx.stop_propagation();
                     }
                     "up" | "down" | "home" | "end" if menu => {
@@ -1075,14 +1077,14 @@ impl RenderOnce for SmartRecommendation {
                             "home" => 0,
                             _ => len - 1,
                         };
-                        window.focus(&focus_options[next]);
+                        window.focus(&focus_options[next], cx);
                         cx.stop_propagation();
                     }
                     "tab" => {
                         if event.keystroke.modifiers.shift {
-                            window.focus_prev();
+                            window.focus_prev(cx);
                         } else {
-                            window.focus_next();
+                            window.focus_next(cx);
                         }
                         cx.stop_propagation();
                     }

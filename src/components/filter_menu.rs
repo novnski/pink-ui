@@ -20,6 +20,7 @@
 //! .on_change(|value, _, _| println!("{value:?}"))
 //! ```
 
+use std::sync::Arc;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     f32::consts::FRAC_PI_2,
@@ -520,7 +521,7 @@ impl RenderOnce for FilterMenu {
                 None => groups.iter().take(1).map(|g| g.id.clone()).collect(),
             };
             window.use_keyed_state(
-                ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+                ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
                 cx,
                 move |_, cx| FilterState {
                     picked: default_value,
@@ -661,9 +662,9 @@ impl RenderOnce for FilterMenu {
                 let current = rows
                     .iter()
                     .position(|r| handles.get(&r.key).is_some_and(|h| h.is_focused(window)));
-                let focus_row = |key: &SharedString, window: &mut Window| {
+                let focus_row = |key: &SharedString, window: &mut Window, cx: &mut App| {
                     if let Some(handle) = handles.get(key) {
-                        window.focus(handle);
+                        window.focus(handle, cx);
                     }
                 };
                 match event.keystroke.key.as_str() {
@@ -673,10 +674,10 @@ impl RenderOnce for FilterMenu {
                             Some(i) => i.saturating_sub(1),
                             None => 0,
                         };
-                        focus_row(&rows[next].key, window);
+                        focus_row(&rows[next].key, window, cx);
                     }
-                    "home" => focus_row(&rows[0].key, window),
-                    "end" => focus_row(&rows[len - 1].key, window),
+                    "home" => focus_row(&rows[0].key, window, cx),
+                    "end" => focus_row(&rows[len - 1].key, window, cx),
                     "right" | "left" => {
                         let Some(i) = current else { return };
                         let group = rows[i].group.clone();
@@ -689,7 +690,7 @@ impl RenderOnce for FilterMenu {
                             if is_open {
                                 toggle_group(&group, cx);
                             }
-                            focus_row(&group_key(&group), window);
+                            focus_row(&group_key(&group), window, cx);
                         }
                     }
                     // GPUI clicks the focused row when Enter or Space comes

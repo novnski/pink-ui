@@ -13,6 +13,7 @@
 //! StepperForm::new("new-project").on_complete(|project, _, _| create(project))
 //! ```
 
+use std::sync::Arc;
 use std::{cell::Cell, f32::consts::PI, rc::Rc, time::Duration};
 
 use gpui::{
@@ -226,7 +227,7 @@ impl FormState {
         cx.defer(move |cx| {
             if let Some(window) = cx.active_window() {
                 window
-                    .update(cx, |_, window, cx| input.read(cx).focus(window))
+                    .update(cx, |_, window, cx| TextInput::focus(&input, window, cx))
                     .ok();
             }
         });
@@ -355,8 +356,7 @@ impl FormState {
                             .update(cx, |_, window, cx| f(&project, window, cx))
                             .ok();
                     }
-                })
-                .ok();
+                });
             }
         }));
         cx.notify();
@@ -438,7 +438,7 @@ impl StepperForm {
         let t = Luna::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             FormState::new,
         );
@@ -738,7 +738,7 @@ fn text_field(
                 if error.is_some() { t.danger } else { t.accent }.opacity(0.14),
             )])
         })
-        .on_click(move |_, window, cx| focus.read(cx).focus(window))
+        .on_click(move |_, window, cx| TextInput::focus(&focus, window, cx))
         .when_some(prefix, |d, p| {
             d.child(div().text_color(t.text_faint).child(p))
         })

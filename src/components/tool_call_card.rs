@@ -26,6 +26,7 @@
 //!     )
 //! ```
 
+use std::sync::Arc;
 use std::{
     cell::Cell,
     f32::consts::PI,
@@ -1402,7 +1403,7 @@ impl RenderOnce for ToolCallCard {
 
         let default_open = self.default_open;
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             move |_, cx| CardState {
                 open: default_open,
@@ -1522,7 +1523,7 @@ impl RenderOnce for ToolCallCard {
             .min_w_0()
             .child(
                 div()
-                    .flex_shrink()
+                    .flex_shrink_1()
                     .max_w(relative(0.55))
                     .map(one_line)
                     .font_family(MONO)
@@ -2195,7 +2196,7 @@ impl RenderOnce for ToolCallGroup {
 
         let default_open = self.default_open;
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             move |_, cx| GroupState {
                 open: default_open,
@@ -2459,7 +2460,7 @@ impl RenderOnce for ToolCallGroup {
                 _ => return,
             };
             set_keyboard_focus(true);
-            window.focus(&lines[next]);
+            window.focus(&lines[next], cx);
             window.refresh();
             cx.stop_propagation();
         };

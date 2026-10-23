@@ -14,6 +14,7 @@
 //!     .on_action(|task, action, _, _| println!("{task}: {action:?}"))
 //! ```
 
+use std::sync::Arc;
 use std::{
     cell::RefCell,
     f32::consts::{PI, TAU},
@@ -733,7 +734,7 @@ impl RenderOnce for AgentInbox {
         let t = Luna::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "inbox".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "inbox".into()),
             cx,
             |_, cx| InboxState::new(&self, cx),
         );

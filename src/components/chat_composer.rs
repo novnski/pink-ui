@@ -16,6 +16,7 @@
 //!     .on_send(|message, _, cx| println!("{} via {}", message.text, message.model))
 //! ```
 
+use std::sync::Arc;
 use std::{
     f32::consts::TAU,
     rc::Rc,
@@ -23,7 +24,7 @@ use std::{
 };
 
 use gpui::{
-    Animation, AnyElement, AnyView, App, Bounds, Context, Corner, ElementId, Entity, FocusHandle,
+    Anchor, Animation, AnyElement, AnyView, App, Bounds, Context, ElementId, Entity, FocusHandle,
     FontWeight, Hsla, IntoElement, KeyDownEvent, SharedString, Subscription, Task, Window,
     anchored, canvas, deferred, div, fill, point, prelude::*, px, size, svg,
 };
@@ -408,7 +409,7 @@ fn menu_popover(
     selected: usize,
     highlight: usize,
     width: f32,
-    corner: Corner,
+    corner: Anchor,
     focus: &FocusHandle,
     state: &Entity<State>,
     t: &Luna,
@@ -527,7 +528,7 @@ fn menu_popover(
                 choose(&key_state, kind, i, window, cx);
             } else if key == "escape" {
                 let input = key_state.read(cx).input.clone();
-                input.read(cx).focus(window);
+                TextInput::focus(&input, window, cx);
             }
             cx.stop_propagation();
         })
@@ -542,7 +543,7 @@ fn menu_popover(
         })
         .children(items);
     let (top, bottom) = match corner {
-        Corner::BottomLeft | Corner::BottomRight => (None, Some(())),
+        Anchor::BottomLeft | Anchor::BottomRight => (None, Some(())),
         _ => (Some(()), None),
     };
     div()
@@ -550,11 +551,11 @@ fn menu_popover(
         .when(top.is_some(), |d| d.bottom_0())
         .when(bottom.is_some(), |d| d.top_0())
         .when(
-            matches!(corner, Corner::BottomRight | Corner::TopRight),
+            matches!(corner, Anchor::BottomRight | Anchor::TopRight),
             |d| d.right_0(),
         )
         .when(
-            matches!(corner, Corner::BottomLeft | Corner::TopLeft),
+            matches!(corner, Anchor::BottomLeft | Anchor::TopLeft),
             |d| d.left_0(),
         )
         .child(deferred(
@@ -582,7 +583,7 @@ fn choose(state: &Entity<State>, kind: Menu, i: usize, window: &mut Window, cx: 
         cx.notify();
         s.input.clone()
     });
-    input.read(cx).focus(window);
+    TextInput::focus(&input, window, cx);
 }
 
 fn open_menu(state: &Entity<State>, kind: Menu, window: &mut Window, cx: &mut App) {
@@ -603,7 +604,7 @@ fn open_menu(state: &Entity<State>, kind: Menu, window: &mut Window, cx: &mut Ap
         s.menu.is_some().then(|| s.menu_focus.clone())
     });
     if let Some(focus) = focus {
-        window.focus(&focus);
+        window.focus(&focus, cx);
     }
 }
 
@@ -612,7 +613,7 @@ impl RenderOnce for ChatComposer {
         let t = Luna::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             State::new,
         );
@@ -929,7 +930,7 @@ impl RenderOnce for ChatComposer {
                     model_ix,
                     highlight,
                     296.,
-                    Corner::BottomRight,
+                    Anchor::BottomRight,
                     &menu_focus,
                     &state,
                     &t,
@@ -986,7 +987,7 @@ impl RenderOnce for ChatComposer {
                         };
                         i.set_text(joined, cx);
                     });
-                    mic_input.read(cx).focus(window);
+                    TextInput::focus(&mic_input, window, cx);
                 }
                 if let Some(f) = &on_listen {
                     f(!listening, window, cx);
@@ -1116,7 +1117,7 @@ impl RenderOnce for ChatComposer {
                                 project_ix,
                                 highlight,
                                 240.,
-                                Corner::BottomLeft,
+                                Anchor::BottomLeft,
                                 &menu_focus,
                                 &state,
                                 &t,
@@ -1151,7 +1152,7 @@ impl RenderOnce for ChatComposer {
                     .on_click(move |_, window, cx| {
                         // A click that just opened a menu keeps the focus there.
                         if focus_state.read(cx).menu.is_none() {
-                            focus_input.read(cx).focus(window)
+                            TextInput::focus(&focus_input, window, cx)
                         }
                     })
                     .children(files)

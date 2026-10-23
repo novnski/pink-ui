@@ -15,6 +15,7 @@
 //!     .subtask(Subtask::new("Map old plans to new prices", 0).done(true))
 //! ```
 
+use std::sync::Arc;
 use std::{cell::Cell, f32::consts::PI, rc::Rc};
 
 use gpui::{
@@ -282,7 +283,7 @@ impl RenderOnce for ProjectCard {
         let initial_done: Vec<bool> = self.subtasks.iter().map(|s| s.done).collect();
         let (initial_status, default_open) = (self.status, self.default_open);
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             move |_, _| CardState {
                 pinned_open: default_open,

@@ -16,6 +16,7 @@
 //!     .on_raise_limit(|_, _| {})
 //! ```
 
+use std::sync::Arc;
 use std::{cell::Cell, f32::consts::TAU, rc::Rc, time::Duration};
 
 use gpui::{
@@ -278,7 +279,7 @@ impl RenderOnce for UsageMeter {
         let t = Luna::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, _| State {
                 cycle: 0,

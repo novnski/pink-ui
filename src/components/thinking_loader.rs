@@ -14,6 +14,7 @@
 //!     .done(finished)
 //! ```
 
+use std::sync::Arc;
 use std::{
     f32::consts::PI,
     mem,
@@ -375,7 +376,7 @@ impl RenderOnce for ThinkingLoader {
         let done = self.done;
 
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, _| LoaderState::new(now),
         );

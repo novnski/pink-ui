@@ -64,6 +64,7 @@ pub fn shadow(x: f32, y: f32, blur: f32, spread: f32, color: Hsla) -> BoxShadow 
         offset: point(px(x), px(y)),
         blur_radius: px((blur / 2.).max(0.35)),
         spread_radius: px(spread),
+        inset: false,
     }
 }
 

@@ -16,12 +16,22 @@ path = "src/bin/gallery.rs"
 
 [dependencies]
 anyhow = "1"
-gpui = "0.2.2"
+gpui = { package = "gpui-pre", version = "=0.3.9" }
+web-time = "1"
 rust-embed = { version = "8", features = ["include-exclude"] }
 unicode-segmentation = "1"
 
+# Only the native gallery opens a window itself; the web player brings its own.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.9", features = ["x11", "wayland"] }
+
+# There is no file system to read assets from in the browser, so embed them in
+# debug builds too.
+[target.'cfg(target_family = "wasm")'.dependencies]
+rust-embed = { version = "8", features = ["include-exclude", "debug-embed"] }
+
 [dev-dependencies]
-gpui = { version = "0.2.2", features = ["test-support"] }
+gpui = { package = "gpui-pre", version = "=0.3.9", features = ["test-support"] }
 
 # Keep debug builds small: GPUI with full debuginfo links 500MB binaries.
 [profile.dev]

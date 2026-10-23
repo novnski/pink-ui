@@ -15,6 +15,7 @@
 //!     .on_connect(|service, connected, _, _| println!("{} → {connected}", service.name))
 //! ```
 
+use std::sync::Arc;
 use std::{collections::HashMap, rc::Rc, time::Duration};
 
 use gpui::{
@@ -452,7 +453,7 @@ impl RenderOnce for IntegrationPicker {
         let placeholder = format!("Search {total} apps…");
 
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             move |window, cx| {
                 let input = cx.new(|cx| TextInput::new(window, cx).placeholder(placeholder));
@@ -463,7 +464,7 @@ impl RenderOnce for IntegrationPicker {
                 );
                 if autofocus {
                     let handle = input.read(cx).focus_handle(cx);
-                    window.defer(cx, move |window, _| window.focus(&handle));
+                    window.defer(cx, move |window, cx| window.focus(&handle, cx));
                 }
                 PickerState {
                     input,
@@ -678,7 +679,7 @@ fn sidebar(
                     .on_click(move |_, window, cx| {
                         picker.update(cx, |s, cx| {
                             s.selected = Some(id.clone());
-                            s.input.read(cx).focus(window);
+                            TextInput::focus(&s.input, window, cx);
                             cx.notify();
                         })
                     })

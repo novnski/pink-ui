@@ -11,7 +11,7 @@
 //!
 //! ```no_run
 //! use affectui::components::profile_menu::{ProfileMenu, ProfileSetup};
-//! use gpui::{App, Application, Context, Window, WindowOptions, div, prelude::*};
+//! use gpui::{App, Context, Window, WindowOptions, div, prelude::*};
 //!
 //! struct Root;
 //!
@@ -28,7 +28,7 @@
 //!     }
 //! }
 //!
-//! Application::new().with_assets(affectui::Assets).run(|cx: &mut App| {
+//! gpui_platform::application().with_assets(affectui::Assets).run(|cx: &mut App| {
 //!     affectui::init(cx);
 //!     cx.open_window(WindowOptions::default(), |_, cx| cx.new(|_| Root)).unwrap();
 //! });

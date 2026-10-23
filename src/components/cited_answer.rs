@@ -18,6 +18,7 @@
 //!     .default_open(0)
 //! ```
 
+use std::sync::Arc;
 use std::{cell::Cell, f32::consts::TAU, ops::Range, rc::Rc, time::Duration};
 
 use gpui::{
@@ -287,7 +288,7 @@ impl RenderOnce for CitedAnswer {
         let key = self.id.to_string();
         let source_count = self.sources.len();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, _: &mut Context<State>| State {
                 hover: None,

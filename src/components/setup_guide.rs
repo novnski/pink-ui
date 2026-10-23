@@ -16,6 +16,7 @@
 //!     .on_toggle(|task, done, _, _| println!("{task}: {done}"))
 //! ```
 
+use std::sync::Arc;
 use std::{
     cell::Cell,
     collections::{HashMap, HashSet},
@@ -308,7 +309,7 @@ impl SetupGuide {
         let t = Luna::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, _| GuideState::new(),
         );
