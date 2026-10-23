@@ -461,7 +461,7 @@ impl RenderOnce for ChangeSummary {
     }
 }
 
-/// The site demo's four metrics.
+/// The demo's four metrics.
 pub fn demo_changes() -> Vec<MetricChange> {
     vec![
         MetricChange::new("Active users", "Up 6.1% to 18.2K").tone(Tone::Good),

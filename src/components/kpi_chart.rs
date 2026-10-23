@@ -14,7 +14,7 @@
 //!     .on_range_change(|ix, _, _| println!("range {ix}"))
 //! ```
 
-use std::{cell::Cell, rc::Rc};
+use std::{cell::Cell, rc::Rc, sync::Arc};
 
 use gpui::{
     AnyView, App, BorderStyle, Bounds, ContentMask, Corners, Edges, ElementId, FocusHandle,
@@ -189,7 +189,7 @@ impl RenderOnce for KpiChart {
         let key = self.id.to_string();
         let default_range = self.default_range;
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, cx| State {
                 range: default_range,
@@ -707,8 +707,8 @@ impl RenderOnce for KpiChart {
                 .cursor_crosshair()
                 .child(plot_canvas)
                 .children(readout)
-                .on_mouse_down(MouseButton::Left, move |_, window, _| {
-                    window.focus(&focus_click)
+                .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                    window.focus(&focus_click, cx)
                 })
                 .on_mouse_move(move |ev: &MouseMoveEvent, _, cx| {
                     let b = plot_cell.get();

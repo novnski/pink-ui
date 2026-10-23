@@ -18,8 +18,9 @@ use std::{
     cell::RefCell,
     f32::consts::{PI, TAU},
     rc::Rc,
-    time::{Duration, Instant},
+    sync::Arc,
 };
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnimationExt, AnyElement, AnyView, App, Bounds, Div, ElementId, FontWeight, Hsla,
@@ -733,7 +734,7 @@ impl RenderOnce for AgentInbox {
         let t = Luna::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "inbox".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "inbox".into()),
             cx,
             |_, cx| InboxState::new(&self, cx),
         );

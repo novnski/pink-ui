@@ -26,13 +26,8 @@
 //!     )
 //! ```
 
-use std::{
-    cell::Cell,
-    f32::consts::PI,
-    ops::Range,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::Cell, f32::consts::PI, ops::Range, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     AlignItems, Animation, AnyElement, AnyView, App, AsyncApp, BoxShadow, ClipboardItem, Context,
@@ -198,7 +193,7 @@ impl<T: Into<Json>> From<Option<T>> for Json {
 }
 
 /// What a code section shows: JSON (pretty-printed and highlighted) or
-/// plain text. Strings that hold JSON are parsed, like the web version does.
+/// plain text. Strings that hold JSON are parsed.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ToolPayload {
     Json(Json),
@@ -1402,7 +1397,7 @@ impl RenderOnce for ToolCallCard {
 
         let default_open = self.default_open;
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             move |_, cx| CardState {
                 open: default_open,
@@ -1522,7 +1517,7 @@ impl RenderOnce for ToolCallCard {
             .min_w_0()
             .child(
                 div()
-                    .flex_shrink()
+                    .flex_shrink_1()
                     .max_w(relative(0.55))
                     .map(one_line)
                     .font_family(MONO)
@@ -2195,7 +2190,7 @@ impl RenderOnce for ToolCallGroup {
 
         let default_open = self.default_open;
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             move |_, cx| GroupState {
                 open: default_open,
@@ -2459,7 +2454,7 @@ impl RenderOnce for ToolCallGroup {
                 _ => return,
             };
             set_keyboard_focus(true);
-            window.focus(&lines[next]);
+            window.focus(&lines[next], cx);
             window.refresh();
             cx.stop_propagation();
         };
@@ -2507,7 +2502,7 @@ impl RenderOnce for ToolCallGroup {
 }
 
 // ---------------------------------------------------------------------------
-// Story: the website demo
+// Story: the demo
 // ---------------------------------------------------------------------------
 
 /// When each step of the demo lands (ms), and when it starts over.

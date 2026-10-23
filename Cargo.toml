@@ -1,11 +1,15 @@
 [package]
-name = "affectui"
+name = "pink-ui"
 version = "0.1.0"
 edition = "2024"
-description = "affectUI's component library, rebuilt for Rust with GPUI"
+description = "Animated components for GPUI, native and in the browser"
 license = "MIT"
 readme = "README.md"
 default-run = "gallery"
+
+[workspace]
+# The browser build of the demos, for the showcase site.
+members = ["web"]
 
 [lib]
 path = "src/lib.rs"
@@ -16,12 +20,22 @@ path = "src/bin/gallery.rs"
 
 [dependencies]
 anyhow = "1"
-gpui = "0.2.2"
+gpui = { package = "gpui-pre", version = "=0.3.9" }
+web-time = "1"
 rust-embed = { version = "8", features = ["include-exclude"] }
 unicode-segmentation = "1"
 
+# Only the native gallery opens a window itself; the web player brings its own.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.9", features = ["x11", "wayland"] }
+
+# There is no file system to read assets from in the browser, so embed them in
+# debug builds too.
+[target.'cfg(target_family = "wasm")'.dependencies]
+rust-embed = { version = "8", features = ["include-exclude", "debug-embed"] }
+
 [dev-dependencies]
-gpui = { version = "0.2.2", features = ["test-support"] }
+gpui = { package = "gpui-pre", version = "=0.3.9", features = ["test-support"] }
 
 # Keep debug builds small: GPUI with full debuginfo links 500MB binaries.
 [profile.dev]
@@ -29,3 +43,13 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
+
+# The browser build: smaller and faster to download than plain release.
+[profile.web]
+inherits = "release"
+opt-level = "s"
+lto = true
+codegen-units = 1
+# Function names alone are a third of the module; panics still print their
+# message.
+strip = true

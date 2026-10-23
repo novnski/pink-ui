@@ -12,7 +12,7 @@
 //!     .on_save(|values, _, _| persist(values))
 //! ```
 
-use std::{rc::Rc, time::Duration};
+use std::{rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     Animation, AnyView, App, ClipboardItem, Context, ElementId, Entity, FontWeight, Hsla,
@@ -351,7 +351,7 @@ impl IntegrationSettings {
         let t = Luna::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             SettingsState::new,
         );
@@ -732,7 +732,7 @@ fn address_row(
                     .pr_0()
                     .overflow_hidden()
                     .cursor_text()
-                    .on_click(move |_, window, cx| focus_input.read(cx).focus(window))
+                    .on_click(move |_, window, cx| TextInput::focus(&focus_input, window, cx))
                     .child(div().text_color(t.text_faint).child("https://"))
                     .child(div().flex_1().min_w_0().ml(px(-6.)).child(input))
                     .children(status)

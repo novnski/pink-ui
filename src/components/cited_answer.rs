@@ -1,4 +1,4 @@
-//! Cited Answer – an original component in luna style.
+//! Cited Answer – a luna component.
 //!
 //! An answer on the left and the evidence on the right. Every sentence ends
 //! in numbered citations. Point at one and its sentence takes a soft accent
@@ -18,7 +18,7 @@
 //!     .default_open(0)
 //! ```
 
-use std::{cell::Cell, f32::consts::TAU, ops::Range, rc::Rc, time::Duration};
+use std::{cell::Cell, f32::consts::TAU, ops::Range, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     AnyElement, AnyView, App, ClipboardItem, Context, ElementId, Entity, FontWeight, Hsla,
@@ -287,7 +287,7 @@ impl RenderOnce for CitedAnswer {
         let key = self.id.to_string();
         let source_count = self.sources.len();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, _: &mut Context<State>| State {
                 hover: None,

@@ -1,6 +1,6 @@
 //! Integration Picker – the integrations page of a command menu.
 //!
-//! An original in luna's design language. A searchable sidebar splits the
+//! A luna component. A searchable sidebar splits the
 //! services into Connected and Available; the picked one fills the detail
 //! pane, where your workspace and the service sit on two tiles joined by a
 //! dotted link. Connecting runs a short handshake – the link pulses, the
@@ -15,7 +15,7 @@
 //!     .on_connect(|service, connected, _, _| println!("{} → {connected}", service.name))
 //! ```
 
-use std::{collections::HashMap, rc::Rc, time::Duration};
+use std::{collections::HashMap, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     Animation, AnimationExt, AnyView, App, Context, ElementId, Entity, Focusable, FontWeight, Hsla,
@@ -452,7 +452,7 @@ impl RenderOnce for IntegrationPicker {
         let placeholder = format!("Search {total} apps…");
 
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             move |window, cx| {
                 let input = cx.new(|cx| TextInput::new(window, cx).placeholder(placeholder));
@@ -463,7 +463,7 @@ impl RenderOnce for IntegrationPicker {
                 );
                 if autofocus {
                     let handle = input.read(cx).focus_handle(cx);
-                    window.defer(cx, move |window, _| window.focus(&handle));
+                    window.defer(cx, move |window, cx| window.focus(&handle, cx));
                 }
                 PickerState {
                     input,
@@ -678,7 +678,7 @@ fn sidebar(
                     .on_click(move |_, window, cx| {
                         picker.update(cx, |s, cx| {
                             s.selected = Some(id.clone());
-                            s.input.read(cx).focus(window);
+                            TextInput::focus(&s.input, window, cx);
                             cx.notify();
                         })
                     })

@@ -1,4 +1,4 @@
-//! AI Answer – an original component in luna style.
+//! AI Answer – a luna component.
 //!
 //! A question, the sources the assistant gathered and its streamed reply in
 //! one card. While it searches, monogram tiles drop into a stacked "sources"
@@ -22,15 +22,11 @@
 //!     .on_follow_up(|question, _, _| println!("{question}"))
 //! ```
 
-use std::{
-    cell::Cell,
-    f32::consts::TAU,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::Cell, f32::consts::TAU, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
-    Animation, AnyElement, AnyView, App, ClipboardItem, Context, Corner, ElementId, Entity,
+    Anchor, Animation, AnyElement, AnyView, App, ClipboardItem, Context, ElementId, Entity,
     FontWeight, Hsla, IntoElement, SharedString, Task, Transformation, Window, anchored, canvas,
     deferred, div, percentage, point, prelude::*, px, radians, svg,
 };
@@ -738,7 +734,7 @@ impl AiAnswer {
             .left(px(-6.))
             .child(deferred(
                 anchored()
-                    .anchor(Corner::TopLeft)
+                    .anchor(Anchor::TopLeft)
                     .offset(point(px(0.), px(2.)))
                     .snap_to_window_with_margin(px(8.))
                     .child(motion::pop_in(
@@ -756,7 +752,7 @@ impl RenderOnce for AiAnswer {
         let reduced = motion::reduced_motion(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, _: &mut Context<State>| State {
                 hover_cite: None,

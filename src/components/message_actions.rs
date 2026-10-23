@@ -20,13 +20,8 @@
 //!     .on_feedback(|kind, reason, window, cx| { /* store the vote */ })
 //! ```
 
-use std::{
-    cell::Cell,
-    collections::HashMap,
-    f32::consts::TAU,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::Cell, collections::HashMap, f32::consts::TAU, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnyElement, AnyView, App, BoxShadow, ClipboardItem, Context, Div, ElementId, Entity,
@@ -785,7 +780,7 @@ impl MessageActionsState {
                 InputEvent::Escape => this.close_feedback(window, cx),
                 InputEvent::Tab => {
                     this.keyboard = true;
-                    window.focus_next();
+                    window.focus_next(cx);
                 }
                 _ => {}
             });
@@ -997,7 +992,7 @@ impl MessageActionsState {
     pub fn close_feedback(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.panel = false;
         if let Some(handle) = self.focus.get(&Btn::Down) {
-            window.focus(handle);
+            window.focus(handle, cx);
         }
         cx.notify();
     }
@@ -1448,7 +1443,7 @@ impl RenderOnce for MessageActions {
         let state = match self.state.clone() {
             Some(state) => state,
             None => window.use_keyed_state(
-                ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+                ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
                 cx,
                 MessageActionsState::new,
             ),
@@ -1931,9 +1926,9 @@ impl RenderOnce for MessageActions {
                 });
                 if stroke.key == "tab" {
                     if stroke.modifiers.shift {
-                        window.focus_prev();
+                        window.focus_prev(cx);
                     } else {
-                        window.focus_next();
+                        window.focus_next(cx);
                     }
                     cx.stop_propagation();
                 }
@@ -2273,7 +2268,7 @@ fn feedback_row(
                 .children(chips)
                 // `margin-left: auto` – as a growing wrapper, since taffy drops
                 // the gaps of a wrapped line that has an auto margin.
-                .child(div().flex().flex_grow().justify_end().child(send)),
+                .child(div().flex().flex_grow_1().justify_end().child(send)),
         )
         .child(fold(
             &bar.k("other"),
@@ -2361,7 +2356,7 @@ impl RenderOnce for MessageText {
         let key = self.id.to_string();
         let (version, text) = (self.version, self.text.clone());
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "text".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "text".into()),
             cx,
             |_, _| TextState {
                 version,
@@ -2430,7 +2425,7 @@ const ANSWERS: [&str; 3] = [
     "In short: teams can now share a workspace, syncing takes half as long and Windows exports are fixed.",
 ];
 
-/// One beat of the site demo's auto-play: what it clicks after how long.
+/// One beat of the demo's auto-play: what it clicks after how long.
 #[derive(Clone, Copy)]
 enum Step {
     Copy,
@@ -2786,7 +2781,7 @@ fn demo_view(demo: &Entity<Demo>, window: &Window, cx: &mut App) -> Stateful<Div
             .child(actions)
     };
 
-    // Any pointer or key on the demo stops the auto-play, like the site.
+    // Any pointer or key on the demo stops the auto-play.
     let (enter, press, key) = (weak.clone(), weak.clone(), weak);
     div()
         .id("ma-demo")

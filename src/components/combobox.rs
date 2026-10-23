@@ -1,6 +1,6 @@
 //! Combobox – pick one or many from a searchable, grouped list.
 //!
-//! An original in luna's design language. Picks sit in the field as chips
+//! A luna component. Picks sit in the field as chips
 //! with a small avatar; the list below groups the options, lights up the
 //! letters that match what you typed and offers to create the entry when
 //! nothing fits. A plate glides to the active row, checks pop in as rows are
@@ -17,7 +17,7 @@
 //!     .on_change(|ids, _, _| println!("{ids:?}"))
 //! ```
 
-use std::{ops::Range, rc::Rc};
+use std::{ops::Range, rc::Rc, sync::Arc};
 
 use gpui::{
     AnimationExt, AnyView, App, Bounds, Context, ElementId, Entity, Focusable, FontWeight,
@@ -488,7 +488,7 @@ impl RenderOnce for Combobox {
         let (default_open, autofocus) = (self.default_open, self.autofocus);
 
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             move |window, cx| {
                 let input = cx.new(|cx| TextInput::new(window, cx).placeholder(placeholder));
@@ -499,7 +499,7 @@ impl RenderOnce for Combobox {
                 );
                 if autofocus {
                     let handle = input.read(cx).focus_handle(cx);
-                    window.defer(cx, move |window, _| window.focus(&handle));
+                    window.defer(cx, move |window, cx| window.focus(&handle, cx));
                 }
                 ComboState {
                     input,
@@ -590,7 +590,7 @@ impl RenderOnce for Combobox {
             .cursor_text()
             .on_click(move |_, window, cx| {
                 opener.update(cx, |s, cx| {
-                    s.input.read(cx).focus(window);
+                    TextInput::focus(&s.input, window, cx);
                     s.set_open(true);
                     cx.notify();
                 })
@@ -1014,7 +1014,7 @@ fn list_row(
             picker.update(cx, |s, cx| {
                 s.active = ix;
                 s.pick(row, window, cx);
-                s.input.read(cx).focus(window);
+                TextInput::focus(&s.input, window, cx);
             })
         });
 

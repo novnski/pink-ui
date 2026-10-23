@@ -409,7 +409,7 @@ impl RenderOnce for ReactionBar {
         let reactions = self.reactions.clone();
         let actions = self.actions.clone();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             move |_, cx| BarState {
                 entries: actions
@@ -589,7 +589,7 @@ impl RenderOnce for ReactionBar {
                 s.keyboard = true;
                 cx.notify();
             });
-            window.focus(&handles[next]);
+            window.focus(&handles[next], cx);
             cx.stop_propagation();
         };
 

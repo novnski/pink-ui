@@ -21,6 +21,7 @@ use std::{
     collections::{HashMap, HashSet},
     f32::consts::PI,
     rc::Rc,
+    sync::Arc,
     time::Duration,
 };
 
@@ -308,7 +309,7 @@ impl SetupGuide {
         let t = Luna::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, _| GuideState::new(),
         );

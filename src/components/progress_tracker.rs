@@ -19,10 +19,8 @@
 //! .on_change(|steps, _, _| println!("{} done", steps.iter().filter(|s| s.done).count()))
 //! ```
 
-use std::{
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     AnyView, App, BoxShadow, Context, ElementId, FocusHandle, FontWeight, Hsla, IntoElement,
@@ -656,7 +654,7 @@ impl RenderOnce for ProgressTracker {
         let key = format!("pt-{}", self.id);
         let (steps, auto_play, interval) = (self.steps.clone(), self.auto_play, self.interval);
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |window, cx| State::new(steps, auto_play, interval, window, cx),
         );
@@ -870,7 +868,7 @@ impl RenderOnce for ProgressTracker {
                     "end" => len - 1,
                     _ => return,
                 };
-                window.focus(&handles[next]);
+                window.focus(&handles[next], cx);
                 cx.stop_propagation();
             }
         };
@@ -903,7 +901,7 @@ impl RenderOnce for ProgressTracker {
         motion::keep_alive(window);
         // On mount the card settles in
         motion::rise_in(
-            ElementId::NamedChild(Box::new(self.id), "in".into()),
+            ElementId::NamedChild(Arc::new(self.id), "in".into()),
             CARD_IN,
             8.,
             card,

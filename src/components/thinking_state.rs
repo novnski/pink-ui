@@ -1,4 +1,4 @@
-//! Thinking State – an original component in luna style.
+//! Thinking State – a luna component.
 //!
 //! A live panel for an assistant at work. The header carries a spinner, the
 //! running step count and a ticking timer, with a hairline along its bottom
@@ -19,12 +19,8 @@
 //! ])
 //! ```
 
-use std::{
-    cell::Cell,
-    f32::consts::TAU,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::Cell, f32::consts::TAU, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnyView, App, Context, ElementId, FocusHandle, FontWeight, Hsla, IntoElement,
@@ -255,7 +251,7 @@ impl RenderOnce for ThinkingState {
         let now = Instant::now();
 
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, cx: &mut Context<State>| State {
                 focus: cx.focus_handle(),

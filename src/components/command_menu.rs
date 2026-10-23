@@ -1,6 +1,6 @@
 //! Command Menu – one field to search and run everything.
 //!
-//! An original in luna's design language. App actions sit on a strip of
+//! A luna component. App actions sit on a strip of
 //! tiles you can fire with Ctrl/⌘ 1–5; everyday commands follow in groups
 //! with their own shortcuts. Typing folds the strip away and filters every
 //! command at once, lighting up the matched letters. Scope chips narrow the
@@ -14,7 +14,7 @@
 //!     .on_run(|command, _, _| println!("{}", command.label))
 //! ```
 
-use std::{ops::Range, rc::Rc, time::Duration};
+use std::{ops::Range, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     AnimationExt, AnyView, App, Context, ElementId, Entity, Focusable, FontWeight, HighlightStyle,
@@ -589,7 +589,7 @@ impl RenderOnce for CommandMenu {
         let autofocus = self.autofocus;
 
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             move |window, cx| {
                 let input = cx.new(|cx| TextInput::new(window, cx).placeholder(placeholder));
@@ -599,7 +599,7 @@ impl RenderOnce for CommandMenu {
                     });
                 if autofocus {
                     let handle = input.read(cx).focus_handle(cx);
-                    window.defer(cx, move |window, _| window.focus(&handle));
+                    window.defer(cx, move |window, cx| window.focus(&handle, cx));
                 }
                 MenuState {
                     input,

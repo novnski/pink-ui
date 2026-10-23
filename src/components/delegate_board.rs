@@ -15,10 +15,8 @@
 //!     .on_auto(|on, _, _| println!("auto {on}"))
 //! ```
 
-use std::{
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnimationExt, AnyView, App, Context, ElementId, Entity, FontWeight, IntoElement,
@@ -355,7 +353,7 @@ impl RenderOnce for DelegateBoard {
         let t = Luna::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, _| BoardState {
                 over: None,

@@ -17,12 +17,8 @@
 //!     .on_send(|email, _, _| println!("to {}", email.to.email))
 //! ```
 
-use std::{
-    cell::Cell,
-    f32::consts::PI,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::Cell, f32::consts::PI, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     AnyElement, AnyView, App, BoxShadow, Context, CursorStyle, Div, ElementId, Entity, FocusHandle,
@@ -548,7 +544,7 @@ fn hairline(window: &Window) -> f32 {
     0.5f32.max(1. / window.scale_factor())
 }
 
-/// Classic sets no line heights: its text takes the site's `line-height: 1.5`.
+/// Classic sets no line heights: its text inherits a 1.5 line height.
 fn inherited(size: f32) -> Pixels {
     px(size * 1.5)
 }
@@ -671,7 +667,7 @@ impl DraftState {
         self.editing = true;
         self.menu = false;
         self.input.update(cx, |input, cx| input.set_text(body, cx));
-        self.input.read(cx).focus(window);
+        TextInput::focus(&self.input, window, cx);
         cx.notify();
     }
 
@@ -814,7 +810,7 @@ pub struct EmailDraft {
 }
 
 impl EmailDraft {
-    /// A draft with affectUI's demo content; override any of it below.
+    /// A draft with the demo content; override any of it below.
     pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
             id: id.into(),
@@ -960,7 +956,7 @@ impl RenderOnce for EmailDraft {
         };
 
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "email-draft-state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "email-draft-state".into()),
             cx,
             {
                 let to = contacts[0].clone();
@@ -1438,7 +1434,7 @@ fn recipient(ctx: &Ctx, p: &Palette, contacts: &Rc<[DraftContact]>, cx: &mut App
                 s.menu
             });
             if opened {
-                window.focus(&menu_focus);
+                window.focus(&menu_focus, cx);
             }
         }
     };
@@ -1600,7 +1596,7 @@ fn recipient(ctx: &Ctx, p: &Palette, contacts: &Rc<[DraftContact]>, cx: &mut App
                     "end" => len - 1,
                     _ => return,
                 };
-                window.focus(&options[next]);
+                window.focus(&options[next], cx);
                 cx.stop_propagation();
             }
         };

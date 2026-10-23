@@ -14,7 +14,7 @@
 //!     .period(BreakdownPeriod::new("7d", vec![352e6]).previous(vec![331e6]))
 //! ```
 
-use std::{cell::Cell, f32::consts::TAU, rc::Rc};
+use std::{cell::Cell, f32::consts::TAU, rc::Rc, sync::Arc};
 
 use gpui::{
     AnyView, App, Bounds, ElementId, FocusHandle, FontWeight, Hsla, KeyDownEvent, MouseButton,
@@ -191,7 +191,7 @@ impl RenderOnce for CompactBreakdown {
         let key = self.id.to_string();
         let default_period = self.default_period;
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, cx| State {
                 period: default_period,
@@ -618,8 +618,8 @@ impl RenderOnce for CompactBreakdown {
             .w(px(420.))
             .font_family(luna::SANS)
             .track_focus(&focus)
-            .on_mouse_down(MouseButton::Left, move |_, window, _| {
-                window.focus(&focus_click)
+            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                window.focus(&focus_click, cx)
             })
             .on_key_down(move |ev: &KeyDownEvent, window, cx| {
                 let (period, active) = {

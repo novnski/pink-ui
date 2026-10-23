@@ -19,7 +19,7 @@
 //! .on_change(|level, _, _| println!("level {level}"))
 //! ```
 
-use std::{collections::HashSet, f32::consts::PI, rc::Rc};
+use std::{collections::HashSet, f32::consts::PI, rc::Rc, sync::Arc};
 
 use gpui::{
     AnyView, App, Bounds, DispatchPhase, ElementId, Entity, FocusHandle, FontWeight, Hsla,
@@ -314,7 +314,7 @@ impl RenderOnce for AutonomyDial {
                 .collect::<HashSet<_>>(),
         );
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, cx| DialState {
                 level: initial,
@@ -589,7 +589,7 @@ fn dial_view(
                 }
                 let v = value_at(ev.position, center);
                 let changed = down_state.update(cx, |s, cx| {
-                    window.focus(&s.focus);
+                    window.focus(&s.focus, cx);
                     let changed = s.set_value(v);
                     cx.notify();
                     changed
@@ -703,7 +703,7 @@ fn dial_view(
             .when(!active, |d| d.hover_fg(label_key, t.text_faint, t.text))
             .on_click(move |_, window, cx| {
                 let changed = state.update(cx, |s, cx| {
-                    window.focus(&s.focus);
+                    window.focus(&s.focus, cx);
                     s.dragging = false;
                     let changed = s.set_level(i);
                     s.value = s.level as f32;

@@ -15,10 +15,8 @@
 //!     .block(LaneBlock::new(1, "Patch partial refunds").span(-530.0, 40.0).handoff(0, "spec.md"))
 //! ```
 
-use std::{
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnimationExt, AnyView, App, ElementId, FontWeight, Hsla, IntoElement, PathBuilder,
@@ -457,7 +455,7 @@ impl RenderOnce for AgentLanes {
         let t = Luna::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "lanes".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "lanes".into()),
             cx,
             |_, cx| LanesState::new(&self, cx),
         );

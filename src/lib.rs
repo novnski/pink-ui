@@ -1,35 +1,35 @@
-//! affectUI for GPUI.
+//! pink-ui: animated components for [GPUI](https://gpui.rs).
 //!
-//! The components from <https://www.affectui.com/components>, rebuilt as
-//! native GPUI elements: ports of affectUI's free components, and originals
-//! in luna's design language built around the ideas of its Pro catalog.
-//! Call [`init`] once at startup, then render any component;
-//! [`components::COMPONENTS`] lists them all with a demo story.
+//! Fifty-six components, one file each, drawn by GPUI natively and in the
+//! browser through its web platform. Core components come in two looks, Clean
+//! and Classic; luna components are drawn in luna's design language. Both
+//! follow light and dark mode. Call [`init`] once at startup, then render any
+//! component; [`components::COMPONENTS`] lists them all with a demo story.
 //!
 //! Components are builders you drop into any element tree, the same way
 //! luna's controls work:
 //!
 //! ```no_run
-//! use affectui::components::profile_menu::{ProfileMenu, ProfileSetup};
-//! use gpui::{App, Application, Context, Window, WindowOptions, div, prelude::*};
+//! use pink_ui::components::profile_menu::{ProfileMenu, ProfileSetup};
+//! use gpui::{App, Context, Window, WindowOptions, div, prelude::*};
 //!
 //! struct Root;
 //!
 //! impl Render for Root {
 //!     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-//!         affectui::motion::frame(window, cx); // eased hovers, once per frame
+//!         pink_ui::motion::frame(window, cx); // eased hovers, once per frame
 //!         div()
 //!             .size_full()
 //!             .child(
 //!                 ProfileMenu::new("account", "Lena Hartmann", "lena@fastmail.com")
 //!                     .setup(ProfileSetup::new(3, 5).next("Add a profile photo")),
 //!             )
-//!             .child(affectui::motion::driver())
+//!             .child(pink_ui::motion::driver())
 //!     }
 //! }
 //!
-//! Application::new().with_assets(affectui::Assets).run(|cx: &mut App| {
-//!     affectui::init(cx);
+//! gpui_platform::application().with_assets(pink_ui::Assets).run(|cx: &mut App| {
+//!     pink_ui::init(cx);
 //!     cx.open_window(WindowOptions::default(), |_, cx| cx.new(|_| Root)).unwrap();
 //! });
 //! ```

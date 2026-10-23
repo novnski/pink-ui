@@ -1,9 +1,9 @@
 //! Every component in the gallery, one file each.
 //!
-//! - **Ports** reproduce affectUI's free (MIT) components: same tokens, sizes,
-//!   copy and motion, in both the Clean and Classic looks.
-//! - **Originals** are our own components in luna's design language, built
-//!   around ideas from affectUI's Pro catalog (not copies of them).
+//! - **Core** components come in two looks, Clean and Classic: Inter type,
+//!   their own color tokens and hairline-shadow edges.
+//! - **Luna** components are drawn in luna's design language: Geist type,
+//!   luna's neutral surfaces and accent, its radius and spacing ladders.
 //!
 //! Each module exports `NAME`, `DESCRIPTION` and `story`, which builds its demo.
 
@@ -80,10 +80,10 @@ pub const CATEGORIES: &[&str] = &[
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
-    /// A port of a free affectUI component, Clean and Classic looks.
-    Port,
-    /// Our own component in luna styling, from an idea in affectUI's Pro catalog.
-    Original,
+    /// Comes in both looks, Clean and Classic.
+    Core,
+    /// Drawn in luna's design language, in one look.
+    Luna,
 }
 
 pub struct ComponentEntry {
@@ -102,7 +102,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: ai_answer::NAME,
         category: "Chat",
         description: ai_answer::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: ai_answer::story,
     },
     ComponentEntry {
@@ -110,7 +110,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: chat_composer::NAME,
         category: "Chat",
         description: chat_composer::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: chat_composer::story,
     },
     ComponentEntry {
@@ -118,7 +118,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: thinking_state::NAME,
         category: "Chat",
         description: thinking_state::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: thinking_state::story,
     },
     ComponentEntry {
@@ -126,7 +126,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: writing_assistant::NAME,
         category: "Chat",
         description: writing_assistant::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: writing_assistant::story,
     },
     ComponentEntry {
@@ -134,7 +134,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: thinking_loader::NAME,
         category: "Chat",
         description: thinking_loader::DESCRIPTION,
-        kind: Kind::Port,
+        kind: Kind::Core,
         story: thinking_loader::story,
     },
     ComponentEntry {
@@ -142,7 +142,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: cited_answer::NAME,
         category: "Chat",
         description: cited_answer::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: cited_answer::story,
     },
     ComponentEntry {
@@ -150,7 +150,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: comment_thread::NAME,
         category: "Chat",
         description: comment_thread::DESCRIPTION,
-        kind: Kind::Port,
+        kind: Kind::Core,
         story: comment_thread::story,
     },
     ComponentEntry {
@@ -158,7 +158,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: comments_panel::NAME,
         category: "Chat",
         description: comments_panel::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: comments_panel::story,
     },
     ComponentEntry {
@@ -166,7 +166,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: message_actions::NAME,
         category: "Chat",
         description: message_actions::DESCRIPTION,
-        kind: Kind::Port,
+        kind: Kind::Core,
         story: message_actions::story,
     },
     ComponentEntry {
@@ -174,7 +174,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: model_picker::NAME,
         category: "Chat",
         description: model_picker::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: model_picker::story,
     },
     ComponentEntry {
@@ -182,7 +182,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: agent_cursors::NAME,
         category: "Agents",
         description: agent_cursors::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: agent_cursors::story,
     },
     ComponentEntry {
@@ -190,7 +190,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: agent_inbox::NAME,
         category: "Agents",
         description: agent_inbox::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: agent_inbox::story,
     },
     ComponentEntry {
@@ -198,7 +198,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: agent_lanes::NAME,
         category: "Agents",
         description: agent_lanes::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: agent_lanes::story,
     },
     ComponentEntry {
@@ -206,7 +206,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: agent_plan::NAME,
         category: "Agents",
         description: agent_plan::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: agent_plan::story,
     },
     ComponentEntry {
@@ -214,7 +214,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: agent_steering::NAME,
         category: "Agents",
         description: agent_steering::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: agent_steering::story,
     },
     ComponentEntry {
@@ -222,7 +222,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: agent_tree::NAME,
         category: "Agents",
         description: agent_tree::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: agent_tree::story,
     },
     ComponentEntry {
@@ -230,7 +230,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: approval_card::NAME,
         category: "Agents",
         description: approval_card::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: approval_card::story,
     },
     ComponentEntry {
@@ -238,7 +238,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: autonomy_dial::NAME,
         category: "Agents",
         description: autonomy_dial::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: autonomy_dial::story,
     },
     ComponentEntry {
@@ -246,7 +246,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: context_window::NAME,
         category: "Agents",
         description: context_window::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: context_window::story,
     },
     ComponentEntry {
@@ -254,7 +254,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: delegate_board::NAME,
         category: "Agents",
         description: delegate_board::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: delegate_board::story,
     },
     ComponentEntry {
@@ -262,7 +262,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: inline_diff::NAME,
         category: "Agents",
         description: inline_diff::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: inline_diff::story,
     },
     ComponentEntry {
@@ -270,7 +270,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: memory_panel::NAME,
         category: "Agents",
         description: memory_panel::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: memory_panel::story,
     },
     ComponentEntry {
@@ -278,7 +278,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: permission_request::NAME,
         category: "Agents",
         description: permission_request::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: permission_request::story,
     },
     ComponentEntry {
@@ -286,7 +286,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: tool_call_card::NAME,
         category: "Agents",
         description: tool_call_card::DESCRIPTION,
-        kind: Kind::Port,
+        kind: Kind::Core,
         story: tool_call_card::story,
     },
     ComponentEntry {
@@ -294,7 +294,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: trace_waterfall::NAME,
         category: "Agents",
         description: trace_waterfall::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: trace_waterfall::story,
     },
     ComponentEntry {
@@ -302,7 +302,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: email_draft::NAME,
         category: "Cards",
         description: email_draft::DESCRIPTION,
-        kind: Kind::Port,
+        kind: Kind::Core,
         story: email_draft::story,
     },
     ComponentEntry {
@@ -310,7 +310,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: project_card::NAME,
         category: "Cards",
         description: project_card::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: project_card::story,
     },
     ComponentEntry {
@@ -318,7 +318,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: smart_recommendation::NAME,
         category: "Cards",
         description: smart_recommendation::DESCRIPTION,
-        kind: Kind::Port,
+        kind: Kind::Core,
         story: smart_recommendation::story,
     },
     ComponentEntry {
@@ -326,7 +326,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: tips_panel::NAME,
         category: "Cards",
         description: tips_panel::DESCRIPTION,
-        kind: Kind::Port,
+        kind: Kind::Core,
         story: tips_panel::story,
     },
     ComponentEntry {
@@ -334,7 +334,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: breakdown_chart::NAME,
         category: "Data display",
         description: breakdown_chart::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: breakdown_chart::story,
     },
     ComponentEntry {
@@ -342,7 +342,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: change_summary::NAME,
         category: "Data display",
         description: change_summary::DESCRIPTION,
-        kind: Kind::Port,
+        kind: Kind::Core,
         story: change_summary::story,
     },
     ComponentEntry {
@@ -350,7 +350,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: compact_breakdown::NAME,
         category: "Data display",
         description: compact_breakdown::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: compact_breakdown::story,
     },
     ComponentEntry {
@@ -358,7 +358,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: data_table::NAME,
         category: "Data display",
         description: data_table::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: data_table::story,
     },
     ComponentEntry {
@@ -366,7 +366,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: experiment_card::NAME,
         category: "Data display",
         description: experiment_card::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: experiment_card::story,
     },
     ComponentEntry {
@@ -374,7 +374,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: kpi_chart::NAME,
         category: "Data display",
         description: kpi_chart::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: kpi_chart::story,
     },
     ComponentEntry {
@@ -382,7 +382,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: usage_meter::NAME,
         category: "Data display",
         description: usage_meter::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: usage_meter::story,
     },
     ComponentEntry {
@@ -390,7 +390,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: command_menu::NAME,
         category: "Navigation",
         description: command_menu::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: command_menu::story,
     },
     ComponentEntry {
@@ -398,7 +398,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: integration_picker::NAME,
         category: "Navigation",
         description: integration_picker::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: integration_picker::story,
     },
     ComponentEntry {
@@ -406,7 +406,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: profile_menu::NAME,
         category: "Navigation",
         description: profile_menu::DESCRIPTION,
-        kind: Kind::Port,
+        kind: Kind::Core,
         story: profile_menu::story,
     },
     ComponentEntry {
@@ -414,7 +414,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: segmented_control::NAME,
         category: "Navigation",
         description: segmented_control::DESCRIPTION,
-        kind: Kind::Port,
+        kind: Kind::Core,
         story: segmented_control::story,
     },
     ComponentEntry {
@@ -422,7 +422,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: button::NAME,
         category: "Buttons",
         description: button::DESCRIPTION,
-        kind: Kind::Port,
+        kind: Kind::Core,
         story: button::story,
     },
     ComponentEntry {
@@ -430,7 +430,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: reaction_bar::NAME,
         category: "Buttons",
         description: reaction_bar::DESCRIPTION,
-        kind: Kind::Port,
+        kind: Kind::Core,
         story: reaction_bar::story,
     },
     ComponentEntry {
@@ -438,7 +438,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: billing_schedule::NAME,
         category: "Inputs",
         description: billing_schedule::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: billing_schedule::story,
     },
     ComponentEntry {
@@ -446,7 +446,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: combobox::NAME,
         category: "Inputs",
         description: combobox::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: combobox::story,
     },
     ComponentEntry {
@@ -454,7 +454,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: date_range_picker::NAME,
         category: "Inputs",
         description: date_range_picker::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: date_range_picker::story,
     },
     ComponentEntry {
@@ -462,7 +462,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: dropzone::NAME,
         category: "Inputs",
         description: dropzone::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: dropzone::story,
     },
     ComponentEntry {
@@ -470,7 +470,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: filter_menu::NAME,
         category: "Inputs",
         description: filter_menu::DESCRIPTION,
-        kind: Kind::Port,
+        kind: Kind::Core,
         story: filter_menu::story,
     },
     ComponentEntry {
@@ -478,7 +478,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: integration_settings::NAME,
         category: "Inputs",
         description: integration_settings::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: integration_settings::story,
     },
     ComponentEntry {
@@ -486,7 +486,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: otp_input::NAME,
         category: "Inputs",
         description: otp_input::DESCRIPTION,
-        kind: Kind::Port,
+        kind: Kind::Core,
         story: otp_input::story,
     },
     ComponentEntry {
@@ -494,7 +494,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: prompt_library::NAME,
         category: "Inputs",
         description: prompt_library::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: prompt_library::story,
     },
     ComponentEntry {
@@ -502,7 +502,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: stepper_form::NAME,
         category: "Inputs",
         description: stepper_form::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: stepper_form::story,
     },
     ComponentEntry {
@@ -510,7 +510,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: decision_inbox::NAME,
         category: "Feedback",
         description: decision_inbox::DESCRIPTION,
-        kind: Kind::Port,
+        kind: Kind::Core,
         story: decision_inbox::story,
     },
     ComponentEntry {
@@ -518,7 +518,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: notification_stack::NAME,
         category: "Feedback",
         description: notification_stack::DESCRIPTION,
-        kind: Kind::Port,
+        kind: Kind::Core,
         story: notification_stack::story,
     },
     ComponentEntry {
@@ -526,7 +526,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: progress_tracker::NAME,
         category: "Feedback",
         description: progress_tracker::DESCRIPTION,
-        kind: Kind::Port,
+        kind: Kind::Core,
         story: progress_tracker::story,
     },
     ComponentEntry {
@@ -534,7 +534,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: setup_guide::NAME,
         category: "Feedback",
         description: setup_guide::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: setup_guide::story,
     },
     ComponentEntry {
@@ -542,7 +542,7 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         name: toaster::NAME,
         category: "Feedback",
         description: toaster::DESCRIPTION,
-        kind: Kind::Original,
+        kind: Kind::Luna,
         story: toaster::story,
     },
 ];

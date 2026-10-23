@@ -22,7 +22,7 @@
 //!     .on_change(|rows, _, _| println!("{} rows", rows.len()))
 //! ```
 
-use std::{rc::Rc, time::Duration};
+use std::{rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     AnyView, App, ClipboardItem, Context, ElementId, Entity, FocusHandle, FontWeight, KeyDownEvent,
@@ -605,7 +605,7 @@ impl State {
             InputEvent::Tab => Some((0, 1)),
             InputEvent::Escape => {
                 self.editing = None;
-                window.focus(&self.focus);
+                window.focus(&self.focus, cx);
                 cx.notify();
                 return;
             }
@@ -627,7 +627,7 @@ impl State {
             } else {
                 self.sheet.step(dr, 0, false);
             }
-            window.focus(&self.focus);
+            window.focus(&self.focus, cx);
             cx.notify();
         }
     }
@@ -663,7 +663,7 @@ impl State {
         let text = initial.unwrap_or_else(|| self.sheet.cell(r, c).to_string());
         self.input.update(cx, |input, cx| input.set_text(text, cx));
         self.editing = Some((r, c));
-        self.input.read(cx).focus(window);
+        TextInput::focus(&self.input, window, cx);
         cx.notify();
     }
 
@@ -700,7 +700,7 @@ impl RenderOnce for DataTable {
         let kinds: Vec<ColumnKind> = self.columns.iter().map(|c| c.kind).collect();
         let initial = self.rows.clone();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |window, cx| State::new(Sheet::new(kinds, initial), window, cx),
         );
@@ -757,7 +757,7 @@ impl RenderOnce for DataTable {
             )
             .when(!enabled, |b| b.opacity(0.35).cursor_default())
             .on_click(move |_, window, cx| {
-                window.focus(&focus);
+                window.focus(&focus, cx);
                 state.update(cx, |s, cx| {
                     let done = if redo { s.sheet.redo() } else { s.sheet.undo() };
                     if done {
@@ -865,7 +865,7 @@ impl RenderOnce for DataTable {
                         t.text,
                     )
                     .on_click(move |_, window, cx| {
-                        window.focus(&focus);
+                        window.focus(&focus, cx);
                         sort_state.update(cx, |s, cx| {
                             if s.commit(cx) {
                                 s.sheet.sort_by(c);
@@ -923,7 +923,7 @@ impl RenderOnce for DataTable {
                         .text_size(px(text::CAPTION))
                         .text_color(if row_lit { t.text } else { t.text_faint })
                         .on_mouse_down(MouseButton::Left, move |ev: &MouseDownEvent, window, cx| {
-                            window.focus(&gutter_focus);
+                            window.focus(&gutter_focus, cx);
                             gutter_state.update(cx, |s, cx| {
                                 if ev.modifiers.shift {
                                     s.sheet.cursor = (r, last_col);
@@ -963,7 +963,7 @@ impl RenderOnce for DataTable {
                             if down_state.read(cx).editing == Some((r, c)) {
                                 return;
                             }
-                            window.focus(&cell_focus);
+                            window.focus(&cell_focus, cx);
                             down_state.update(cx, |s, cx| {
                                 s.sheet.select((r, c), ev.modifiers.shift);
                                 s.selecting = !ev.modifiers.shift;
@@ -1154,7 +1154,7 @@ impl RenderOnce for DataTable {
                 .child(luna::glyph(ICON_PLUS, ControlSize::Sm).text_color(t.text_muted))
                 .child("Add row")
                 .on_click(move |_, window, cx| {
-                    window.focus(&add_focus);
+                    window.focus(&add_focus, cx);
                     add_state.update(cx, |s, cx| {
                         if s.commit(cx) {
                             let r = s.sheet.add_row();

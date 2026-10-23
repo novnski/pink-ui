@@ -1,4 +1,4 @@
-//! Writing Assistant – an original component in luna style.
+//! Writing Assistant – a luna component.
 //!
 //! A rewrite companion for a piece of selected text. The reader picks a
 //! direction ("Friendlier", "Shorter", …), types an instruction or dictates
@@ -19,11 +19,8 @@
 //!     .on_apply(|text, _, cx| { /* replace the selection */ })
 //! ```
 
-use std::{
-    f32::consts::TAU,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{f32::consts::TAU, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnyElement, AnyView, App, Bounds, ClipboardItem, Context, ElementId, Entity,
@@ -379,7 +376,7 @@ impl RenderOnce for WritingAssistant {
         let reduced = motion::reduced_motion(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             State::new,
         );

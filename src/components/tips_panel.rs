@@ -19,7 +19,8 @@
 //! ```
 
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use web_time::{Duration, Instant};
 
 use gpui::{
     AnyView, App, BoxShadow, ElementId, FontWeight, Hsla, IntoElement, Pixels, SharedString,
@@ -417,7 +418,7 @@ impl RenderOnce for TipsPanel {
         let m = Metrics::get(look);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, _| TipsState { done: Vec::new() },
         );
@@ -839,6 +840,7 @@ fn blend_shadows(rest: &[BoxShadow], hover: &[BoxShadow], t: f32) -> Vec<BoxShad
                 f32::from(b.spread_radius),
                 t,
             )),
+            inset: a.inset,
         })
         .collect()
 }
@@ -861,7 +863,7 @@ fn text_width(window: &Window, text: &str, size: Pixels, weight: FontWeight) -> 
         .width
 }
 
-/// The website's tips.
+/// The demo's tips.
 pub fn demo_tips() -> Vec<Tip> {
     vec![
         Tip::new("invite", "Invite your team", "Invite")

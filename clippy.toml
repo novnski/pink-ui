@@ -1,0 +1,10 @@
+# std's clocks panic in the browser (wasm32-unknown-unknown); web_time's are
+# the same types on native and work on the web.
+disallowed-types = [
+    { path = "std::time::Instant", reason = "panics on wasm32, use web_time::Instant" },
+    { path = "std::time::SystemTime", reason = "panics on wasm32, use web_time::SystemTime" },
+]
+disallowed-methods = [
+    { path = "std::time::Instant::now", reason = "panics on wasm32, use web_time::Instant" },
+    { path = "std::time::SystemTime::now", reason = "panics on wasm32, use web_time::SystemTime" },
+]

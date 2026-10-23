@@ -20,8 +20,9 @@ use std::{
     f32::consts::PI,
     path::{Path, PathBuf},
     rc::Rc,
-    time::{Duration, Instant},
+    sync::Arc,
 };
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnyView, App, Context, ElementId, Entity, ExternalPaths, FillOptions, FillRule,
@@ -331,7 +332,7 @@ impl Dropzone {
         let t = Luna::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, _| DropState::new(),
         );
@@ -631,9 +632,7 @@ fn drop_target(
             browse_state.update(cx, |s, cx| {
                 s.browse = Some(cx.spawn(async move |_, cx| {
                     if let Some(paths) = task.await {
-                        state
-                            .update(cx, |s, cx| s.add_paths(&paths, &rules, cx))
-                            .ok();
+                        state.update(cx, |s, cx| s.add_paths(&paths, &rules, cx));
                     }
                 }));
             });

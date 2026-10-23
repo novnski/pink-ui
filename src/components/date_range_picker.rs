@@ -14,6 +14,7 @@
 //! ```
 
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui::{
     AnyElement, AnyView, App, ElementId, Entity, FocusHandle, FontWeight, Hsla, IntoElement,
@@ -466,7 +467,7 @@ impl DateRangePicker {
         let key = self.id.to_string();
         let today = self.today;
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |window, cx| PickerState::new(window, cx, today),
         );
@@ -525,7 +526,7 @@ impl DateRangePicker {
                         s.open = !s.open;
                         if s.open {
                             s.reset();
-                            window.focus(&s.focus);
+                            window.focus(&s.focus, cx);
                         }
                         cx.notify();
                     })

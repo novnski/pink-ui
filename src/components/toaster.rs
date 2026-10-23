@@ -14,14 +14,8 @@
 //! div().child(Toaster::new("toasts", toasts.clone()))
 //! ```
 
-use std::{
-    cell::Cell,
-    collections::HashMap,
-    f32::consts::PI,
-    future::Future,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::Cell, collections::HashMap, f32::consts::PI, future::Future, rc::Rc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnyView, App, Context, DispatchPhase, ElementId, Entity, FontWeight, Hsla,

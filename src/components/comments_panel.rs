@@ -1,4 +1,4 @@
-//! Comments Panel – an original component in luna style.
+//! Comments Panel – a luna component.
 //!
 //! The comment sidebar of a document. Each comment shows who wrote it, the
 //! passage it is anchored to and the note itself. A comment that starts with
@@ -17,12 +17,8 @@
 //!     .on_run(|id, _, cx| { /* apply the edit */ })
 //! ```
 
-use std::{
-    cell::Cell,
-    collections::HashMap,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::Cell, collections::HashMap, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     Animation, AnyElement, AnyView, App, Context, ElementId, Entity, FontWeight, Hsla, IntoElement,
@@ -476,7 +472,7 @@ impl RenderOnce for CommentsPanel {
         let t = Luna::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             State::new,
         );
@@ -866,7 +862,7 @@ impl RenderOnce for CommentsPanel {
                     .on_click(move |_, window, cx| {
                         let text: SharedString = format!("/{name} ").into();
                         pick_input.update(cx, |i, cx| i.set_text(text.clone(), cx));
-                        pick_input.read(cx).focus(window);
+                        TextInput::focus(&pick_input, window, cx);
                         pick_state.update(cx, |s, cx| {
                             s.text = text;
                             cx.notify();

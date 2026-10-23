@@ -15,11 +15,8 @@
 //!     .on_resolve(|decision, _, _| println!("{decision:?}"))
 //! ```
 
-use std::{
-    cell::Cell,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::Cell, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     AnyView, App, Bounds, ElementId, Entity, FocusHandle, FontWeight, HighlightStyle, Hsla,
@@ -362,12 +359,12 @@ impl RenderOnce for ApprovalCard {
             self.autofocus,
         );
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |window, cx| {
                 let state = CardState::new(timeout, resolved, undo_window, window, cx);
                 if autofocus {
-                    window.focus(&state.focus);
+                    window.focus(&state.focus, cx);
                 }
                 state
             },

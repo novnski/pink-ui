@@ -15,7 +15,8 @@
 //!     .playback(1.0)
 //! ```
 
-use std::{collections::HashSet, rc::Rc, time::Instant};
+use std::{collections::HashSet, rc::Rc, sync::Arc};
+use web_time::Instant;
 
 use gpui::{
     AnyElement, AnyView, App, ElementId, Entity, FocusHandle, FontWeight, Hsla, IntoElement,
@@ -341,7 +342,7 @@ impl RenderOnce for TraceWaterfall {
         let t = Luna::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, cx| TraceState {
                 focus: cx.focus_handle(),
@@ -721,7 +722,7 @@ impl RenderOnce for TraceWaterfall {
             .on_key_down(on_key)
             .on_mouse_down(MouseButton::Left, {
                 let focus = focus.clone();
-                move |_, window, _| window.focus(&focus)
+                move |_, window, cx| window.focus(&focus, cx)
             })
             .w(px(self.width))
             .overflow_hidden()

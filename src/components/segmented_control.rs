@@ -23,7 +23,7 @@
 //! .on_change(|value, _, _| println!("{value}"))
 //! ```
 
-use std::{rc::Rc, time::Duration};
+use std::{rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     AnyElement, AnyView, App, BoxShadow, DispatchPhase, Entity, FocusHandle, FontWeight,
@@ -462,7 +462,7 @@ impl Picker {
         if handles.iter().any(|h| h.is_focused(window))
             && let Some(handle) = handles.get(ix)
         {
-            window.focus(handle);
+            window.focus(handle, cx);
         }
         if let Some(on_change) = &self.on_change {
             on_change(&value, window, cx);
@@ -496,7 +496,7 @@ impl Picker {
         self.pick(target, window, cx);
         let handle = self.state.read(cx).focus.get(target).cloned();
         if let Some(handle) = handle {
-            window.focus(&handle);
+            window.focus(&handle, cx);
         }
         true
     }
@@ -541,7 +541,7 @@ fn text_width(window: &Window, text: &SharedString, size: f32, weight: FontWeigh
     f32::from(line.width)
 }
 
-/// The content's width, like the web version's `offsetWidth` (rounded).
+/// The content's width, rounded to whole pixels.
 fn content_width(window: &Window, o: &SegmentOption, look: Look, m: &Metrics) -> f32 {
     let mut parts: Vec<f32> = Vec::new();
     if o.icon.is_some() {
@@ -677,7 +677,7 @@ impl RenderOnce for SegmentedControl {
             .map(|o| o.value.clone());
         let initial = self.default_value.clone().or(first_enabled);
         let state = window.use_keyed_state(
-            gpui::ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            gpui::ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, _| State {
                 inner: initial,

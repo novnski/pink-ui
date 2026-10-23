@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>pink-ui player</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <style>
+    /* The stage colors match the player's Rust side (web/src/lib.rs). */
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #fafafa; }
+    html.dark, html.dark body { background: #1f1f21; }
+    canvas { display: block; }
+    /* GPUI writes its own notice into <body> when there is no WebGPU or WebGL2. */
+    body > p { font: 14px/1.5 system-ui, sans-serif; color: #71717a; padding: 24px; margin: 0; }
+  </style>
+  <script>
+    // Paint the right stage color before the module arrives.
+    if (new URLSearchParams(location.search).get('theme') === 'dark') {
+      document.documentElement.classList.add('dark');
+    }
+  </script>
+</head>
+<body>
+  <script type="module" src="player.js?v=__BUILD__"></script>
+</body>
+</html>

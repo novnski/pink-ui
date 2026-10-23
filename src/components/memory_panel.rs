@@ -13,10 +13,8 @@
 //!     .on_change(|change, _, _| println!("{change:?}"))
 //! ```
 
-use std::{
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     AnyElement, AnyView, App, Context, ElementId, Entity, FontWeight, IntoElement, SharedString,
@@ -245,7 +243,7 @@ impl MemoryState {
             InputEvent::Escape => this.cancel(cx),
             _ => {}
         });
-        input.read(cx).focus(window);
+        TextInput::focus(&input, window, cx);
         self.editing = Some(Editor {
             id,
             input,
@@ -389,7 +387,7 @@ impl RenderOnce for MemoryPanel {
         let key = self.id.to_string();
         let initial = self.memories.clone();
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             move |_, _| MemoryState {
                 items: initial

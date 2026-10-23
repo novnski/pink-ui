@@ -16,11 +16,8 @@
 //!     .on_decide(|outcome, _, _| println!("{outcome:?}"))
 //! ```
 
-use std::{
-    cell::Cell,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{cell::Cell, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     AnyElement, AnyView, App, ElementId, Entity, FocusHandle, FontWeight, HighlightStyle, Hsla,
@@ -248,12 +245,12 @@ impl RenderOnce for PermissionRequest {
         let key = self.id.to_string();
         let autofocus = self.autofocus;
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |window, cx| {
                 let focus = cx.focus_handle();
                 if autofocus {
-                    window.focus(&focus);
+                    window.focus(&focus, cx);
                 }
                 let ticker = cx.spawn(async move |this, cx| {
                     loop {
@@ -629,7 +626,7 @@ impl RenderOnce for PermissionRequest {
             .on_key_down(on_key)
             .on_mouse_down(MouseButton::Left, {
                 let focus = focus.clone();
-                move |_, window, _| window.focus(&focus)
+                move |_, window, cx| window.focus(&focus, cx)
             })
             .w(px(self.width))
             .overflow_hidden()

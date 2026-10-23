@@ -1,6 +1,6 @@
 //! Prompt Library – saved prompt templates you fill in place.
 //!
-//! An original in luna's design language. The library lists templates by
+//! A luna component. The library lists templates by
 //! group; the open one reads as a sentence with blanks you type straight
 //! into, each blank growing with its text. A ring and a row of variable
 //! tokens track what is still missing, the assembled prompt updates below
@@ -17,7 +17,7 @@
 //!     .on_use(|template, prompt, _, _| println!("{}: {prompt}", template.title))
 //! ```
 
-use std::{collections::HashMap, f32::consts::TAU, rc::Rc, time::Duration};
+use std::{collections::HashMap, f32::consts::TAU, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     Animation, AnimationExt, AnyView, App, Context, ElementId, Entity, FontWeight, HighlightStyle,
@@ -349,7 +349,7 @@ impl LibraryState {
             InputEvent::Tab => {
                 let inputs = self.inputs();
                 if let Some(at) = inputs.iter().position(|i| i == input) {
-                    inputs[(at + 1) % inputs.len()].read(cx).focus(window);
+                    TextInput::focus(&inputs[(at + 1) % inputs.len()], window, cx);
                 }
             }
             InputEvent::Submit(_) => {
@@ -359,7 +359,7 @@ impl LibraryState {
                     self.focus_next_empty(Some(input), window, cx);
                 }
             }
-            InputEvent::Escape => self.search.read(cx).focus(window),
+            InputEvent::Escape => TextInput::focus(&self.search, window, cx),
             InputEvent::Focus | InputEvent::Blur => {}
             _ => return,
         }
@@ -381,12 +381,12 @@ impl LibraryState {
         for step in 0..len {
             let input = &inputs[(start + step) % len];
             if input.read(cx).text().trim().is_empty() {
-                input.read(cx).focus(window);
+                TextInput::focus(&input, window, cx);
                 return;
             }
         }
         if let Some(first) = inputs.first() {
-            first.read(cx).focus(window);
+            TextInput::focus(&first, window, cx);
         }
     }
 
@@ -526,7 +526,7 @@ impl RenderOnce for PromptLibrary {
         let focus_first = self.focus_first_blank;
 
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             move |window, cx| {
                 let search =
@@ -959,7 +959,7 @@ fn editor(
                 ))
                 .cursor_pointer()
                 .when_some(target, |el, input| {
-                    el.on_click(move |_, window, cx| input.read(cx).focus(window))
+                    el.on_click(move |_, window, cx| TextInput::focus(&input, window, cx))
                 })
                 .when(done, |el| {
                     el.child(svg().path(ICON_CHECK).size(px(11.)).text_color(if t.dark {

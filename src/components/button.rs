@@ -21,7 +21,7 @@
 //!     .loading(uploading);
 //! ```
 
-use std::{collections::HashMap, f32::consts::TAU, ops::Range, rc::Rc, time::Duration};
+use std::{collections::HashMap, f32::consts::TAU, ops::Range, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
     AnyElement, AnyView, App, BoxShadow, ClickEvent, Context, CursorStyle, Div, ElementId, Entity,
@@ -57,7 +57,7 @@ const PRESS: MotionSpec = MotionSpec::new(160, EASE_OUT_QUINT);
 const SWEEP: Duration = Duration::from_millis(1040);
 const SPIN: Duration = Duration::from_millis(900);
 
-/// The icons from the website demo, drawn for `look` (Clean strokes are a
+/// The demo's icons, drawn for `look` (Clean strokes are a
 /// little thinner): `arrow-up`, `arrow-right`, `plus`, `dots`, `copy`,
 /// `upload`, `trash` and `check`.
 pub fn icon(look: Look, name: &str) -> SharedString {
@@ -195,7 +195,7 @@ impl Button {
     }
 
     /// The width the button takes at rest – handy for reserving room for the
-    /// widest of several labels, like the website demo's slots do.
+    /// widest of several labels, like the demo's slots do.
     pub fn measure(&self, window: &Window, cx: &App) -> Pixels {
         let look = self.look.unwrap_or(cx.look());
         let m = Metrics::get(look, self.size);
@@ -680,6 +680,7 @@ fn mix_shadows(rest: &[BoxShadow], hover: &[BoxShadow], t: f32) -> Vec<BoxShadow
                 f32::from(b.spread_radius),
                 t,
             )),
+            inset: a.inset,
         })
         .collect()
 }
@@ -711,7 +712,7 @@ fn over(top: Hsla, bottom: Hsla) -> Hsla {
     })
 }
 
-/// What the web version keys its parts by: a change remounts the part, which
+/// What the parts are keyed by: a change remounts the part, which
 /// replays its entrance, and the width glides.
 #[derive(Clone, PartialEq)]
 struct Content {
@@ -760,7 +761,7 @@ impl RenderOnce for Button {
         let reduced = motion::reduced_motion(cx);
 
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "button".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "button".into()),
             cx,
             |_, cx| ButtonState {
                 focus: cx.focus_handle().tab_stop(true),
@@ -872,9 +873,9 @@ impl RenderOnce for Button {
                 .on_key_down(|event, window, cx| {
                     if event.keystroke.key == "tab" {
                         if event.keystroke.modifiers.shift {
-                            window.focus_prev();
+                            window.focus_prev(cx);
                         } else {
-                            window.focus_next();
+                            window.focus_next(cx);
                         }
                         cx.stop_propagation();
                     }
@@ -1103,7 +1104,7 @@ fn label_element(
 }
 
 // ---------------------------------------------------------------------------
-// Story: the website's showcase
+// Story: the showcase
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]

@@ -1,5 +1,4 @@
-//! The component gallery: every affectUI component with its demo, like the
-//! library page on affectui.com.
+//! The component gallery: every pink-ui component with its demo.
 //!
 //! ```text
 //! cargo run                                   # browse everything
@@ -9,17 +8,17 @@
 //! ```
 //!
 //! `--stage-only` renders just the preview stage, which is what
-//! `scripts/screenshot.sh` captures for side-by-side checks with the website.
+//! `scripts/screenshot.sh` captures.
 
-use affectui::{
+use gpui::{
+    AnyView, App, Bounds, Context, FontWeight, Hsla, KeyBinding, ScrollHandle, SharedString,
+    TitlebarOptions, Window, WindowBounds, WindowOptions, actions, div, point, prelude::*, px,
+    size,
+};
+use pink_ui::{
     ActiveTheme, Assets, HoverFill, Look, Theme, ThemeMode,
     components::{CATEGORIES, COMPONENTS, Kind},
     primitives::{SANS, hex, hexa},
-};
-use gpui::{
-    AnyView, App, Application, Bounds, Context, FontWeight, Hsla, KeyBinding, ScrollHandle,
-    SharedString, TitlebarOptions, Window, WindowBounds, WindowOptions, actions, div, point,
-    prelude::*, px, size,
 };
 
 actions!(gallery, [Next, Previous, ToggleTheme, Replay, Quit]);
@@ -76,8 +75,10 @@ fn parse_args() -> Args {
     args
 }
 
-/// The site chrome colors (`--bg`, `--preview`, `--text`, `--border`, `--border-soft`).
+/// The gallery chrome colors, matching the showcase site's.
 struct Chrome {
+    /// pink-ui's brand pink.
+    brand: Hsla,
     bg: Hsla,
     preview: Hsla,
     text: Hsla,
@@ -92,6 +93,7 @@ impl Chrome {
     fn get(cx: &App) -> Self {
         if cx.is_dark() {
             Chrome {
+                brand: hex(0xf472b6),
                 bg: hex(0x0c0c0d),
                 preview: hex(0x1f1f21),
                 text: hex(0xededed),
@@ -103,6 +105,7 @@ impl Chrome {
             }
         } else {
             Chrome {
+                brand: hex(0xdb2777),
                 bg: hex(0xf5f5f5),
                 preview: hex(0xfafafa),
                 text: hex(0x0a0a0a),
@@ -137,7 +140,7 @@ impl Gallery {
     fn select(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.selected = ix;
         self.story = (COMPONENTS[ix].story)(window, cx);
-        window.set_window_title(&format!("{} · affectUI for GPUI", COMPONENTS[ix].name));
+        window.set_window_title(&format!("{} · pink-ui", COMPONENTS[ix].name));
         cx.notify();
     }
 
@@ -266,8 +269,8 @@ impl Gallery {
                         div()
                             .text_size(px(16.))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(chrome.text)
-                            .child("affectUI"),
+                            .text_color(chrome.brand)
+                            .child("pink-ui"),
                     )
                     .child(
                         div()
@@ -332,7 +335,7 @@ impl Gallery {
                                     .text_color(chrome.muted)
                                     .child(entry.category),
                             )
-                            .when(entry.kind == Kind::Original, |row| {
+                            .when(entry.kind == Kind::Luna, |row| {
                                 row.child(
                                     div()
                                         .px(px(8.))
@@ -343,7 +346,7 @@ impl Gallery {
                                         .bg(chrome.hover)
                                         .text_size(px(12.))
                                         .text_color(chrome.muted)
-                                        .child("Original · luna style"),
+                                        .child("luna style"),
                                 )
                             }),
                     )
@@ -364,8 +367,8 @@ impl Gallery {
                     .rounded(px(10.))
                     .border_1()
                     .border_color(chrome.border)
-                    // Only ports come in affectUI's two looks
-                    .when(entry.kind == Kind::Port, |row| {
+                    // Only core components come in the two looks
+                    .when(entry.kind == Kind::Core, |row| {
                         row.child(
                             pill("clean", "Clean", look == Look::Clean).on_click(
                                 cx.listener(|_, _, _, cx| Theme::set_look(Look::Clean, cx)),
@@ -396,7 +399,7 @@ impl Gallery {
 
 impl Render for Gallery {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        affectui::motion::frame(window, cx);
+        pink_ui::motion::frame(window, cx);
         let chrome = Chrome::get(cx);
         let root = div()
             .id("gallery")
@@ -442,10 +445,10 @@ fn main() {
         eprintln!("gallery: unknown component `{slug}`, try --list");
     }
 
-    Application::new()
+    gpui_platform::application()
         .with_assets(Assets)
         .run(move |cx: &mut App| {
-            affectui::init(cx);
+            pink_ui::init(cx);
             Theme::set_mode(args.mode, cx);
             Theme::set_look(args.look, cx);
             cx.bind_keys([
@@ -475,12 +478,10 @@ fn main() {
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     titlebar: Some(TitlebarOptions {
-                        title: Some(
-                            format!("{} · affectUI for GPUI", COMPONENTS[selected].name).into(),
-                        ),
+                        title: Some(format!("{} · pink-ui", COMPONENTS[selected].name).into()),
                         ..Default::default()
                     }),
-                    app_id: Some("affectui-gallery".into()),
+                    app_id: Some("pink-ui-gallery".into()),
                     ..Default::default()
                 },
                 |window, cx| cx.new(|cx| Gallery::new(selected, stage_only, window, cx)),

@@ -1,10 +1,9 @@
 //! Light/dark mode and the Clean/Classic look.
 //!
-//! Every affectUI component carries its own color tokens, with a light set and
-//! a dark override (the web version switches on a `.dark` class). Each one also
-//! comes in two looks, like the style switch on affectui.com: **Clean**, one
-//! flat card whose edges are hairline shadows (the default), and **Classic**,
-//! white cards on a gray tray. The active mode and look live in a GPUI global;
+//! Every core component carries its own color tokens, with a light set and a
+//! dark override. Each one also comes in two looks: **Clean**, one flat card
+//! whose edges are hairline shadows (the default), and **Classic**, white
+//! cards on a gray tray. The active mode and look live in a GPUI global;
 //! components read them with [`ActiveTheme`] and can override the look per
 //! instance.
 
@@ -30,7 +29,7 @@ impl ThemeMode {
     }
 }
 
-/// The two component styles from affectui.com.
+/// The two looks of the core components.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Look {
     /// One flat card; strokes are shadows, like a popover.

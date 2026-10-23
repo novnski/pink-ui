@@ -1,8 +1,8 @@
 //! Eased hover feedback, adapted from luna-ui's `interaction` module.
 //!
 //! GPUI's `.hover(|s| s.bg(..))` applies on the frame the pointer enters, so
-//! it snaps. affectUI controls transition their colors over 160ms, so every
-//! control here eases through [`HoverFill`] instead.
+//! it snaps. Controls here transition their colors over 160ms instead, like a
+//! CSS transition, by easing through [`HoverFill`].
 //!
 //! Keys must be unique among the elements on screen: two elements sharing a
 //! key share one fade. Derive the key from the element id, prefixed by the

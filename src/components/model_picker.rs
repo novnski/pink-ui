@@ -1,6 +1,6 @@
 //! Model Picker – a chat composer's model menu with a live spec sheet.
 //!
-//! An original in luna's design language. A quiet trigger names the current
+//! A luna component. A quiet trigger names the current
 //! model; its menu opens above the composer with the models on the left and
 //! a spec sheet on the right. Point at a model (or arrow to it) and its
 //! speed, depth and cost meters glide to the new values while the latency,
@@ -17,6 +17,7 @@
 //! ```
 
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui::{
     AnimationExt, AnyView, App, Bounds, ElementId, FocusHandle, FontWeight, Hsla, IntoElement,
@@ -418,13 +419,13 @@ impl RenderOnce for ModelPicker {
         let (reasoning, budget) = (self.reasoning, self.budget);
 
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             move |window, cx| {
                 let focus = cx.focus_handle();
                 if autofocus {
                     let handle = focus.clone();
-                    window.defer(cx, move |window, _| window.focus(&handle));
+                    window.defer(cx, move |window, cx| window.focus(&handle, cx));
                 }
                 PickerState {
                     focus,
@@ -620,7 +621,7 @@ fn trigger(
             toggler.update(cx, |s, cx| {
                 let open = !s.open;
                 s.set_open(open);
-                window.focus(&s.focus);
+                window.focus(&s.focus, cx);
                 cx.notify();
             })
         })

@@ -14,12 +14,8 @@
 //!     .done(finished)
 //! ```
 
-use std::{
-    f32::consts::PI,
-    mem,
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::{f32::consts::PI, mem, rc::Rc, sync::Arc};
+use web_time::{Duration, Instant};
 
 use gpui::{
     AnyElement, AnyView, App, BoxShadow, Context, ElementId, FontWeight, HighlightStyle, Hsla,
@@ -81,7 +77,7 @@ pub enum LoaderVariant {
 struct Palette {
     bg: Hsla,
     shadow: Vec<BoxShadow>,
-    /// Classic draws a 1px edge (an inset ring on the web).
+    /// Classic draws a 1px edge (an inset ring in CSS).
     border: Option<Hsla>,
     text: Hsla,
     ink: Hsla,
@@ -375,7 +371,7 @@ impl RenderOnce for ThinkingLoader {
         let done = self.done;
 
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Box::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, _| LoaderState::new(now),
         );
