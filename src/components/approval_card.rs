@@ -25,8 +25,8 @@ use gpui::{
 };
 
 use crate::{
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, Tone, oklch, radius, text},
     motion::{self, AnimationExt, EASE_OUT_QUINT, GLIDE, MENU_IN},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, oklch, radius, text},
     story,
 };
 
@@ -78,7 +78,7 @@ impl Risk {
         }
     }
 
-    fn color(self, t: &Luna) -> Hsla {
+    fn color(self, t: &Pink) -> Hsla {
         match self {
             Risk::Low => t.success,
             Risk::Medium => t.warning,
@@ -349,7 +349,7 @@ impl ApprovalCard {
 
 impl RenderOnce for ApprovalCard {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let req = self.request;
         let (timeout, resolved, undo_window, autofocus) = (
@@ -473,7 +473,7 @@ impl RenderOnce for ApprovalCard {
                 )
             });
 
-        luna::card(&t)
+        pink::card(&t)
             .id(self.id.clone())
             .track_focus(&focus)
             .on_key_down(on_key)
@@ -484,7 +484,7 @@ impl RenderOnce for ApprovalCard {
                 })
             })
             .w(px(CARD_W))
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_size(px(text::BODY))
             .text_color(t.text)
             .when(focused && decision.is_none(), |d| {
@@ -495,7 +495,7 @@ impl RenderOnce for ApprovalCard {
 }
 
 /// Agent monogram.
-fn monogram(name: &str, hue: f32, size: f32, t: &Luna) -> impl IntoElement {
+fn monogram(name: &str, hue: f32, size: f32, t: &Pink) -> impl IntoElement {
     let (wash, ink) = if t.dark {
         (oklch(0.30, 0.055, hue), oklch(0.86, 0.10, hue))
     } else {
@@ -522,7 +522,7 @@ fn monogram(name: &str, hue: f32, size: f32, t: &Luna) -> impl IntoElement {
 }
 
 /// Three rising bars, lit up to the risk level.
-fn risk_meter(risk: Risk, t: &Luna) -> impl IntoElement {
+fn risk_meter(risk: Risk, t: &Pink) -> impl IntoElement {
     let color = risk.color(t);
     div()
         .flex_none()
@@ -581,7 +581,7 @@ const SQL_WORDS: &[&str] = &[
 ];
 
 /// A light tint: keywords, quoted strings, numbers and flags.
-fn highlight(line: &str, t: &Luna) -> Vec<(std::ops::Range<usize>, HighlightStyle)> {
+fn highlight(line: &str, t: &Pink) -> Vec<(std::ops::Range<usize>, HighlightStyle)> {
     let keyword = HighlightStyle {
         color: Some(t.accent),
         ..Default::default()
@@ -629,7 +629,7 @@ fn pending_view(
     req: &ApprovalRequest,
     key: &str,
     state: &Entity<CardState>,
-    t: &Luna,
+    t: &Pink,
     cx: &App,
 ) -> impl IntoElement {
     let s = state.read(cx);
@@ -733,7 +733,7 @@ fn pending_view(
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .font_family(luna::MONO)
+                            .font_family(pink::MONO)
                             .text_size(px(text::FOOTNOTE))
                             .text_color(t.text_muted)
                             .child(file),
@@ -743,7 +743,7 @@ fn pending_view(
                             div()
                                 .flex()
                                 .gap(px(6.))
-                                .font_family(luna::MONO)
+                                .font_family(pink::MONO)
                                 .text_size(px(text::CAPTION))
                                 .child(div().text_color(t.success).child(format!("+{}", req.added)))
                                 .child(
@@ -757,7 +757,7 @@ fn pending_view(
             .child(
                 div()
                     .py(px(6.))
-                    .font_family(luna::MONO)
+                    .font_family(pink::MONO)
                     .text_size(px(text::FOOTNOTE))
                     .children(lines),
             )
@@ -826,7 +826,7 @@ fn pending_view(
         .rounded(px(radius::XS))
         .bg(t.on_solid.opacity(0.14))
         .text_size(px(text::CAPTION))
-        .font_family(luna::MONO)
+        .font_family(pink::MONO)
         .text_color(t.on_solid.opacity(0.75))
         .child(approve_mod)
         .child(
@@ -845,7 +845,7 @@ fn pending_view(
         .gap(px(8.))
         .child(timer)
         .child(
-            luna::button(
+            pink::button(
                 format!("{key}-deny"),
                 ButtonKind::Secondary,
                 ControlSize::Lg,
@@ -853,13 +853,13 @@ fn pending_view(
             )
             .pr(px(6.))
             .child("Deny")
-            .child(luna::kbd("Esc", t).ml(px(2.)))
+            .child(pink::kbd("Esc", t).ml(px(2.)))
             .on_click(move |_, window, cx| {
                 deny_state.update(cx, |s, cx| s.resolve(Decision::Denied, window, cx))
             }),
         )
         .child(
-            luna::button(
+            pink::button(
                 format!("{key}-approve"),
                 ButtonKind::Primary,
                 ControlSize::Lg,
@@ -951,7 +951,7 @@ fn record_view(
     key: &str,
     state: &Entity<CardState>,
     on_undo: Option<Handler>,
-    t: &Luna,
+    t: &Pink,
     cx: &App,
 ) -> impl IntoElement {
     let s = state.read(cx);
@@ -1028,8 +1028,8 @@ fn record_view(
         .when(can_undo, |d| {
             d.child(motion::fade_in(
                 eid(format!("{key}-undo-{epoch}")),
-                luna::button(format!("{key}-undo"), ButtonKind::Ghost, ControlSize::Md, t)
-                    .child(luna::glyph(ICON_UNDO, ControlSize::Md).text_color(t.text_muted))
+                pink::button(format!("{key}-undo"), ButtonKind::Ghost, ControlSize::Md, t)
+                    .child(pink::glyph(ICON_UNDO, ControlSize::Md).text_color(t.text_muted))
                     .child("Undo")
                     .on_click(move |_, window, cx| {
                         undo_state.update(cx, |s, cx| s.undo(cx));
@@ -1040,7 +1040,7 @@ fn record_view(
             ))
         })
         .when(!can_undo, |d| {
-            d.child(luna::badge(
+            d.child(pink::badge(
                 match decision {
                     Decision::Approved => "Approved",
                     Decision::Denied => "Denied",
@@ -1156,7 +1156,7 @@ mod tests {
     use super::*;
 
     fn spans<'a>(line: &'a str) -> Vec<&'a str> {
-        highlight(line, &Luna::light())
+        highlight(line, &Pink::light())
             .into_iter()
             .map(|(r, _)| &line[r])
             .collect()

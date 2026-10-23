@@ -25,8 +25,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ControlSize, FillTier, Luna, radius, space, text},
     motion::{self, MotionSpec},
+    pink::{self, ControlSize, FillTier, Pink, radius, space, text},
     story,
 };
 
@@ -275,23 +275,23 @@ impl State {
     }
 }
 
-fn palette(t: &Luna) -> [Hsla; 5] {
+fn palette(t: &Pink) -> [Hsla; 5] {
     let amber = if t.dark {
         t.warning
     } else {
-        luna::oklch(0.70, 0.165, 62.)
+        pink::oklch(0.70, 0.165, 62.)
     };
     let rose = if t.dark {
-        luna::oklch(0.70, 0.17, 5.)
+        pink::oklch(0.70, 0.17, 5.)
     } else {
-        luna::oklch(0.63, 0.20, 8.)
+        pink::oklch(0.63, 0.20, 8.)
     };
-    [t.accent, t.success, amber, rose, luna::neutral(0.62)]
+    [t.accent, t.success, amber, rose, pink::neutral(0.62)]
 }
 
 impl RenderOnce for BreakdownChart {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let cube = self.cube.clone();
         let (m0, s0, g0) = (self.measure, self.slice, self.segment);
@@ -313,7 +313,7 @@ impl RenderOnce for BreakdownChart {
             },
         );
         if cube.dimensions.len() < 2 || cube.measures.is_empty() {
-            return luna::card(&t).id(self.id.clone());
+            return pink::card(&t).id(self.id.clone());
         }
         let s = state.read(cx);
         let measure_ix = s.measure.min(cube.measures.len() - 1);
@@ -476,7 +476,7 @@ impl RenderOnce for BreakdownChart {
                 let current = state.read(cx).current(picker);
                 let close_state = state.clone();
                 deferred(
-                    luna::overlay(&t)
+                    pink::overlay(&t)
                         .id(SharedString::from(format!("{tkey}-menu")))
                         .absolute()
                         .top(px(32.))
@@ -638,7 +638,7 @@ impl RenderOnce for BreakdownChart {
                         cube.dimensions[slice_dim].name.clone(),
                     ))
                     .child(
-                        luna::icon_button(
+                        pink::icon_button(
                             SharedString::from(format!("{key}-swap")),
                             ICON_SWAP,
                             ControlSize::Sm,
@@ -660,7 +660,7 @@ impl RenderOnce for BreakdownChart {
                     )),
             )
             .child(
-                luna::chip(
+                pink::chip(
                     SharedString::from(format!("{key}-sort")),
                     sorted,
                     ControlSize::Sm,
@@ -755,7 +755,7 @@ impl RenderOnce for BreakdownChart {
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(t.text)
                         .child(slices[sl].clone())
-                        .child(div().font_family(luna::MONO).child(measure.fmt(total))),
+                        .child(div().font_family(pink::MONO).child(measure.fmt(total))),
                 )
                 .children((0..parts.len()).rev().map(|g| {
                     let v = matrix[sl][g];
@@ -776,7 +776,7 @@ impl RenderOnce for BreakdownChart {
                         )
                         .child(
                             div()
-                                .font_family(luna::MONO)
+                                .font_family(pink::MONO)
                                 .text_color(t.text)
                                 .child(measure.fmt(v)),
                         )
@@ -785,7 +785,7 @@ impl RenderOnce for BreakdownChart {
                                 .w(px(32.))
                                 .flex()
                                 .justify_end()
-                                .font_family(luna::MONO)
+                                .font_family(pink::MONO)
                                 .text_color(t.text_faint)
                                 .child(format!("{:.0}%", share * 100.)),
                         )
@@ -811,7 +811,7 @@ impl RenderOnce for BreakdownChart {
                     .top(px(y - 8.))
                     .text_size(px(text::CAPTION))
                     .line_height(px(16.))
-                    .font_family(luna::MONO)
+                    .font_family(pink::MONO)
                     .text_color(t.text_faint)
                     .child(measure.fmt((step * (4 - k) as f32) as f64))
             }));
@@ -1010,7 +1010,7 @@ impl RenderOnce for BreakdownChart {
                             .flex()
                             .justify_end()
                             .pr(px(space::S6))
-                            .font_family(luna::MONO)
+                            .font_family(pink::MONO)
                             .text_size(px(text::FOOTNOTE))
                             .text_color(if focus_cell || isolated.is_none() {
                                 t.text_muted
@@ -1027,7 +1027,7 @@ impl RenderOnce for BreakdownChart {
                             .flex()
                             .justify_end()
                             .pr(px(space::S6))
-                            .font_family(luna::MONO)
+                            .font_family(pink::MONO)
                             .text_size(px(text::FOOTNOTE))
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(t.text)
@@ -1094,14 +1094,14 @@ impl RenderOnce for BreakdownChart {
 
         motion::keep_alive(window);
         let focus_click = focus.clone();
-        luna::card(&t)
+        pink::card(&t)
             .id(self.id.clone())
             .w(px(780.))
             .p(px(space::S20))
             .flex()
             .flex_col()
             .gap(px(space::S16))
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .track_focus(&focus)
             .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                 window.focus(&focus_click, cx)

@@ -23,8 +23,8 @@ use gpui::{
 };
 
 use crate::{
-    luna::{self, ControlSize, FillTier, Luna, Tone, radius, space, text},
     motion::{self, MotionSpec},
+    pink::{self, ControlSize, FillTier, Pink, Tone, radius, space, text},
     story,
 };
 
@@ -170,24 +170,24 @@ struct State {
     focus: FocusHandle,
 }
 
-fn palette(t: &Luna) -> [Hsla; 5] {
+fn palette(t: &Pink) -> [Hsla; 5] {
     let amber = if t.dark {
         t.warning
     } else {
-        luna::oklch(0.70, 0.165, 62.)
+        pink::oklch(0.70, 0.165, 62.)
     };
-    // A rose a little softer than luna's danger, so no part reads as an error.
+    // A rose a little softer than pink's danger, so no part reads as an error.
     let rose = if t.dark {
-        luna::oklch(0.70, 0.17, 5.)
+        pink::oklch(0.70, 0.17, 5.)
     } else {
-        luna::oklch(0.63, 0.20, 8.)
+        pink::oklch(0.63, 0.20, 8.)
     };
-    [t.accent, t.success, amber, rose, luna::neutral(0.62)]
+    [t.accent, t.success, amber, rose, pink::neutral(0.62)]
 }
 
 impl RenderOnce for CompactBreakdown {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let default_period = self.default_period;
         let state = window.use_keyed_state(
@@ -201,7 +201,7 @@ impl RenderOnce for CompactBreakdown {
             },
         );
         if self.periods.is_empty() || self.parts.is_empty() {
-            return luna::card(&t).id(self.id.clone());
+            return pink::card(&t).id(self.id.clone());
         }
         let (period_ix, active, ring_cell, focus) = {
             let s = state.read(cx);
@@ -269,13 +269,13 @@ impl RenderOnce for CompactBreakdown {
         let tabs = self.periods.iter().enumerate().map(|(ix, p)| {
             let state = state.clone();
             let handler = self.on_period_change.clone();
-            luna::chip(
+            pink::chip(
                 SharedString::from(format!("{key}-period-{ix}")),
                 ix == period_ix,
                 ControlSize::Sm,
                 &t,
             )
-            .font_family(luna::MONO)
+            .font_family(pink::MONO)
             .child(p.label.clone())
             .on_click(move |_, window, cx| {
                 set_period(&state, ix, cx);
@@ -509,7 +509,7 @@ impl RenderOnce for CompactBreakdown {
                             .w(px(56.))
                             .flex()
                             .justify_end()
-                            .font_family(luna::MONO)
+                            .font_family(pink::MONO)
                             .text_size(px(text::FOOTNOTE))
                             .text_color(t.text)
                             .child((self.format)(shown)),
@@ -520,7 +520,7 @@ impl RenderOnce for CompactBreakdown {
                             .w(px(34.))
                             .flex()
                             .justify_end()
-                            .font_family(luna::MONO)
+                            .font_family(pink::MONO)
                             .text_size(px(text::FOOTNOTE))
                             .text_color(t.text_faint)
                             .child(format!("{:.0}%", share * 100.)),
@@ -613,10 +613,10 @@ impl RenderOnce for CompactBreakdown {
         let periods = self.periods.len();
         let handler = self.on_period_change.clone();
         let focus_click = focus.clone();
-        luna::card(&t)
+        pink::card(&t)
             .id(self.id.clone())
             .w(px(420.))
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .track_focus(&focus)
             .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                 window.focus(&focus_click, cx)
@@ -672,7 +672,7 @@ impl RenderOnce for CompactBreakdown {
                     .child(ring)
                     .child(rows),
             )
-            .child(luna::divider(&t))
+            .child(pink::divider(&t))
             .child(div().px(px(space::S16)).py(px(space::S12)).child(footer))
     }
 }
@@ -704,14 +704,14 @@ fn clear_active(state: &gpui::Entity<State>, cx: &mut App) {
     });
 }
 
-fn growth_badge(g: f64, t: &Luna) -> impl IntoElement {
+fn growth_badge(g: f64, t: &Pink) -> impl IntoElement {
     let tone = if g >= 0. { Tone::Success } else { Tone::Danger };
-    luna::badge(
+    pink::badge(
         format!("{}{:.0}%", if g >= 0. { "+" } else { "−" }, g.abs() * 100.),
         tone,
         t,
     )
-    .font_family(luna::MONO)
+    .font_family(pink::MONO)
 }
 
 /// A point on a circle, clockwise from 12 o'clock.

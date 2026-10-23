@@ -1,6 +1,6 @@
 //! Model Picker – a chat composer's model menu with a live spec sheet.
 //!
-//! A luna component. A quiet trigger names the current
+//! A pink component. A quiet trigger names the current
 //! model; its menu opens above the composer with the models on the left and
 //! a spec sheet on the right. Point at a model (or arrow to it) and its
 //! speed, depth and cost meters glide to the new values while the latency,
@@ -27,8 +27,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, Tone, radius, text},
     motion::{self, EASE, EASE_OUT_QUINT, GLIDE, MENU_IN, MotionSpec},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, radius, text},
     primitives::shadow,
     story,
 };
@@ -406,7 +406,7 @@ impl ModelPicker {
 
 impl RenderOnce for ModelPicker {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let models = Rc::new(self.models);
         let count = models.len();
@@ -569,7 +569,7 @@ impl RenderOnce for ModelPicker {
             .id(self.id)
             .relative()
             .flex_none()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .track_focus(&s.focus)
             .on_key_down(on_key)
             .child(trigger)
@@ -582,7 +582,7 @@ fn trigger(
     current: &ModelOption,
     s: &PickerState,
     reasoning_on: bool,
-    t: &Luna,
+    t: &Pink,
     state: &gpui::Entity<PickerState>,
 ) -> Stateful<gpui::Div> {
     let turn = motion::follow(
@@ -671,7 +671,7 @@ fn menu(
     key: &str,
     models: &Rc<Vec<ModelOption>>,
     s: &PickerState,
-    t: &Luna,
+    t: &Pink,
     state: &gpui::Entity<PickerState>,
     on_change: Option<ChangeHandler>,
     on_reasoning: Option<ReasoningHandler>,
@@ -760,7 +760,7 @@ fn menu(
                             .text_color(t.text)
                             .child(m.name.clone())
                             .when_some(m.tag.clone(), |el, tag| {
-                                el.child(luna::badge(tag, Tone::Accent, t).h(px(16.)).px(px(5.)))
+                                el.child(pink::badge(tag, Tone::Accent, t).h(px(16.)).px(px(5.)))
                             }),
                     )
                     .child(
@@ -835,7 +835,7 @@ fn menu(
                 .child(div().w(px(1.)).bg(t.border))
                 .child(spec_sheet(key, model, budget, s.opened, t)),
         )
-        .child(luna::divider(t))
+        .child(pink::divider(t))
         .child(reasoning_panel(key, model, s, t, state, on_reasoning))
 }
 
@@ -845,7 +845,7 @@ fn spec_sheet(
     model: &ModelOption,
     budget: Option<Budget>,
     opened: u32,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let header = div()
         .flex()
@@ -866,7 +866,7 @@ fn spec_sheet(
                 .child(
                     div()
                         .text_size(px(text::CAPTION))
-                        .font_family(luna::MONO)
+                        .font_family(pink::MONO)
                         .text_color(t.text_faint)
                         .child(price_label(model)),
                 ),
@@ -1002,7 +1002,7 @@ fn meter(
     (lo, hi): (f32, f32),
     word: &'static str,
     opened: u32,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     // Keyed by the open count, so the bars fill from empty each time the menu opens.
     let low = motion::follow_from(&format!("{key}-{label}-lo-{opened}"), 0., lo, GLIDE);
@@ -1071,7 +1071,7 @@ fn roll(id: String, value: String, rise: f32) -> impl IntoElement {
     )
 }
 
-fn figure(key: &str, name: &str, value: String, label: &'static str, t: &Luna) -> impl IntoElement {
+fn figure(key: &str, name: &str, value: String, label: &'static str, t: &Pink) -> impl IntoElement {
     div()
         .flex_1()
         .min_w_0()
@@ -1107,7 +1107,7 @@ fn reasoning_panel(
     key: &str,
     model: &ModelOption,
     s: &PickerState,
-    t: &Luna,
+    t: &Pink,
     state: &gpui::Entity<PickerState>,
     on_reasoning: Option<ReasoningHandler>,
 ) -> impl IntoElement {
@@ -1293,7 +1293,7 @@ fn reasoning_panel(
 }
 
 /// A 30×18 switch whose knob and track ease between off and on.
-fn switch(key: &str, on: bool, t: &Luna) -> Stateful<gpui::Div> {
+fn switch(key: &str, on: bool, t: &Pink) -> Stateful<gpui::Div> {
     let k = motion::follow(
         key,
         if on { 1. } else { 0. },
@@ -1326,7 +1326,7 @@ fn switch(key: &str, on: bool, t: &Luna) -> Stateful<gpui::Div> {
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |_, cx| {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let hint: Hsla = t.text_faint;
         div()
             .h(px(420.))
@@ -1334,9 +1334,9 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .flex()
             .flex_col()
             .justify_end()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .child(
-                luna::card(&t)
+                pink::card(&t)
                     .w_full()
                     .rounded(px(radius::XL))
                     .p(px(8.))
@@ -1356,7 +1356,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                             .flex()
                             .items_center()
                             .gap(px(4.))
-                            .child(luna::icon_button(
+                            .child(pink::icon_button(
                                 "mp-attach",
                                 ICON_PLUS,
                                 ControlSize::Md,
@@ -1370,13 +1370,13 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                                     .autofocus(true),
                             )
                             .child(div().flex_1())
-                            .child(luna::icon_button("mp-voice", ICON_MIC, ControlSize::Md, &t))
+                            .child(pink::icon_button("mp-voice", ICON_MIC, ControlSize::Md, &t))
                             .child(
-                                luna::button("mp-send", ButtonKind::Primary, ControlSize::Md, &t)
+                                pink::button("mp-send", ButtonKind::Primary, ControlSize::Md, &t)
                                     .w(px(28.))
                                     .px_0()
                                     .child(
-                                        luna::glyph(ICON_SEND, ControlSize::Md)
+                                        pink::glyph(ICON_SEND, ControlSize::Md)
                                             .text_color(t.on_solid),
                                     ),
                             ),

@@ -30,8 +30,8 @@ use gpui::{
 };
 
 use crate::{
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, radius, space, text},
     motion::{self, EASE_IN_OUT, GLIDE, MotionSpec},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, radius, space, text},
     primitives::ring,
     story,
 };
@@ -397,11 +397,11 @@ impl Stage {
 // Rendering helpers
 // ---------------------------------------------------------------------------
 
-fn agent_color(hue: f32, t: &Luna) -> Hsla {
+fn agent_color(hue: f32, t: &Pink) -> Hsla {
     if t.dark {
-        luna::oklch(0.72, 0.15, hue)
+        pink::oklch(0.72, 0.15, hue)
     } else {
-        luna::oklch(0.57, 0.19, hue)
+        pink::oklch(0.57, 0.19, hue)
     }
 }
 
@@ -583,7 +583,7 @@ fn pulse(id: impl Into<ElementId>, color: Hsla) -> impl IntoElement {
 }
 
 /// A round monogram in the agent's color.
-fn face(name: &str, color: Hsla, size: f32, t: &Luna) -> Div {
+fn face(name: &str, color: Hsla, size: f32, t: &Pink) -> Div {
     div()
         .size(px(size))
         .flex_none()
@@ -604,7 +604,7 @@ fn face(name: &str, color: Hsla, size: f32, t: &Luna) -> Div {
 
 impl RenderOnce for AgentCursors {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "cursors".into()),
@@ -866,7 +866,7 @@ impl RenderOnce for AgentCursors {
                                 .when(active, |el| {
                                     el.child(
                                         div()
-                                            .font_family(luna::MONO)
+                                            .font_family(pink::MONO)
                                             .text_color(color)
                                             .child(format!("{:.0} px", w)),
                                     )
@@ -901,7 +901,7 @@ impl RenderOnce for AgentCursors {
                                 .items_center()
                                 .border_b_1()
                                 .border_color(t.border)
-                                .font_family(luna::MONO)
+                                .font_family(pink::MONO)
                                 .text_size(px(text::CAPTION))
                                 .text_color(t.text_faint)
                                 .child(file.clone()),
@@ -910,7 +910,7 @@ impl RenderOnce for AgentCursors {
                             div()
                                 .px(px(space::S12))
                                 .py(px(space::S8))
-                                .font_family(luna::MONO)
+                                .font_family(pink::MONO)
                                 .text_size(px(12.5))
                                 .text_color(t.text_muted)
                                 .children(rows),
@@ -1153,7 +1153,7 @@ impl RenderOnce for AgentCursors {
                     .flex()
                     .gap(px(2.))
                     .child(
-                        luna::icon_button(
+                        pink::icon_button(
                             format!("{card_key}-ok"),
                             ICON_CHECK,
                             ControlSize::Sm,
@@ -1163,7 +1163,7 @@ impl RenderOnce for AgentCursors {
                     )
                     .when(!is_comment, |el| {
                         el.child(
-                            luna::icon_button(
+                            pink::icon_button(
                                 format!("{card_key}-no"),
                                 ICON_CLOSE,
                                 ControlSize::Sm,
@@ -1339,15 +1339,15 @@ impl RenderOnce for AgentCursors {
                 )
         });
         let follow_chip = following.and_then(|ix| self.agents.get(ix)).map(|agent| {
-            luna::button(
+            pink::button(
                 format!("{key}-unfollow"),
                 ButtonKind::Ghost,
                 ControlSize::Sm,
                 &t,
             )
-            .child(luna::glyph(ICON_FOLLOW, ControlSize::Sm).text_color(t.text_muted))
+            .child(pink::glyph(ICON_FOLLOW, ControlSize::Sm).text_color(t.text_muted))
             .child(format!("Following {}", agent.name))
-            .child(luna::glyph(ICON_CLOSE, ControlSize::Sm).text_color(t.text_faint))
+            .child(pink::glyph(ICON_CLOSE, ControlSize::Sm).text_color(t.text_faint))
             .on_click({
                 let state = state.clone();
                 move |_, _, cx| {
@@ -1358,7 +1358,7 @@ impl RenderOnce for AgentCursors {
                 }
             })
         });
-        let accept_all = luna::button(
+        let accept_all = pink::button(
             format!("{key}-accept-all"),
             ButtonKind::Primary,
             ControlSize::Md,
@@ -1469,10 +1469,10 @@ impl RenderOnce for AgentCursors {
             window.request_animation_frame();
         }
         motion::keep_alive(window);
-        luna::card(&t)
+        pink::card(&t)
             .w(px(WIDTH))
             .overflow_hidden()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .child(header)
             .child(body)

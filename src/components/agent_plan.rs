@@ -31,8 +31,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, Tone, radius, space, text},
     motion::{self, EASE_OUT_BACK, GLIDE, LINEAR, MotionSpec, ROW_IN},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, radius, space, text},
     primitives::{InputEvent, TextInput},
     story,
 };
@@ -632,7 +632,7 @@ fn spinner(id: impl Into<ElementId>, size: f32, color: Hsla, track: Hsla) -> imp
 }
 
 /// The status node in front of each step.
-fn node(step: &Step, index: usize, phase: Phase, key: &str, t: &Luna) -> impl IntoElement {
+fn node(step: &Step, index: usize, phase: Phase, key: &str, t: &Pink) -> impl IntoElement {
     let size = 20.0;
     let frame = || {
         div()
@@ -690,7 +690,7 @@ fn node(step: &Step, index: usize, phase: Phase, key: &str, t: &Luna) -> impl In
 
 impl RenderOnce for AgentPlan {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let initial = self.steps.clone();
         let failure = self.failure.clone();
@@ -788,7 +788,7 @@ impl RenderOnce for AgentPlan {
                             )),
                     ),
             )
-            .child(luna::badge(badge_label, badge_tone, &t));
+            .child(pink::badge(badge_label, badge_tone, &t));
 
         // -- Segmented progress --------------------------------------------
         let complete = motion::follow(
@@ -961,7 +961,7 @@ impl RenderOnce for AgentPlan {
                     .line_height(px(16.))
                     .text_color(t.text_faint)
                     .child(svg().path(ICON_TOOL).size(px(12.)).text_color(t.text_faint))
-                    .child(div().font_family(luna::MONO).child(step.plan.tool.clone())),
+                    .child(div().font_family(pink::MONO).child(step.plan.tool.clone())),
             };
 
             let actions = (step.status == StepStatus::Failed).then(|| {
@@ -971,13 +971,13 @@ impl RenderOnce for AgentPlan {
                     .gap(px(space::S6))
                     .mt(px(space::S10))
                     .child(
-                        luna::button(
+                        pink::button(
                             format!("{row_key}-retry"),
                             ButtonKind::Secondary,
                             ControlSize::Sm,
                             &t,
                         )
-                        .child(luna::glyph(ICON_RETRY, ControlSize::Sm).text_color(t.text))
+                        .child(pink::glyph(ICON_RETRY, ControlSize::Sm).text_color(t.text))
                         .child("Retry from here")
                         .on_click({
                             let state = state.clone();
@@ -991,7 +991,7 @@ impl RenderOnce for AgentPlan {
                         }),
                     )
                     .child(
-                        luna::button(
+                        pink::button(
                             format!("{row_key}-skip"),
                             ButtonKind::Ghost,
                             ControlSize::Sm,
@@ -1026,7 +1026,7 @@ impl RenderOnce for AgentPlan {
                 .when_some(time_label, |el, (label, live)| {
                     el.child(
                         div()
-                            .font_family(luna::MONO)
+                            .font_family(pink::MONO)
                             .text_size(px(text::FOOTNOTE))
                             .text_color(if live { t.text } else { t.text_faint })
                             .child(label),
@@ -1035,7 +1035,7 @@ impl RenderOnce for AgentPlan {
                 .when(draft, |el| {
                     el.child(
                         div().opacity(hover).child(
-                            luna::icon_button(
+                            pink::icon_button(
                                 format!("{row_key}-remove"),
                                 ICON_CLOSE,
                                 ControlSize::Sm,
@@ -1167,7 +1167,7 @@ impl RenderOnce for AgentPlan {
                             .text_color(t.text)
                             .child(s.add.clone()),
                     )
-                    .child(luna::kbd("↵", &t))
+                    .child(pink::kbd("↵", &t))
             } else {
                 let tone = motion::hover_blend(&add_key, t.text_muted, t.text);
                 div()
@@ -1234,13 +1234,13 @@ impl RenderOnce for AgentPlan {
         };
         let footer_actions = match phase {
             Phase::Draft => vec![
-                luna::button(
+                pink::button(
                     format!("{key}-run"),
                     ButtonKind::Accent,
                     ControlSize::Md,
                     &t,
                 )
-                .child(luna::glyph(ICON_PLAY, ControlSize::Md).text_color(t.on_accent))
+                .child(pink::glyph(ICON_PLAY, ControlSize::Md).text_color(t.on_accent))
                 .child("Run plan")
                 .on_click({
                     let state = state.clone();
@@ -1258,13 +1258,13 @@ impl RenderOnce for AgentPlan {
                 }),
             ],
             Phase::Running => vec![
-                luna::button(
+                pink::button(
                     format!("{key}-stop"),
                     ButtonKind::Secondary,
                     ControlSize::Md,
                     &t,
                 )
-                .child(luna::glyph(ICON_STOP, ControlSize::Md).text_color(t.text))
+                .child(pink::glyph(ICON_STOP, ControlSize::Md).text_color(t.text))
                 .child("Stop")
                 .on_click({
                     let state = state.clone();
@@ -1278,7 +1278,7 @@ impl RenderOnce for AgentPlan {
                 }),
             ],
             Phase::Failed | Phase::Done => vec![
-                luna::button(
+                pink::button(
                     format!("{key}-edit"),
                     ButtonKind::Secondary,
                     ControlSize::Md,
@@ -1321,10 +1321,10 @@ impl RenderOnce for AgentPlan {
         // Followers started above need frames of their own: this render runs
         // after the story's `keep_alive`.
         motion::keep_alive(window);
-        luna::card(&t)
+        pink::card(&t)
             .id(self.id.clone())
             .w(px(WIDTH))
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .when(dragging, |el| el.cursor_grabbing())
             .on_mouse_move({
@@ -1351,7 +1351,7 @@ impl RenderOnce for AgentPlan {
             })
             .child(header)
             .child(progress)
-            .child(luna::divider(&t))
+            .child(pink::divider(&t))
             .child(div().pt(px(space::S6)).child(list))
             .children(add_row)
             .child(footer)

@@ -1,4 +1,4 @@
-//! Writing Assistant – a luna component.
+//! Writing Assistant – a pink component.
 //!
 //! A rewrite companion for a piece of selected text. The reader picks a
 //! direction ("Friendlier", "Shorter", …), types an instruction or dictates
@@ -31,8 +31,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, oklch, radius, space, text},
     motion::{self, AnimationExt, EASE_IN_OUT, EASE_OUT, GLIDE, MotionSpec, ROW_IN},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, oklch, radius, space, text},
     primitives::{InputEvent, TextInput},
     story,
 };
@@ -264,7 +264,7 @@ fn spinner(id: impl Into<ElementId>, size: f32, color: Hsla, reduced: bool) -> A
 }
 
 /// A small square icon button.
-fn tool(id: impl Into<SharedString>, icon: &'static str, t: &Luna) -> gpui::Stateful<gpui::Div> {
+fn tool(id: impl Into<SharedString>, icon: &'static str, t: &Pink) -> gpui::Stateful<gpui::Div> {
     let id: SharedString = id.into();
     let key = format!("wa-tool-{id}");
     div()
@@ -289,8 +289,8 @@ fn tool(id: impl Into<SharedString>, icon: &'static str, t: &Luna) -> gpui::Stat
         )
 }
 
-/// The glow's second hue: a soft magenta beside luna's indigo.
-fn glow_hue(t: &Luna) -> Hsla {
+/// The glow's second hue: a soft magenta beside pink's indigo.
+fn glow_hue(t: &Pink) -> Hsla {
     if t.dark {
         oklch(0.66, 0.17, 330.)
     } else {
@@ -300,7 +300,7 @@ fn glow_hue(t: &Luna) -> Hsla {
 
 /// Two gradient washes rising from the bottom edge, their angles drifting
 /// against each other. `strength` scales them; `phase` (0..1) drives the drift.
-fn glow(t: &Luna, strength: f32, phase: f32) -> impl IntoElement {
+fn glow(t: &Pink, strength: f32, phase: f32) -> impl IntoElement {
     let a = 180. + 28. * (phase * TAU).sin();
     let b = 180. - 32. * (phase * TAU + 1.3).cos();
     let (alpha_a, alpha_b) = if t.dark { (0.30, 0.20) } else { (0.16, 0.12) };
@@ -372,7 +372,7 @@ fn level_meter(started: Instant, color: Hsla) -> impl IntoElement {
 
 impl RenderOnce for WritingAssistant {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let reduced = motion::reduced_motion(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
@@ -520,7 +520,7 @@ impl RenderOnce for WritingAssistant {
             let selected = active_label.as_ref() == Some(label);
             let on_request = self.on_request.clone();
             let label2 = label.clone();
-            luna::chip(format!("{key}-chip-{i}"), selected, ControlSize::Md, &t)
+            pink::chip(format!("{key}-chip-{i}"), selected, ControlSize::Md, &t)
                 .when_some(on_request, |c, f| {
                     c.on_click(move |_, window, cx| f(label2.clone(), window, cx))
                 })
@@ -644,7 +644,7 @@ impl RenderOnce for WritingAssistant {
                         .child(
                             div()
                                 .text_size(px(text::CAPTION))
-                                .font_family(luna::MONO)
+                                .font_family(pink::MONO)
                                 .text_color(t.text_faint)
                                 .child(format!("{}/{}", ix + 1, version_count)),
                         )
@@ -671,16 +671,16 @@ impl RenderOnce for WritingAssistant {
                     let delta = all.len() as i64
                         - self.selection.split_whitespace().count() as i64;
                     let buttons: Vec<AnyElement> = vec![
-                        luna::button(format!("{key}-apply"), ButtonKind::Primary, ControlSize::Md, &t)
-                            .child(luna::glyph(ICON_REPLACE, ControlSize::Md).text_color(t.on_solid))
+                        pink::button(format!("{key}-apply"), ButtonKind::Primary, ControlSize::Md, &t)
+                            .child(pink::glyph(ICON_REPLACE, ControlSize::Md).text_color(t.on_solid))
                             .child("Replace selection")
                             .when_some(on_apply, |b, f| {
                                 b.on_click(move |_, window, cx| f(text_apply.clone(), window, cx))
                             })
                             .into_any_element(),
-                        luna::button(format!("{key}-copy"), ButtonKind::Secondary, ControlSize::Md, &t)
+                        pink::button(format!("{key}-copy"), ButtonKind::Secondary, ControlSize::Md, &t)
                             .child(
-                                luna::glyph(if copied { ICON_CHECK } else { ICON_COPY }, ControlSize::Md)
+                                pink::glyph(if copied { ICON_CHECK } else { ICON_COPY }, ControlSize::Md)
                                     .text_color(if copied { t.success } else { t.text_muted }),
                             )
                             .child(if copied { "Copied" } else { "Copy" })
@@ -931,7 +931,7 @@ impl RenderOnce for WritingAssistant {
                     div()
                         .flex_none()
                         .text_size(px(text::FOOTNOTE))
-                        .font_family(luna::MONO)
+                        .font_family(pink::MONO)
                         .text_color(t.text_faint)
                         .child(format!("{}:{:02}", secs / 60, secs % 60)),
                 )
@@ -965,9 +965,9 @@ impl RenderOnce for WritingAssistant {
             .id(self.id.clone())
             .w(px(self.width))
             .max_w_full()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .child(
-                luna::card(&t)
+                pink::card(&t)
                     .flex()
                     .flex_col()
                     .gap(px(space::S12))

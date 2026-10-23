@@ -94,7 +94,7 @@
   const counts = {
     all: components.length,
     core: components.filter((c) => c.kind === 'core').length,
-    luna: components.filter((c) => c.kind === 'luna').length,
+    pink: components.filter((c) => c.kind === 'pink').length,
   };
   for (const img of document.querySelectorAll('.hero-art img')) {
     img.src = thumb(img.dataset.thumb);
@@ -103,7 +103,7 @@
   }
   for (const el of document.querySelectorAll('[data-count]')) el.textContent = counts.all;
   for (const el of document.querySelectorAll('[data-count-core]')) el.textContent = counts.core;
-  for (const el of document.querySelectorAll('[data-count-luna]')) el.textContent = counts.luna;
+  for (const el of document.querySelectorAll('[data-count-pink]')) el.textContent = counts.pink;
 
   let category = 'All';
   let query = '';
@@ -119,7 +119,7 @@
   function kindBadge(c) {
     return c.kind === 'core'
       ? '<span class="badge pink">Clean · Classic</span>'
-      : '<span class="badge">luna</span>';
+      : '<span class="badge">pink</span>';
   }
 
   function card(c) {

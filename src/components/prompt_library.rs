@@ -1,6 +1,6 @@
 //! Prompt Library – saved prompt templates you fill in place.
 //!
-//! A luna component. The library lists templates by
+//! A pink component. The library lists templates by
 //! group; the open one reads as a sentence with blanks you type straight
 //! into, each blank growing with its text. A ring and a row of variable
 //! tokens track what is still missing, the assembled prompt updates below
@@ -27,8 +27,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, radius, text},
     motion::{self, EASE, EASE_OUT_QUINT, MotionSpec, ROW_IN, VIEW_IN},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, radius, text},
     primitives::{InputEvent, TextInput, ring},
     story,
 };
@@ -433,7 +433,7 @@ impl LibraryState {
     }
 
     /// Creates the open template's blanks the first time it is shown.
-    fn ensure_blanks(&mut self, window: &mut Window, cx: &mut Context<Self>, t: &Luna) {
+    fn ensure_blanks(&mut self, window: &mut Window, cx: &mut Context<Self>, t: &Pink) {
         let Some(template) = self.current() else {
             return;
         };
@@ -516,7 +516,7 @@ impl PromptLibrary {
 
 impl RenderOnce for PromptLibrary {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let initial = self
             .selected
@@ -601,7 +601,7 @@ impl RenderOnce for PromptLibrary {
             .w(px(WIDTH))
             .h(px(HEIGHT))
             .flex()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .bg(t.surface_card)
             .border_1()
@@ -624,7 +624,7 @@ fn sidebar(
     search: &Entity<TextInput>,
     state: &Entity<LibraryState>,
     scroll: &ScrollHandle,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let count: usize = groups.iter().map(|(_, rows)| rows.len()).sum();
     let mut y = LIST_PAD;
@@ -788,7 +788,7 @@ fn sidebar(
                         .text_color(t.text_faint)
                         .child(count.to_string()),
                 )
-                .child(luna::icon_button("pl-new", ICON_PLUS, ControlSize::Md, t)),
+                .child(pink::icon_button("pl-new", ICON_PLUS, ControlSize::Md, t)),
         )
         .child(
             div().px(px(12.)).pb(px(6.)).child(
@@ -831,7 +831,7 @@ fn measure(text: &str, window: &mut Window) -> f32 {
         len: text.len(),
         font: gpui::Font {
             weight: FontWeight::MEDIUM,
-            ..font(luna::SANS)
+            ..font(pink::SANS)
         },
         color: gpui::black(),
         background_color: None,
@@ -851,7 +851,7 @@ fn editor(
     state: &Entity<LibraryState>,
     window: &mut Window,
     cx: &mut App,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let s = state.read(cx);
     let vars = template.variables();
@@ -951,7 +951,7 @@ fn editor(
                     k,
                 ))
                 .text_size(px(text::CAPTION))
-                .font_family(luna::MONO)
+                .font_family(pink::MONO)
                 .text_color(motion::mix(
                     t.text_muted,
                     if t.dark { t.text } else { t.accent },
@@ -1074,7 +1074,7 @@ fn editor(
         .bg(t.fill(FillTier::Quaternary))
         .border_1()
         .border_color(t.border)
-        .font_family(luna::MONO)
+        .font_family(pink::MONO)
         .text_size(px(12.5))
         .line_height(px(20.))
         .text_color(t.text_muted)
@@ -1157,7 +1157,7 @@ fn blank(
     input: &Entity<TextInput>,
     window: &mut Window,
     cx: &mut App,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let focused = input.read(cx).is_focused(window);
     let filled = !value.trim().is_empty();
@@ -1201,7 +1201,7 @@ fn blank(
         .child(input.clone())
 }
 
-fn fill_ring(progress: f32, complete: bool, t: &Luna) -> impl IntoElement {
+fn fill_ring(progress: f32, complete: bool, t: &Pink) -> impl IntoElement {
     let track = t.fill(FillTier::Primary);
     let color = if complete { t.success } else { t.accent };
     canvas(
@@ -1247,7 +1247,7 @@ fn footer(
     copied: Option<u32>,
     used: Option<u32>,
     state: &Entity<LibraryState>,
-    t: &Luna,
+    t: &Pink,
 ) -> impl IntoElement {
     let copier = state.clone();
     let user = state.clone();
@@ -1264,7 +1264,7 @@ fn footer(
         format!("{missing} blanks left").into()
     };
 
-    let copy = luna::button("pl-copy", ButtonKind::Secondary, ControlSize::Md, t)
+    let copy = pink::button("pl-copy", ButtonKind::Secondary, ControlSize::Md, t)
         .on_click(move |_, _, cx| copier.update(cx, |s, cx| s.copy(cx)))
         .child(
             svg()
@@ -1284,7 +1284,7 @@ fn footer(
 
     let arrow_key = format!("{key}-use");
     let nudge = motion::hover_t(&arrow_key) * 2. * ready;
-    let use_button = luna::button("pl-use", ButtonKind::Primary, ControlSize::Md, t)
+    let use_button = pink::button("pl-use", ButtonKind::Primary, ControlSize::Md, t)
         .opacity(0.4 + 0.6 * ready)
         .when(!complete, |el| el.cursor_default())
         .when(complete, |el| {

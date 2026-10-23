@@ -1,6 +1,6 @@
 //! Motion kit: CSS timing curves, transition specs and eased hover fades.
 //!
-//! Adapted from luna-ui's `motion` module so components animate the way CSS
+//! Adapted from the Pink app's `motion` module so components animate the way CSS
 //! transitions do:
 //!
 //! - [`CubicBezier`] evaluates CSS `cubic-bezier()` exactly; the common

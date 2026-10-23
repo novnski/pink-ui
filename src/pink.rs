@@ -1,15 +1,15 @@
-//! luna's design language, for the luna components.
+//! pink's design language, for the pink components.
 //!
-//! The core components keep their own tokens. The luna components use luna's
+//! The core components keep their own tokens. The pink components use pink's
 //! look instead: Geist type, Tailwind-neutral surfaces, the indigo
-//! luna accent, a 4pt spacing grid, the 4/6/8/10/16 radius ladder and the
-//! 24/28/32 control sizes. Values come from luna-ui's `theme` and `button`
+//! pink accent, a 4pt spacing grid, the 4/6/8/10/16 radius ladder and the
+//! 24/28/32 control sizes. Values come from the Pink app's `theme` and `button`
 //! modules.
 //!
 //! ```ignore
-//! let t = Luna::get(cx);
+//! let t = Pink::get(cx);
 //! div().bg(t.surface_card).border_1().border_color(t.border).rounded(px(radius::LG))
-//!     .child(luna::button("deploy", ButtonKind::Primary, ControlSize::Md, &t).child("Deploy"))
+//!     .child(pink::button("deploy", ButtonKind::Primary, ControlSize::Md, &t).child("Deploy"))
 //! ```
 
 use gpui::{
@@ -19,9 +19,9 @@ use gpui::{
 
 use crate::{ActiveTheme, HoverFill, motion};
 
-/// luna's interface font (bundled under `assets/fonts`).
+/// pink's interface font (bundled under `assets/fonts`).
 pub const SANS: &str = "Geist";
-/// luna's code font (bundled under `assets/fonts`).
+/// pink's code font (bundled under `assets/fonts`).
 pub const MONO: &str = "Geist Mono";
 
 /// Corner radius ladder: pick by role, and give a nested surface
@@ -82,7 +82,7 @@ pub enum FillTier {
     Primary,
 }
 
-/// OKLCH → color (CSS Color 4 matrices), as luna writes its palette.
+/// OKLCH → color (CSS Color 4 matrices), as pink writes its palette.
 pub fn oklch(l: f32, c: f32, h_deg: f32) -> Hsla {
     let h = h_deg.to_radians();
     let (a, b) = (c * h.cos(), c * h.sin());
@@ -120,7 +120,7 @@ fn grey(value: u8) -> Hsla {
 }
 
 /// A shadow with GPUI's own blur semantics (a Gaussian sigma), exactly as
-/// luna-ui writes its elevations. `primitives::shadow` converts CSS values
+/// the Pink app writes its elevations. `primitives::shadow` converts CSS values
 /// instead, which would halve these.
 fn shadow(x: f32, y: f32, sigma: f32, spread: f32, color: Hsla) -> BoxShadow {
     BoxShadow {
@@ -132,9 +132,9 @@ fn shadow(x: f32, y: f32, sigma: f32, spread: f32, color: Hsla) -> BoxShadow {
     }
 }
 
-/// luna's tokens for the active light/dark mode.
+/// pink's tokens for the active light/dark mode.
 #[derive(Clone, Debug)]
-pub struct Luna {
+pub struct Pink {
     pub dark: bool,
     /// Main content panel: #060606 dark, white light.
     pub bg: Hsla,
@@ -170,7 +170,7 @@ pub struct Luna {
     pub selection: Hsla,
 }
 
-impl Luna {
+impl Pink {
     pub fn get(cx: &App) -> Self {
         if cx.is_dark() {
             Self::dark()
@@ -182,7 +182,7 @@ impl Luna {
     pub fn dark() -> Self {
         let accent = oklch(0.673, 0.182, 276.935);
         let accent_strong = oklch(0.585, 0.233, 277.117);
-        Luna {
+        Pink {
             dark: true,
             bg: grey(6),
             surface: grey(13),
@@ -214,7 +214,7 @@ impl Luna {
 
     pub fn light() -> Self {
         let accent = oklch(0.511, 0.262, 276.966);
-        Luna {
+        Pink {
             dark: false,
             bg: grey(0xff),
             surface: neutral(0.968),
@@ -295,7 +295,7 @@ impl Luna {
 }
 
 // ---------------------------------------------------------------------------
-// Control kit (luna-ui `button`): buttons, icon buttons, chips and badges in
+// Control kit (the Pink app's `button`): buttons, icon buttons, chips and badges in
 // three sizes, so every control on a surface shares one height and corner.
 // ---------------------------------------------------------------------------
 
@@ -391,7 +391,7 @@ pub fn button(
     id: impl Into<SharedString>,
     kind: ButtonKind,
     size: ControlSize,
-    t: &Luna,
+    t: &Pink,
 ) -> Stateful<Div> {
     let id: SharedString = id.into();
     let (rest, hover, fg, border) = match kind {
@@ -425,7 +425,7 @@ pub fn button(
         .px(px(size.pad_x()))
         .when_some(border, |el, b| el.border_color(b))
         .text_color(fg)
-        .hover_fill(format!("luna-btn-{id}"), rest, hover)
+        .hover_fill(format!("pink-btn-{id}"), rest, hover)
 }
 
 /// A square glyph-only button: transparent at rest, the hover wash under the pointer.
@@ -433,10 +433,10 @@ pub fn icon_button(
     id: impl Into<SharedString>,
     glyph_path: impl Into<SharedString>,
     size: ControlSize,
-    t: &Luna,
+    t: &Pink,
 ) -> Stateful<Div> {
     let id: SharedString = id.into();
-    let key = format!("luna-icon-{id}");
+    let key = format!("pink-icon-{id}");
     let tone = motion::hover_blend(&key, t.text_muted, t.text);
     frame(id, size)
         .w(px(size.height()))
@@ -459,7 +459,7 @@ pub fn chip(
     id: impl Into<SharedString>,
     selected: bool,
     size: ControlSize,
-    t: &Luna,
+    t: &Pink,
 ) -> Stateful<Div> {
     let id: SharedString = id.into();
     let base = frame(id.clone(), size)
@@ -471,7 +471,7 @@ pub fn chip(
             .text_color(if t.dark { t.text } else { t.accent })
     } else {
         base.text_color(t.text_muted).hover_fill_fg(
-            format!("luna-chip-{id}"),
+            format!("pink-chip-{id}"),
             t.fill(FillTier::Quaternary),
             t.fill(FillTier::Tertiary),
             t.text_muted,
@@ -491,7 +491,7 @@ pub enum Tone {
 }
 
 impl Tone {
-    pub fn color(self, t: &Luna) -> Hsla {
+    pub fn color(self, t: &Pink) -> Hsla {
         match self {
             Tone::Neutral => t.text_muted,
             Tone::Accent => t.accent,
@@ -503,7 +503,7 @@ impl Tone {
 }
 
 /// A small status pill: tinted wash, colored label.
-pub fn badge(label: impl Into<SharedString>, tone: Tone, t: &Luna) -> Div {
+pub fn badge(label: impl Into<SharedString>, tone: Tone, t: &Pink) -> Div {
     let color = tone.color(t);
     let wash = if tone == Tone::Neutral {
         t.fill(FillTier::Tertiary)
@@ -525,7 +525,7 @@ pub fn badge(label: impl Into<SharedString>, tone: Tone, t: &Luna) -> Div {
 }
 
 /// A keyboard hint: `kbd("⌘K", &t)`.
-pub fn kbd(keys: impl Into<SharedString>, t: &Luna) -> Div {
+pub fn kbd(keys: impl Into<SharedString>, t: &Pink) -> Div {
     div()
         .flex_none()
         .h(px(18.))
@@ -541,7 +541,7 @@ pub fn kbd(keys: impl Into<SharedString>, t: &Luna) -> Div {
 }
 
 /// A card resting on the panel: card surface, hairline border, `radius::LG`.
-pub fn card(t: &Luna) -> Div {
+pub fn card(t: &Pink) -> Div {
     div()
         .bg(t.surface_card)
         .border_1()
@@ -551,7 +551,7 @@ pub fn card(t: &Luna) -> Div {
 }
 
 /// A floating popover / menu surface.
-pub fn overlay(t: &Luna) -> Div {
+pub fn overlay(t: &Pink) -> Div {
     div()
         .bg(t.surface_overlay)
         .border_1()
@@ -561,7 +561,7 @@ pub fn overlay(t: &Luna) -> Div {
 }
 
 /// A hairline divider.
-pub fn divider(t: &Luna) -> Div {
+pub fn divider(t: &Pink) -> Div {
     div().h(px(1.)).w_full().bg(t.border)
 }
 

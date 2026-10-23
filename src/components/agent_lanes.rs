@@ -25,8 +25,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, Tone, radius, space, text},
     motion::{self, EASE_IN_OUT, GLIDE, MotionSpec},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, radius, space, text},
     primitives::ring,
     story,
 };
@@ -400,18 +400,18 @@ fn span_label(seconds: f32) -> String {
     }
 }
 
-/// A stable hue per agent name, from luna's palette family.
-fn agent_hue(name: &str, t: &Luna) -> Hsla {
+/// A stable hue per agent name, from pink's palette family.
+fn agent_hue(name: &str, t: &Pink) -> Hsla {
     const HUES: [f32; 5] = [277.0, 200.0, 155.0, 60.0, 330.0];
     let ix = name
         .bytes()
         .fold(0usize, |a, b| a.wrapping_mul(31).wrapping_add(b as usize))
         % HUES.len();
     let (l, c) = if t.dark { (0.74, 0.13) } else { (0.56, 0.17) };
-    luna::oklch(l, c, HUES[ix])
+    pink::oklch(l, c, HUES[ix])
 }
 
-fn monogram(name: &str, size: f32, t: &Luna) -> gpui::Div {
+fn monogram(name: &str, size: f32, t: &Pink) -> gpui::Div {
     let hue = agent_hue(name, t);
     div()
         .size(px(size))
@@ -452,7 +452,7 @@ struct Link {
 
 impl RenderOnce for AgentLanes {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "lanes".into()),
@@ -488,7 +488,7 @@ impl RenderOnce for AgentLanes {
                 .child(label)
         };
         let window_chips = WINDOWS.iter().enumerate().map(|(ix, (_, label, _))| {
-            luna::chip(
+            pink::chip(
                 format!("{key}-window-{ix}"),
                 s.window == ix,
                 ControlSize::Sm,
@@ -640,7 +640,7 @@ impl RenderOnce for AgentLanes {
                 .flex()
                 .items_center()
                 .justify_end()
-                .font_family(luna::MONO)
+                .font_family(pink::MONO)
                 .text_size(px(text::CAPTION))
                 .text_color(t.text_faint)
                 .child(label.clone())
@@ -699,7 +699,7 @@ impl RenderOnce for AgentLanes {
                                     .bg(t.surface_card)
                                     .border_1()
                                     .border_color(t.border)
-                                    .font_family(luna::MONO)
+                                    .font_family(pink::MONO)
                                     .text_size(px(10.5))
                                     .text_color(t.text_muted)
                                     .child(
@@ -780,7 +780,7 @@ impl RenderOnce for AgentLanes {
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .font_family(luna::MONO)
+                        .font_family(pink::MONO)
                         .text_size(px(10.5))
                         .line_height(px(14.))
                         .text_color(t.text_faint)
@@ -808,7 +808,7 @@ impl RenderOnce for AgentLanes {
                     .flex()
                     .gap(px(4.))
                     .child(
-                        luna::button(
+                        pink::button(
                             format!("{block_key}-approve"),
                             ButtonKind::Accent,
                             ControlSize::Sm,
@@ -819,7 +819,7 @@ impl RenderOnce for AgentLanes {
                         .on_click(decide(true)),
                     )
                     .child(
-                        luna::button(
+                        pink::button(
                             format!("{block_key}-deny"),
                             ButtonKind::Secondary,
                             ControlSize::Sm,
@@ -956,7 +956,7 @@ impl RenderOnce for AgentLanes {
             .items_center()
             .rounded(px(radius::SM))
             .bg(t.accent_strong)
-            .font_family(luna::MONO)
+            .font_family(pink::MONO)
             .text_size(px(10.5))
             .font_weight(FontWeight::MEDIUM)
             .text_color(t.on_accent)
@@ -1027,7 +1027,7 @@ impl RenderOnce for AgentLanes {
                             .items_center()
                             .rounded(px(radius::XS))
                             .bg(t.fill(FillTier::Tertiary))
-                            .font_family(luna::MONO)
+                            .font_family(pink::MONO)
                             .text_size(px(text::CAPTION))
                             .text_color(t.text_muted)
                             .child(tool),
@@ -1035,7 +1035,7 @@ impl RenderOnce for AgentLanes {
                 })
                 .child(
                     div()
-                        .font_family(luna::MONO)
+                        .font_family(pink::MONO)
                         .text_size(px(text::FOOTNOTE))
                         .text_color(t.text_muted)
                         .child(format!(
@@ -1048,14 +1048,14 @@ impl RenderOnce for AgentLanes {
                             }
                         )),
                 )
-                .child(luna::badge(label, tone, &t))
+                .child(pink::badge(label, tone, &t))
         });
 
         motion::keep_alive(window);
-        luna::card(&t)
+        pink::card(&t)
             .w(px(WIDTH))
             .overflow_hidden()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .child(header)
             .child(lane_header)

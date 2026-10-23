@@ -1,4 +1,4 @@
-//! Cited Answer – a luna component.
+//! Cited Answer – a pink component.
 //!
 //! An answer on the left and the evidence on the right. Every sentence ends
 //! in numbered citations. Point at one and its sentence takes a soft accent
@@ -28,8 +28,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, Tone, radius, space, text},
     motion::{self, AnimationExt, EASE, EASE_OUT, GLIDE, MotionSpec},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, radius, space, text},
     story,
 };
 
@@ -226,7 +226,7 @@ fn measure(cell: Rc<Cell<f32>>) -> impl IntoElement {
     .size_full()
 }
 
-fn tile(source: &CitedSource, size: f32, t: &Luna) -> gpui::Div {
+fn tile(source: &CitedSource, size: f32, t: &Pink) -> gpui::Div {
     let color = source.tone.color(t);
     div()
         .flex_none()
@@ -277,13 +277,13 @@ fn mark_ranges(passage: &str, marks: &[SharedString]) -> Vec<Range<usize>> {
 }
 
 /// The highlight wash for a lit sentence or marked words.
-fn wash(t: &Luna) -> Hsla {
+fn wash(t: &Pink) -> Hsla {
     t.accent.opacity(if t.dark { 0.2 } else { 0.11 })
 }
 
 impl RenderOnce for CitedAnswer {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let source_count = self.sources.len();
         let state = window.use_keyed_state(
@@ -638,14 +638,14 @@ impl RenderOnce for CitedAnswer {
                         .gap(px(space::S6))
                         .mt(px(space::S10))
                         .child(
-                            luna::button(
+                            pink::button(
                                 format!("{key}-copy-{ix}"),
                                 ButtonKind::Secondary,
                                 ControlSize::Sm,
                                 &t,
                             )
                             .child(
-                                luna::glyph(
+                                pink::glyph(
                                     if is_copied { ICON_CHECK } else { ICON_COPY },
                                     ControlSize::Sm,
                                 )
@@ -677,13 +677,13 @@ impl RenderOnce for CitedAnswer {
                             }),
                         )
                         .child(
-                            luna::button(
+                            pink::button(
                                 format!("{key}-goto-{ix}"),
                                 ButtonKind::Ghost,
                                 ControlSize::Sm,
                                 &t,
                             )
-                            .child(luna::glyph(ICON_OPEN, ControlSize::Sm).text_color(t.text_muted))
+                            .child(pink::glyph(ICON_OPEN, ControlSize::Sm).text_color(t.text_muted))
                             .child(format!("Open in {}", source.site))
                             .when_some(on_open, |b, f| {
                                 b.on_click(move |_, window, cx| f(ix, window, cx))
@@ -764,13 +764,13 @@ impl RenderOnce for CitedAnswer {
             .id(self.id.clone())
             .w(px(self.width))
             .max_w_full()
-            .font_family(luna::SANS)
-            .child(luna::card(&t).flex().child(answer).child(panel))
+            .font_family(pink::SANS)
+            .child(pink::card(&t).flex().child(answer).child(panel))
     }
 }
 
 /// One tick per sentence: cited ones in the accent, the lit one solid.
-fn coverage(t: &Luna, key: &str, cited: &[bool], lit: Option<usize>) -> impl IntoElement {
+fn coverage(t: &Pink, key: &str, cited: &[bool], lit: Option<usize>) -> impl IntoElement {
     let total = cited.len();
     let backed = cited.iter().filter(|c| **c).count();
     div()
@@ -810,7 +810,7 @@ fn coverage(t: &Luna, key: &str, cited: &[bool], lit: Option<usize>) -> impl Int
 }
 
 /// The source number in the panel, lit while its source is in play.
-fn number_chip(t: &Luna, ix: usize, lit: f32) -> impl IntoElement {
+fn number_chip(t: &Pink, ix: usize, lit: f32) -> impl IntoElement {
     div()
         .flex_none()
         .h(px(16.))
@@ -832,7 +832,7 @@ fn number_chip(t: &Luna, ix: usize, lit: f32) -> impl IntoElement {
 }
 
 fn citation_chip(
-    t: &Luna,
+    t: &Pink,
     key: &str,
     state: &Entity<State>,
     ix: usize,

@@ -335,7 +335,7 @@ impl Gallery {
                                     .text_color(chrome.muted)
                                     .child(entry.category),
                             )
-                            .when(entry.kind == Kind::Luna, |row| {
+                            .when(entry.kind == Kind::Pink, |row| {
                                 row.child(
                                     div()
                                         .px(px(8.))
@@ -346,7 +346,7 @@ impl Gallery {
                                         .bg(chrome.hover)
                                         .text_size(px(12.))
                                         .text_color(chrome.muted)
-                                        .child("luna style"),
+                                        .child("pink style"),
                                 )
                             }),
                     )

@@ -1,4 +1,4 @@
-//! Comments Panel – a luna component.
+//! Comments Panel – a pink component.
 //!
 //! The comment sidebar of a document. Each comment shows who wrote it, the
 //! passage it is anchored to and the note itself. A comment that starts with
@@ -28,8 +28,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, Tone, radius, space, text},
     motion::{self, AnimationExt, EASE_IN_OUT, GLIDE, MENU_IN, MotionSpec, ROW_IN},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, radius, space, text},
     primitives::{InputEvent, TextInput},
     story,
 };
@@ -385,7 +385,7 @@ fn initials(name: &str) -> String {
         .to_uppercase()
 }
 
-fn avatar(name: &str, tone: Tone, size: f32, t: &Luna) -> impl IntoElement {
+fn avatar(name: &str, tone: Tone, size: f32, t: &Pink) -> impl IntoElement {
     let color = tone.color(t);
     div()
         .flex_none()
@@ -427,7 +427,7 @@ fn spinner(id: impl Into<ElementId>, size: f32, color: Hsla) -> impl IntoElement
 }
 
 /// Wrapping words, with a leading `/command` drawn as a pill.
-fn body_flow(body: &str, t: &Luna) -> impl IntoElement {
+fn body_flow(body: &str, t: &Pink) -> impl IntoElement {
     let mut words: Vec<AnyElement> = Vec::new();
     for (i, word) in body.split_whitespace().enumerate() {
         if i == 0 && word.starts_with('/') && word.len() > 1 {
@@ -441,7 +441,7 @@ fn body_flow(body: &str, t: &Luna) -> impl IntoElement {
                     .items_center()
                     .rounded(px(radius::XS))
                     .bg(t.accent_wash)
-                    .font_family(luna::MONO)
+                    .font_family(pink::MONO)
                     .text_size(px(text::FOOTNOTE))
                     .text_color(if t.dark { t.text } else { t.accent })
                     .child(word.to_string())
@@ -469,7 +469,7 @@ fn body_flow(body: &str, t: &Luna) -> impl IntoElement {
 
 impl RenderOnce for CommentsPanel {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
@@ -871,7 +871,7 @@ impl RenderOnce for CommentsPanel {
                     .child(
                         div()
                             .w(px(84.))
-                            .font_family(luna::MONO)
+                            .font_family(pink::MONO)
                             .text_size(px(text::FOOTNOTE))
                             .text_color(if i == highlight {
                                 if t.dark { t.text } else { t.accent }
@@ -898,7 +898,7 @@ impl RenderOnce for CommentsPanel {
                     "cp-cmd-menu",
                     MENU_IN,
                     4.,
-                    luna::overlay(&t)
+                    pink::overlay(&t)
                         .p(px(space::S4))
                         .flex()
                         .flex_col()
@@ -916,8 +916,8 @@ impl RenderOnce for CommentsPanel {
                                 .child(svg().path(ICON_SPARK).size(px(12.)).text_color(t.accent))
                                 .child("Commands")
                                 .child(div().flex_1())
-                                .child(luna::kbd("↑↓", &t))
-                                .child(luna::kbd("Tab", &t)),
+                                .child(pink::kbd("↑↓", &t))
+                                .child(pink::kbd("Tab", &t)),
                         )
                         .children(rows),
                 ))
@@ -1000,9 +1000,9 @@ impl RenderOnce for CommentsPanel {
             .w(px(self.width))
             .h(px(self.height))
             .max_w_full()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .child(
-                luna::card(&t)
+                pink::card(&t)
                     .relative()
                     .size_full()
                     .flex()
@@ -1017,7 +1017,7 @@ impl RenderOnce for CommentsPanel {
 
 /// The before/after card under a slash-command comment.
 fn edit_card(
-    t: &Luna,
+    t: &Pink,
     id: &SharedString,
     edit: EditCommand,
     on_run: Option<IdHandler>,
@@ -1058,14 +1058,14 @@ fn edit_card(
                             .child("Edits the anchored text"),
                     )
                     .child(
-                        luna::button(
+                        pink::button(
                             format!("cp-run-{id}"),
                             ButtonKind::Secondary,
                             ControlSize::Sm,
                             t,
                         )
                         .when(resolved, |b| b.opacity(0.5))
-                        .child(luna::glyph(ICON_RUN, ControlSize::Sm).text_color(t.accent))
+                        .child(pink::glyph(ICON_RUN, ControlSize::Sm).text_color(t.accent))
                         .child("Run edit")
                         .when_some(on_run.filter(|_| !resolved), |b, f| {
                             b.on_click(move |_, window, cx| f(id_run.clone(), window, cx))
@@ -1145,13 +1145,13 @@ fn edit_card(
                                 .child("Applied to the page"),
                         )
                         .child(
-                            luna::button(
+                            pink::button(
                                 format!("cp-undo-{id}"),
                                 ButtonKind::Ghost,
                                 ControlSize::Sm,
                                 t,
                             )
-                            .child(luna::glyph(ICON_UNDO, ControlSize::Sm).text_color(t.text_muted))
+                            .child(pink::glyph(ICON_UNDO, ControlSize::Sm).text_color(t.text_muted))
                             .child("Undo")
                             .when_some(on_undo, |b, f| {
                                 b.on_click(move |_, window, cx| f(id_undo.clone(), window, cx))

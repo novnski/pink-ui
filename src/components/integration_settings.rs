@@ -22,8 +22,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, Tone, radius, space, text},
     motion::{self, AnimationExt, GLIDE, MotionSpec},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, radius, space, text},
     primitives::{InputEvent, TextInput, ring, shadow},
     story,
 };
@@ -348,7 +348,7 @@ impl RenderOnce for IntegrationSettings {
 
 impl IntegrationSettings {
     fn build(self, window: &mut Window, cx: &mut App) -> gpui::AnyElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
@@ -434,9 +434,9 @@ impl IntegrationSettings {
                                         .child(self.service.clone()),
                                 )
                                 .child(if enabled {
-                                    luna::badge("Connected", Tone::Success, &t)
+                                    pink::badge("Connected", Tone::Success, &t)
                                 } else {
-                                    luna::badge("Paused", Tone::Neutral, &t)
+                                    pink::badge("Paused", Tone::Neutral, &t)
                                 }),
                         )
                         .child(
@@ -489,10 +489,10 @@ impl IntegrationSettings {
 
         let save_bar = save_bar(&key, &state, bar, self.on_save.clone(), &t, cx);
 
-        luna::card(&t)
+        pink::card(&t)
             .id(self.id.clone())
             .w(self.width)
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .text_size(px(text::BODY))
             .overflow_hidden()
@@ -504,7 +504,7 @@ impl IntegrationSettings {
 }
 
 /// One settings row: the label column and the control column.
-fn row(label: &'static str, help: impl Into<SharedString>, t: &Luna) -> gpui::Div {
+fn row(label: &'static str, help: impl Into<SharedString>, t: &Pink) -> gpui::Div {
     div()
         .flex()
         .gap(px(space::S16))
@@ -536,7 +536,7 @@ fn row(label: &'static str, help: impl Into<SharedString>, t: &Luna) -> gpui::Di
         )
 }
 
-fn field(t: &Luna, focused: bool, invalid: bool) -> gpui::Div {
+fn field(t: &Pink, focused: bool, invalid: bool) -> gpui::Div {
     let edge = if invalid {
         t.danger.opacity(0.7)
     } else if focused {
@@ -562,7 +562,7 @@ fn field(t: &Luna, focused: bool, invalid: bool) -> gpui::Div {
         })
 }
 
-fn token_row(key: &str, state: &Entity<SettingsState>, t: &Luna, cx: &App) -> impl IntoElement {
+fn token_row(key: &str, state: &Entity<SettingsState>, t: &Pink, cx: &App) -> impl IntoElement {
     let s = state.read(cx);
     let rotating = s.rotating.is_some();
     let copied = s.copied.is_some();
@@ -575,7 +575,7 @@ fn token_row(key: &str, state: &Entity<SettingsState>, t: &Luna, cx: &App) -> im
         .flex_1()
         .min_w_0()
         .truncate()
-        .font_family(luna::MONO)
+        .font_family(pink::MONO)
         .text_size(px(text::FOOTNOTE))
         .text_color(if rotating { t.text_faint } else { t.text })
         .child(shown);
@@ -593,7 +593,7 @@ fn token_row(key: &str, state: &Entity<SettingsState>, t: &Luna, cx: &App) -> im
 
     let reveal = {
         let state = state.clone();
-        luna::icon_button(
+        pink::icon_button(
             format!("{key}-reveal"),
             if s.revealed { ICON_EYE_OFF } else { ICON_EYE },
             ControlSize::Sm,
@@ -608,7 +608,7 @@ fn token_row(key: &str, state: &Entity<SettingsState>, t: &Luna, cx: &App) -> im
     };
     let copy = {
         let state = state.clone();
-        luna::icon_button(
+        pink::icon_button(
             format!("{key}-copy"),
             if copied { ICON_CHECK } else { ICON_COPY },
             ControlSize::Sm,
@@ -618,7 +618,7 @@ fn token_row(key: &str, state: &Entity<SettingsState>, t: &Luna, cx: &App) -> im
     };
     let rotate = {
         let state = state.clone();
-        luna::button(
+        pink::button(
             format!("{key}-rotate"),
             ButtonKind::Secondary,
             ControlSize::Lg,
@@ -675,7 +675,7 @@ fn address_row(
     key: &str,
     state: &Entity<SettingsState>,
     domain: &SharedString,
-    t: &Luna,
+    t: &Pink,
     window: &Window,
     cx: &App,
 ) -> impl IntoElement {
@@ -760,7 +760,7 @@ fn address_row(
     )
 }
 
-fn cadence_row(key: &str, state: &Entity<SettingsState>, t: &Luna, cx: &App) -> impl IntoElement {
+fn cadence_row(key: &str, state: &Entity<SettingsState>, t: &Pink, cx: &App) -> impl IntoElement {
     let s = state.read(cx);
     let current = s.draft.cadence.min(CADENCES.len() - 1);
     let thumb = motion::follow(
@@ -843,7 +843,7 @@ fn cadence_row(key: &str, state: &Entity<SettingsState>, t: &Luna, cx: &App) -> 
     )
 }
 
-fn zone_row(key: &str, state: &Entity<SettingsState>, t: &Luna, cx: &App) -> impl IntoElement {
+fn zone_row(key: &str, state: &Entity<SettingsState>, t: &Pink, cx: &App) -> impl IntoElement {
     let s = state.read(cx);
     let zone = s.draft.zone.min(ZONES.len() - 1);
     let open = s.zone_open;
@@ -918,7 +918,7 @@ fn zone_row(key: &str, state: &Entity<SettingsState>, t: &Luna, cx: &App) -> imp
         deferred(
             div().absolute().top(px(36.)).left_0().child(motion::pop_in(
                 SharedString::from(format!("{key}-zone-menu")),
-                luna::overlay(t)
+                pink::overlay(t)
                     .id(SharedString::from(format!("{key}-zone-list")))
                     .w(px(SEGMENT_W * 3. + 6.))
                     .p(px(space::S4))
@@ -953,7 +953,7 @@ fn save_bar(
     state: &Entity<SettingsState>,
     height: f32,
     on_save: Option<SaveHandler>,
-    t: &Luna,
+    t: &Pink,
     cx: &App,
 ) -> impl IntoElement {
     let s = state.read(cx);
@@ -990,7 +990,7 @@ fn save_bar(
 
     let discard = {
         let state = state.clone();
-        luna::button(
+        pink::button(
             format!("{key}-discard"),
             ButtonKind::Ghost,
             ControlSize::Md,
@@ -1001,7 +1001,7 @@ fn save_bar(
     };
     let commit = {
         let state = state.clone();
-        luna::button(
+        pink::button(
             format!("{key}-save"),
             ButtonKind::Primary,
             ControlSize::Md,
@@ -1070,7 +1070,7 @@ fn spinning(id: &str, path: &'static str, spin: bool, color: Hsla) -> gpui::AnyE
 }
 
 /// An on/off switch whose knob glides and whose track fills with the accent.
-fn switch(key: &str, on: bool, t: &Luna) -> impl IntoElement {
+fn switch(key: &str, on: bool, t: &Pink) -> impl IntoElement {
     let k = motion::follow(
         &format!("{key}-knob"),
         if on { 1. } else { 0. },

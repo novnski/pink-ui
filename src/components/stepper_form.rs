@@ -23,8 +23,8 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    luna::{self, ButtonKind, ControlSize, FillTier, Luna, radius, space, text},
     motion::{self, AnimationExt, GLIDE, MotionSpec},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, radius, space, text},
     primitives::{InputEvent, TextInput, ring},
     story,
 };
@@ -434,7 +434,7 @@ impl RenderOnce for StepperForm {
 
 impl StepperForm {
     fn build(self, window: &mut Window, cx: &mut App) -> AnyElement {
-        let t = Luna::get(cx);
+        let t = Pink::get(cx);
         let key = self.id.to_string();
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
@@ -513,11 +513,11 @@ impl StepperForm {
 
         let footer = (phase != Phase::Done).then(|| footer(&key, &state, &t, cx));
 
-        luna::card(&t)
+        pink::card(&t)
             .id(self.id.clone())
             .w(self.width)
             .flex()
-            .font_family(luna::SANS)
+            .font_family(pink::SANS)
             .text_color(t.text)
             .text_size(px(text::BODY))
             .overflow_hidden()
@@ -552,7 +552,7 @@ fn rail(
     key: &str,
     state: &Entity<FormState>,
     title: &SharedString,
-    t: &Luna,
+    t: &Pink,
     cx: &App,
 ) -> impl IntoElement {
     let s = state.read(cx);
@@ -707,7 +707,7 @@ fn text_field(
     hint: Option<SharedString>,
     error: Option<&'static str>,
     shakes: usize,
-    t: &Luna,
+    t: &Pink,
     window: &Window,
     cx: &App,
 ) -> AnyElement {
@@ -792,7 +792,7 @@ fn shake<E: IntoElement + Styled + 'static>(
 fn step_project(
     key: &str,
     state: &Entity<FormState>,
-    t: &Luna,
+    t: &Pink,
     window: &Window,
     cx: &App,
 ) -> AnyElement {
@@ -835,7 +835,7 @@ fn step_project(
         .into_any_element()
 }
 
-fn step_region(key: &str, state: &Entity<FormState>, t: &Luna, cx: &App) -> AnyElement {
+fn step_region(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> AnyElement {
     let s = state.read(cx);
     let error = s.error.filter(|(f, _)| *f == Field::Region).map(|(_, m)| m);
     let cards = REGIONS
@@ -926,7 +926,7 @@ fn step_region(key: &str, state: &Entity<FormState>, t: &Luna, cx: &App) -> AnyE
                         .child(
                             div()
                                 .text_size(px(text::FOOTNOTE))
-                                .font_family(luna::MONO)
+                                .font_family(pink::MONO)
                                 .text_color(t.text_faint)
                                 .child(*code),
                         ),
@@ -978,7 +978,7 @@ fn step_region(key: &str, state: &Entity<FormState>, t: &Luna, cx: &App) -> AnyE
 fn step_team(
     key: &str,
     state: &Entity<FormState>,
-    t: &Luna,
+    t: &Pink,
     window: &Window,
     cx: &App,
 ) -> AnyElement {
@@ -1005,7 +1005,7 @@ fn step_team(
                 .child(svg().path(ICON_MAIL).size(px(12.)).text_color(t.text_faint))
                 .child(email.clone())
                 .child(
-                    luna::icon_button(
+                    pink::icon_button(
                         format!("{key}-remove-{ix}"),
                         ICON_REMOVE,
                         ControlSize::Sm,
@@ -1063,7 +1063,7 @@ fn step_team(
         .into_any_element()
 }
 
-fn step_review(key: &str, state: &Entity<FormState>, t: &Luna, cx: &App) -> AnyElement {
+fn step_review(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> AnyElement {
     let s = state.read(cx);
     let project = s.project(cx);
     let creating = s.phase == Phase::Creating;
@@ -1108,7 +1108,7 @@ fn step_review(key: &str, state: &Entity<FormState>, t: &Luna, cx: &App) -> AnyE
                         .min_w_0()
                         .truncate()
                         .font_weight(FontWeight::MEDIUM)
-                        .when(label == "Key", |d| d.font_family(luna::MONO))
+                        .when(label == "Key", |d| d.font_family(pink::MONO))
                         .child(value),
                 )
                 .when(!creating, |d| {
@@ -1135,21 +1135,21 @@ fn step_review(key: &str, state: &Entity<FormState>, t: &Luna, cx: &App) -> AnyE
         .into_any_element()
 }
 
-fn footer(key: &str, state: &Entity<FormState>, t: &Luna, cx: &App) -> impl IntoElement {
+fn footer(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> impl IntoElement {
     let s = state.read(cx);
     let step = s.step;
     let creating = s.phase == Phase::Creating;
     let last = step + 1 == STEPS.len();
     let back = (step > 0 && !creating).then(|| {
         let state = state.clone();
-        luna::button(format!("{key}-back"), ButtonKind::Ghost, ControlSize::Lg, t)
-            .child(luna::glyph(ICON_BACK, ControlSize::Lg).text_color(t.text_muted))
+        pink::button(format!("{key}-back"), ButtonKind::Ghost, ControlSize::Lg, t)
+            .child(pink::glyph(ICON_BACK, ControlSize::Lg).text_color(t.text_muted))
             .child("Back")
             .on_click(move |_, _, cx| state.update(cx, |s, cx| s.go(s.step - 1, cx)))
     });
     let skip = (step == 2 && s.invites.is_empty()).then(|| {
         let state = state.clone();
-        luna::button(format!("{key}-skip"), ButtonKind::Ghost, ControlSize::Lg, t)
+        pink::button(format!("{key}-skip"), ButtonKind::Ghost, ControlSize::Lg, t)
             .child("Skip for now")
             .on_click(move |_, _, cx| {
                 state.update(cx, |s, cx| {
@@ -1161,8 +1161,8 @@ fn footer(key: &str, state: &Entity<FormState>, t: &Luna, cx: &App) -> impl Into
     let next = {
         let state = state.clone();
         let arrow_key = format!("{key}-next");
-        let shift = motion::hover_t(&format!("luna-btn-{arrow_key}")) * 2.;
-        luna::button(arrow_key, ButtonKind::Primary, ControlSize::Lg, t)
+        let shift = motion::hover_t(&format!("pink-btn-{arrow_key}")) * 2.;
+        pink::button(arrow_key, ButtonKind::Primary, ControlSize::Lg, t)
             .min_w(px(112.))
             .map(|b| {
                 if creating {
@@ -1189,7 +1189,7 @@ fn footer(key: &str, state: &Entity<FormState>, t: &Luna, cx: &App) -> impl Into
                         div()
                             .w(px(16.))
                             .pl(px(shift))
-                            .child(luna::glyph(ICON_NEXT, ControlSize::Lg).text_color(t.on_solid)),
+                            .child(pink::glyph(ICON_NEXT, ControlSize::Lg).text_color(t.on_solid)),
                     )
                 }
             })
@@ -1209,7 +1209,7 @@ fn footer(key: &str, state: &Entity<FormState>, t: &Luna, cx: &App) -> impl Into
         .child(next)
 }
 
-fn success(key: &str, state: &Entity<FormState>, t: &Luna, cx: &App) -> AnyElement {
+fn success(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> AnyElement {
     let s = state.read(cx);
     let project = s.project(cx);
     let epoch = s.epoch;
@@ -1282,7 +1282,7 @@ fn success(key: &str, state: &Entity<FormState>, t: &Luna, cx: &App) -> AnyEleme
                 .gap(px(space::S8))
                 .mt(px(space::S8))
                 .child(
-                    luna::button(
+                    pink::button(
                         format!("{key}-again"),
                         ButtonKind::Ghost,
                         ControlSize::Lg,
@@ -1292,13 +1292,13 @@ fn success(key: &str, state: &Entity<FormState>, t: &Luna, cx: &App) -> AnyEleme
                     .on_click(move |_, _, cx| restart.update(cx, |s, cx| s.restart(cx))),
                 )
                 .child(
-                    luna::button(
+                    pink::button(
                         format!("{key}-open"),
                         ButtonKind::Primary,
                         ControlSize::Lg,
                         t,
                     )
-                    .child(luna::glyph(ICON_SPARKLE, ControlSize::Lg).text_color(t.on_solid))
+                    .child(pink::glyph(ICON_SPARKLE, ControlSize::Lg).text_color(t.on_solid))
                     .child("Open project"),
                 ),
         ))
