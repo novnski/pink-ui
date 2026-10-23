@@ -457,8 +457,9 @@ impl RenderOnce for CommentsPanel {
             .filter_map(|c| c.edit.as_ref().map(|e| (c.id.clone(), e.status)))
             .collect();
         let ids: Vec<SharedString> = self.comments.iter().map(|c| c.id.clone()).collect();
-        // pink `ComposerInput`: the composer placeholder tone, accent caret
-        let colors = (t.placeholder, t.caret, t.selection);
+        // pink `ComposerInput` outside the message composer: a `text_faint`
+        // placeholder, the accent caret
+        let colors = (t.text_faint, t.caret, t.selection);
         state.update(cx, |s, cx| {
             s.commands = commands;
             s.on_submit = on_submit;
