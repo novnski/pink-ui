@@ -1,70 +1,78 @@
-//! Prompt Library – saved prompt templates you fill in place.
+//! Prompt Library – saved prompts in a menu above the composer, filled in
+//! place.
 //!
-//! A pink component. The library lists templates by
-//! group; the open one reads as a sentence with blanks you type straight
-//! into, each blank growing with its text. A ring and a row of variable
-//! tokens track what is still missing, the assembled prompt updates below
-//! with a soft flash, and "Use prompt" wakes up (with one pulse) once every
-//! blank is filled.
+//! A pink component. The library is pink's saved-prompts menu (pink:
+//! composer.rs `render_stash_menu`): a full-width stack popup above the
+//! composer pill whose rows open a saved prompt, with the prompt's blank
+//! count and a Delete button. The open prompt sits in the composer surface
+//! the way pink's question wizard does (pink: composer.rs `composer_surface`
+//! and the wizard's header and footer): a tracked title with a counter chip,
+//! the prompt as a sentence whose blanks you type straight into (painted
+//! like the composer's inline chips), a hint line, Copy, and one Primary
+//! "Use prompt" that wakes up once nothing is missing.
 //!
-//! Keys: in the search field ↑/↓ switch templates and Enter jumps to the
-//! first blank; in a blank Tab moves on, Enter uses the prompt when it is
-//! complete (or jumps to the next empty blank), Escape returns to search.
+//! Keys: menu rows are tab stops (Enter opens one); in a blank Tab moves on,
+//! Enter uses the prompt when it is complete (or jumps to the next empty
+//! blank), Escape closes the menu.
 //!
 //! ```ignore
 //! PromptLibrary::new("prompts", default_templates())
 //!     .selected("follow-up")
+//!     .open(true)
 //!     .on_use(|template, prompt, _, _| println!("{}: {prompt}", template.title))
 //! ```
 
-use std::{collections::HashMap, f32::consts::TAU, rc::Rc, sync::Arc, time::Duration};
-
-use gpui::{
-    Animation, AnimationExt, AnyView, App, Context, ElementId, Entity, FontWeight, HighlightStyle,
-    IntoElement, PathBuilder, ScrollHandle, SharedString, StyledText, Subscription, Task, TextRun,
-    Window, canvas, div, font, point, prelude::*, px, svg,
+use std::{
+    collections::{HashMap, HashSet},
+    rc::Rc,
+    sync::Arc,
+    time::Duration,
 };
 
+use gpui::{
+    AnyElement, AnyView, App, ClipboardItem, Context, ElementId, Entity, FontWeight, IntoElement,
+    KeyDownEvent, MouseButton, Role, ScrollHandle, SharedString, Subscription, Task, TextRun,
+    Window, deferred, div, font, prelude::*, px, svg,
+};
+use web_time::Instant;
+
 use crate::{
-    HoverFill,
-    motion::{self, EASE, EASE_OUT_QUINT, MotionSpec, ROW_IN, VIEW_IN},
-    pink::{self, ButtonKind, ControlSize, FillTier, Pink, radius, text},
-    primitives::{InputEvent, TextInput, ring},
+    motion::{self, HOVER_FADE, MENU_OUT, MENU_RISE_UP, TRANSCRIPT_IN, TRANSCRIPT_IN_RISE},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, layout, loaders, radius},
+    primitives::{InputEvent, TextInput},
     story,
 };
 
 pub const NAME: &str = "Prompt Library";
-pub const DESCRIPTION: &str = "Saved prompt templates you fill in place – type into the blanks of the sentence, watch the prompt assemble below and use it once nothing is missing";
+pub const DESCRIPTION: &str = "Saved prompts in a menu above the composer – open one, type into the blanks of its sentence and use it once nothing is missing";
 
-const ICON_SEARCH: &str = "icons/prompt-library/search.svg";
-const ICON_COPY: &str = "icons/prompt-library/copy.svg";
-const ICON_CHECK: &str = "icons/prompt-library/check.svg";
-const ICON_ARROW: &str = "icons/prompt-library/arrow.svg";
-const ICON_PULSE: &str = "icons/prompt-library/pulse.svg";
-const ICON_BUG: &str = "icons/prompt-library/bug.svg";
-const ICON_MAIL: &str = "icons/prompt-library/mail.svg";
-const ICON_MEGAPHONE: &str = "icons/prompt-library/megaphone.svg";
-const ICON_CHAT: &str = "icons/prompt-library/chat.svg";
-const ICON_PLUS: &str = "icons/prompt-library/plus.svg";
+const ICON_NOTEBOOK: &str = "icons/prompt-library/notebook.svg";
 
-const WIDTH: f32 = 780.;
-const HEIGHT: f32 = 420.;
-const SIDEBAR_W: f32 = 232.;
-const ROW_H: f32 = 32.;
-const HEADER_H: f32 = 26.;
-const LIST_PAD: f32 = 4.;
-const SENTENCE_SIZE: f32 = 15.;
-const SLOT_PAD: f32 = 7.;
+/// The composer's input metrics (pink composer.rs `INPUT_TEXT_SIZE`,
+/// `INPUT_LINE_HEIGHT`: `text-[14px] leading-relaxed`).
+const INPUT_TEXT_SIZE: f32 = 14.0;
+const INPUT_LINE_HEIGHT: f32 = 22.75;
+/// The saved-prompt list's height cap (pink `render_stash_menu`).
+const STASH_LIST_MAX_H: f32 = 220.0;
+/// Inline chip geometry (pink composer.rs chip quads): the wash sits 2 px
+/// inside the line box top and bottom, at radius 5.
+const CHIP_INSET_Y: f32 = 2.0;
+const CHIP_RADIUS: f32 = 5.0;
+/// Side room inside an editable blank, so the caret never touches its edge.
+const CHIP_PAD_X: f32 = 4.0;
+/// How long the Copied / Sent note stays.
+const NOTE_MS: u64 = 1600;
+/// Room the story keeps above the pill for the popup: the list cap, the
+/// card's inset and edge, and the 6 px gap to the pill.
+const MENU_ROOM: f32 = STASH_LIST_MAX_H + 2.0 * layout::STACK_POPUP_INSET + 2.0 + 6.0;
 
 type UseHandler = Rc<dyn Fn(&PromptTemplate, &str, &mut Window, &mut App)>;
+type DeleteHandler = Rc<dyn Fn(&PromptTemplate, &mut Window, &mut App)>;
 
 #[derive(Clone, Debug)]
 pub struct PromptTemplate {
     pub id: SharedString,
     pub title: SharedString,
-    pub group: SharedString,
-    pub icon: Option<SharedString>,
-    pub about: SharedString,
     /// The prompt, with `{variable}` blanks.
     pub body: SharedString,
     /// Values filled in from the start, by variable name.
@@ -80,27 +88,9 @@ impl PromptTemplate {
         Self {
             id: id.into(),
             title: title.into(),
-            group: "Templates".into(),
-            icon: None,
-            about: SharedString::default(),
             body: body.into(),
             defaults: Vec::new(),
         }
-    }
-
-    pub fn group(mut self, group: impl Into<SharedString>) -> Self {
-        self.group = group.into();
-        self
-    }
-
-    pub fn icon(mut self, path: impl Into<SharedString>) -> Self {
-        self.icon = Some(path.into());
-        self
-    }
-
-    pub fn about(mut self, about: impl Into<SharedString>) -> Self {
-        self.about = about.into();
-        self
     }
 
     pub fn default_value(
@@ -152,7 +142,40 @@ enum Part {
     Blank(String),
 }
 
-/// Five templates across Writing, Sales, Engineering and People.
+/// One piece of the sentence: a word, or a blank.
+#[derive(Clone, Debug, PartialEq)]
+enum Piece {
+    Word(String),
+    Blank(String),
+}
+
+/// The sentence as unbreakable groups: words wrap freely, and a blank stays
+/// glued to the punctuation right before or after it.
+fn atoms(parts: &[Part]) -> Vec<Vec<Piece>> {
+    let mut atoms: Vec<Vec<Piece>> = vec![Vec::new()];
+    for part in parts {
+        match part {
+            Part::Text(text) => {
+                for (i, chunk) in text.split(' ').enumerate() {
+                    if i > 0 {
+                        atoms.push(Vec::new());
+                    }
+                    if !chunk.is_empty() {
+                        atoms
+                            .last_mut()
+                            .unwrap()
+                            .push(Piece::Word(chunk.to_string()));
+                    }
+                }
+            }
+            Part::Blank(var) => atoms.last_mut().unwrap().push(Piece::Blank(var.clone())),
+        }
+    }
+    atoms.retain(|atom| !atom.is_empty());
+    atoms
+}
+
+/// Five saved prompts for writing, sales, engineering and hiring.
 pub fn default_templates() -> Vec<PromptTemplate> {
     vec![
         PromptTemplate::new(
@@ -160,26 +183,17 @@ pub fn default_templates() -> Vec<PromptTemplate> {
             "Weekly status update",
             "Summarize what {team} shipped this week for {audience}. Lead with {highlight} and keep it under {length} words.",
         )
-        .group("Writing")
-        .icon(ICON_PULSE)
-        .about("A short, skimmable update for people outside the team.")
         .default_value("length", "150"),
         PromptTemplate::new(
             "launch",
             "Launch announcement",
             "Announce {feature} to {audience} as a {format}. Open with the problem it solves and close with {call to action}.",
-        )
-        .group("Writing")
-        .icon(ICON_MEGAPHONE)
-        .about("Lead with the problem, not the feature list."),
+        ),
         PromptTemplate::new(
             "follow-up",
             "Customer follow-up",
             "Write a follow-up email to {name} at {company} after our {meeting} call. Mention {next step} and keep the tone {tone}.",
         )
-        .group("Sales")
-        .icon(ICON_MAIL)
-        .about("Recap the call and agree on one clear next step.")
         .default_value("name", "Noor")
         .default_value("company", "Northwind")
         .default_value("tone", "warm"),
@@ -188,18 +202,12 @@ pub fn default_templates() -> Vec<PromptTemplate> {
             "Error explainer",
             "Explain this {language} error in plain words: {error}. Suggest {count} fixes, simplest first.",
         )
-        .group("Engineering")
-        .icon(ICON_BUG)
-        .about("Turns a stack trace into something a teammate can act on.")
         .default_value("count", "three"),
         PromptTemplate::new(
             "interview",
             "Interview questions",
             "Draft {count} interview questions for a {role} that test {skill}, from warm-up to deep dive.",
-        )
-        .group("People")
-        .icon(ICON_CHAT)
-        .about("A structured set that gets harder as it goes."),
+        ),
     ]
 }
 
@@ -209,57 +217,44 @@ struct Blank {
     _subscription: Subscription,
 }
 
+/// The transient line in the footer after an action.
+#[derive(Clone, Copy, PartialEq)]
+enum Note {
+    Copied,
+    Sent,
+}
+
 struct LibraryState {
-    search: Entity<TextInput>,
-    _subscription: Subscription,
-    query: SharedString,
     selected: SharedString,
+    open: bool,
+    /// Bumped on every opening, so the menu's entrance replays.
+    opens: u32,
+    /// When the menu began closing; it fades out over `MENU_OUT`.
+    closing: Option<Instant>,
+    deleted: HashSet<SharedString>,
     blanks: HashMap<(SharedString, String), Blank>,
-    /// Bumped on every edit, so the preview flashes.
-    edits: u32,
-    copied: Option<u32>,
-    used: Option<u32>,
-    flashes: u32,
-    _timer: Option<Task<()>>,
+    note: Option<Note>,
+    notes: u32,
+    _note_timer: Option<Task<()>>,
+    _reap: Option<Task<()>>,
     scroll: ScrollHandle,
     templates: Rc<Vec<PromptTemplate>>,
     on_use: Option<UseHandler>,
-}
-
-/// Visible templates grouped, in first-seen group order.
-fn arranged<'a>(
-    templates: &'a [PromptTemplate],
-    query: &str,
-) -> Vec<(SharedString, Vec<&'a PromptTemplate>)> {
-    let q = query.trim().to_lowercase();
-    let mut groups: Vec<(SharedString, Vec<&PromptTemplate>)> = Vec::new();
-    for template in templates.iter().filter(|t| {
-        q.is_empty()
-            || t.title.to_lowercase().contains(&q)
-            || t.group.to_lowercase().contains(&q)
-            || t.body.to_lowercase().contains(&q)
-    }) {
-        match groups.iter_mut().find(|(g, _)| *g == template.group) {
-            Some((_, rows)) => rows.push(template),
-            None => groups.push((template.group.clone(), vec![template])),
-        }
-    }
-    groups
+    on_delete: Option<DeleteHandler>,
 }
 
 impl LibraryState {
+    /// The templates not deleted from the menu, in order.
     fn visible(&self) -> Vec<PromptTemplate> {
-        arranged(&self.templates, &self.query)
-            .into_iter()
-            .flat_map(|(_, rows)| rows.into_iter().cloned())
+        self.templates
+            .iter()
+            .filter(|t| !self.deleted.contains(&t.id))
+            .cloned()
             .collect()
     }
 
     fn current(&self) -> Option<PromptTemplate> {
-        self.templates
-            .iter()
-            .find(|t| t.id == self.selected)
-            .cloned()
+        self.visible().into_iter().find(|t| t.id == self.selected)
     }
 
     fn value(&self, template: &SharedString, var: &str, cx: &App) -> SharedString {
@@ -303,36 +298,56 @@ impl LibraryState {
         Some((out, complete))
     }
 
-    fn on_search(&mut self, event: &InputEvent, window: &mut Window, cx: &mut Context<Self>) {
-        match event {
-            InputEvent::Change(text) => {
-                self.query = text.clone();
-                let visible = self.visible();
-                if !visible.iter().any(|t| t.id == self.selected)
-                    && let Some(first) = visible.first()
-                {
-                    self.selected = first.id.clone();
-                }
-            }
-            InputEvent::MoveDown | InputEvent::MoveUp => {
-                let visible = self.visible();
-                let len = visible.len();
-                if len > 0 {
-                    let at = visible.iter().position(|t| t.id == self.selected);
-                    let next = match (at, *event == InputEvent::MoveDown) {
-                        (None, _) => 0,
-                        (Some(at), true) => (at + 1) % len,
-                        (Some(at), false) => (at + len - 1) % len,
-                    };
-                    self.selected = visible[next].id.clone();
-                }
-            }
-            InputEvent::Submit(_) => self.focus_next_empty(None, window, cx),
-            InputEvent::Escape => {
-                self.search.update(cx, |input, cx| input.clear(cx));
-                self.query = SharedString::default();
-            }
-            _ => return,
+    /// Opens or closes the menu; a closing menu fades out over `MENU_OUT`
+    /// before it unmounts (pink `completion_exits`).
+    fn set_open(&mut self, open: bool, cx: &mut Context<Self>) {
+        if open == self.open {
+            return;
+        }
+        self.open = open;
+        if open {
+            self.opens += 1;
+            self.closing = None;
+            self._reap = None;
+        } else {
+            self.closing = Some(Instant::now());
+            let reap = MENU_OUT.total().mul_f32(motion::speed_scale());
+            self._reap = Some(cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(reap).await;
+                this.update(cx, |s, cx| {
+                    s.closing = None;
+                    cx.notify();
+                })
+                .ok();
+            }));
+        }
+        cx.notify();
+    }
+
+    /// Opens a saved prompt in the composer: the menu closes and the caret
+    /// lands in its first empty blank.
+    fn pick(&mut self, id: SharedString, window: &mut Window, cx: &mut Context<Self>) {
+        self.selected = id;
+        self.note = None;
+        self.ensure_blanks(window, cx);
+        self.set_open(false, cx);
+        self.focus_next_empty(None, window, cx);
+        cx.notify();
+    }
+
+    fn delete(&mut self, id: SharedString, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(template) = self.templates.iter().find(|t| t.id == id).cloned() else {
+            return;
+        };
+        self.deleted.insert(id.clone());
+        if self.selected == id
+            && let Some(first) = self.visible().first()
+        {
+            self.selected = first.id.clone();
+            self.ensure_blanks(window, cx);
+        }
+        if let Some(f) = self.on_delete.clone() {
+            window.defer(cx, move |window, cx| f(&template, window, cx));
         }
         cx.notify();
     }
@@ -345,7 +360,7 @@ impl LibraryState {
         cx: &mut Context<Self>,
     ) {
         match event {
-            InputEvent::Change(_) => self.edits += 1,
+            InputEvent::Change(_) => self.note = None,
             InputEvent::Tab => {
                 let inputs = self.inputs();
                 if let Some(at) = inputs.iter().position(|i| i == input) {
@@ -359,7 +374,7 @@ impl LibraryState {
                     self.focus_next_empty(Some(input), window, cx);
                 }
             }
-            InputEvent::Escape => TextInput::focus(&self.search, window, cx),
+            InputEvent::Escape => self.set_open(false, cx),
             InputEvent::Focus | InputEvent::Blur => {}
             _ => return,
         }
@@ -381,12 +396,12 @@ impl LibraryState {
         for step in 0..len {
             let input = &inputs[(start + step) % len];
             if input.read(cx).text().trim().is_empty() {
-                TextInput::focus(&input, window, cx);
+                TextInput::focus(input, window, cx);
                 return;
             }
         }
         if let Some(first) = inputs.first() {
-            TextInput::focus(&first, window, cx);
+            TextInput::focus(first, window, cx);
         }
     }
 
@@ -394,46 +409,42 @@ impl LibraryState {
         let (Some(template), Some((prompt, true))) = (self.current(), self.assembled(cx)) else {
             return;
         };
-        self.flashes += 1;
-        self.used = Some(self.flashes);
-        self.reset_later(cx);
+        self.show_note(Note::Sent, cx);
         if let Some(f) = self.on_use.clone() {
             window.defer(cx, move |window, cx| f(&template, &prompt, window, cx));
         }
-        cx.notify();
     }
 
     fn copy(&mut self, cx: &mut Context<Self>) {
         let Some((prompt, _)) = self.assembled(cx) else {
             return;
         };
-        cx.write_to_clipboard(gpui::ClipboardItem::new_string(prompt));
-        self.flashes += 1;
-        self.copied = Some(self.flashes);
-        self.reset_later(cx);
-        cx.notify();
+        cx.write_to_clipboard(ClipboardItem::new_string(prompt));
+        self.show_note(Note::Copied, cx);
     }
 
-    /// Clears the Copied / Sent confirmations after a moment.
-    fn reset_later(&mut self, cx: &mut Context<Self>) {
-        let flashes = self.flashes;
-        self._timer = Some(cx.spawn(async move |this, cx| {
+    /// Shows `note` in the footer, then clears it after a moment.
+    fn show_note(&mut self, note: Note, cx: &mut Context<Self>) {
+        self.notes += 1;
+        self.note = Some(note);
+        let notes = self.notes;
+        self._note_timer = Some(cx.spawn(async move |this, cx| {
             cx.background_executor()
-                .timer(Duration::from_millis(1600))
+                .timer(Duration::from_millis(NOTE_MS))
                 .await;
             this.update(cx, |s, cx| {
-                if s.flashes == flashes {
-                    s.copied = None;
-                    s.used = None;
+                if s.notes == notes {
+                    s.note = None;
                     cx.notify();
                 }
             })
             .ok();
         }));
+        cx.notify();
     }
 
     /// Creates the open template's blanks the first time it is shown.
-    fn ensure_blanks(&mut self, window: &mut Window, cx: &mut Context<Self>, t: &Pink) {
+    fn ensure_blanks(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(template) = self.current() else {
             return;
         };
@@ -453,9 +464,6 @@ impl LibraryState {
                 TextInput::new(window, cx)
                     .placeholder(placeholder)
                     .default_text(default)
-            });
-            input.update(cx, |input, _| {
-                input.set_colors(Some(t.text_faint), Some(t.accent), Some(t.selection))
             });
             let subscription =
                 cx.subscribe_in(&input, window, |s: &mut Self, input, event, window, cx| {
@@ -477,8 +485,11 @@ pub struct PromptLibrary {
     id: ElementId,
     templates: Vec<PromptTemplate>,
     selected: Option<SharedString>,
+    open: bool,
+    loading: bool,
     focus_first_blank: bool,
     on_use: Option<UseHandler>,
+    on_delete: Option<DeleteHandler>,
 }
 
 impl PromptLibrary {
@@ -487,14 +498,30 @@ impl PromptLibrary {
             id: id.into(),
             templates,
             selected: None,
+            open: false,
+            loading: false,
             focus_first_blank: false,
             on_use: None,
+            on_delete: None,
         }
     }
 
-    /// The template open at first (by id); defaults to the first one.
+    /// The saved prompt open at first (by id); defaults to the first one.
     pub fn selected(mut self, id: impl Into<SharedString>) -> Self {
         self.selected = Some(id.into());
+        self
+    }
+
+    /// Shows the saved-prompts menu when the library first renders.
+    pub fn open(mut self, open: bool) -> Self {
+        self.open = open;
+        self
+    }
+
+    /// The library is still loading: an empty menu says so, and its rows
+    /// take no clicks.
+    pub fn loading(mut self, loading: bool) -> Self {
+        self.loading = loading;
         self
     }
 
@@ -512,6 +539,16 @@ impl PromptLibrary {
         self.on_use = Some(Rc::new(handler));
         self
     }
+
+    /// Gives every menu row a Delete button; the row leaves the menu and the
+    /// handler gets the template.
+    pub fn on_delete(
+        mut self,
+        handler: impl Fn(&PromptTemplate, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_delete = Some(Rc::new(handler));
+        self
+    }
 }
 
 impl RenderOnce for PromptLibrary {
@@ -523,19 +560,12 @@ impl RenderOnce for PromptLibrary {
             .clone()
             .or_else(|| self.templates.first().map(|t| t.id.clone()))
             .unwrap_or_default();
-        let focus_first = self.focus_first_blank;
+        let (open, focus_first) = (self.open, self.focus_first_blank);
 
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
-            move |window, cx| {
-                let search =
-                    cx.new(|cx| TextInput::new(window, cx).placeholder("Search templates"));
-                let subscription = cx.subscribe_in(
-                    &search,
-                    window,
-                    |s: &mut LibraryState, _, event, window, cx| s.on_search(event, window, cx),
-                );
+            move |window, cx: &mut Context<LibraryState>| {
                 if focus_first {
                     let this = cx.entity();
                     window.defer(cx, move |window, cx| {
@@ -543,296 +573,198 @@ impl RenderOnce for PromptLibrary {
                     });
                 }
                 LibraryState {
-                    search,
-                    _subscription: subscription,
-                    query: SharedString::default(),
                     selected: initial,
+                    open,
+                    opens: u32::from(open),
+                    closing: None,
+                    deleted: HashSet::new(),
                     blanks: HashMap::new(),
-                    edits: 0,
-                    copied: None,
-                    used: None,
-                    flashes: 0,
-                    _timer: None,
+                    note: None,
+                    notes: 0,
+                    _note_timer: None,
+                    _reap: None,
                     scroll: ScrollHandle::new(),
                     templates: Rc::new(Vec::new()),
                     on_use: None,
+                    on_delete: None,
                 }
             },
         );
 
         let templates = Rc::new(self.templates);
         state.update(cx, |s, cx| {
-            s.templates = templates.clone();
+            s.templates = templates;
             s.on_use = self.on_use.clone();
-            s.ensure_blanks(window, cx, &t);
-            s.search.update(cx, |input, _| {
-                input.set_colors(Some(t.text_faint), Some(t.accent), Some(t.selection))
-            });
+            s.on_delete = self.on_delete.clone();
+            s.ensure_blanks(window, cx);
             for blank in s.blanks.values() {
                 blank.input.update(cx, |input, _| {
-                    input.set_colors(Some(t.text_faint), Some(t.accent), Some(t.selection))
+                    input.set_colors(Some(t.placeholder), Some(t.caret), Some(t.selection))
                 });
             }
         });
 
-        let s = state.read(cx);
-        let groups = arranged(&templates, &s.query);
-        let current = s.current();
-        let search = s.search.clone();
-        let scroll = s.scroll.clone();
-        let selected = s.selected.clone();
-
-        let sidebar = sidebar(&key, &groups, &selected, &search, &state, &scroll, &t);
-        let main = match current {
-            Some(template) => editor(&key, &template, &state, window, cx, &t).into_any_element(),
-            None => div()
-                .flex_1()
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_color(t.text_faint)
-                .child("No templates yet")
-                .into_any_element(),
-        };
+        let pill = composer(&key, &state, window, cx, &t);
+        let menu = stash_menu(&key, &state, self.loading, cx, &t);
+        let closer = state.clone();
 
         motion::keep_alive(window);
         div()
             .id(self.id)
-            .w(px(WIDTH))
-            .h(px(HEIGHT))
-            .flex()
+            .relative()
+            .w_full()
             .font_family(pink::SANS)
             .text_color(t.text)
-            .bg(t.surface_card)
-            .border_1()
-            .border_color(t.border)
-            .rounded(px(radius::XL))
-            .shadow(t.menu_shadow())
-            .overflow_hidden()
-            .child(sidebar)
-            .child(main)
-            .with_animation("prompt-library-in", ROW_IN.animation(), |el, k| {
-                el.opacity(k).mt(px(8. * (1. - k)))
+            .on_key_down(move |event: &KeyDownEvent, _, cx| {
+                if event.keystroke.key == "escape" {
+                    closer.update(cx, |s, cx| s.set_open(false, cx));
+                }
             })
+            .child(pill)
+            .children(menu)
     }
 }
 
-fn sidebar(
+/// The saved-prompts menu (pink: composer.rs `render_stash_menu` on
+/// popover.rs `full_width_menu_above`): a full-width `stack_popup_card`
+/// 6 px above the pill, rising 6 px in over `MENU_IN` and fading out over
+/// `MENU_OUT`. Rows are menu rows on the popup's 14 pt corner: the title
+/// truncating, an 11 `text_muted` blank count and a Ghost Sm Delete.
+fn stash_menu(
     key: &str,
-    groups: &[(SharedString, Vec<&PromptTemplate>)],
-    selected: &SharedString,
-    search: &Entity<TextInput>,
     state: &Entity<LibraryState>,
-    scroll: &ScrollHandle,
+    loading: bool,
+    cx: &App,
     t: &Pink,
-) -> impl IntoElement {
-    let count: usize = groups.iter().map(|(_, rows)| rows.len()).sum();
-    let mut y = LIST_PAD;
-    let mut plate: Option<f32> = None;
-    for (_, rows) in groups {
-        y += HEADER_H;
-        for row in rows {
-            if row.id == *selected {
-                plate = Some(y);
-            }
-            y += ROW_H;
-        }
-    }
-    let plate_top = motion::follow(
-        &format!("{key}-plate"),
-        plate.unwrap_or(LIST_PAD + HEADER_H),
-        MotionSpec::new(240, EASE_OUT_QUINT),
-    );
-    let plate_bg = if t.dark {
-        t.fill(FillTier::Secondary)
-    } else {
-        t.surface_card
+) -> Option<AnyElement> {
+    let s = state.read(cx);
+    let exit = match (s.open, s.closing) {
+        (true, _) => None,
+        (false, Some(since)) => Some(motion::menu_exit_progress(since)),
+        (false, None) => return None,
     };
+    let busy = loading || exit.is_some();
+    let visible = s.visible();
+    let ring = t.focus_ring();
 
-    let mut list = div()
-        .id("templates")
-        .relative()
-        .flex_1()
-        .min_h_0()
-        .px(px(8.))
-        .py(px(LIST_PAD))
-        .overflow_y_scroll()
-        .track_scroll(scroll)
-        .child(
+    let mut rows: Vec<AnyElement> = Vec::new();
+    if visible.is_empty() {
+        rows.push(
             div()
-                .absolute()
-                .left(px(8.))
-                .right(px(8.))
-                .top(px(plate_top))
-                .h(px(ROW_H))
-                .rounded(px(radius::MD))
-                .bg(plate_bg)
-                .when(!t.dark, |el| {
-                    el.border_1().border_color(t.border).shadow(t.card_shadow())
-                })
-                .when(plate.is_none(), |el| el.opacity(0.)),
-        );
-    for (group, rows) in groups {
-        list = list.child(
-            div()
-                .h(px(HEADER_H))
                 .px(px(8.))
-                .pt(px(6.))
-                .flex()
-                .items_center()
-                .text_size(px(text::CAPTION))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(t.text_faint)
-                .child(group.clone()),
+                .py(px(8.))
+                .text_size(px(12.))
+                .text_color(t.text_muted)
+                .child(if loading {
+                    "Loading saved prompts…"
+                } else {
+                    "No saved prompts yet"
+                })
+                .into_any_element(),
         );
-        for template in rows {
-            let picker = state.clone();
-            let id = template.id.clone();
-            let on = template.id == *selected;
-            let lit = motion::follow(
-                &format!("{key}-lit-{}", template.id),
-                if on { 1. } else { 0. },
-                MotionSpec::new(160, EASE),
-            );
-            list = list.child(
-                div()
-                    .id(SharedString::from(format!("template-{}", template.id)))
-                    .relative()
-                    .h(px(ROW_H))
-                    .px(px(8.))
-                    .flex()
-                    .items_center()
-                    .gap(px(9.))
-                    .rounded(px(radius::MD))
-                    .cursor_pointer()
-                    .hover_fill(
-                        format!("{key}-row-{}", template.id),
-                        t.fill(FillTier::Tertiary).opacity(0.),
-                        if on {
-                            t.fill(FillTier::Tertiary).opacity(0.)
-                        } else {
-                            t.fill(FillTier::Tertiary)
-                        },
-                    )
-                    .on_click(move |_, _, cx| {
-                        picker.update(cx, |s, cx| {
-                            s.selected = id.clone();
-                            cx.notify();
-                        })
-                    })
-                    .when_some(template.icon.clone(), |el, icon| {
-                        el.child(
-                            svg()
-                                .path(icon)
-                                .size(px(15.))
-                                .flex_none()
-                                .text_color(motion::mix(t.text_faint, t.accent, lit)),
-                        )
-                    })
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .text_size(px(text::BODY))
-                            .text_color(motion::mix(t.text_muted, t.text, lit))
-                            .font_weight(if on {
-                                FontWeight::MEDIUM
-                            } else {
-                                FontWeight::NORMAL
-                            })
-                            .child(template.title.clone()),
-                    ),
-            );
-        }
     }
-    if groups.is_empty() {
-        list = list.child(
-            div()
-                .pt(px(20.))
-                .flex()
-                .justify_center()
-                .text_size(px(text::FOOTNOTE))
-                .text_color(t.text_faint)
-                .child("No templates match"),
+    for template in visible {
+        let blanks = template.variables().len();
+        let active = template.id == s.selected;
+        let (picker, deleter) = (state.clone(), state.clone());
+        let (pick_id, delete_id) = (template.id.clone(), template.id.clone());
+        let label = template.title.clone();
+        rows.push(
+            pink::menu_row(format!("{key}-stash-row-{}", template.id), active, t)
+                .rounded(px(radius::STACK_POPUP_ROW))
+                .role(Role::Button)
+                .aria_label(format!("Open saved prompt: {label}"))
+                .when(!busy, |row| {
+                    row.tab_index(0)
+                        .focus_visible(move |style| pink::focus_ring(style, ring))
+                        .on_click(move |_, window, cx| {
+                            picker.update(cx, |s, cx| s.pick(pick_id.clone(), window, cx))
+                        })
+                        .on_key_down(pink::swallow_activation_key)
+                })
+                .when(busy, |row| row.cursor_default())
+                .child(div().flex_1().min_w_0().truncate().child(label.clone()))
+                .when(blanks > 0, |row| {
+                    row.child(
+                        div()
+                            .flex_none()
+                            .text_size(px(11.))
+                            .text_color(t.text_muted)
+                            .child(format!(
+                                "{blanks} blank{}",
+                                if blanks == 1 { "" } else { "s" }
+                            )),
+                    )
+                })
+                .when(s.on_delete.is_some(), |row| {
+                    row.child(
+                        pink::button_enabled(
+                            format!("{key}-stash-delete-{}", template.id),
+                            ButtonKind::Ghost,
+                            ControlSize::Sm,
+                            !busy,
+                            t,
+                        )
+                        .aria_label(format!("Delete saved prompt: {label}"))
+                        .when(!busy, |button| {
+                            button.on_click(move |_, window, cx| {
+                                cx.stop_propagation();
+                                deleter.update(cx, |s, cx| s.delete(delete_id.clone(), window, cx))
+                            })
+                        })
+                        .child("Delete"),
+                    )
+                })
+                .into_any_element(),
         );
     }
 
-    div()
-        .w(px(SIDEBAR_W))
-        .flex_none()
-        .h_full()
-        .flex()
-        .flex_col()
-        .bg(t.surface)
-        .border_r_1()
-        .border_color(t.border)
-        .child(
-            div()
-                .h(px(48.))
-                .pl(px(16.))
-                .pr(px(10.))
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .child(
-                    div()
-                        .text_size(px(text::CALLOUT))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .child("Library"),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .text_size(px(text::FOOTNOTE))
-                        .text_color(t.text_faint)
-                        .child(count.to_string()),
-                )
-                .child(pink::icon_button("pl-new", ICON_PLUS, ControlSize::Md, t)),
+    let card = pink::stack_popup_card(t).w_full().child(
+        div()
+            .id(SharedString::from(format!("{key}-stash-list")))
+            .max_h(px(STASH_LIST_MAX_H))
+            .overflow_y_scroll()
+            .track_scroll(&s.scroll)
+            .flex()
+            .flex_col()
+            .gap(px(layout::MENU_GAP))
+            .children(rows),
+    );
+    let inner = div().occlude().pb(px(layout::POPOVER_GAP)).child(card);
+    let layer = match exit {
+        // A dying menu takes no clicks.
+        Some(progress) => motion::menu_out(
+            SharedString::from(format!("{key}-stash-out")),
+            progress,
+            inner.relative().child(div().absolute().inset_0().occlude()),
         )
-        .child(
-            div().px(px(12.)).pb(px(6.)).child(
-                div()
-                    .h(px(30.))
-                    .px(px(9.))
-                    .flex()
-                    .items_center()
-                    .gap(px(7.))
-                    .rounded(px(radius::MD))
-                    .bg(t.input_bg)
-                    .border_1()
-                    .border_color(t.border)
-                    .child(
-                        svg()
-                            .path(ICON_SEARCH)
-                            .size(px(14.))
-                            .flex_none()
-                            .text_color(t.text_faint),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .text_size(px(text::BODY))
-                            .line_height(px(18.))
-                            .child(search.clone()),
-                    ),
-            ),
+        .into_any_element(),
+        None => motion::menu_in_from(
+            ElementId::NamedInteger(format!("{key}-stash-in").into(), u64::from(s.opens)),
+            MENU_RISE_UP,
+            inner,
         )
-        .child(list)
+        .into_any_element(),
+    };
+    Some(
+        div()
+            .absolute()
+            .bottom_full()
+            .left_0()
+            .right_0()
+            .child(deferred(layer).priority(1))
+            .into_any_element(),
+    )
 }
 
-/// Text width at the sentence's size, for sizing a blank to its contents.
+/// Text width at the composer's input size, for sizing a blank to its text.
 fn measure(text: &str, window: &mut Window) -> f32 {
     if text.is_empty() {
         return 0.;
     }
     let run = TextRun {
         len: text.len(),
-        font: gpui::Font {
-            weight: FontWeight::MEDIUM,
-            ..font(pink::SANS)
-        },
+        font: font(pink::SANS),
         color: gpui::black(),
         background_color: None,
         underline: None,
@@ -841,322 +773,201 @@ fn measure(text: &str, window: &mut Window) -> f32 {
     let line =
         window
             .text_system()
-            .shape_line(text.to_string().into(), px(SENTENCE_SIZE), &[run], None);
+            .shape_line(text.to_string().into(), px(INPUT_TEXT_SIZE), &[run], None);
     f32::from(line.width)
 }
 
-fn editor(
-    key: &str,
-    template: &PromptTemplate,
-    state: &Entity<LibraryState>,
-    window: &mut Window,
-    cx: &mut App,
-    t: &Pink,
-) -> impl IntoElement {
-    let s = state.read(cx);
-    let vars = template.variables();
-    let values: Vec<(String, SharedString)> = vars
-        .iter()
-        .map(|v| (v.clone(), s.value(&template.id, v, cx)))
-        .collect();
-    let filled = values.iter().filter(|(_, v)| !v.trim().is_empty()).count();
-    let total = vars.len();
-    let complete = filled == total;
-    let (prompt, _) = s.assembled(cx).unwrap_or_default();
-    let tokens = (prompt.chars().count() as f32 / 4.).round() as usize;
-    let edits = s.edits;
-    let copied = s.copied;
-    let used = s.used;
-    let inputs: HashMap<String, Entity<TextInput>> = vars
-        .iter()
-        .filter_map(|v| {
-            s.blanks
-                .get(&(template.id.clone(), v.clone()))
-                .map(|b| (v.clone(), b.input.clone()))
-        })
-        .collect();
-
-    // Header: title, about, and the fill ring.
-    let progress = motion::follow(
-        &format!("{key}-progress-{}", template.id),
-        if total == 0 {
-            1.
-        } else {
-            filled as f32 / total as f32
-        },
-        MotionSpec::new(420, EASE_OUT_QUINT),
-    );
-    let header = div()
-        .flex()
-        .items_start()
-        .gap(px(12.))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .gap(px(2.))
-                .child(
-                    div()
-                        .text_size(px(text::TITLE))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .child(template.title.clone()),
-                )
-                .child(
-                    div()
-                        .text_size(px(text::FOOTNOTE))
-                        .text_color(t.text_muted)
-                        .child(template.about.clone()),
-                ),
-        )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .text_size(px(text::FOOTNOTE))
-                .text_color(if complete { t.success } else { t.text_muted })
-                .child(fill_ring(progress, complete, t))
-                .child(format!("{filled} of {total}")),
-        );
-
-    // Variable tokens: a checklist that also jumps to its blank.
-    let tokens_row = div()
-        .flex()
-        .flex_wrap()
-        .gap(px(6.))
-        .children(values.iter().map(|(var, value)| {
-            let done = !value.trim().is_empty();
-            let target = inputs.get(var).cloned();
-            let k = motion::follow(
-                &format!("{key}-token-{}-{var}", template.id),
-                if done { 1. } else { 0. },
-                MotionSpec::new(220, EASE_OUT_QUINT),
-            );
-            div()
-                .id(SharedString::from(format!("token-{var}")))
-                .h(px(22.))
-                .px(px(7.))
-                .flex()
-                .items_center()
-                .gap(px(4.))
-                .rounded(px(radius::SM))
-                .border_1()
-                .border_color(motion::mix(t.border_strong, t.accent.opacity(0.0), k))
-                .when(!done, |el| el.border_dashed())
-                .bg(motion::mix(
-                    t.fill(FillTier::Quaternary).opacity(0.),
-                    t.accent_wash,
-                    k,
-                ))
-                .text_size(px(text::CAPTION))
-                .font_family(pink::MONO)
-                .text_color(motion::mix(
-                    t.text_muted,
-                    if t.dark { t.text } else { t.accent },
-                    k,
-                ))
-                .cursor_pointer()
-                .when_some(target, |el, input| {
-                    el.on_click(move |_, window, cx| TextInput::focus(&input, window, cx))
-                })
-                .when(done, |el| {
-                    el.child(svg().path(ICON_CHECK).size(px(11.)).text_color(if t.dark {
-                        t.text
-                    } else {
-                        t.accent
-                    }))
-                })
-                .child(var.clone())
-        }));
-
-    // The sentence: words wrap freely; a blank stays glued to the
-    // punctuation right after it.
-    let mut atoms: Vec<Vec<gpui::AnyElement>> = vec![Vec::new()];
-    let mut seen: Vec<String> = Vec::new();
-    for part in template.parts() {
-        match part {
-            Part::Text(text) => {
-                for (i, chunk) in text.split(' ').enumerate() {
-                    if i > 0 {
-                        atoms.push(Vec::new());
-                    }
-                    if !chunk.is_empty() {
-                        atoms
-                            .last_mut()
-                            .unwrap()
-                            .push(div().child(chunk.to_string()).into_any_element());
-                    }
-                }
-            }
-            Part::Blank(var) => {
-                let first = !seen.contains(&var);
-                seen.push(var.clone());
-                let value = values
-                    .iter()
-                    .find(|(v, _)| *v == var)
-                    .map(|(_, value)| value.clone())
-                    .unwrap_or_default();
-                let element = match inputs.get(&var).filter(|_| first) {
-                    Some(input) => {
-                        blank(key, &var, &value, input, window, cx, t).into_any_element()
-                    }
-                    None => div()
-                        .text_color(t.accent)
-                        .child(if value.is_empty() {
-                            format!("{{{var}}}")
-                        } else {
-                            value.to_string()
-                        })
-                        .into_any_element(),
-                };
-                atoms.last_mut().unwrap().push(element);
-            }
-        }
-    }
-    let sentence = div()
-        .flex()
-        .flex_wrap()
-        .items_center()
-        .gap_x(px(4.5))
-        .gap_y(px(6.))
-        .text_size(px(SENTENCE_SIZE))
-        .line_height(px(28.))
-        .text_color(t.text)
-        .children(
-            atoms
-                .into_iter()
-                .filter(|a| !a.is_empty())
-                .map(|pieces| div().flex().items_center().children(pieces)),
-        );
-
-    // The assembled prompt: values bright, open blanks faint.
-    let mut highlights: Vec<(std::ops::Range<usize>, HighlightStyle)> = Vec::new();
-    let mut preview = String::new();
-    for part in template.parts() {
-        match part {
-            Part::Text(text) => preview.push_str(&text),
-            Part::Blank(var) => {
-                let value = values
-                    .iter()
-                    .find(|(v, _)| *v == var)
-                    .map(|(_, v)| v.trim().to_string())
-                    .unwrap_or_default();
-                let start = preview.len();
-                let style = if value.is_empty() {
-                    // Underscores keep a blank's name on one line when it wraps.
-                    preview.push_str(&var.replace(' ', "_"));
-                    HighlightStyle {
-                        color: Some(t.text_faint),
-                        underline: Some(gpui::UnderlineStyle {
-                            thickness: px(1.),
-                            color: Some(t.text_faint),
-                            wavy: false,
-                        }),
-                        ..Default::default()
-                    }
-                } else {
-                    preview.push_str(&value);
-                    HighlightStyle {
-                        color: Some(t.text),
-                        font_weight: Some(FontWeight::SEMIBOLD),
-                        ..Default::default()
-                    }
-                };
-                highlights.push((start..preview.len(), style));
-            }
-        }
-    }
-    let preview_box = div()
-        .p(px(12.))
-        .rounded(px(radius::MD))
-        .bg(t.fill(FillTier::Quaternary))
-        .border_1()
-        .border_color(t.border)
-        .font_family(pink::MONO)
-        .text_size(px(12.5))
-        .line_height(px(20.))
-        .text_color(t.text_muted)
-        .child(StyledText::new(preview).with_highlights(highlights))
-        .with_animation(
-            ElementId::NamedInteger(format!("{key}-preview-flash").into(), u64::from(edits)),
-            MotionSpec::new(700, EASE).animation(),
-            {
-                let (accent, border) = (t.accent.opacity(0.55), t.border);
-                move |el, k| {
-                    el.border_color(motion::mix(accent, border, if edits == 0 { 1. } else { k }))
-                }
-            },
-        );
-
-    let footer = footer(
-        key,
-        template,
-        complete,
-        total - filled,
-        tokens,
-        copied,
-        used,
-        state,
-        t,
-    );
-
-    div()
-        .flex_1()
-        .min_w_0()
-        .h_full()
-        .flex()
-        .flex_col()
-        .child(
-            div()
-                .id("editor")
-                .flex_1()
-                .min_h_0()
-                .overflow_y_scroll()
-                .px(px(22.))
-                .pt(px(18.))
-                .pb(px(14.))
-                .flex()
-                .flex_col()
-                .gap(px(14.))
-                .child(header)
-                .child(tokens_row)
-                .child(sentence)
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(6.))
-                        .child(
-                            div()
-                                .flex()
-                                .justify_between()
-                                .text_size(px(text::CAPTION))
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(t.text_faint)
-                                .child("Assembled prompt")
-                                .child(format!("≈ {tokens} tokens")),
-                        )
-                        .child(preview_box),
-                )
-                .with_animation(
-                    SharedString::from(format!("{key}-editor-{}", template.id)),
-                    VIEW_IN.animation(),
-                    |el, k| el.opacity(k).mt(px(6. * (1. - k))),
-                ),
-        )
-        .child(footer)
+/// A filled blank's colors: pink's inline folder chip (composer.rs
+/// `composer_chip_palette`): `accent` text on accent at 0.17 dark / 0.10
+/// light.
+fn chip_palette(t: &Pink) -> (gpui::Hsla, gpui::Hsla) {
+    (t.accent, t.accent.opacity(if t.dark { 0.17 } else { 0.10 }))
 }
 
-/// One blank in the sentence: a text field as wide as its text.
+/// The pill holding the open prompt (pink: composer.rs `composer_surface`
+/// with the question wizard's layout): radius 26, a 1 px `border`, the
+/// input plate and `shadow_lg`; `px 16 / pt 16` body with a tracked header
+/// and counter chip; a footer of quiet controls and notes on the left and
+/// one Primary on the right.
+fn composer(
+    key: &str,
+    state: &Entity<LibraryState>,
+    window: &mut Window,
+    cx: &App,
+    t: &Pink,
+) -> AnyElement {
+    let s = state.read(cx);
+    let current = s.current();
+    let open = s.open;
+    let note = s.note;
+    let (values, inputs): (
+        Vec<(String, SharedString)>,
+        HashMap<String, Entity<TextInput>>,
+    ) = match &current {
+        Some(template) => {
+            let vars = template.variables();
+            let values = vars
+                .iter()
+                .map(|v| (v.clone(), s.value(&template.id, v, cx)))
+                .collect();
+            let inputs = vars
+                .iter()
+                .filter_map(|v| {
+                    s.blanks
+                        .get(&(template.id.clone(), v.clone()))
+                        .map(|b| (v.clone(), b.input.clone()))
+                })
+                .collect();
+            (values, inputs)
+        }
+        None => (Vec::new(), HashMap::new()),
+    };
+    let filled = values.iter().filter(|(_, v)| !v.trim().is_empty()).count();
+    let total = values.len();
+    let complete = current.is_some() && filled == total;
+    let muted = t.readable_muted(0.6);
+
+    // Header (pink wizard): tracked uppercase 11 medium + a counter chip.
+    let title = current
+        .as_ref()
+        .map_or("Saved prompts".into(), |c| c.title.clone());
+    let header = div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(10.))
+        .child(
+            div()
+                .text_size(px(11.))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(muted)
+                .child(SharedString::from(pink::tracked_upper(&title))),
+        )
+        .when(total > 0, |el| {
+            el.child(
+                div()
+                    .h(px(20.))
+                    .px(px(6.))
+                    .flex()
+                    .items_center()
+                    .rounded(px(6.))
+                    .bg(t.ink(0.06))
+                    .text_size(px(11.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(muted)
+                    .child(format!("{filled} of {total} filled")),
+            )
+        });
+
+    let sentence = match &current {
+        Some(template) => {
+            let space = measure(" ", window);
+            let mut seen: Vec<String> = Vec::new();
+            let mut groups: Vec<AnyElement> = Vec::new();
+            for atom in atoms(&template.parts()) {
+                let mut group = div()
+                    .min_h(px(INPUT_LINE_HEIGHT))
+                    .flex()
+                    .flex_row()
+                    .items_center();
+                for piece in atom {
+                    group = match piece {
+                        Piece::Word(word) => group.child(div().child(word)),
+                        Piece::Blank(var) => {
+                            let value = values
+                                .iter()
+                                .find(|(v, _)| *v == var)
+                                .map(|(_, value)| value.clone())
+                                .unwrap_or_default();
+                            let first = !seen.contains(&var);
+                            seen.push(var.clone());
+                            match inputs.get(&var).filter(|_| first) {
+                                Some(input) => group.child(blank(
+                                    &format!("{key}-blank-{}-{var}", template.id),
+                                    &var,
+                                    &value,
+                                    input,
+                                    window,
+                                    cx,
+                                    t,
+                                )),
+                                None => group.child(echo(&var, &value, t)),
+                            }
+                        }
+                    };
+                }
+                groups.push(group.into_any_element());
+            }
+            motion::rise_in(
+                SharedString::from(format!("{key}-sentence-{}", template.id)),
+                TRANSCRIPT_IN,
+                TRANSCRIPT_IN_RISE,
+                div()
+                    .flex()
+                    .flex_row()
+                    .flex_wrap()
+                    .items_center()
+                    .gap_x(px(space))
+                    .text_color(t.text)
+                    .children(groups),
+            )
+            .into_any_element()
+        }
+        None => div()
+            .text_color(t.placeholder)
+            .child("Pick a saved prompt to fill in")
+            .into_any_element(),
+    };
+
+    let body = div()
+        .px(px(16.))
+        .pt(px(16.))
+        .flex()
+        .flex_col()
+        .child(header)
+        .child(
+            div()
+                .mt(px(6.))
+                .text_size(px(INPUT_TEXT_SIZE))
+                .line_height(px(INPUT_LINE_HEIGHT))
+                .child(sentence),
+        );
+
+    div()
+        .id(SharedString::from(format!("{key}-pill")))
+        .w_full()
+        .flex()
+        .flex_col()
+        .rounded(px(radius::COMPOSER))
+        .border_1()
+        .border_color(t.border)
+        .bg(t.input_glass_bg())
+        .shadow(pink::shadow_lg())
+        .child(body)
+        .child(footer(
+            key,
+            state,
+            open,
+            complete,
+            current.is_some(),
+            note,
+            t,
+        ))
+        .into_any_element()
+}
+
+/// One editable blank: a text field as wide as its text, painted as one of
+/// the composer's inline chips (radius 5, 2 px inside the line box). Empty
+/// it shows the variable's name in `placeholder` on a neutral fill, which
+/// deepens one tier while the caret is in it; filled it takes the accent
+/// chip's colors. Both changes ease over `HOVER_FADE`.
 fn blank(
     key: &str,
     var: &str,
     value: &SharedString,
     input: &Entity<TextInput>,
     window: &mut Window,
-    cx: &mut App,
+    cx: &App,
     t: &Pink,
 ) -> impl IntoElement {
     let focused = input.read(cx).is_focused(window);
@@ -1166,201 +977,166 @@ fn blank(
     } else {
         value.as_ref()
     };
-    // Room for the caret after the last letter.
-    let width = measure(shown, window) + 2. * SLOT_PAD + 5.;
-    let k = motion::follow(
-        &format!("{key}-blank-{var}"),
-        if filled { 1. } else { 0. },
-        MotionSpec::new(220, EASE_OUT_QUINT),
-    );
+    let width = measure(shown, window) + 2. * CHIP_PAD_X + layout::CARET_WIDTH;
+    let k = motion::follow(key, if filled { 1. } else { 0. }, HOVER_FADE);
     let f = motion::follow(
-        &format!("{key}-blank-focus-{var}"),
+        &format!("{key}-focus"),
         if focused { 1. } else { 0. },
-        MotionSpec::new(160, EASE),
+        HOVER_FADE,
     );
-    let ink = if t.dark { t.text } else { t.accent };
+    let (ink, wash) = chip_palette(t);
+    let empty = motion::mix(t.fill(FillTier::Tertiary), t.fill(FillTier::Primary), f);
+    let target = input.clone();
     div()
-        .h(px(28.))
+        .flex_none()
         .w(px(width))
-        .px(px(SLOT_PAD))
+        .h(px(INPUT_LINE_HEIGHT - 2. * CHIP_INSET_Y))
+        .px(px(CHIP_PAD_X))
         .flex()
         .items_center()
-        .rounded(px(radius::SM))
-        .border_1()
-        .when(!filled && !focused, |el| el.border_dashed())
-        .border_color(motion::mix(
-            motion::mix(t.border_strong, t.accent.opacity(0.0), k),
-            t.accent,
-            f,
-        ))
-        .shadow(vec![ring(3. * f, t.focus_ring().opacity(0.3 * f))])
-        .bg(motion::mix(t.fill(FillTier::Quaternary), t.accent_wash, k))
-        .font_weight(FontWeight::MEDIUM)
-        .line_height(px(20.))
+        .rounded(px(CHIP_RADIUS))
+        .bg(motion::mix(empty, wash, k))
         .text_color(motion::mix(t.text, ink, k))
+        .line_height(px(INPUT_LINE_HEIGHT - 2. * CHIP_INSET_Y))
+        .cursor_text()
+        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            TextInput::focus(&target, window, cx)
+        })
         .child(input.clone())
 }
 
-fn fill_ring(progress: f32, complete: bool, t: &Pink) -> impl IntoElement {
-    let track = t.fill(FillTier::Primary);
-    let color = if complete { t.success } else { t.accent };
-    canvas(
-        |_, _, _| {},
-        move |bounds, _, window, _| {
-            let center = bounds.center();
-            let r = f32::from(bounds.size.width) / 2. - 1.5;
-            let arc = |from: f32, to: f32| {
-                let mut path = PathBuilder::stroke(px(2.5));
-                let steps = ((to - from) * 64.).ceil().max(1.) as usize;
-                for i in 0..=steps {
-                    let a = (from + (to - from) * i as f32 / steps as f32) * TAU - TAU / 4.;
-                    let p = point(center.x + px(r * a.cos()), center.y + px(r * a.sin()));
-                    if i == 0 {
-                        path.move_to(p);
-                    } else {
-                        path.line_to(p);
-                    }
-                }
-                path.build().ok()
-            };
-            if let Some(path) = arc(0., 1.) {
-                window.paint_path(path, track);
-            }
-            if progress > 0.005
-                && let Some(path) = arc(0., progress.min(1.))
-            {
-                window.paint_path(path, color);
-            }
-        },
-    )
-    .size(px(18.))
-    .flex_none()
-}
-
-#[allow(clippy::too_many_arguments)]
-fn footer(
-    key: &str,
-    template: &PromptTemplate,
-    complete: bool,
-    missing: usize,
-    tokens: usize,
-    copied: Option<u32>,
-    used: Option<u32>,
-    state: &Entity<LibraryState>,
-    t: &Pink,
-) -> impl IntoElement {
-    let copier = state.clone();
-    let user = state.clone();
-    let ready = motion::follow(
-        &format!("{key}-ready-{}", template.id),
-        if complete { 1. } else { 0. },
-        MotionSpec::new(240, EASE_OUT_QUINT),
-    );
-    let status: SharedString = if complete {
-        "Ready to use".into()
-    } else if missing == 1 {
-        "1 blank left".into()
-    } else {
-        format!("{missing} blanks left").into()
-    };
-
-    let copy = pink::button("pl-copy", ButtonKind::Secondary, ControlSize::Md, t)
-        .on_click(move |_, _, cx| copier.update(cx, |s, cx| s.copy(cx)))
-        .child(
-            svg()
-                .path(if copied.is_some() {
-                    ICON_CHECK
-                } else {
-                    ICON_COPY
-                })
-                .size(px(14.))
-                .text_color(if copied.is_some() {
-                    t.success
-                } else {
-                    t.text_muted
-                }),
-        )
-        .child(if copied.is_some() { "Copied" } else { "Copy" });
-
-    let arrow_key = format!("{key}-use");
-    let nudge = motion::hover_t(&arrow_key) * 2. * ready;
-    let use_button = pink::button("pl-use", ButtonKind::Primary, ControlSize::Md, t)
-        .opacity(0.4 + 0.6 * ready)
-        .when(!complete, |el| el.cursor_default())
-        .when(complete, |el| {
-            el.on_click(move |_, window, cx| user.update(cx, |s, cx| s.use_prompt(window, cx)))
-        })
-        .child(if used.is_some() {
-            "Sent to chat"
-        } else {
-            "Use prompt"
-        })
-        .child(
-            div().pl(px(nudge)).child(
-                svg()
-                    .path(if used.is_some() {
-                        ICON_CHECK
-                    } else {
-                        ICON_ARROW
-                    })
-                    .size(px(14.))
-                    .text_color(t.on_solid),
-            ),
-        );
-    // One soft pulse when the prompt becomes complete.
-    let use_button = div()
-        .id(SharedString::from(arrow_key.clone()))
-        .rounded(px(radius::MD))
-        .on_hover(motion::hover_listener(arrow_key))
-        .child(use_button);
-    let use_button = if complete {
-        let glow = t.accent;
-        use_button
-            .with_animation(
-                SharedString::from(format!("{key}-pulse-{}", template.id)),
-                Animation::new(Duration::from_millis(1100)).with_easing(EASE_OUT_QUINT.easing()),
-                move |el, k| el.shadow(vec![ring(6. * k, glow.opacity(0.35 * (1. - k)))]),
-            )
-            .into_any_element()
-    } else {
-        use_button.into_any_element()
-    };
-
+/// A repeated blank: the same chip, showing what the first one holds.
+fn echo(var: &str, value: &SharedString, t: &Pink) -> impl IntoElement {
+    let filled = !value.trim().is_empty();
+    let (ink, wash) = chip_palette(t);
     div()
-        .h(px(52.))
-        .px(px(16.))
+        .flex_none()
+        .h(px(INPUT_LINE_HEIGHT - 2. * CHIP_INSET_Y))
+        .px(px(CHIP_PAD_X))
         .flex()
         .items_center()
-        .gap(px(8.))
-        .border_t_1()
-        .border_color(t.border)
+        .rounded(px(CHIP_RADIUS))
+        .bg(if filled {
+            wash
+        } else {
+            t.fill(FillTier::Tertiary)
+        })
+        .text_color(if filled { ink } else { t.placeholder })
+        .child(if filled {
+            value.trim().to_string()
+        } else {
+            var.to_string()
+        })
+}
+
+/// The pill's footer (pink wizard footer: `px 16 / pb 16`, gap 12,
+/// `justify_between`): the Saved prompts trigger chip (the composer's ghost
+/// pill, washed while the menu is open) and a 12 `readable_muted(0.7)` note
+/// on the left; Ghost Copy and the Primary on the right, both Lg.
+fn footer(
+    key: &str,
+    state: &Entity<LibraryState>,
+    open: bool,
+    complete: bool,
+    has_prompt: bool,
+    note: Option<Note>,
+    t: &Pink,
+) -> impl IntoElement {
+    let (toggler, copier, user) = (state.clone(), state.clone(), state.clone());
+    let trigger = pink::trigger_chip(format!("{key}-saved"), true, open, t)
+        .on_click(move |_, _, cx| toggler.update(cx, |s, cx| s.set_open(!s.open, cx)))
+        .child(
+            svg()
+                .path(ICON_NOTEBOOK)
+                .size(px(16.))
+                .flex_none()
+                .text_color(t.text_muted),
+        )
+        .child("Saved prompts");
+
+    let hint: SharedString = match (note, complete) {
+        (Some(Note::Copied), _) => "Copied to clipboard".into(),
+        (Some(Note::Sent), _) => "Sent to chat".into(),
+        (None, true) => "Enter uses the prompt".into(),
+        (None, false) if has_prompt => "Tab moves to the next blank".into(),
+        (None, false) => "Open the menu to pick one".into(),
+    };
+    let hint = motion::status_swap(
+        loaders::label_id(&format!("{key}-note"), &hint),
+        div()
+            .flex_1()
+            .min_w_0()
+            .truncate()
+            .text_size(px(12.))
+            .text_color(t.readable_muted(0.7))
+            .child(hint),
+    );
+
+    let copy = pink::button_enabled(
+        format!("{key}-copy"),
+        ButtonKind::Ghost,
+        ControlSize::Lg,
+        has_prompt,
+        t,
+    )
+    .when(has_prompt, |el| {
+        el.on_click(move |_, _, cx| copier.update(cx, |s, cx| s.copy(cx)))
+    })
+    .child("Copy");
+    let use_prompt = pink::button_enabled(
+        format!("{key}-use"),
+        ButtonKind::Primary,
+        ControlSize::Lg,
+        complete,
+        t,
+    )
+    .px(px(16.))
+    .when(complete, |el| {
+        el.on_click(move |_, window, cx| user.update(cx, |s, cx| s.use_prompt(window, cx)))
+    })
+    .child("Use prompt");
+
+    div()
+        .flex()
+        .flex_row()
+        .justify_between()
+        .items_center()
+        .gap(px(12.))
+        .px(px(16.))
+        .pt(px(12.))
+        .pb(px(16.))
         .child(
             div()
-                .flex_1()
                 .flex()
+                .flex_1()
+                .min_w_0()
                 .items_center()
-                .gap(px(6.))
-                .text_size(px(text::FOOTNOTE))
-                .text_color(if complete { t.success } else { t.text_faint })
-                .when(complete, |el| {
-                    el.child(svg().path(ICON_CHECK).size(px(13.)).text_color(t.success))
-                })
-                .child(status)
-                .child(
-                    div()
-                        .text_color(t.text_faint)
-                        .child(format!("· {tokens} tokens")),
-                ),
+                .gap(px(8.))
+                .child(trigger)
+                .child(hint),
         )
-        .child(copy)
-        .child(use_button)
+        .child(
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap(px(8.))
+                .child(copy)
+                .child(use_prompt),
+        )
 }
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |_, _| {
-        PromptLibrary::new("prompt-library", default_templates())
-            .selected("follow-up")
-            .focus_first_blank(true)
+        // A composer column with the transcript's room above it, where the
+        // saved-prompts menu opens.
+        div().w(px(680.)).pt(px(MENU_ROOM)).child(
+            PromptLibrary::new("prompt-library", default_templates())
+                .selected("follow-up")
+                .open(true)
+                .focus_first_blank(true)
+                .on_delete(|_, _, _| {}),
+        )
     })
 }
 
@@ -1386,17 +1162,17 @@ mod tests {
     }
 
     #[test]
-    fn groups_keep_first_seen_order() {
-        let templates = default_templates();
-        let groups: Vec<_> = arranged(&templates, "")
-            .into_iter()
-            .map(|(group, rows)| (group, rows.len()))
-            .collect();
+    fn blanks_stay_glued_to_their_punctuation() {
+        let template = PromptTemplate::new("t", "T", "Close with {call to action}. Thanks");
+        let word = |w: &str| Piece::Word(w.into());
         assert_eq!(
-            groups.first().map(|(g, n)| (g.as_ref(), *n)),
-            Some(("Writing", 2))
+            atoms(&template.parts()),
+            vec![
+                vec![word("Close")],
+                vec![word("with")],
+                vec![Piece::Blank("call to action".into()), word(".")],
+                vec![word("Thanks")],
+            ]
         );
-        assert_eq!(arranged(&templates, "stack trace").len(), 0);
-        assert_eq!(arranged(&templates, "error").len(), 1);
     }
 }
