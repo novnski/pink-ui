@@ -1,112 +1,101 @@
-//! Agent Inbox – every background task your agents run, in one quiet list.
+//! Agent Inbox – pink's sidebar Activity view: every agent task that needs
+//! you, has a fresh result, or is still running, in one triage list.
 //!
-//! Tasks sort themselves by urgency: whatever needs you floats to the top,
-//! failures next, then the running work and finally what's done. When a task
-//! changes state its row glides to its new place, and the filter tabs roll
-//! their counts. Click a row to unfold its last steps and the actions that
-//! fit its state: approve or reject, stop, retry, open.
+//! Rows sort into three sections – Needs you, Ready, Running – newest first
+//! within each, and glide to their new place when a task changes state. A
+//! row is pink's two-line task row: the title over a quiet project · branch
+//! line, the time-ago in the corner (pin and archive under the pointer) and
+//! the status at the right edge – a spinner while it works, a dot when it is
+//! done, and a pill naming the next step when it waits on you. Opening a row
+//! reads it: a result stays listed while you read it and leaves once you open
+//! another. The bell turns the view off, back to the plain task list.
 //!
 //! ```ignore
 //! AgentInbox::new("inbox")
-//!     .task(InboxTask::new("coupons", "Migrate legacy coupon codes", "Ledger")
+//!     .task(InboxTask::new("coupons", "Retire expired coupon codes", "billing-api")
 //!         .status(TaskStatus::NeedsYou)
-//!         .ask("Wants to retire 1,180 expired codes in production"))
+//!         .branch("coupons/retire"))
 //!     .on_action(|task, action, _, _| println!("{task}: {action:?}"))
 //! ```
 
 use std::{
     cell::RefCell,
-    f32::consts::{PI, TAU},
+    collections::{HashMap, HashSet},
+    f32::consts::FRAC_PI_2,
     rc::Rc,
     sync::Arc,
 };
 use web_time::{Duration, Instant};
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, AnyView, App, Bounds, Div, ElementId, FontWeight, Hsla,
-    IntoElement, PathBuilder, Pixels, SharedString, Task, Transformation, Window, canvas, div,
-    point, prelude::*, px, radians, svg,
+    AnimationExt, AnyElement, AnyView, App, Context, Div, ElementId, Entity, FontWeight, Hsla,
+    IntoElement, Render, Role, SharedString, Stateful, Task, Toggled, Transformation, Window, div,
+    linear_color_stop, linear_gradient, prelude::*, px, radians, svg,
 };
 
 use crate::{
     HoverFill,
-    motion::{self, EASE_IN_OUT, GLIDE, MotionSpec, ROW_IN},
-    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, radius, space, text},
+    motion::{self, COLLAPSE, RESORT},
+    pink::{self, FillTier, Pink, chrome, layout, loaders, radius, space},
     story,
 };
 
 pub const NAME: &str = "Agent Inbox";
-pub const DESCRIPTION: &str = "One calm list for every background agent task – urgent work floats up, counts roll as states change, and each row unfolds into its last steps and the right next action";
+pub const DESCRIPTION: &str = "Every agent task in one triage list – what needs you, fresh results and live work in three quiet sections, each row gliding to its new place as its task changes";
 
-const ICON_CHEVRON: &str = "icons/agent-inbox/chevron.svg";
+const ICON_SHIELD: &str = "icons/agent-inbox/shield-warning.svg";
+const ICON_QUESTION: &str = "icons/agent-inbox/chat-round-question-mark.svg";
+const ICON_DANGER: &str = "icons/agent-inbox/danger-circle.svg";
+const ICON_BELL: &str = "icons/agent-inbox/bell.svg";
+const ICON_BRANCH: &str = "icons/agent-inbox/git-branch.svg";
+const ICON_PIN: &str = "icons/agent-inbox/pin.svg";
+const ICON_ARCHIVE: &str = "icons/agent-inbox/archive-minimalistic.svg";
+const ICON_FOLDER: &str = "icons/agent-inbox/folder.svg";
 const ICON_CHECK: &str = "icons/agent-inbox/check.svg";
-const ICON_CLOSE: &str = "icons/agent-inbox/close.svg";
-const ICON_RETRY: &str = "icons/agent-inbox/retry.svg";
-const ICON_OPEN: &str = "icons/agent-inbox/open.svg";
-const ICON_STOP: &str = "icons/agent-inbox/stop.svg";
-const ICON_INBOX: &str = "icons/agent-inbox/inbox.svg";
-const ICON_ATTENTION: &str = "icons/agent-inbox/attention.svg";
-const ICON_CLEAR: &str = "icons/agent-inbox/clear.svg";
+const ICON_CHEVRON: &str = "icons/agent-inbox/alt-arrow-right.svg";
 
-const WIDTH: f32 = 640.0;
-const HEAD_H: f32 = 56.0;
-const STEP_H: f32 = 22.0;
-const ASK_H: f32 = 34.0;
-const ACTIONS_H: f32 = 28.0;
+/// pink: shell.rs `chat_row_height` – a title line and one meta line.
+const ROW_H: f32 = 52.0;
+/// pink: spaces.rs `SIDEBAR_DISCLOSURE_HEADER_HEIGHT`.
+const HEADING_H: f32 = 28.0;
+/// pink: spaces.rs `SIDEBAR_SECTION_GAP`, above every section after the first.
+const SECTION_GAP: f32 = 12.0;
+/// pink: spaces.rs `SIDEBAR_DISCLOSURE_BODY_INSET`.
+const BODY_INSET: f32 = 4.0;
+/// pink: the Pinned group's rule – `pt 8`, `pb 8` and one pixel.
+const DIVIDER_H: f32 = 17.0;
+/// pink: shell.rs `SIDEBAR_GUTTER` (`SPACE_SM`).
+const GUTTER: f32 = space::SM;
+/// pink: shell.rs `sidebar_faded_label` – the fade that stands in for an ellipsis.
+const LABEL_FADE: f32 = 20.0;
+/// pink: activity_center.rs `UNREAD_DOT`.
+const UNREAD_DOT: f32 = 6.0;
 /// How long the demo plays before it starts over.
 const DEMO_LOOP: f32 = 28.0;
 
 /// Where a task stands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TaskStatus {
-    /// Paused until you approve or reject something.
+    /// Paused until you approve something (pink: awaiting approval).
     NeedsYou,
+    /// Asked you a question (pink: awaiting input).
+    NeedsReply,
     Running,
     Failed,
+    /// Finished; a fresh result until someone reads it.
     Done,
+    /// Stopped; nothing is going on (pink: idle).
     Cancelled,
 }
 
-impl TaskStatus {
-    /// Sort order: what needs a person first.
-    fn rank(self) -> u8 {
-        match self {
-            TaskStatus::NeedsYou => 0,
-            TaskStatus::Failed => 1,
-            TaskStatus::Running => 2,
-            TaskStatus::Done | TaskStatus::Cancelled => 3,
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            TaskStatus::NeedsYou => "Needs you",
-            TaskStatus::Running => "Running",
-            TaskStatus::Failed => "Failed",
-            TaskStatus::Done => "Done",
-            TaskStatus::Cancelled => "Cancelled",
-        }
-    }
-
-    fn tone(self) -> Tone {
-        match self {
-            TaskStatus::NeedsYou => Tone::Warning,
-            TaskStatus::Running => Tone::Accent,
-            TaskStatus::Failed => Tone::Danger,
-            TaskStatus::Done => Tone::Success,
-            TaskStatus::Cancelled => Tone::Neutral,
-        }
-    }
-}
-
-/// What a person did with a task.
+/// What a person did with a task's row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InboxAction {
-    Approve,
-    Reject,
-    Stop,
-    Retry,
+    /// Clicked the row: the task opens and its result counts as read.
     Open,
+    Pin,
+    Unpin,
+    Archive,
 }
 
 /// One background task.
@@ -114,14 +103,14 @@ pub enum InboxAction {
 pub struct InboxTask {
     pub id: SharedString,
     pub title: SharedString,
-    pub agent: SharedString,
-    pub summary: SharedString,
+    pub project: SharedString,
+    pub branch: Option<SharedString>,
     pub status: TaskStatus,
-    /// What the agent is waiting on you for.
-    pub ask: Option<SharedString>,
-    /// Recent steps, oldest first, with how many seconds ago they happened.
-    pub steps: Vec<(SharedString, f32)>,
-    /// Seconds in the current state (running time, waiting time, or age).
+    /// Its result (or failure) was already read: a read task leaves the
+    /// Activity view and waits in the full list only.
+    pub seen: bool,
+    pub pinned: bool,
+    /// Seconds since its last message, counted in the row's corner.
     pub age: f32,
 }
 
@@ -129,22 +118,22 @@ impl InboxTask {
     pub fn new(
         id: impl Into<SharedString>,
         title: impl Into<SharedString>,
-        agent: impl Into<SharedString>,
+        project: impl Into<SharedString>,
     ) -> Self {
         Self {
             id: id.into(),
             title: title.into(),
-            agent: agent.into(),
-            summary: SharedString::default(),
+            project: project.into(),
+            branch: None,
             status: TaskStatus::Running,
-            ask: None,
-            steps: Vec::new(),
+            seen: false,
+            pinned: false,
             age: 0.0,
         }
     }
 
-    pub fn summary(mut self, summary: impl Into<SharedString>) -> Self {
-        self.summary = summary.into();
+    pub fn branch(mut self, branch: impl Into<SharedString>) -> Self {
+        self.branch = Some(branch.into());
         self
     }
 
@@ -153,13 +142,13 @@ impl InboxTask {
         self
     }
 
-    pub fn ask(mut self, ask: impl Into<SharedString>) -> Self {
-        self.ask = Some(ask.into());
+    pub fn seen(mut self, seen: bool) -> Self {
+        self.seen = seen;
         self
     }
 
-    pub fn step(mut self, text: impl Into<SharedString>, seconds_ago: f32) -> Self {
-        self.steps.push((text.into(), seconds_ago));
+    pub fn pinned(mut self, pinned: bool) -> Self {
+        self.pinned = pinned;
         self
     }
 
@@ -167,9 +156,44 @@ impl InboxTask {
         self.age = seconds;
         self
     }
+
+    /// What the row shows (pink `ChatIndicator`): a result reads as done only
+    /// until it is read.
+    fn indicator(&self) -> Indicator {
+        match self.status {
+            TaskStatus::Running => Indicator::Working,
+            TaskStatus::NeedsYou => Indicator::Approval,
+            TaskStatus::NeedsReply => Indicator::Input,
+            TaskStatus::Failed => Indicator::Errored,
+            TaskStatus::Done if !self.seen => Indicator::Completed,
+            TaskStatus::Done | TaskStatus::Cancelled => Indicator::Idle,
+        }
+    }
+
+    /// Where the row lists by its own state (pink: spaces.rs
+    /// `activity_section`); a read failure no longer needs you.
+    fn live_section(&self) -> Option<Section> {
+        match self.indicator() {
+            Indicator::Errored if self.seen => None,
+            Indicator::Approval | Indicator::Input | Indicator::Errored => Some(Section::NeedsYou),
+            Indicator::Completed => Some(Section::Ready),
+            Indicator::Working => Some(Section::Running),
+            Indicator::Idle => None,
+        }
+    }
+
+    /// Lights the bell's dot (pink: activity_center.rs `has_attention`).
+    fn wants_you(&self) -> bool {
+        match self.indicator() {
+            Indicator::Approval | Indicator::Input | Indicator::Completed => true,
+            Indicator::Errored => !self.seen,
+            Indicator::Working | Indicator::Idle => false,
+        }
+    }
 }
 
-/// A scripted change for the demo: at `at` seconds, `task` moves to `status`.
+/// A scripted change for the demo: at `at` seconds, `task` replaces the task
+/// with the same id (or arrives as a new one).
 #[derive(Clone, Debug)]
 pub struct InboxEvent {
     pub at: f32,
@@ -184,8 +208,11 @@ pub struct AgentInbox {
     title: SharedString,
     tasks: Vec<InboxTask>,
     events: Vec<InboxEvent>,
-    expanded: Option<SharedString>,
+    selected: Option<SharedString>,
+    activity: bool,
     autoplay: bool,
+    width: f32,
+    height: f32,
     on_action: Option<ActionHandler>,
 }
 
@@ -193,15 +220,19 @@ impl AgentInbox {
     pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
             id: id.into(),
-            title: "Agent inbox".into(),
+            title: "Activity".into(),
             tasks: Vec::new(),
             events: Vec::new(),
-            expanded: None,
+            selected: None,
+            activity: true,
             autoplay: false,
+            width: layout::SIDEBAR_DEFAULT,
+            height: 600.0,
             on_action: None,
         }
     }
 
+    /// The header's label while the Activity view is on.
     pub fn title(mut self, title: impl Into<SharedString>) -> Self {
         self.title = title.into();
         self
@@ -212,9 +243,16 @@ impl AgentInbox {
         self
     }
 
-    /// Unfolds this task's row when the inbox first appears.
-    pub fn expanded(mut self, task_id: impl Into<SharedString>) -> Self {
-        self.expanded = Some(task_id.into());
+    /// Opens this task's row when the inbox first appears.
+    pub fn selected(mut self, task_id: impl Into<SharedString>) -> Self {
+        self.selected = Some(task_id.into());
+        self
+    }
+
+    /// Starts in the Activity view (the default) or, with `false`, in the
+    /// plain task list; the bell switches between them.
+    pub fn activity_view(mut self, on: bool) -> Self {
+        self.activity = on;
         self
     }
 
@@ -230,6 +268,18 @@ impl AgentInbox {
         self
     }
 
+    /// The column's width (pink's sidebar: 224 to 400, 256 by default).
+    pub fn width(mut self, width: f32) -> Self {
+        self.width = width;
+        self
+    }
+
+    /// The column's height; the list scrolls inside it.
+    pub fn height(mut self, height: f32) -> Self {
+        self.height = height;
+        self
+    }
+
     pub fn on_action(
         mut self,
         handler: impl Fn(&SharedString, InboxAction, &mut Window, &mut App) + 'static,
@@ -240,112 +290,83 @@ impl AgentInbox {
 }
 
 // ---------------------------------------------------------------------------
-// State
+// Model
 // ---------------------------------------------------------------------------
 
+/// pink: proto `ChatIndicator`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Filter {
-    All,
-    NeedsYou,
-    Running,
-    Failed,
-    Done,
+enum Indicator {
+    Working,
+    Approval,
+    Input,
+    Errored,
+    Completed,
+    Idle,
 }
 
-const FILTERS: [Filter; 5] = [
-    Filter::All,
-    Filter::NeedsYou,
-    Filter::Running,
-    Filter::Failed,
-    Filter::Done,
-];
+/// Activity's sections, most urgent first (pink: spaces.rs `ActivitySection`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Section {
+    NeedsYou,
+    Ready,
+    Running,
+}
 
-impl Filter {
+impl Section {
+    fn key(self) -> &'static str {
+        match self {
+            Section::NeedsYou => "needs-you",
+            Section::Ready => "ready",
+            Section::Running => "running",
+        }
+    }
+
     fn label(self) -> &'static str {
         match self {
-            Filter::All => "All",
-            Filter::NeedsYou => "Needs you",
-            Filter::Running => "Running",
-            Filter::Failed => "Failed",
-            Filter::Done => "Done",
-        }
-    }
-
-    fn admits(self, status: TaskStatus) -> bool {
-        match self {
-            Filter::All => true,
-            Filter::NeedsYou => status == TaskStatus::NeedsYou,
-            Filter::Running => status == TaskStatus::Running,
-            Filter::Failed => status == TaskStatus::Failed,
-            Filter::Done => matches!(status, TaskStatus::Done | TaskStatus::Cancelled),
+            Section::NeedsYou => "Needs you",
+            Section::Ready => "Ready",
+            Section::Running => "Running",
         }
     }
 }
 
+#[derive(Clone)]
 struct Row {
-    key: usize,
     task: InboxTask,
-    /// Clock time the current state began (age counts from here).
-    since: f32,
-    /// Clock time of the last change: newer rows sort first in their group.
+    /// Clock time of its last message: newer rows list first.
     updated: f32,
-    /// Steps as (text, clock time).
-    steps: Vec<(SharedString, f32)>,
 }
 
-impl Row {
-    fn new(key: usize, task: InboxTask, clock: f32, updated: f32) -> Self {
-        let since = clock - task.age;
-        let steps = task
-            .steps
-            .iter()
-            .map(|(text, ago)| (text.clone(), clock - ago))
-            .collect();
-        Row {
-            key,
-            task,
-            since,
-            updated,
-            steps,
-        }
-    }
-
-    fn detail_height(&self) -> f32 {
-        let ask = if self.task.ask.is_some() && self.task.status == TaskStatus::NeedsYou {
-            ASK_H + 8.0
-        } else {
-            0.0
-        };
-        let steps = self.steps.len().min(4) as f32 * STEP_H;
-        ask + steps + 10.0 + ACTIONS_H + 14.0
-    }
-}
-
-/// Tab bounds from the last paint, for the sliding underline.
-#[derive(Default)]
-struct TabMarks {
-    bar: Option<Bounds<Pixels>>,
-    tabs: [Option<Bounds<Pixels>>; 5],
-}
+/// Labels that overflowed at their last paint: they wear the edge fade.
+type Clips = Rc<RefCell<HashSet<String>>>;
 
 struct InboxState {
     initial: Vec<InboxTask>,
-    initial_expanded: Option<SharedString>,
+    initial_selected: Option<SharedString>,
     events: Vec<InboxEvent>,
     played: usize,
     rows: Vec<Row>,
-    next_key: usize,
-    filter: Filter,
-    expanded: Option<usize>,
+    /// The Activity view (bell on), or the plain task list.
+    activity: bool,
+    /// The task being read.
+    selected: Option<SharedString>,
+    /// pink `ActivityHold`: the most urgent section the task being read has
+    /// listed under since it was opened. It never lists below it.
+    hold: Option<Section>,
+    /// The row under the pointer: its corner trades the time for actions.
+    hovered: Option<SharedString>,
+    pinned_collapsed: bool,
     clock: f32,
     loop_start: f32,
-    /// Bumps on every demo loop so rows fade back in.
-    generation: usize,
     autoplay: bool,
-    counts: [usize; 5],
-    prev_counts: [usize; 5],
-    count_serial: [usize; 5],
-    marks: Rc<RefCell<TabMarks>>,
+    clips: Clips,
+    // The resort glide (pink: shell.rs `render_chat_sidebar`).
+    prev_order: Vec<(String, f32)>,
+    resort: HashMap<String, f32>,
+    new_keys: HashSet<String>,
+    epoch: usize,
+    /// A disclosure animates its own height, so its toggle is no resort.
+    skip_resort: bool,
     last_tick: Instant,
     on_action: Option<ActionHandler>,
     _ticker: Task<()>,
@@ -365,70 +386,49 @@ impl InboxState {
         });
         let mut state = Self {
             initial: config.tasks.clone(),
-            initial_expanded: config.expanded.clone(),
+            initial_selected: config.selected.clone(),
             events: config.events.clone(),
             played: 0,
             rows: Vec::new(),
-            next_key: 0,
-            filter: Filter::All,
-            expanded: None,
+            activity: config.activity,
+            selected: None,
+            hold: None,
+            hovered: None,
+            pinned_collapsed: false,
             clock: 0.0,
             loop_start: 0.0,
-            generation: 0,
             autoplay: config.autoplay,
-            counts: [0; 5],
-            prev_counts: [0; 5],
-            count_serial: [0; 5],
-            marks: Rc::default(),
+            clips: Rc::default(),
+            prev_order: Vec::new(),
+            resort: HashMap::new(),
+            new_keys: HashSet::new(),
+            epoch: 0,
+            skip_resort: false,
             last_tick: Instant::now(),
             on_action: None,
             _ticker: ticker,
         };
         state.load();
-        state.counts = state.tally();
-        state.prev_counts = state.counts;
         state
     }
 
-    /// (Re)loads the configured tasks.
+    /// (Re)loads the configured tasks and opens the configured row.
     fn load(&mut self) {
-        self.rows.clear();
         self.played = 0;
         self.loop_start = self.clock;
         let clock = self.clock;
-        for (ix, task) in self.initial.clone().into_iter().enumerate() {
-            let key = self.next_key;
-            self.next_key += 1;
-            self.rows
-                .push(Row::new(key, task, clock, clock - ix as f32));
-        }
-        self.expanded = self
-            .initial_expanded
-            .as_ref()
-            .and_then(|id| self.rows.iter().find(|r| &r.task.id == id).map(|r| r.key));
-    }
-
-    fn tally(&self) -> [usize; 5] {
-        let mut counts = [0; 5];
-        for (ix, filter) in FILTERS.iter().enumerate() {
-            counts[ix] = self
-                .rows
-                .iter()
-                .filter(|r| filter.admits(r.task.status))
-                .count();
-        }
-        counts
-    }
-
-    /// Remembers the previous counts so the tabs can roll from them.
-    fn recount(&mut self) {
-        let counts = self.tally();
-        for (ix, count) in counts.into_iter().enumerate() {
-            if count != self.counts[ix] {
-                self.prev_counts[ix] = self.counts[ix];
-                self.counts[ix] = count;
-                self.count_serial[ix] += 1;
-            }
+        self.rows = self
+            .initial
+            .iter()
+            .map(|task| Row {
+                task: task.clone(),
+                updated: clock - task.age,
+            })
+            .collect();
+        self.selected = None;
+        self.hold = None;
+        if let Some(id) = self.initial_selected.clone() {
+            self.open(&id);
         }
     }
 
@@ -449,78 +449,194 @@ impl InboxState {
                 self.apply(event.task);
             }
             if t >= DEMO_LOOP {
-                self.generation += 1;
                 self.load();
             }
-            self.recount();
         }
         cx.notify();
     }
 
-    /// Replaces the task with the same id, or adds it at the top of its group.
+    /// Replaces the task with the same id, or adds it.
     fn apply(&mut self, task: InboxTask) {
-        let clock = self.clock;
+        let updated = self.clock - task.age;
+        let reading = self.selected.as_ref() == Some(&task.id);
         if let Some(row) = self.rows.iter_mut().find(|r| r.task.id == task.id) {
-            let changed = row.task.status != task.status;
-            for (text, ago) in &task.steps {
-                if !row.steps.iter().any(|(t, _)| t == text) {
-                    row.steps.push((text.clone(), clock - ago));
-                }
-            }
-            if changed {
-                row.since = clock - task.age;
-                row.updated = clock;
-            }
+            // What arrives in the task being read is read as it arrives.
+            let seen = task.seen || reading;
             row.task = InboxTask {
-                steps: Vec::new(),
+                seen,
+                pinned: row.task.pinned,
                 ..task
             };
+            row.updated = updated;
         } else {
-            let key = self.next_key;
-            self.next_key += 1;
-            self.rows.push(Row::new(key, task, clock, clock));
+            self.rows.push(Row { task, updated });
         }
     }
 
-    fn act(&mut self, key: usize, action: InboxAction) {
-        let clock = self.clock;
-        let Some(row) = self.rows.iter_mut().find(|r| r.key == key) else {
+    /// Opens a row (pink: activity_center.rs `hold_activity_section`, then
+    /// the open that reads it).
+    fn open(&mut self, id: &SharedString) {
+        let Some(row) = self.rows.iter().find(|r| &r.task.id == id) else {
             return;
         };
-        let (status, step) = match action {
-            InboxAction::Approve => (TaskStatus::Running, "Approved by you"),
-            InboxAction::Reject => (TaskStatus::Cancelled, "Rejected by you"),
-            InboxAction::Stop => (TaskStatus::Cancelled, "Stopped by you"),
-            InboxAction::Retry => (TaskStatus::Running, "Retried by you"),
-            InboxAction::Open => return,
+        self.hold = if self.activity {
+            self.section_of(&row.task)
+        } else {
+            None
         };
-        row.task.status = status;
-        row.since = clock;
-        row.updated = clock;
-        row.steps.push((step.into(), clock));
-        if action == InboxAction::Approve
-            && let Some(ask) = row.task.ask.take()
-        {
-            row.task.summary = ask;
+        self.selected = Some(id.clone());
+        if let Some(row) = self.rows.iter_mut().find(|r| &r.task.id == id) {
+            row.task.seen = true;
         }
-        self.recount();
     }
 
-    /// Visible rows in display order: urgency first, newest first within a group.
-    fn ordered(&self) -> Vec<&Row> {
-        let mut rows: Vec<&Row> = self
+    fn toggle_pin(&mut self, id: &SharedString) -> bool {
+        let Some(row) = self.rows.iter_mut().find(|r| &r.task.id == id) else {
+            return false;
+        };
+        row.task.pinned = !row.task.pinned;
+        row.task.pinned
+    }
+
+    fn archive(&mut self, id: &SharedString) {
+        self.rows.retain(|r| &r.task.id != id);
+        if self.selected.as_ref() == Some(id) {
+            self.selected = None;
+            self.hold = None;
+        }
+        if self.hovered.as_ref() == Some(id) {
+            self.hovered = None;
+        }
+    }
+
+    /// Where a row lists in Activity (pink: spaces.rs
+    /// `activity_sidebar_chats`): the task being read never lists below its
+    /// held section, and stays listed while it is read.
+    fn section_of(&self, task: &InboxTask) -> Option<Section> {
+        let live = task.live_section();
+        let reading = self.selected.as_ref() == Some(&task.id);
+        let held = if reading { self.hold } else { None };
+        let section = match (held, live) {
+            (Some(held), Some(live)) => Some(held.min(live)),
+            (held, live) => held.or(live),
+        };
+        section.or(reading.then_some(Section::Ready))
+    }
+
+    /// Activity's rows: by section, then newest first.
+    fn activity_rows(&self) -> Vec<(Section, Row)> {
+        let mut rows: Vec<(Section, Row)> = self
             .rows
             .iter()
-            .filter(|r| self.filter.admits(r.task.status))
+            .filter_map(|row| self.section_of(&row.task).map(|s| (s, row.clone())))
             .collect();
-        rows.sort_by(|a, b| {
-            a.task
-                .status
-                .rank()
-                .cmp(&b.task.status.rank())
-                .then(b.updated.total_cmp(&a.updated))
+        rows.sort_by(|(ls, l), (rs, r)| {
+            ls.cmp(rs)
+                .then(r.updated.total_cmp(&l.updated))
+                .then(l.task.id.cmp(&r.task.id))
         });
         rows
+    }
+
+    /// The plain list: every task, newest first.
+    fn thread_rows(&self) -> Vec<Row> {
+        let mut rows = self.rows.clone();
+        rows.sort_by(|l, r| {
+            r.updated
+                .total_cmp(&l.updated)
+                .then(l.task.id.cmp(&r.task.id))
+        });
+        rows
+    }
+
+    /// Records the rendered order; a reorder glides the rows that moved and
+    /// fades in the new ones (pink: shell.rs `resort_offsets`).
+    fn note_order(&mut self, order: Vec<(String, f32)>) {
+        if self.prev_order == order {
+            return;
+        }
+        let skip = std::mem::take(&mut self.skip_resort);
+        let reordered = self.prev_order.len() != order.len()
+            || self
+                .prev_order
+                .iter()
+                .zip(&order)
+                .any(|((old, _), (new, _))| old != new);
+        if !self.prev_order.is_empty() && reordered && !skip {
+            let mut old_y = HashMap::new();
+            let mut y = 0.0;
+            for (key, height) in &self.prev_order {
+                old_y.insert(key.as_str(), y);
+                y += height;
+            }
+            let mut offsets = HashMap::new();
+            let mut new_keys = HashSet::new();
+            let mut y = 0.0;
+            for (key, height) in &order {
+                match old_y.get(key.as_str()) {
+                    Some(prev) if (prev - y).abs() > 0.5 => {
+                        offsets.insert(key.clone(), prev - y);
+                    }
+                    Some(_) => {}
+                    None => {
+                        new_keys.insert(key.clone());
+                    }
+                }
+                y += height;
+            }
+            if !offsets.is_empty() || !new_keys.is_empty() {
+                self.epoch += 1;
+                self.resort = offsets;
+                self.new_keys = new_keys;
+            }
+        }
+        self.prev_order = order;
+    }
+}
+
+/// One keyed entry of the rendered list.
+enum Item {
+    /// pink: activity_center.rs `activity_section_heading`.
+    Heading {
+        section: Section,
+        count: usize,
+        first: bool,
+    },
+    Task(Row),
+    /// pink: the full list's Pinned disclosure group.
+    Pinned {
+        rows: Vec<Row>,
+        collapsed: bool,
+    },
+    /// pink: the rule under the Pinned group.
+    Divider,
+}
+
+impl Item {
+    fn key(&self) -> String {
+        match self {
+            Item::Heading { section, .. } => format!("h:{}", section.key()),
+            Item::Task(row) => format!("c:{}", row.task.id),
+            Item::Pinned { .. } => "g:pinned".into(),
+            Item::Divider => "divider:pinned".into(),
+        }
+    }
+
+    fn height(&self) -> f32 {
+        match self {
+            Item::Heading { first, .. } => HEADING_H + if *first { 0.0 } else { SECTION_GAP },
+            Item::Task(_) => ROW_H,
+            Item::Pinned { rows, collapsed } => {
+                SECTION_GAP
+                    + HEADING_H
+                    + if *collapsed {
+                        0.0
+                    } else {
+                        BODY_INSET + ROW_H * rows.len() as f32
+                    }
+            }
+            Item::Divider => DIVIDER_H,
+        }
     }
 }
 
@@ -528,205 +644,732 @@ impl InboxState {
 // Rendering
 // ---------------------------------------------------------------------------
 
-fn duration_label(seconds: f32) -> String {
-    let s = seconds.max(0.0) as u32;
+/// Compact relative time, no "ago" (pink: proto `format_time_ago`).
+fn time_ago(seconds: f32) -> String {
+    let s = seconds.max(0.0) as u64;
     if s < 60 {
-        format!("{s}s")
-    } else if s < 3600 {
-        format!("{}m {:02}s", s / 60, s % 60)
-    } else {
-        format!("{}h {:02}m", s / 3600, (s % 3600) / 60)
+        return "now".into();
+    }
+    let m = s / 60;
+    if m < 60 {
+        return format!("{m}m");
+    }
+    let h = m / 60;
+    if h < 24 {
+        return format!("{h}h");
+    }
+    let d = h / 24;
+    if d < 7 {
+        return format!("{d}d");
+    }
+    let w = d / 7;
+    if w < 5 {
+        return format!("{w}w");
+    }
+    let mo = d / 30;
+    if mo < 12 {
+        return format!("{mo}mo");
+    }
+    format!("{}y", d / 365)
+}
+
+/// pink: spaces.rs `status_dot_color` – every state but Done sits well below
+/// full strength.
+fn status_dot_color(indicator: Indicator, t: &Pink) -> Hsla {
+    match indicator {
+        Indicator::Working => t.busy.opacity(0.55),
+        Indicator::Approval => t.warning.opacity(0.72),
+        Indicator::Input => t.accent.opacity(0.6),
+        Indicator::Errored => t.danger.opacity(0.65),
+        Indicator::Completed => t.success.opacity(0.9),
+        Indicator::Idle => t.ink(0.14),
     }
 }
 
-fn ago_label(seconds: f32) -> String {
-    let s = seconds.max(0.0) as u32;
-    if s < 45 {
-        "just now".into()
-    } else if s < 3600 {
-        format!("{}m ago", (s + 30) / 60)
-    } else {
-        format!("{}h ago", s / 3600)
-    }
-}
-
-/// A stable hue per agent name, from Pink's palette family.
-fn agent_hue(name: &str, t: &Pink) -> Hsla {
-    const HUES: [f32; 5] = [277.0, 200.0, 155.0, 60.0, 330.0];
-    let ix = name
-        .bytes()
-        .fold(0usize, |a, b| a.wrapping_mul(31).wrapping_add(b as usize))
-        % 5;
-    let (l, c) = if t.dark { (0.74, 0.13) } else { (0.56, 0.17) };
-    pink::oklch(l, c, HUES[ix])
-}
-
-/// A tiny square monogram for an agent.
-fn monogram(name: &str, size: f32, t: &Pink) -> Div {
-    let hue = agent_hue(name, t);
+/// pink: shell.rs `sidebar_faded_label` – no ellipsis: a clipped label's last
+/// glyphs fade out over 20 px into `fade_to`, the row's painted color.
+fn faded_label(
+    id: String,
+    fill: bool,
+    label: impl IntoElement,
+    fade_to: Hsla,
+    clips: &Clips,
+) -> Div {
+    let clipped = clips.borrow().contains(&id);
+    let clips = clips.clone();
     div()
-        .size(px(size))
+        .when(fill, |el| el.flex_1())
+        .relative()
+        .min_w_0()
+        .overflow_hidden()
+        .flex()
+        .child(div().flex_none().whitespace_nowrap().child(label))
+        // A probe the size of the visible box, read against the label.
+        .child(div().absolute().inset_0())
+        .when(clipped, |el| {
+            el.child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .bottom_0()
+                    .right_0()
+                    .w(px(LABEL_FADE))
+                    .bg(linear_gradient(
+                        90.0,
+                        linear_color_stop(fade_to.opacity(0.0), 0.0),
+                        linear_color_stop(fade_to, 1.0),
+                    )),
+            )
+        })
+        .on_children_prepainted(move |bounds, window, _| {
+            let (Some(label), Some(probe)) = (bounds.first(), bounds.get(1)) else {
+                return;
+            };
+            let clipped = label.size.width > probe.size.width + px(0.5);
+            let mut clips = clips.borrow_mut();
+            if clipped != clips.contains(&id) {
+                if clipped {
+                    clips.insert(id.clone());
+                } else {
+                    clips.remove(&id);
+                }
+                // Read a frame late: draw once more with the fade settled.
+                window.request_animation_frame();
+            }
+        })
+}
+
+/// A 20 px corner action (pink: shell.rs `render_chat_row` pin / archive):
+/// radius 4, a quiet wash under the pointer, a 12 px glyph.
+fn corner_action(
+    id: String,
+    label: &'static str,
+    glyph: &'static str,
+    tone: Hsla,
+    t: &Pink,
+) -> Stateful<Div> {
+    div()
+        .id(ElementId::Name(id.clone().into()))
+        .role(Role::Button)
+        .aria_label(label)
+        .size(px(chrome::CONTROL_S))
         .flex_none()
         .flex()
         .items_center()
         .justify_center()
-        .rounded(px(radius::XS))
-        .bg(hue.opacity(if t.dark { 0.2 } else { 0.13 }))
-        .text_size(px(size * 0.6))
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(hue)
-        .child(name.chars().next().unwrap_or('?').to_string())
-}
-
-/// The running spinner: a thin ring and a sweeping arc.
-fn spinner(id: impl Into<ElementId>, size: f32, color: Hsla, track: Hsla) -> AnyElement {
-    div()
-        .size(px(size))
-        .flex_none()
-        .with_animation(
-            id,
-            Animation::new(Duration::from_millis(1000)).repeat(),
-            move |el, t| {
-                el.child(
-                    canvas(
-                        |_, _, _| {},
-                        move |bounds, _, window, _| {
-                            let c = bounds.center();
-                            let r = f32::from(bounds.size.width) / 2.0 - 1.0;
-                            let at = |a: f32| point(c.x + px(r * a.cos()), c.y + px(r * a.sin()));
-                            let mut ring = PathBuilder::stroke(px(1.5));
-                            ring.move_to(at(0.0));
-                            ring.arc_to(point(px(r), px(r)), px(0.), false, true, at(PI));
-                            ring.arc_to(point(px(r), px(r)), px(0.), false, true, at(TAU));
-                            if let Ok(path) = ring.build() {
-                                window.paint_path(path, track);
-                            }
-                            let start = t * TAU;
-                            let mut arc = PathBuilder::stroke(px(1.5));
-                            arc.move_to(at(start));
-                            arc.arc_to(
-                                point(px(r), px(r)),
-                                px(0.),
-                                false,
-                                true,
-                                at(start + PI * 0.55),
-                            );
-                            if let Ok(path) = arc.build() {
-                                window.paint_path(path, color);
-                            }
-                        },
-                    )
-                    .size_full(),
-                )
-            },
+        .rounded(px(chrome::RADIUS_S))
+        .cursor_pointer()
+        .hover_wash(id, t.fill(FillTier::Tertiary))
+        .tooltip(pink::text_tooltip(label))
+        .tooltip_show_delay(layout::TOOLTIP_DELAY)
+        .child(
+            svg()
+                .path(glyph)
+                .size(px(chrome::ICON_S))
+                .flex_none()
+                .text_color(tone),
         )
-        .into_any_element()
 }
 
-fn status_glyph(row: &Row, key: &str, t: &Pink) -> AnyElement {
-    let size = 18.0;
-    let frame = || {
+/// The row's details card after the hover delay (pink: shell.rs
+/// `SidebarThreadTooltip`).
+#[derive(Clone)]
+struct TaskDetails {
+    title: SharedString,
+    project: SharedString,
+    branch: Option<SharedString>,
+    done: bool,
+}
+
+impl Render for TaskDetails {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = Pink::get(cx);
+        let detail = |glyph: &'static str, label: SharedString| {
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.0))
+                .min_w_0()
+                .child(
+                    svg()
+                        .path(glyph)
+                        .size(px(13.0))
+                        .flex_none()
+                        .text_color(t.text_muted),
+                )
+                .child(div().min_w_0().truncate().child(label))
+        };
         div()
-            .size(px(size))
-            .flex_none()
+            .w(px(244.0))
+            .px(px(12.0))
+            .py(px(11.0))
             .flex()
-            .items_center()
-            .justify_center()
-            .rounded_full()
-    };
-    match row.task.status {
-        TaskStatus::Running => frame()
-            .child(spinner(
-                ElementId::Name(format!("{key}-spin-{}", row.key).into()),
-                size - 2.0,
-                t.accent,
-                t.fill(FillTier::Primary),
-            ))
-            .into_any_element(),
-        TaskStatus::NeedsYou => frame()
-            .border_1()
-            .border_color(t.warning.opacity(0.6))
-            .child(
-                div()
-                    .size(px(8.))
-                    .rounded_full()
-                    .bg(t.warning)
-                    .with_animation(
-                        ElementId::Name(format!("{key}-wait-{}", row.key).into()),
-                        Animation::new(Duration::from_millis(1600))
-                            .repeat()
-                            .with_easing(EASE_IN_OUT.easing()),
-                        |el, p| el.opacity(0.45 + 0.55 * (1.0 - (p * 2.0 - 1.0).abs())),
-                    ),
-            )
-            .into_any_element(),
-        TaskStatus::Done => frame()
-            .bg(t.success)
-            .child(svg().path(ICON_CHECK).size(px(13.)).text_color(t.bg))
-            .into_any_element(),
-        TaskStatus::Failed => frame()
-            .bg(t.danger_strong)
-            .child(svg().path(ICON_CLOSE).size(px(12.)).text_color(t.on_accent))
-            .into_any_element(),
-        TaskStatus::Cancelled => frame()
+            .flex_col()
+            .gap(px(7.0))
+            .rounded(px(9.0))
             .border_1()
             .border_color(t.border_strong)
-            .child(div().w(px(7.)).h(px(1.5)).rounded_full().bg(t.text_faint))
-            .into_any_element(),
+            .bg(t.tooltip_surface())
+            .shadow(t.tooltip_shadows())
+            .font_family(pink::SANS)
+            .text_size(px(11.0))
+            .text_color(t.text_muted)
+            .child(
+                div()
+                    .truncate()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_size(px(12.0))
+                    .text_color(t.text)
+                    .child(self.title.clone()),
+            )
+            .child(detail(ICON_FOLDER, self.project.clone()))
+            .when_some(self.branch.clone(), |el, branch| {
+                el.child(detail(ICON_BRANCH, branch))
+            })
+            .when(self.done, |el| el.child(detail(ICON_CHECK, "Done".into())))
     }
 }
 
-/// A count that rolls: the old number slides up and out as the new one rises in.
-fn rolling_count(id: String, prev: usize, now: usize, color: Hsla) -> AnyElement {
-    let digits = prev.to_string().len().max(now.to_string().len()) as f32;
-    let cell = |n: usize| {
+/// What every row of one render shares.
+struct RowCx<'a> {
+    key: &'a str,
+    t: &'a Pink,
+    state: &'a Entity<InboxState>,
+    clips: &'a Clips,
+    /// The sidebar surface the rows sit on.
+    surface: Hsla,
+    clock: f32,
+    selected: Option<&'a SharedString>,
+    hovered: Option<&'a SharedString>,
+}
+
+/// One task row (pink: shell.rs `Shell::render_chat_row`, two-line sidebar
+/// row): 52 tall, `px 8 py 6`, radius 8; the title over the meta line, the
+/// time (or the hover actions) in the corner, the status at the right edge.
+fn task_row(c: &RowCx, row: &Row) -> AnyElement {
+    let t = c.t;
+    let task = &row.task;
+    let row_id = format!("{}-row-{}", c.key, task.id);
+    let fade_key = format!("{row_id}-hover");
+    let selected = c.selected == Some(&task.id);
+    let corner_hovered = c.hovered == Some(&task.id);
+    let indicator = task.indicator();
+    let status_color = status_dot_color(indicator, t);
+
+    // Working keeps the square loader and Done its dot; a task waiting on
+    // you names the next step in a pill wearing the glyph of what it waits for.
+    let pill = |word: &'static str, glyph: &'static str| {
+        pink::status_pill(word, status_color, Some(glyph.into()), t).into_any_element()
+    };
+    let status_badge = match indicator {
+        Indicator::Working => Some(
+            loaders::mini_glyph_spinner(format!("{row_id}-working"), 2.0, t.glyph)
+                .into_any_element(),
+        ),
+        Indicator::Completed => Some(
+            div()
+                .size(px(6.0))
+                .flex_none()
+                .rounded_full()
+                .bg(status_color)
+                .into_any_element(),
+        ),
+        Indicator::Approval => Some(pill("Approve", ICON_SHIELD)),
+        Indicator::Input => Some(pill("Reply", ICON_QUESTION)),
+        Indicator::Errored => Some(pill("Failed", ICON_DANGER)),
+        Indicator::Idle => None,
+    }
+    .map(|badge| div().flex_none().flex().items_center().child(badge));
+
+    // The wash and the title brighten ride one 150 ms blend; a selected row
+    // never drifts toward the hover wash.
+    let text = t.text;
+    let selected_wash = t.glass_selected_bg();
+    let rest_bg = if selected { selected_wash } else { t.wash(0.0) };
+    let hover_bg = if selected {
+        selected_wash
+    } else {
+        t.sidebar_hover_bg()
+    };
+    let rest_text = if selected {
+        text
+    } else if indicator == Indicator::Completed {
+        text.opacity(0.95)
+    } else {
+        text.opacity(0.8)
+    };
+    let hover = motion::hover_t_or(&fade_key, if corner_hovered { 1.0 } else { 0.0 });
+    let row_bg = motion::mix(rest_bg, hover_bg, hover);
+    let fade_to = pink::flatten(row_bg, c.surface);
+    // Project and branch are information: quiet, held to the text floor.
+    let subline = t.readable_muted(0.5);
+
+    // At rest the corner is the time alone; under the pointer, the row's
+    // pin and archive.
+    let corner_body = if corner_hovered {
+        let pin_id = task.id.clone();
+        let archive_id = task.id.clone();
+        let pinned = task.pinned;
         div()
-            .absolute()
-            .left_0()
-            .right_0()
-            .h(px(16.))
+            .flex()
+            .flex_row()
+            .items_center()
+            .justify_end()
+            .gap(px(2.0))
+            .h(px(18.0))
+            .child(
+                corner_action(
+                    format!("{row_id}-pin"),
+                    if pinned { "Unpin task" } else { "Pin task" },
+                    ICON_PIN,
+                    if pinned {
+                        t.readable_icon(t.accent)
+                    } else {
+                        t.text_muted
+                    },
+                    t,
+                )
+                .on_click({
+                    let state = c.state.clone();
+                    move |_, window, cx| {
+                        cx.stop_propagation();
+                        let (handler, pinned) = state.update(cx, |s, cx| {
+                            s.autoplay = false;
+                            let pinned = s.toggle_pin(&pin_id);
+                            cx.notify();
+                            (s.on_action.clone(), pinned)
+                        });
+                        let action = if pinned {
+                            InboxAction::Pin
+                        } else {
+                            InboxAction::Unpin
+                        };
+                        if let Some(handler) = handler {
+                            handler(&pin_id, action, window, cx);
+                        }
+                    }
+                }),
+            )
+            .child(
+                corner_action(
+                    format!("{row_id}-archive"),
+                    "Archive task",
+                    ICON_ARCHIVE,
+                    t.text_muted,
+                    t,
+                )
+                .on_click({
+                    let state = c.state.clone();
+                    move |_, window, cx| {
+                        cx.stop_propagation();
+                        let handler = state.update(cx, |s, cx| {
+                            s.autoplay = false;
+                            s.archive(&archive_id);
+                            cx.notify();
+                            s.on_action.clone()
+                        });
+                        if let Some(handler) = handler {
+                            handler(&archive_id, InboxAction::Archive, window, cx);
+                        }
+                    }
+                }),
+            )
+            .into_any_element()
+    } else {
+        div()
+            .h(px(18.0))
             .flex()
             .items_center()
-            .justify_center()
-            .child(n.to_string())
+            .text_size(px(11.0))
+            .font_features(pink::tabular_figures())
+            .child(time_ago(c.clock - row.updated))
+            .into_any_element()
     };
+    let corner = div()
+        .id(ElementId::Name(format!("{row_id}-corner").into()))
+        .flex_none()
+        .h(px(18.0))
+        .flex()
+        .items_center()
+        .justify_end()
+        .child(corner_body);
+
+    // Line 2: project · branch on the title's left edge, the status at the right.
+    let meta = div()
+        .flex_1()
+        .min_w_0()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(4.0))
+        .text_size(px(11.0))
+        .line_height(px(14.0))
+        .text_color(subline)
+        .child(faded_label(
+            format!("{row_id}-project"),
+            false,
+            task.project.clone(),
+            fade_to,
+            c.clips,
+        ))
+        .when_some(task.branch.clone(), |el, branch| {
+            el.child(div().flex_none().child("·"))
+                .child(
+                    svg()
+                        .path(ICON_BRANCH)
+                        .size(px(11.0))
+                        .flex_none()
+                        .text_color(subline),
+                )
+                .child(faded_label(
+                    format!("{row_id}-branch"),
+                    false,
+                    branch,
+                    fade_to,
+                    c.clips,
+                ))
+        });
+
+    let details = TaskDetails {
+        title: task.title.clone(),
+        project: task.project.clone(),
+        branch: task.branch.clone(),
+        done: indicator == Indicator::Completed,
+    };
+    let open_id = task.id.clone();
+    let hover_id = task.id.clone();
     div()
-        .relative()
-        .w(px(digits * 7.0 + 1.0))
-        .h(px(16.))
-        .overflow_hidden()
-        .font_family(pink::MONO)
-        .text_size(px(text::CAPTION))
-        .text_color(color)
-        .with_animation(
-            ElementId::Name(id.into()),
-            MotionSpec::new(420, motion::EASE_OUT_QUINT).animation(),
-            move |el, p| {
-                let up = now >= prev;
-                let dir = if up { 1.0 } else { -1.0 };
-                el.child(cell(prev).top(px(-12.0 * p * dir)).opacity(1.0 - p))
-                    .child(cell(now).top(px(12.0 * (1.0 - p) * dir)).opacity(p))
-            },
+        .id(ElementId::Name(row_id.clone().into()))
+        .h(px(ROW_H))
+        .flex()
+        .flex_col()
+        .justify_center()
+        .gap(px(2.0))
+        .rounded(px(radius::MD))
+        .px(px(space::SM))
+        .py(px(6.0))
+        .text_color(motion::mix(rest_text, text, hover))
+        .bg(row_bg)
+        // One listener drives both the wash blend and the corner's swap.
+        .on_hover({
+            let fade = motion::hover_listener(fade_key);
+            let state = c.state.clone();
+            move |hovered: &bool, window, cx| {
+                fade(hovered, window, cx);
+                state.update(cx, |s, cx| {
+                    if *hovered {
+                        if s.hovered.as_ref() != Some(&hover_id) {
+                            s.hovered = Some(hover_id.clone());
+                            cx.notify();
+                        }
+                    } else if s.hovered.as_ref() == Some(&hover_id) {
+                        s.hovered = None;
+                        cx.notify();
+                    }
+                });
+            }
+        })
+        .cursor_pointer()
+        .role(Role::Button)
+        .aria_selected(selected)
+        .aria_label(task.title.clone())
+        .on_click({
+            let state = c.state.clone();
+            move |_, window, cx| {
+                let handler = state.update(cx, |s, cx| {
+                    s.autoplay = false;
+                    s.open(&open_id);
+                    cx.notify();
+                    s.on_action.clone()
+                });
+                if let Some(handler) = handler {
+                    handler(&open_id, InboxAction::Open, window, cx);
+                }
+            }
+        })
+        .tooltip(move |_, cx| cx.new(|_| details.clone()).into())
+        .tooltip_show_delay(layout::TOOLTIP_DELAY)
+        // Line 1: the title, then the time (or the hover actions).
+        .child(
+            div()
+                .w_full()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(space::SM))
+                .child(faded_label(
+                    format!("{row_id}-title"),
+                    true,
+                    div()
+                        .text_size(px(13.0))
+                        .line_height(px(17.0))
+                        .font_weight(FontWeight::MEDIUM)
+                        .child(task.title.clone()),
+                    fade_to,
+                    c.clips,
+                ))
+                .child(div().text_color(subline).child(corner)),
+        )
+        .child(
+            div()
+                .w_full()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(6.0))
+                .child(meta)
+                .children(status_badge),
         )
         .into_any_element()
 }
 
-/// An invisible layer that records its bounds when painted.
-fn mark(marks: Rc<RefCell<TabMarks>>, slot: Option<usize>) -> impl IntoElement {
-    canvas(
-        move |bounds, _, _| {
-            let mut marks = marks.borrow_mut();
-            match slot {
-                Some(ix) => marks.tabs[ix] = Some(bounds),
-                None => marks.bar = Some(bounds),
+/// One Activity section's heading (pink: activity_center.rs
+/// `activity_section_heading`): a heading, not a disclosure – what needs you
+/// never folds away. 11 semibold label, the count beside it.
+fn section_heading(key: &str, section: Section, count: usize, first: bool, t: &Pink) -> AnyElement {
+    let tasks = if count == 1 { "task" } else { "tasks" };
+    div()
+        .w_full()
+        .flex_none()
+        .flex()
+        .flex_col()
+        .pt(px(if first { 0.0 } else { SECTION_GAP }))
+        .child(
+            div()
+                .id(ElementId::Name(
+                    format!("{key}-section-{}", section.key()).into(),
+                ))
+                .role(Role::Heading)
+                .aria_label(format!("{}, {count} {tasks}", section.label()))
+                .h(px(HEADING_H))
+                .px(px(space::SM))
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(8.0))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(px(11.0))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(t.readable_faint(0.9))
+                        .child(section.label()),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .text_size(px(11.0))
+                        .text_color(t.readable_faint(0.7))
+                        .child(count.to_string()),
+                ),
+        )
+        .into_any_element()
+}
+
+/// The full list's Pinned group (pink: spaces.rs `sidebar_disclosure_header`
+/// and `render_sidebar_disclosure_body`): a 28 px header with a quiet wash and
+/// the chevron only under the pointer; the body folds over `COLLAPSE`.
+fn pinned_group(c: &RowCx, rows: &[Row], collapsed: bool) -> AnyElement {
+    let t = c.t;
+    let header_id = format!("{}-pinned", c.key);
+    let group: SharedString = format!("{header_id}-header").into();
+    let reveal = motion::follow(
+        &format!("{header_id}-open"),
+        if collapsed { 0.0 } else { 1.0 },
+        COLLAPSE,
+    );
+    let body_h = BODY_INSET + ROW_H * rows.len() as f32;
+    let label: SharedString = if collapsed {
+        format!("Pinned ({})", rows.len()).into()
+    } else {
+        "Pinned".into()
+    };
+    let header = div()
+        .id(ElementId::Name(header_id.clone().into()))
+        .group(group.clone())
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(8.0))
+        .h(px(HEADING_H))
+        .px(px(space::SM))
+        .rounded(px(radius::SM))
+        .cursor_pointer()
+        .hover_wash(header_id.clone(), t.fill(FillTier::Tertiary))
+        .role(Role::Button)
+        .aria_expanded(!collapsed)
+        .on_click({
+            let state = c.state.clone();
+            move |_, _, cx| {
+                state.update(cx, |s, cx| {
+                    s.autoplay = false;
+                    s.pinned_collapsed = !s.pinned_collapsed;
+                    s.skip_resort = true;
+                    cx.notify();
+                })
             }
-        },
-        |_, _, _, _| {},
-    )
-    .absolute()
-    .top_0()
-    .left_0()
-    .size_full()
+        })
+        .child(faded_label(
+            format!("{header_id}-label"),
+            false,
+            div()
+                .text_size(px(11.0))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(t.readable_faint(0.9))
+                .child(label),
+            c.surface,
+            c.clips,
+        ))
+        .child(div().flex_1())
+        .child(
+            div()
+                .flex_none()
+                .opacity(0.0)
+                .group_hover(group, |s| s.opacity(1.0))
+                .child(
+                    svg()
+                        .path(ICON_CHEVRON)
+                        .size(px(12.0))
+                        .text_color(t.readable_icon(t.readable_muted(0.5)))
+                        .with_transformation(Transformation::rotate(radians(reveal * FRAC_PI_2))),
+                ),
+        );
+    let body = div()
+        .w_full()
+        .flex_none()
+        .overflow_hidden()
+        .h(px(body_h * reveal))
+        .opacity(0.35 + 0.65 * reveal)
+        .relative()
+        .top(px(-3.0 * (1.0 - reveal)))
+        .child(
+            div()
+                .w_full()
+                .flex()
+                .flex_col()
+                .pt(px(BODY_INSET))
+                .children(rows.iter().map(|row| task_row(c, row))),
+        );
+    div()
+        .w_full()
+        .flex()
+        .flex_col()
+        .pt(px(SECTION_GAP))
+        .child(header)
+        .child(body)
+        .into_any_element()
+}
+
+/// The header's Activity toggle (pink: activity_center.rs
+/// `render_activity_action`): a 28 px bell, accent while the view is on, with
+/// a 6 px accent dot on its shoulder while something needs you.
+fn bell(c: &RowCx, active: bool, has_attention: bool) -> Stateful<Div> {
+    let t = c.t;
+    let id = format!("{}-activity", c.key);
+    let label = if active {
+        "Turn off activity view"
+    } else {
+        "View activity"
+    };
+    let ring = t.focus_ring();
+    div()
+        .id(ElementId::Name(id.clone().into()))
+        .relative()
+        .size(px(chrome::CONTROL_M))
+        .flex_none()
+        .rounded(px(chrome::RADIUS_M))
+        .border_1()
+        .border_color(t.border.opacity(0.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .role(Role::Button)
+        .aria_label(label)
+        .aria_toggled(if active {
+            Toggled::True
+        } else {
+            Toggled::False
+        })
+        .tab_index(0)
+        .focus_visible(move |s| pink::focus_ring(s, ring))
+        .cursor_pointer()
+        .hover_fill(
+            id,
+            if active {
+                t.glass_hover()
+            } else {
+                t.glass_hover().opacity(0.0)
+            },
+            t.glass_hover(),
+        )
+        .tooltip(pink::text_tooltip(label))
+        .tooltip_show_delay(layout::TOOLTIP_DELAY)
+        .on_click({
+            let state = c.state.clone();
+            move |_, _, cx| {
+                state.update(cx, |s, cx| {
+                    s.autoplay = false;
+                    s.activity = !s.activity;
+                    cx.notify();
+                })
+            }
+        })
+        .on_key_down(pink::swallow_activation_key)
+        .child(
+            svg()
+                .path(ICON_BELL)
+                .size(px(16.0))
+                .flex_none()
+                .text_color(if active { t.accent } else { t.text_muted }),
+        )
+        .when(has_attention, |el| {
+            el.child(
+                div()
+                    .absolute()
+                    .top(px(4.5))
+                    .right(px(5.5))
+                    .size(px(UNREAD_DOT))
+                    .rounded_full()
+                    .bg(t.accent),
+            )
+        })
+}
+
+/// A centred empty list with the next step (pink: shell.rs
+/// `render_chat_sidebar`, audit SH-24).
+fn empty_state(activity: bool, t: &Pink) -> AnyElement {
+    let (title, hint) = if activity {
+        (
+            "Nothing needs attention",
+            "Running and waiting tasks appear here.",
+        )
+    } else {
+        ("No tasks yet", "Start one with ⌘N.")
+    };
+    div()
+        .px(px(space::SM))
+        .py(px(space::LG))
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap(px(2.0))
+        .text_center()
+        .child(
+            div()
+                .text_size(px(13.0))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(t.readable_muted(0.9))
+                .child(title),
+        )
+        .child(
+            div()
+                .text_size(px(12.0))
+                .text_color(t.readable_faint(0.9))
+                .child(hint),
+        )
+        .into_any_element()
 }
 
 impl RenderOnce for AgentInbox {
@@ -740,533 +1383,177 @@ impl RenderOnce for AgentInbox {
         );
         let on_action = self.on_action.clone();
         state.update(cx, |s, _| s.on_action = on_action);
-        let s = state.read(cx);
-        let clock = s.clock;
-        let generation = s.generation;
 
-        // -- Header -------------------------------------------------------------
-        let needs = s.counts[1];
-        let running = s.counts[2];
-        let has_done = s.counts[4] > 0;
+        // -- What lists, in order ---------------------------------------------
+        let s = state.read(cx);
+        let activity = s.activity;
+        let mut items = Vec::new();
+        let mut drawn_selected = None;
+        if activity {
+            let rows = s.activity_rows();
+            let mut current: Option<Section> = None;
+            for (ix, (section, row)) in rows.iter().enumerate() {
+                if current != Some(*section) {
+                    let count = rows[ix..].iter().take_while(|(s, _)| s == section).count();
+                    items.push(Item::Heading {
+                        section: *section,
+                        count,
+                        first: current.is_none(),
+                    });
+                    current = Some(*section);
+                }
+                if s.selected.as_ref() == Some(&row.task.id) {
+                    drawn_selected = Some(*section);
+                }
+                items.push(Item::Task(row.clone()));
+            }
+        } else {
+            let (pinned, rest): (Vec<Row>, Vec<Row>) =
+                s.thread_rows().into_iter().partition(|row| row.task.pinned);
+            if !pinned.is_empty() {
+                let has_rest = !rest.is_empty();
+                items.push(Item::Pinned {
+                    rows: pinned,
+                    collapsed: s.pinned_collapsed,
+                });
+                if has_rest && !s.pinned_collapsed {
+                    items.push(Item::Divider);
+                }
+            }
+            items.extend(rest.into_iter().map(Item::Task));
+        }
+        let has_attention = s.rows.iter().any(|row| row.task.wants_you());
+        let selected = s.selected.clone();
+        let hovered = s.hovered.clone();
+        let clock = s.clock;
+        let clips = s.clips.clone();
+
+        // A held row drawn in a more urgent section keeps it while it is
+        // read; then the resort glide (pink: shell.rs `RESORT`).
+        let order: Vec<(String, f32)> = items.iter().map(|i| (i.key(), i.height())).collect();
+        let (epoch, resort, new_keys) = state.update(cx, |s, _| {
+            if let (Some(drawn), Some(hold)) = (drawn_selected, s.hold) {
+                s.hold = Some(hold.min(drawn));
+            }
+            s.note_order(order);
+            (s.epoch, s.resort.clone(), s.new_keys.clone())
+        });
+
+        // -- Elements -----------------------------------------------------------
+        let surface = t.chrome_surface();
+        let c = RowCx {
+            key: &key,
+            t: &t,
+            state: &state,
+            clips: &clips,
+            surface,
+            clock,
+            selected: selected.as_ref(),
+            hovered: hovered.as_ref(),
+        };
+        let is_empty = items.is_empty();
+        let list_items: Vec<AnyElement> = items
+            .iter()
+            .map(|item| {
+                let item_key = item.key();
+                let element = match item {
+                    Item::Heading {
+                        section,
+                        count,
+                        first,
+                    } => section_heading(&key, *section, *count, *first, &t),
+                    Item::Task(row) => task_row(&c, row),
+                    Item::Pinned { rows, collapsed } => pinned_group(&c, rows, *collapsed),
+                    Item::Divider => div()
+                        .w_full()
+                        .pt(px(space::SM))
+                        .pb(px(space::SM))
+                        .px(px(space::SM))
+                        .child(div().h(px(1.0)).bg(t.border.opacity(0.6)))
+                        .into_any_element(),
+                };
+                // Surviving rows glide from their old place; new rows fade
+                // in; removals just go.
+                if let Some(dy) = resort.get(&item_key).copied() {
+                    div()
+                        .child(element)
+                        .with_animation(
+                            ElementId::Name(format!("{key}-resort-{epoch}-{item_key}").into()),
+                            RESORT.animation(),
+                            move |el, p| el.relative().top(px(dy * (1.0 - p))),
+                        )
+                        .into_any_element()
+                } else if new_keys.contains(&item_key) {
+                    motion::fade_quick(
+                        ElementId::Name(format!("{key}-row-in-{epoch}-{item_key}").into()),
+                        div().child(element),
+                    )
+                    .into_any_element()
+                } else {
+                    element
+                }
+            })
+            .collect();
+
+        // pink: spaces.rs `render_threads_header` – the label turns into
+        // "Activity" while the bell is on.
         let header = div()
+            .flex_none()
             .flex()
+            .flex_row()
             .items_center()
-            .gap(px(space::S12))
-            .px(px(space::S16))
-            .pt(px(space::S16))
-            .pb(px(space::S8))
+            .gap(px(4.0))
+            .pt(px(4.0))
             .child(
                 div()
-                    .size(px(32.))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(radius::MD))
-                    .bg(t.fill(FillTier::Tertiary))
-                    .child(svg().path(ICON_INBOX).size(px(16.)).text_color(t.text)),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
                     .flex_1()
                     .min_w_0()
-                    .child(
-                        div()
-                            .text_size(px(text::CALLOUT))
-                            .line_height(px(20.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(t.text)
-                            .child(self.title.clone()),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(text::FOOTNOTE))
-                            .line_height(px(16.))
-                            .text_color(t.text_muted)
-                            .child(format!("{running} running · {needs} waiting on you")),
-                    ),
+                    .h(px(29.0))
+                    .px(px(space::SM))
+                    .flex()
+                    .items_center()
+                    .text_size(px(12.0))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(if activity {
+                        t.text
+                    } else {
+                        t.readable_faint(0.9)
+                    })
+                    .child(if activity {
+                        self.title.clone()
+                    } else {
+                        "Threads".into()
+                    }),
             )
-            .child(
-                pink::button(
-                    format!("{key}-clear"),
-                    ButtonKind::Ghost,
-                    ControlSize::Md,
-                    &t,
-                )
-                .when(!has_done, |el| el.opacity(0.45))
-                .child(pink::glyph(ICON_CLEAR, ControlSize::Md).text_color(t.text_muted))
-                .child("Clear done")
-                .on_click({
-                    let state = state.clone();
-                    move |_, _, cx| {
-                        state.update(cx, |s, cx| {
-                            s.autoplay = false;
-                            s.rows.retain(|r| {
-                                !matches!(r.task.status, TaskStatus::Done | TaskStatus::Cancelled)
-                            });
-                            s.recount();
-                            cx.notify();
-                        })
-                    }
-                }),
-            );
+            .child(bell(&c, activity, has_attention));
 
-        // -- Filter tabs ----------------------------------------------------------
-        let marks = s.marks.clone();
-        let tabs = FILTERS.iter().enumerate().map(|(ix, filter)| {
-            let active = s.filter == *filter;
-            let tab_key = format!("{key}-tab-{ix}");
-            let fg = if active {
-                t.text
-            } else {
-                motion::hover_blend(&tab_key, t.text_muted, t.text)
-            };
-            let count = s.counts[ix];
-            let urgent = *filter == Filter::NeedsYou && count > 0;
-            let pill_fg = if urgent { t.warning } else { t.text_muted };
-            let pill_bg = if urgent {
-                t.warning.opacity(if t.dark { 0.16 } else { 0.12 })
-            } else {
-                t.fill(FillTier::Tertiary)
-            };
-            let count_el = if s.prev_counts[ix] != count {
-                rolling_count(
-                    format!("{tab_key}-roll-{}", s.count_serial[ix]),
-                    s.prev_counts[ix],
-                    count,
-                    pill_fg,
-                )
-            } else {
-                div()
-                    .font_family(pink::MONO)
-                    .text_size(px(text::CAPTION))
-                    .text_color(pill_fg)
-                    .child(count.to_string())
-                    .into_any_element()
-            };
-            let filter = *filter;
-            div()
-                .id(ElementId::Name(tab_key.clone().into()))
-                .relative()
-                .h(px(36.))
-                .px(px(space::S8))
-                .flex()
-                .items_center()
-                .gap(px(space::S6))
-                .cursor_pointer()
-                .text_size(px(text::BODY))
-                .font_weight(if active {
-                    FontWeight::MEDIUM
-                } else {
-                    FontWeight::NORMAL
-                })
-                .text_color(fg)
-                .on_hover(motion::hover_listener(tab_key.clone()))
-                .on_click({
-                    let state = state.clone();
-                    move |_, _, cx| {
-                        state.update(cx, |s, cx| {
-                            s.autoplay = false;
-                            s.filter = filter;
-                            cx.notify();
-                        })
-                    }
-                })
-                .child(mark(marks.clone(), Some(ix)))
-                .child(filter.label())
-                .child(
-                    div()
-                        .h(px(18.))
-                        .px(px(5.))
-                        .flex()
-                        .items_center()
-                        .rounded(px(radius::SM))
-                        .bg(pill_bg)
-                        .child(count_el),
-                )
-        });
-        let underline = {
-            let m = marks.borrow();
-            let active_ix = FILTERS.iter().position(|f| *f == s.filter).unwrap_or(0);
-            m.bar.zip(m.tabs[active_ix]).map(|(bar, tab)| {
-                let x = f32::from(tab.origin.x - bar.origin.x) + space::S8;
-                let w = f32::from(tab.size.width) - space::S8 * 2.0;
-                let x = motion::follow(&format!("{key}-ul-x"), x, GLIDE);
-                let w = motion::follow(&format!("{key}-ul-w"), w, GLIDE);
-                div()
-                    .absolute()
-                    .bottom(px(-1.))
-                    .left(px(x))
-                    .w(px(w))
-                    .h(px(2.))
-                    .rounded_full()
-                    .bg(t.accent)
-            })
-        };
-        let tab_bar = div()
-            .relative()
-            .flex()
-            .items_center()
-            .gap(px(space::S2))
-            .mx(px(space::S8))
-            .border_b_1()
-            .border_color(t.border)
-            .child(mark(marks.clone(), None))
-            .children(tabs)
-            .children(underline);
-
-        // -- Rows -------------------------------------------------------------------
-        let ordered = s.ordered();
-        let mut top = 0.0;
-        let mut rows = Vec::new();
-        for (ix, row) in ordered.iter().enumerate() {
-            let expanded = s.expanded == Some(row.key);
-            let height = HEAD_H + if expanded { row.detail_height() } else { 0.0 };
-            let row_key = format!("{key}-row-{}", row.key);
-            let y = motion::follow(&format!("{row_key}-y"), top, GLIDE);
-            let h = motion::follow(&format!("{row_key}-h"), height, GLIDE);
-            let open = motion::follow(
-                &format!("{row_key}-open"),
-                if expanded { 1.0 } else { 0.0 },
-                GLIDE,
-            );
-            top += height;
-            let status = row.task.status;
-            let row_id = row.key;
-
-            let (time, time_color) = match status {
-                TaskStatus::Running => (duration_label(clock - row.since), t.text_muted),
-                TaskStatus::NeedsYou => (
-                    format!("waiting {}", duration_label(clock - row.since)),
-                    t.warning,
-                ),
-                TaskStatus::Failed => (ago_label(clock - row.since), t.danger),
-                TaskStatus::Done | TaskStatus::Cancelled => {
-                    (ago_label(clock - row.since), t.text_faint)
-                }
-            };
-
-            let head_key = format!("{row_key}-head");
-            let head = div()
-                .id(ElementId::Name(head_key.clone().into()))
-                .h(px(HEAD_H))
-                .flex()
-                .items_center()
-                .gap(px(space::S12))
-                .px(px(space::S12))
-                .cursor_pointer()
-                .rounded(px(radius::MD))
-                .hover_fill(
-                    head_key,
-                    t.fill(FillTier::Quaternary).opacity(0.),
-                    t.fill(FillTier::Quaternary),
-                )
-                .on_click({
-                    let state = state.clone();
-                    move |_, _, cx| {
-                        state.update(cx, |s, cx| {
-                            s.autoplay = false;
-                            s.expanded = if s.expanded == Some(row_id) {
-                                None
-                            } else {
-                                Some(row_id)
-                            };
-                            cx.notify();
-                        })
-                    }
-                })
-                .child(status_glyph(row, &key, &t))
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .flex_1()
-                        .min_w_0()
-                        .gap(px(space::S2))
-                        .child(
-                            div().flex().child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_size(px(text::BODY))
-                                    .line_height(px(18.))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_color(t.text)
-                                    .child(row.task.title.clone()),
-                            ),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(space::S6))
-                                .text_size(px(text::FOOTNOTE))
-                                .line_height(px(16.))
-                                .child(monogram(&row.task.agent, 14.0, &t))
-                                .child(
-                                    div()
-                                        .flex_none()
-                                        .text_color(t.text_muted)
-                                        .child(row.task.agent.clone()),
-                                )
-                                .child(div().text_color(t.text_faint).child("·"))
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .min_w_0()
-                                        .truncate()
-                                        .text_color(t.text_faint)
-                                        .child(row.task.summary.clone()),
-                                ),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex_none()
-                        .font_family(pink::MONO)
-                        .text_size(px(text::FOOTNOTE))
-                        .text_color(time_color)
-                        .child(time),
-                )
-                .child(
-                    div()
-                        .w(px(74.))
-                        .flex_none()
-                        .flex()
-                        .justify_end()
-                        .child(pink::badge(status.label(), status.tone(), &t)),
-                )
-                .child(
-                    svg()
-                        .path(ICON_CHEVRON)
-                        .size(px(14.))
-                        .flex_none()
-                        .text_color(t.text_faint)
-                        .with_transformation(Transformation::rotate(radians(PI * open))),
-                );
-
-            // Unfolded: what it asks, its last steps and the fitting actions.
-            let detail = expanded.then(|| {
-                let ask = (status == TaskStatus::NeedsYou)
-                    .then(|| row.task.ask.clone())
-                    .flatten()
-                    .map(|ask| {
-                        div()
-                            .h(px(ASK_H))
-                            .mb(px(8.))
-                            .px(px(space::S10))
-                            .flex()
-                            .items_center()
-                            .gap(px(space::S8))
-                            .rounded(px(radius::MD))
-                            .bg(t.warning.opacity(if t.dark { 0.10 } else { 0.08 }))
-                            .text_size(px(text::BODY))
-                            .text_color(t.text)
-                            .child(
-                                svg()
-                                    .path(ICON_ATTENTION)
-                                    .size(px(14.))
-                                    .flex_none()
-                                    .text_color(t.warning),
-                            )
-                            .child(div().flex_1().min_w_0().truncate().child(ask))
-                    });
-                let shown = row.steps.len().min(4);
-                let steps = row.steps[row.steps.len() - shown..].iter().enumerate().map(
-                    |(n, (text, at))| {
-                        let last = n + 1 == shown;
-                        div()
-                            .h(px(STEP_H))
-                            .flex()
-                            .items_center()
-                            .gap(px(space::S10))
-                            .text_size(px(text::FOOTNOTE))
-                            .child(div().size(px(5.)).flex_none().rounded_full().bg(if last {
-                                t.text_muted
-                            } else {
-                                t.border_strong
-                            }))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_color(if last { t.text } else { t.text_muted })
-                                    .child(text.clone()),
-                            )
-                            .child(
-                                div()
-                                    .flex_none()
-                                    .font_family(pink::MONO)
-                                    .text_size(px(text::CAPTION))
-                                    .text_color(t.text_faint)
-                                    .child(ago_label(clock - at)),
-                            )
-                    },
-                );
-                let button = |name: &str,
-                              kind: ButtonKind,
-                              icon: Option<&'static str>,
-                              action: InboxAction| {
-                    let fg = match kind {
-                        ButtonKind::Accent | ButtonKind::Danger => t.on_accent,
-                        ButtonKind::Primary => t.on_solid,
-                        _ => t.text,
-                    };
-                    pink::button(format!("{row_key}-{name}"), kind, ControlSize::Md, &t)
-                        .when_some(icon, |el, icon| {
-                            el.child(pink::glyph(icon, ControlSize::Md).text_color(fg))
-                        })
-                        .child(name.to_string())
-                        .on_click({
-                            let state = state.clone();
-                            move |_, window, cx| {
-                                let (handler, id) = state.update(cx, |s, cx| {
-                                    s.autoplay = false;
-                                    s.act(row_id, action);
-                                    cx.notify();
-                                    let id = s
-                                        .rows
-                                        .iter()
-                                        .find(|r| r.key == row_id)
-                                        .map(|r| r.task.id.clone());
-                                    (s.on_action.clone(), id)
-                                });
-                                if let (Some(handler), Some(id)) = (handler, id) {
-                                    handler(&id, action, window, cx);
-                                }
-                            }
-                        })
-                };
-                let actions = match status {
-                    TaskStatus::NeedsYou => vec![
-                        button(
-                            "Approve",
-                            ButtonKind::Accent,
-                            Some(ICON_CHECK),
-                            InboxAction::Approve,
-                        ),
-                        button("Reject", ButtonKind::Secondary, None, InboxAction::Reject),
-                        button(
-                            "Open",
-                            ButtonKind::Ghost,
-                            Some(ICON_OPEN),
-                            InboxAction::Open,
-                        ),
-                    ],
-                    TaskStatus::Running => vec![
-                        button(
-                            "Stop",
-                            ButtonKind::Secondary,
-                            Some(ICON_STOP),
-                            InboxAction::Stop,
-                        ),
-                        button(
-                            "Open",
-                            ButtonKind::Ghost,
-                            Some(ICON_OPEN),
-                            InboxAction::Open,
-                        ),
-                    ],
-                    TaskStatus::Failed => vec![
-                        button(
-                            "Retry",
-                            ButtonKind::Accent,
-                            Some(ICON_RETRY),
-                            InboxAction::Retry,
-                        ),
-                        button(
-                            "Open logs",
-                            ButtonKind::Ghost,
-                            Some(ICON_OPEN),
-                            InboxAction::Open,
-                        ),
-                    ],
-                    TaskStatus::Done | TaskStatus::Cancelled => vec![button(
-                        "Open",
-                        ButtonKind::Secondary,
-                        Some(ICON_OPEN),
-                        InboxAction::Open,
-                    )],
-                };
-                div()
-                    .pl(px(42.))
-                    .pr(px(space::S12))
-                    .opacity(open)
-                    .children(ask)
-                    .children(steps)
-                    .child(
-                        div()
-                            .mt(px(10.))
-                            .flex()
-                            .gap(px(space::S6))
-                            .children(actions),
-                    )
-            });
-
-            let row_el = div()
-                .absolute()
-                .left_0()
-                .right_0()
-                .top(px(y))
-                .h(px(h))
-                .overflow_hidden()
-                .rounded(px(radius::MD))
-                .bg(t.fill(FillTier::Quaternary).opacity(open))
-                .when(ix > 0, |el| {
-                    el.child(
-                        div()
-                            .absolute()
-                            .top_0()
-                            .left(px(space::S12))
-                            .right(px(space::S12))
-                            .h(px(1.))
-                            .bg(t.border.opacity(1.0 - open)),
-                    )
-                })
-                .child(head)
-                .children(detail);
-            // Absolute rows can't take a `top` offset: they fade in instead.
-            rows.push(row_el.with_animation(
-                ElementId::Name(format!("{row_key}-in-{generation}").into()),
-                ROW_IN.with_delay(30 * ix.min(8) as u64).animation(),
-                |el, p| el.opacity(p),
-            ));
-        }
-        let list_h = motion::follow(&format!("{key}-list-h"), top.max(HEAD_H), GLIDE);
-        let empty = ordered.is_empty().then(|| {
-            div()
-                .absolute()
-                .inset_0()
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_size(px(text::BODY))
-                .text_color(t.text_faint)
-                .child("Nothing here right now")
-        });
         let list = div()
-            .relative()
-            .mx(px(space::S8))
-            .my(px(space::S8))
-            .h(px(list_h))
-            .children(rows)
-            .children(empty);
+            .id(ElementId::Name(format!("{key}-list").into()))
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .flex()
+            .flex_col()
+            .pt(px(4.0))
+            .when(is_empty, |el| el.child(empty_state(activity, &t)))
+            .children(list_items);
 
-        // Tab marks are read a frame late: ask for one more until they land.
-        if marks.borrow().bar.is_none() {
-            window.request_animation_frame();
-        }
         motion::keep_alive(window);
-        pink::card(&t)
-            .w(px(WIDTH))
+        // The sidebar column on the shell surface, with pink's left gutter
+        // (and the canvas inset standing in on the right).
+        div()
+            .w(px(self.width))
+            .h(px(self.height))
+            .flex()
+            .flex_col()
+            .px(px(GUTTER))
+            .pb(px(GUTTER))
+            .rounded(px(radius::PANEL))
+            .overflow_hidden()
+            .bg(surface)
             .font_family(pink::SANS)
             .text_color(t.text)
             .child(header)
-            .child(tab_bar)
             .child(list)
     }
 }
@@ -1274,81 +1561,86 @@ impl RenderOnce for AgentInbox {
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |_, _| {
         AgentInbox::new("agent-inbox")
+            .width(288.0)
+            .height(640.0)
             .task(
-                InboxTask::new("coupons", "Migrate legacy coupon codes", "Ledger")
+                InboxTask::new("coupons", "Retire expired coupon codes", "billing-api")
+                    .branch("coupons/retire")
                     .status(TaskStatus::NeedsYou)
-                    .summary("Paused before writing to production")
-                    .ask("Wants to retire 1,180 expired codes in production")
-                    .step("Matched 4,902 codes to the new schema", 410.0)
-                    .step("Dry run on staging passed", 190.0)
-                    .step("Paused for your approval", 72.0)
                     .age(72.0),
             )
             .task(
-                InboxTask::new("crm", "Sync CRM contacts", "Atlas")
+                InboxTask::new("exports", "Pick a date format for exports", "reports-web")
+                    .status(TaskStatus::NeedsReply)
+                    .age(240.0),
+            )
+            .task(
+                InboxTask::new("crm", "Sync CRM contacts", "crm-sync")
+                    .branch("sync/backoff")
                     .status(TaskStatus::Failed)
-                    .summary("Rate limited after 3,400 of 9,100 contacts")
-                    .step("Pulled 9,100 contacts", 1020.0)
-                    .step("Rate limited by the CRM API", 760.0)
                     .age(760.0),
             )
             .task(
-                InboxTask::new("invoices", "Backfill invoice PDFs", "Relay")
-                    .summary("Rendering March and April invoices")
-                    .step("Found 1,904 invoices without a PDF", 180.0)
-                    .step("Rendering March and April invoices", 95.0)
-                    .age(221.0),
-            )
-            .task(
-                InboxTask::new("churn", "Summarize churn interviews", "Quill")
-                    .summary("Reading 14 transcripts")
-                    .step("Collected 14 interview transcripts", 300.0)
-                    .step("Reading 14 transcripts", 120.0)
-                    .age(362.0),
-            )
-            .task(
-                InboxTask::new("flags", "Audit unused feature flags", "Scout")
-                    .summary("Scanning three repositories")
-                    .step("Listed 212 flags from the dashboard", 70.0)
-                    .age(80.0),
-            )
-            .task(
-                InboxTask::new("digest", "Weekly revenue digest", "Quill")
+                InboxTask::new("digest", "Weekly revenue digest", "finance-bots")
                     .status(TaskStatus::Done)
-                    .summary("Posted to the finance channel with 4 charts")
-                    .step("Pulled numbers from billing", 1700.0)
-                    .step("Posted the digest", 1440.0)
                     .age(1440.0),
             )
-            .expanded("coupons")
+            .task(
+                InboxTask::new("invoices", "Backfill invoice PDFs", "billing-api")
+                    .branch("invoices/backfill")
+                    .age(25.0),
+            )
+            .task(InboxTask::new("churn", "Summarize churn interviews", "research").age(130.0))
+            .task(
+                InboxTask::new(
+                    "flags",
+                    "Audit unused feature flags across the web app",
+                    "web-app",
+                )
+                .branch("chore/flag-audit")
+                .age(320.0),
+            )
+            .task(
+                InboxTask::new("postgres", "Upgrade the Postgres driver", "billing-api")
+                    .branch("deps/pg")
+                    .status(TaskStatus::Done)
+                    .seen(true)
+                    .age(7200.0),
+            )
+            .task(
+                InboxTask::new("notes", "Draft the 4.2 release notes", "docs")
+                    .status(TaskStatus::Cancelled)
+                    .age(172_800.0),
+            )
+            .selected("invoices")
             .event(
                 3.5,
-                InboxTask::new("invoices", "Backfill invoice PDFs", "Relay")
-                    .status(TaskStatus::NeedsYou)
-                    .summary("Paused before overwriting files")
-                    .ask("Wants to overwrite 212 PDFs in the archive bucket")
-                    .step("Rendered 1,904 invoices", 2.0)
-                    .step("Paused for your approval", 0.0),
+                InboxTask::new("invoices", "Backfill invoice PDFs", "billing-api")
+                    .branch("invoices/backfill")
+                    .status(TaskStatus::NeedsYou),
             )
             .event(
                 7.5,
-                InboxTask::new("churn", "Summarize churn interviews", "Quill")
-                    .status(TaskStatus::Done)
-                    .summary("Wrote a two-page brief with 9 themes")
-                    .step("Wrote a two-page brief", 0.0),
+                InboxTask::new("churn", "Summarize churn interviews", "research")
+                    .status(TaskStatus::Done),
             )
             .event(
                 11.0,
-                InboxTask::new("tickets", "Triage new support tickets", "Scout")
-                    .summary("Labeling 37 tickets since this morning")
-                    .step("Fetched 37 new tickets", 1.0),
+                InboxTask::new("tickets", "Triage new support tickets", "support-desk"),
             )
             .event(
                 15.5,
-                InboxTask::new("flags", "Audit unused feature flags", "Scout")
-                    .status(TaskStatus::Done)
-                    .summary("Found 23 flags that are safe to delete")
-                    .step("Found 23 flags that are safe to delete", 0.0),
+                InboxTask::new(
+                    "flags",
+                    "Audit unused feature flags across the web app",
+                    "web-app",
+                )
+                .branch("chore/flag-audit")
+                .status(TaskStatus::Done),
+            )
+            .event(
+                20.0,
+                InboxTask::new("exports", "Pick a date format for exports", "reports-web"),
             )
             .autoplay(true)
     })
