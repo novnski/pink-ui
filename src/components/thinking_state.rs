@@ -1,7 +1,7 @@
-//! Thinking State – a pink component.
+//! Thinking State – a Pink component.
 //!
-//! What an assistant is doing while it thinks, drawn the way pink's
-//! transcript draws it (pink: `transcript.rs` `render_tool_group`,
+//! What an assistant is doing while it thinks, drawn the way Pink's
+//! transcript draws it (Pink: `transcript.rs` `render_tool_group`,
 //! `activity_rail`, `chip_header_row`, `render_working_trailer`). There is no
 //! card. Reasoning and the tool calls between thoughts form one tool group:
 //! a quiet 24px plate naming the work ("Thought 2 times · Read 3 files") with
@@ -61,8 +61,8 @@ const ICON_SEARCH: &str = "icons/thinking-state/file-search.svg";
 const ICON_RUN: &str = "icons/thinking-state/terminal.svg";
 const ICON_EDIT: &str = "icons/thinking-state/file-pen.svg";
 const ICON_FETCH: &str = "icons/thinking-state/global.svg";
-/// pink: `file_icons` – the polychrome file-type artwork in a file badge's
-/// well (vscode-symbols; dark variants lifted like pink's `dark_icon_svg`).
+/// Pink: `file_icons` – the polychrome file-type artwork in a file badge's
+/// well (vscode-symbols; dark variants lifted like Pink's `dark_icon_svg`).
 const FILE_TS: &str = "icons/thinking-state/file-ts.svg";
 const FILE_TS_DARK: &str = "icons/thinking-state/file-ts-dark.svg";
 const FILE_PRISMA: &str = "icons/thinking-state/file-prisma.svg";
@@ -70,14 +70,14 @@ const FILE_DATABASE: &str = "icons/thinking-state/file-database.svg";
 const FILE_DOCUMENT: &str = "icons/thinking-state/file-document.svg";
 const FILE_DOCUMENT_DARK: &str = "icons/thinking-state/file-document-dark.svg";
 
-/// pink: `TOOL_GROUP_HEADER_HEIGHT` – the summary row; its plate is 2px
+/// Pink: `TOOL_GROUP_HEADER_HEIGHT` – the summary row; its plate is 2px
 /// shorter.
 const TOOL_GROUP_HEADER_HEIGHT: f32 = 26.;
-/// pink: `TOOL_TREE_ROW_HEIGHT`, `CHIP_CARD_HEIGHT`, `CHIPS_TOP_PAD`.
+/// Pink: `TOOL_TREE_ROW_HEIGHT`, `CHIP_CARD_HEIGHT`, `CHIPS_TOP_PAD`.
 const TOOL_TREE_ROW_HEIGHT: f32 = 32.;
 const CHIP_CARD_HEIGHT: f32 = 30.;
 const CHIPS_TOP_PAD: f32 = 2.;
-/// pink: the activity rail – a 48px gutter, the trunk at x 12.5, a 6px elbow
+/// Pink: the activity rail – a 48px gutter, the trunk at x 12.5, a 6px elbow
 /// to x 28, the glyph at x 32, then 8px to the row text.
 const ACTIVITY_GUTTER_WIDTH: f32 = 48.;
 const ACTIVITY_TEXT_GAP: f32 = 8.;
@@ -86,26 +86,26 @@ const ACTIVITY_BEND_RADIUS: f32 = 6.;
 const ACTIVITY_BRANCH_END_X: f32 = 28.;
 const ACTIVITY_ICON_LEFT: f32 = 32.;
 const ACTIVITY_ICON_SIZE: f32 = icon_size::SM;
-/// pink: `DISCLOSURE_CHEVRON_SIZE` and `chip_header_row`'s 18px trailing
+/// Pink: `DISCLOSURE_CHEVRON_SIZE` and `chip_header_row`'s 18px trailing
 /// tile.
 const DISCLOSURE_CHEVRON_SIZE: f32 = icon_size::XS;
 const TRAIL_TILE: f32 = 18.;
-/// pink: `file_badges::render_file_badge` – a 22px chip, a 20px well, a 14px
+/// Pink: `file_badges::render_file_badge` – a 22px chip, a 20px well, a 14px
 /// file icon.
 const FILE_BADGE_HEIGHT: f32 = 22.;
 const FILE_WELL: f32 = 20.;
 const FILE_ICON: f32 = icon_size::SM;
-/// pink: the "Failed" word, the Stop action – 11px.
+/// Pink: the "Failed" word, the Stop action – 11px.
 const STATUS_WORD_SIZE: f32 = 11.;
-/// pink: `OUTPUT_LINE_HEIGHT`, `OUTPUT_BODY_PAD` (`py 6` × 2),
+/// Pink: `OUTPUT_LINE_HEIGHT`, `OUTPUT_BODY_PAD` (`py 6` × 2),
 /// `DETAIL_SEPARATOR`, `OUTPUT_DETAIL_MAX_LINES` – a thought's text rows.
 const OUTPUT_LINE_HEIGHT: f32 = 18.;
 const OUTPUT_BODY_PAD: f32 = 12.;
 const DETAIL_SEPARATOR: f32 = 1.;
 const OUTPUT_DETAIL_MAX_LINES: usize = 24;
-/// pink: the open body settles 6px as it fades in.
+/// Pink: the open body settles 6px as it fades in.
 const TOOL_BODY_RISE: f32 = 6.;
-/// pink: arriving row content rises 4px.
+/// Pink: arriving row content rises 4px.
 const ROW_CONTENT_RISE: f32 = 4.;
 
 type ToggleHandler = Rc<dyn Fn(bool, &mut Window, &mut App)>;
@@ -129,7 +129,7 @@ pub enum StepKind {
 }
 
 impl StepKind {
-    /// The row label (pink: `tool_chip_content`; a thought reads "Thought
+    /// The row label (Pink: `tool_chip_content`; a thought reads "Thought
     /// process").
     pub fn label(self) -> &'static str {
         match self {
@@ -142,7 +142,7 @@ impl StepKind {
         }
     }
 
-    /// pink: `tool_icon_path` / `activity_glyph`.
+    /// Pink: `tool_icon_path` / `activity_glyph`.
     fn glyph(self) -> &'static str {
         match self {
             Self::Thought => ICON_BRAIN,
@@ -154,7 +154,7 @@ impl StepKind {
         }
     }
 
-    /// pink: `tool_file_path` – the detail is a path, shown as a file badge.
+    /// Pink: `tool_file_path` – the detail is a path, shown as a file badge.
     fn names_file(self) -> bool {
         matches!(self, Self::Read | Self::Edit)
     }
@@ -246,7 +246,7 @@ impl ThinkingStep {
     }
 }
 
-/// One fold (the group's, or a thought row's), pink: `FoldState` plus the
+/// One fold (the group's, or a thought row's), Pink: `FoldState` plus the
 /// group's `rendered_open` / `rendered_height`.
 #[derive(Clone, Copy, Default)]
 struct Fold {
@@ -261,7 +261,7 @@ struct Fold {
 
 impl Fold {
     /// Starts the tween when the open state turned since the last frame,
-    /// whether the reader toggled it or the live rule did (pink:
+    /// whether the reader toggled it or the live rule did (Pink:
     /// `render_tool_group` `rendered_open`).
     fn settle(&mut self, open: bool, now: Instant) {
         if self.rendered_open.is_some_and(|previous| previous != open) {
@@ -280,7 +280,7 @@ impl Fold {
 }
 
 struct State {
-    /// When each step's row began arriving, by step index (pink:
+    /// When each step's row began arriving, by step index (Pink:
     /// `ToolGroupReveal::starts`). Present = seen; `None` = already there
     /// when the component mounted, so it does not animate.
     starts: HashMap<usize, Option<Instant>>,
@@ -325,7 +325,7 @@ impl State {
         }
     }
 
-    /// Records arrivals (pink: the row sync in `transcript.rs`): a new group
+    /// Records arrivals (Pink: the row sync in `transcript.rs`): a new group
     /// reveals its header and then its rows 90ms later, 65ms apart; rows
     /// joining a group already on screen start at once, 65ms apart. A trace
     /// that starts over begins fresh.
@@ -431,7 +431,7 @@ fn plural(n: usize, one: &str, many: &str) -> String {
     }
 }
 
-/// pink: `pink_proto::view::tool_group_summary` – "Ran 2 commands · read 3
+/// Pink: `pink_proto::view::tool_group_summary` – "Ran 2 commands · read 3
 /// files · 1 failed", first letter capitalized.
 fn tools_summary(tools: &[&ThinkingStep]) -> String {
     let count = |kind: StepKind| tools.iter().filter(|s| s.kind == kind).count();
@@ -479,7 +479,7 @@ fn tools_summary(tools: &[&ThinkingStep]) -> String {
     summary
 }
 
-/// pink: `tool_group_summary` – the tools' summary with the thoughts named on
+/// Pink: `tool_group_summary` – the tools' summary with the thoughts named on
 /// the collapsed line ("Thought process", "Thought 3 times · Read 2 files").
 fn group_summary(steps: &[&ThinkingStep]) -> String {
     let tools: Vec<&ThinkingStep> = steps
@@ -502,7 +502,7 @@ fn group_summary(steps: &[&ThinkingStep]) -> String {
     }
 }
 
-/// pink: `tool_group_glyph` – the brain for a thought-only group, the tools'
+/// Pink: `tool_group_glyph` – the brain for a thought-only group, the tools'
 /// own glyph when they share a kind, else layers.
 fn group_glyph(steps: &[&ThinkingStep]) -> &'static str {
     let mut kinds = steps
@@ -516,20 +516,20 @@ fn group_glyph(steps: &[&ThinkingStep]) -> &'static str {
     }
 }
 
-/// pink: `file_badge_name` – the last path component.
+/// Pink: `file_badge_name` – the last path component.
 fn file_name(path: &str) -> &str {
     path.rsplit(['/', '\\'])
         .find(|part| !part.is_empty())
         .unwrap_or(path)
 }
 
-/// pink: `url_host`.
+/// Pink: `url_host`.
 fn url_host(url: &str) -> &str {
     let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
     rest.split(['/', '?', '#']).next().unwrap_or(rest)
 }
 
-/// pink: `live_status` / `tool_status` – the working line's verb and object:
+/// Pink: `live_status` / `tool_status` – the working line's verb and object:
 /// the newest running step, else "Thinking" before anything shows and
 /// "Working" between steps.
 fn live_status(steps: &[ThinkingStep]) -> (&'static str, Option<String>) {
@@ -571,14 +571,14 @@ fn push_run(line: &mut ThoughtLine, text: &str, code: bool) {
     }
 }
 
-/// pink: `thought_cols_for_width` – columns of 12px text (Geist's average
+/// Pink: `thought_cols_for_width` – columns of 12px text (Geist's average
 /// advance ≈ 0.56em) that fit the text column.
 fn thought_cols_for_width(text_width: f32) -> usize {
     let advance = TOOL_LABEL_SIZE * 0.56;
     ((text_width / advance).floor() as usize).clamp(24, 200)
 }
 
-/// pink: `thought_lines` – the thought flattened into lines wrapped at `cols`
+/// Pink: `thought_lines` – the thought flattened into lines wrapped at `cols`
 /// columns (one fixed-height row each, so heights stay analytic), with a
 /// blank row between paragraphs.
 fn thought_lines(text: &str, cols: usize) -> Vec<ThoughtLine> {
@@ -631,7 +631,7 @@ fn thought_lines(text: &str, cols: usize) -> Vec<ThoughtLine> {
     out
 }
 
-/// pink: `cap_thought_lines` – at most 24 rows: the tail while the thought
+/// Pink: `cap_thought_lines` – at most 24 rows: the tail while the thought
 /// streams, the head once it settles; returns the cut count.
 fn cap_thought_lines(mut lines: Vec<ThoughtLine>, live: bool) -> (Vec<ThoughtLine>, usize) {
     let truncated_by = lines.len().saturating_sub(OUTPUT_DETAIL_MAX_LINES);
@@ -648,7 +648,7 @@ fn cap_thought_lines(mut lines: Vec<ThoughtLine>, live: bool) -> (Vec<ThoughtLin
     (lines, truncated_by)
 }
 
-/// pink: `detail_height_for` (`ToolDetail::Thought`) – separator, rows and
+/// Pink: `detail_height_for` (`ToolDetail::Thought`) – separator, rows and
 /// the body's padding.
 fn thought_detail_height(lines: usize, truncated_by: usize) -> f32 {
     let rows = lines + usize::from(truncated_by > 0);
@@ -659,7 +659,7 @@ fn thought_detail_height(lines: usize, truncated_by: usize) -> f32 {
 // Pieces
 // ---------------------------------------------------------------------------
 
-/// pink: `reveal_tool_row` – an arriving row grows to its height.
+/// Pink: `reveal_tool_row` – an arriving row grows to its height.
 fn reveal_tool_row(row: AnyElement, height: f32, progress: f32) -> AnyElement {
     if progress >= 1. {
         return row;
@@ -673,7 +673,7 @@ fn reveal_tool_row(row: AnyElement, height: f32, progress: f32) -> AnyElement {
         .into_any_element()
 }
 
-/// pink: `activity_branch_points` – the elbow from the trunk to the branch
+/// Pink: `activity_branch_points` – the elbow from the trunk to the branch
 /// tip, cut to `progress` of its length.
 fn branch_points(progress: f32) -> Vec<Point<f32>> {
     let mut path: Vec<Point<f32>> = (0..=24)
@@ -712,7 +712,7 @@ fn branch_points(progress: f32) -> Vec<Point<f32>> {
     visible
 }
 
-/// pink: `activity_ribbon` – a 1px ribbon contour; nonzero fill unions the
+/// Pink: `activity_ribbon` – a 1px ribbon contour; nonzero fill unions the
 /// trunk and the elbow so the fork paints one alpha.
 fn ribbon(path: &mut PathBuilder, points: &[Point<Pixels>]) {
     if points.len() < 2 {
@@ -737,7 +737,7 @@ fn ribbon(path: &mut PathBuilder, points: &[Point<Pixels>]) {
     path.close();
 }
 
-/// pink: `activity_rail` – one row's 48px gutter: the trunk drawing down
+/// Pink: `activity_rail` – one row's 48px gutter: the trunk drawing down
 /// from the row above (and on past an open row's text), the elbow to the
 /// branch tip, and the row's glyph at x 32 fading in as the branch lands.
 /// The ribbons are `hairline(0.12)`; `slot` is the glyph or the running
@@ -809,7 +809,7 @@ fn activity_rail(
         )
 }
 
-/// pink: `file_icons::asset_path` for the kinds this component names.
+/// Pink: `file_icons::asset_path` for the kinds this component names.
 fn file_icon(path: &str, dark: bool) -> &'static str {
     let name = file_name(path).to_ascii_lowercase();
     let ext = name.rsplit_once('.').map_or("", |(_, ext)| ext);
@@ -823,11 +823,11 @@ fn file_icon(path: &str, dark: bool) -> &'static str {
     }
 }
 
-/// pink: `file_badges::render_file_badge` (no open route) – a 22px chip on
+/// Pink: `file_badges::render_file_badge` (no open route) – a 22px chip on
 /// `ink(0.06)`: the file-type artwork in a 20px well, then the file name at
 /// `text` 85%.
 fn file_badge(path: &str, t: &Pink) -> Div {
-    // pink: `file_icons::well_bg` – a counter-shade seat for the artwork.
+    // Pink: `file_icons::well_bg` – a counter-shade seat for the artwork.
     let well = pink::grey(if t.dark { 0 } else { 255 }).opacity(0.16);
     div()
         .min_w_0()
@@ -862,7 +862,7 @@ fn file_badge(path: &str, t: &Pink) -> Div {
 
 const HEADER_GROUP: &str = "tool-header";
 
-/// pink: `chip_header_row` for a row on the rail – the label and its detail
+/// Pink: `chip_header_row` for a row on the rail – the label and its detail
 /// at 12/18 in `content_muted` (a file badge for a path), "Failed" in red
 /// when it failed, and for an expandable row the trailing tile: a chevron at
 /// half strength turning with `trail` (0 shut, 1 open). An expandable row's
@@ -964,7 +964,7 @@ fn chip_header_row(step: &ThinkingStep, trail: Option<f32>, t: &Pink) -> Div {
         })
 }
 
-/// pink: `thought_line_text` – a line as shaped runs: faint prose, code in
+/// Pink: `thought_line_text` – a line as shaped runs: faint prose, code in
 /// the mono face.
 fn thought_line_text(line: &ThoughtLine, color: Hsla) -> Option<(SharedString, Vec<TextRun>)> {
     let mut text = String::new();
@@ -987,7 +987,7 @@ fn thought_line_text(line: &ThoughtLine, color: Hsla) -> Option<(SharedString, V
     Some((text.into(), runs))
 }
 
-/// pink: `detail_body` (`ToolDetail::Thought`) – 18px rows of 12px
+/// Pink: `detail_body` (`ToolDetail::Thought`) – 18px rows of 12px
 /// `content_faint` text inside 6px of padding, then a counted tail.
 fn thought_body(lines: &[ThoughtLine], truncated_by: usize, t: &Pink) -> Div {
     let color = t.content_faint;
@@ -1018,7 +1018,7 @@ fn thought_body(lines: &[ThoughtLine], truncated_by: usize, t: &Pink) -> Div {
             }
         }))
         .when(truncated_by > 0, |body| {
-            // pink: `more_lines_row`.
+            // Pink: `more_lines_row`.
             body.child(
                 div()
                     .h(px(OUTPUT_LINE_HEIGHT))
@@ -1076,7 +1076,7 @@ impl RenderOnce for ThinkingState {
         let live = self.steps.is_empty() || self.steps.iter().any(|s| !s.settled());
         state.update(cx, |s, _| s.sync(&visible, live, now));
 
-        // ---- arrival clocks (pink: `tool_row_reveal_progress`,
+        // ---- arrival clocks (Pink: `tool_row_reveal_progress`,
         // `tool_connector_reveal_progress`) -------------------------------
         let (starts, header_start, shimmer_start, clock) = {
             let s = state.read(cx);
@@ -1167,7 +1167,7 @@ impl RenderOnce for ThinkingState {
                 .collect()
         });
 
-        // ---- the group's fold (pink: `render_tool_group`) ------------------
+        // ---- the group's fold (Pink: `render_tool_group`) ------------------
         let auto_open = live || !self.auto_fold;
         let effective_auto_open = auto_open || arrival_pending;
         let revealed_height = CHIPS_TOP_PAD
@@ -1206,7 +1206,7 @@ impl RenderOnce for ThinkingState {
             let summary: SharedString = group_summary(&shown).into();
             let hover_key = format!("tl-{key}-hdr");
 
-            // The summary plate (pink: `render_tool_group` header): a glyph
+            // The summary plate (Pink: `render_tool_group` header): a glyph
             // on the rail's trunk naming what is inside, the summary with a
             // light sweeping across it while the work runs, and a chevron
             // that turns as the group opens. Quiet even when steps failed.
@@ -1350,7 +1350,7 @@ impl RenderOnce for ThinkingState {
                     };
 
                     let Some((lines, truncated_by)) = &row.detail else {
-                        // pink: `tool_chip` – a plain row.
+                        // Pink: `tool_chip` – a plain row.
                         let card = div()
                             .ml(px(ACTIVITY_TEXT_GAP))
                             .my(px((TOOL_TREE_ROW_HEIGHT - CHIP_CARD_HEIGHT) / 2.))
@@ -1373,7 +1373,7 @@ impl RenderOnce for ThinkingState {
                         return reveal_tool_row(el, TOOL_TREE_ROW_HEIGHT, reveal);
                     };
 
-                    // pink: the expandable chip – a header that toggles its
+                    // Pink: the expandable chip – a header that toggles its
                     // body, the thought's text along the same column.
                     let ix = row.ix;
                     let row_open = row.open;
@@ -1458,7 +1458,7 @@ impl RenderOnce for ThinkingState {
                 .child(div().overflow_hidden().h(px(body_height)).child(chips))
         });
 
-        // ---- the working line (pink: `render_working_trailer`) -------------
+        // ---- the working line (Pink: `render_working_trailer`) -------------
         // One line, three tones: the verb shimmering in `content_muted`, the
         // object in `text`, the timer in `content_faint` with tabular digits;
         // Stop appears only under the pointer.
@@ -1684,7 +1684,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             let d = demo.read(cx);
             (d.steps(), d.started)
         };
-        // pink: the user bubble – right-aligned, `wash 0.08`, r16, 14/22.
+        // Pink: the user bubble – right-aligned, `wash 0.08`, r16, 14/22.
         let bubble = div().flex().justify_end().child(
             div()
                 .max_w(px(DEMO_WIDTH * 0.8))
@@ -1692,7 +1692,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                 .py(px(space::S10))
                 .rounded(px(radius::BUBBLE))
                 .bg(t.user_bubble_bg())
-                // pink: an inset edge, so the bubble's height stays exact.
+                // Pink: an inset edge, so the bubble's height stays exact.
                 .when_some(t.user_bubble_edge(), |el, edge| {
                     el.shadow(vec![BoxShadow {
                         color: edge,

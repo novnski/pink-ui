@@ -1,16 +1,16 @@
 //! Context Window – the composer's context chip and what fills the window.
 //!
-//! A pink component. The chip is pink's context-usage chip (pink:
+//! A Pink component. The chip is Pink's context-usage chip (Pink:
 //! context_usage.rs `render`): a 16 px ring and the occupied share, muted,
 //! warning from 75%, danger from 90% and accent while compacting. Resting
-//! the pointer on it shows pink's details card (`UsageCard`) centered above
-//! the chip (pink: popover.rs `tooltip_above`); clicking it opens the window
+//! the pointer on it shows Pink's details card (`UsageCard`) centered above
+//! the chip (Pink: popover.rs `tooltip_above`); clicking it opens the window
 //! card in the same place: the same details, a field of 100
 //! cells (one per percent of the window) filled column by column by the
 //! instructions, tool definitions, attached files, the chat history and
 //! memory, with the reply reserve as hollow cells at the end and a rule
 //! where auto-compaction kicks in; a breakdown whose rows light their
-//! cells; and pink's context tray (pink: pickers.rs
+//! cells; and Pink's context tray (Pink: pickers.rs
 //! `render_context_controls`) with Compact and Clear context. Files can be
 //! dropped from the breakdown. Compacting waves the chat history's cells on
 //! the pulse clock, then sweeps the freed cells clear.
@@ -51,14 +51,14 @@ use crate::{
 pub const NAME: &str = "Context Window";
 pub const DESCRIPTION: &str = "A composer's context chip – a ring and the share in use, muted, then warning and danger as it fills, with the token count on hover – that opens a card mapping the window one cell per percent, with a breakdown that lights its cells, files to drop, and Compact and Clear context";
 
-/// pink: icons.rs `COLLAPSE_ARROWS`, `REFRESH`, `CLOSE`, `PAPERCLIP`, `ARROW_UP`.
+/// Pink: icons.rs `COLLAPSE_ARROWS`, `REFRESH`, `CLOSE`, `PAPERCLIP`, `ARROW_UP`.
 const ICON_COMPACT: &str = "icons/context-window/minimize.svg";
 const ICON_CLEAR: &str = "icons/context-window/refresh.svg";
 const ICON_REMOVE: &str = "icons/context-window/close.svg";
 const ICON_PAPERCLIP: &str = "icons/context-window/paperclip.svg";
 const ICON_ARROW_UP: &str = "icons/context-window/arrow-up.svg";
 
-/// The chip (pink: context_usage.rs `CHIP_PAD_X`, `RING`, `RING_GAP` and the
+/// The chip (Pink: context_usage.rs `CHIP_PAD_X`, `RING`, `RING_GAP` and the
 /// ring's radius and stroke).
 const CHIP_PAD_X: f32 = 6.;
 const RING: f32 = 16.;
@@ -66,7 +66,7 @@ const RING_GAP: f32 = 5.;
 const RING_RADIUS: f32 = 6.;
 const RING_STROKE: f32 = 1.8;
 
-/// The details card's padding and rhythm (pink: `UsageCard::render`).
+/// The details card's padding and rhythm (Pink: `UsageCard::render`).
 const CARD_PAD: f32 = 12.;
 const CARD_GAP: f32 = 8.;
 
@@ -79,15 +79,15 @@ const CELL_RADIUS: f32 = 3.;
 const PITCH: f32 = CELL + CELL_GAP;
 const FIELD_W: f32 = COLS as f32 * PITCH - CELL_GAP;
 const FIELD_H: f32 = ROWS as f32 * PITCH - CELL_GAP;
-/// The card hugs the field, as pink's details card hugs its lines.
+/// The card hugs the field, as Pink's details card hugs its lines.
 const CARD_W: f32 = FIELD_W + 2. * CARD_PAD + 2.;
-/// Breakdown rows: parts (pink: shell/activity_center.rs alert row, 28
+/// Breakdown rows: parts (Pink: shell/activity_center.rs alert row, 28
 /// tall, gap 6), and the files under Attached files.
 const ROW_H: f32 = 28.;
 const ROW_GAP: f32 = 6.;
 const SWATCH: f32 = 8.;
 const FILE_H: f32 = 24.;
-/// The tray's action rows (pink: `render_context_controls`).
+/// The tray's action rows (Pink: `render_context_controls`).
 const TRAY_ROW_H: f32 = 30.;
 /// Share of the window at which the conversation compacts on its own.
 const AUTO_COMPACT: f32 = 0.9;
@@ -98,7 +98,7 @@ const COMPACT_TIME: Duration = Duration::from_millis(1700);
 const SWEEP_STAGGER_MS: u64 = 8;
 /// Unlit cells while a part is inspected.
 const DIMMED: f32 = 0.22;
-/// A status tone's strength across the field (pink: shell/spaces.rs status
+/// A status tone's strength across the field (Pink: shell/spaces.rs status
 /// colors, `warning @ 0.72`).
 const STATUS_STRENGTH: f32 = 0.72;
 
@@ -232,7 +232,7 @@ impl Usage {
         self.system + self.tools + self.files_total() + self.conversation + self.memory
     }
 
-    /// The occupied share (pink: `ContextUsage::fraction`); can pass 1.
+    /// The occupied share (Pink: `ContextUsage::fraction`); can pass 1.
     fn fraction(&self) -> f32 {
         self.used() as f32 / self.capacity as f32
     }
@@ -303,7 +303,7 @@ impl Usage {
     }
 }
 
-/// Thousands grouped with commas (pink: context_usage.rs `with_separators`).
+/// Thousands grouped with commas (Pink: context_usage.rs `with_separators`).
 fn with_separators(count: u32) -> String {
     let digits = count.to_string();
     let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
@@ -316,7 +316,7 @@ fn with_separators(count: u32) -> String {
     grouped
 }
 
-/// The token lines (pink: context_usage.rs `details`).
+/// The token lines (Pink: context_usage.rs `details`).
 fn details(usage: &Usage) -> String {
     let used = usage.used();
     format!(
@@ -327,7 +327,7 @@ fn details(usage: &Usage) -> String {
     )
 }
 
-/// The state tone before flooring (pink: context_usage.rs `tone`): accent
+/// The state tone before flooring (Pink: context_usage.rs `tone`): accent
 /// while compacting, else danger from 90%, warning from 75%, muted below.
 fn tone(compacting: bool, fraction: f32, t: &Pink) -> Hsla {
     if compacting {
@@ -341,7 +341,7 @@ fn tone(compacting: bool, fraction: f32, t: &Pink) -> Hsla {
     }
 }
 
-/// The chip's text (pink: context_usage.rs `label`).
+/// The chip's text (Pink: context_usage.rs `label`).
 fn label(compacting: bool, fraction: f32) -> String {
     if compacting {
         "Compacting…".into()
@@ -359,18 +359,18 @@ struct WindowState {
     opened: u32,
     closing: Option<Instant>,
     trigger: Bounds<Pixels>,
-    /// pink's details card, shown once the pointer has rested on the chip
+    /// Pink's details card, shown once the pointer has rested on the chip
     /// for `TOOLTIP_DELAY`.
     peek: bool,
     /// A compaction started from the tray.
     compacting: Option<Instant>,
-    /// The host reports a compaction running (pink: the chat's compact
+    /// The host reports a compaction running (Pink: the chat's compact
     /// status `Running`).
     held: bool,
-    /// Clear context asks once more before it acts (pink:
+    /// Clear context asks once more before it acts (Pink:
     /// `clear_context_confirmation`).
     confirm_clear: bool,
-    /// What the last context operation did (pink: `compact.detail`).
+    /// What the last context operation did (Pink: `compact.detail`).
     note: Option<SharedString>,
     /// The field before the last change, for the sweep.
     prev: Vec<Cell>,
@@ -393,7 +393,7 @@ impl WindowState {
         self.compacting.is_some() || self.held
     }
 
-    /// The details card's operation line (pink: `compact.detail`, else the
+    /// The details card's operation line (Pink: `compact.detail`, else the
     /// idle sentence).
     fn detail(&self) -> SharedString {
         match &self.note {
@@ -405,7 +405,7 @@ impl WindowState {
         }
     }
 
-    /// The pointer arrived on or left the chip: pink's tooltip delay, then
+    /// The pointer arrived on or left the chip: Pink's tooltip delay, then
     /// the details card; leaving hides it at once.
     fn hover_chip(&mut self, hovered: bool, cx: &mut Context<Self>) {
         if !hovered {
@@ -529,7 +529,7 @@ impl WindowState {
         self.compacting = None;
     }
 
-    /// pink: the tray's Clear context, which asks to be confirmed first.
+    /// Pink: the tray's Clear context, which asks to be confirmed first.
     /// Returns whether the history was cleared.
     fn clear(&mut self, cx: &mut Context<Self>) -> bool {
         if !self.confirm_clear {
@@ -646,7 +646,7 @@ impl ContextWindow {
         self
     }
 
-    /// Whether the chip shows the share beside its ring (pink gives it up
+    /// Whether the chip shows the share beside its ring (Pink gives it up
     /// when the composer row is tight; the card says it either way).
     pub fn show_label(mut self, show: bool) -> Self {
         self.show_label = show;
@@ -659,7 +659,7 @@ impl ContextWindow {
         self
     }
 
-    /// The provider is compacting this chat (pink: compact status
+    /// The provider is compacting this chat (Pink: compact status
     /// `Running`): the chip reads Compacting… in the accent, the chat
     /// history's cells wave and Compact waits, for as long as this is set.
     pub fn compacting(mut self, running: bool) -> Self {
@@ -742,7 +742,7 @@ impl RenderOnce for ContextWindow {
         let fraction = s.usage.fraction();
         let tone = tone(compacting, fraction, &t);
         let chip = chip(&key, s, fraction, tone, self.show_label, &t, &state);
-        // pink: popover.rs `tooltip_above`, the details card centered 7 px
+        // Pink: popover.rs `tooltip_above`, the details card centered 7 px
         // above the chip.
         let peek = (s.peek && !s.open && s.closing.is_none()).then(|| {
             above(
@@ -762,7 +762,7 @@ impl RenderOnce for ContextWindow {
                     &key, s, tone, wave, &props, &state, window, &t, cx,
                 ));
             let inner: AnyElement = match exit {
-                // A dying card takes no clicks (pink: `menu_motion_from`).
+                // A dying card takes no clicks (Pink: `menu_motion_from`).
                 Some(progress) => motion::menu_out(
                     ElementId::NamedInteger("card-out".into(), u64::from(s.opened)),
                     progress,
@@ -776,7 +776,7 @@ impl RenderOnce for ContextWindow {
                 )
                 .into_any_element(),
             };
-            // Centered above the chip, as pink's details card.
+            // Centered above the chip, as Pink's details card.
             above(inner)
         });
 
@@ -804,7 +804,7 @@ impl RenderOnce for ContextWindow {
     }
 }
 
-/// Floats `card` centered above the chip, kept inside the window (pink:
+/// Floats `card` centered above the chip, kept inside the window (Pink:
 /// popover.rs `AboveTooltip`, `snap_to_window_with_margin(8)`).
 fn above(card: impl IntoElement) -> Div {
     div().absolute().top_0().left(relative(0.5)).size_0().child(
@@ -818,10 +818,10 @@ fn above(card: impl IntoElement) -> Div {
     )
 }
 
-/// The context chip (pink: context_usage.rs `render`): the ring, and the
+/// The context chip (Pink: context_usage.rs `render`): the ring, and the
 /// share in tabular digits, both in the state tone floored on the composer
 /// plate; the `element_hover` wash under the pointer, and here also while
-/// its card is open. Resting on it shows pink's details card.
+/// its card is open. Resting on it shows Pink's details card.
 fn chip(
     key: &str,
     s: &WindowState,
@@ -891,7 +891,7 @@ fn chip(
         )
 }
 
-/// The chip's 16 px ring (pink: context_usage.rs `render`'s canvas): the
+/// The chip's 16 px ring (Pink: context_usage.rs `render`'s canvas): the
 /// full track, then the occupied arc from twelve o'clock, radius 6 at a
 /// 1.8 px stroke.
 fn occupancy_ring(fraction: f32, color: Hsla, track: Hsla) -> impl IntoElement {
@@ -929,7 +929,7 @@ fn occupancy_ring(fraction: f32, color: Hsla, track: Hsla) -> impl IntoElement {
     .size(px(RING))
 }
 
-/// pink: context_usage.rs `UsageCard`, the chip's hover card: "Context
+/// Pink: context_usage.rs `UsageCard`, the chip's hover card: "Context
 /// window", the token lines and the operation note, on the tooltip plate.
 fn usage_card(s: &WindowState, t: &Pink) -> Div {
     pink::popover_card(t)
@@ -952,7 +952,7 @@ fn usage_card(s: &WindowState, t: &Pink) -> Div {
         )
 }
 
-/// pink: `UsageCard`'s 12 medium title.
+/// Pink: `UsageCard`'s 12 medium title.
 fn card_title(t: &Pink) -> Div {
     div()
         .text_size(px(12.))
@@ -961,7 +961,7 @@ fn card_title(t: &Pink) -> Div {
         .child("Context window")
 }
 
-/// pink: `UsageCard`'s token lines, 12/19 muted, broken only at their own
+/// Pink: `UsageCard`'s token lines, 12/19 muted, broken only at their own
 /// newline.
 fn card_details(usage: &Usage, t: &Pink) -> Div {
     div()
@@ -972,7 +972,7 @@ fn card_details(usage: &Usage, t: &Pink) -> Div {
         .child(SharedString::from(details(usage)))
 }
 
-/// pink: `UsageCard`'s note, 11/17 faint.
+/// Pink: `UsageCard`'s note, 11/17 faint.
 fn card_note(note: String, t: &Pink) -> Div {
     div()
         .text_size(px(11.))
@@ -981,8 +981,8 @@ fn card_note(note: String, t: &Pink) -> Div {
         .child(SharedString::from(note))
 }
 
-/// The window card: pink's details card on the popover plate, the field and
-/// its breakdown, and pink's context tray.
+/// The window card: Pink's details card on the popover plate, the field and
+/// its breakdown, and Pink's context tray.
 #[allow(clippy::too_many_arguments)]
 fn window_card(
     key: &str,
@@ -997,8 +997,8 @@ fn window_card(
 ) -> Div {
     let hover = s.hover.map(|(spot, _)| spot);
     // The cells carry the ring's tone, floored on the card. Across a whole
-    // field a status tone runs below full strength, as pink's sidebar status
-    // colors do (pink: shell/spaces.rs, warning @ 0.72).
+    // field a status tone runs below full strength, as Pink's sidebar status
+    // colors do (Pink: shell/spaces.rs, warning @ 0.72).
     let strength = if tone == t.text_muted {
         1.
     } else {
@@ -1057,7 +1057,7 @@ fn cell_color(cell: Cell, tone: Hsla, t: &Pink) -> Hsla {
     }
 }
 
-/// The reserve's hollow cells and swatch (pink's dashed "missing" frame,
+/// The reserve's hollow cells and swatch (Pink's dashed "missing" frame,
 /// `hairline(0.14)`, drawn solid at this size).
 fn reserve_edge(t: &Pink) -> Hsla {
     t.hairline(0.14)
@@ -1179,7 +1179,7 @@ fn swatch(color: Option<Hsla>, t: &Pink) -> Div {
         })
 }
 
-/// The breakdown under the field. Rows follow pink's quiet list rows (the
+/// The breakdown under the field. Rows follow Pink's quiet list rows (the
 /// activity center's alert row: 12 label at `text @ 0.85`, 11 meta, the
 /// Tertiary wash on hover) and light their cells; a lit cell washes its
 /// row back. Counts are tabular so they line up.
@@ -1312,9 +1312,9 @@ fn count(tokens: u32, color: Hsla) -> Div {
         .child(with_separators(tokens))
 }
 
-/// An attached file under Attached files: its name in mono (pink keeps mono
+/// An attached file under Attached files: its name in mono (Pink keeps mono
 /// for paths) aligned with the part labels, and its count, which gives way
-/// on hover to pink's row action (pink: shell.rs sidebar row actions, 20 px
+/// on hover to Pink's row action (Pink: shell.rs sidebar row actions, 20 px
 /// at radius 4 with a 12 px glyph) to drop the file. A dropped file folds
 /// away.
 #[allow(clippy::too_many_arguments)]
@@ -1425,7 +1425,7 @@ fn file_row(
                     .child(name.clone()),
             )
             .child(
-                // pink: shell.rs sidebar corner, where the time gives way to
+                // Pink: shell.rs sidebar corner, where the time gives way to
                 // the row's actions on hover.
                 div()
                     .flex_none()
@@ -1451,7 +1451,7 @@ fn file_row(
     )
 }
 
-/// One of the tray's actions (pink: pickers.rs `render_context_controls`
+/// One of the tray's actions (Pink: pickers.rs `render_context_controls`
 /// `compact` / `clear`): 30 tall, `px 8`, radius 6, gap 8, a 13 px glyph in
 /// `text_muted`, the quiet wash on hover; half strength when unavailable.
 fn tray_row(
@@ -1489,7 +1489,7 @@ fn tray_row(
         .child(label)
 }
 
-/// pink: pickers.rs `render_context_controls`, the context tray: a hairline
+/// Pink: pickers.rs `render_context_controls`, the context tray: a hairline
 /// on top, an 11 faint heading (here naming the model), Compact (Compacting…
 /// while it runs, with the reason when there is nothing to compact) and
 /// Clear context, which asks to be confirmed.
@@ -1573,7 +1573,7 @@ fn tray(
         .child(clear)
 }
 
-/// The story's column: a composer under pink's 768 maximum, with room
+/// The story's column: a composer under Pink's 768 maximum, with room
 /// above it for the open card.
 const STORY_W: f32 = 640.;
 const STORY_H: f32 = 720.;
@@ -1642,7 +1642,7 @@ fn story_states(t: &Pink) -> Div {
 }
 
 /// A composer with the chip beside the model picker and its window card
-/// open (pink: composer.rs controls row, opaque `composer_surface`).
+/// open (Pink: composer.rs controls row, opaque `composer_surface`).
 fn story_composer(t: &Pink) -> Div {
     let attach = div()
         .id("story-attach")

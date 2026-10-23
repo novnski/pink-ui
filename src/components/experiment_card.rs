@@ -1,22 +1,22 @@
 //! Experiment Card – an A/B test as a settings card whose header folds open
 //! onto the evidence.
 //!
-//! Folded, the card is one settings row (pink `settings/widgets.rs`
+//! Folded, the card is one settings row (Pink `settings/widgets.rs`
 //! `card_row` around a `row_tile`): the test's name over its status line, the
 //! leading variant's lift as a settings badge, and a disclosure chevron.
 //! Clicking the header (Enter / Space when focused) folds the body open on
-//! pink's tool fold (`transcript.rs`, `motion::fold_progress`): the height
+//! Pink's tool fold (`transcript.rs`, `motion::fold_progress`): the height
 //! glides over `DISCLOSURE` while the body fades in and settles.
 //!
 //! The body is three rows of the same card:
-//! - the cumulative lift chart (pink `shell/usage.rs` `usage_chart`: a
+//! - the cumulative lift chart (Pink `shell/usage.rs` `usage_chart`: a
 //!   three-line grid, monotone cubic lines over 12% areas, a value gutter),
 //!   with a segmented metric switch; pointing at a day draws the guide and
 //!   reads the day out in the row's description;
-//! - one menu row per variant (pink `popover::menu_row`): its monogram, its
+//! - one menu row per variant (Pink `popover::menu_row`): its monogram, its
 //!   value, a confidence interval on a shared lift axis and the lift. Pointing
 //!   at a row picks its line out of the chart; clicking a challenger picks it;
-//! - a footer in pink's question-wizard footer shape: a quiet note on the
+//! - a footer in Pink's question-wizard footer shape: a quiet note on the
 //!   left, Ghost actions and one Primary on the right.
 //!
 //! Keys, inside the card: ←/→ switch the metric, ↑/↓ pick a challenger,
@@ -51,7 +51,7 @@ use crate::{
 pub const NAME: &str = "Experiment Card";
 pub const DESCRIPTION: &str = "An A/B test whose header folds open onto each variant's cumulative lift, value and confidence interval – switch the metric, point at a day for a readout, pick a winner and ship it";
 
-/// Solar `test-tube-minimalistic` (pink's icon family; pink has no test glyph).
+/// Solar `test-tube-minimalistic` (Pink's icon family; Pink has no test glyph).
 const ICON_TEST: &str = "icons/experiment-card/test-tube.svg";
 const ICON_PAUSE: &str = "icons/experiment-card/pause.svg";
 const ICON_CHEVRON: &str = "icons/experiment-card/alt-arrow-right.svg";
@@ -61,10 +61,10 @@ const CARD_W: f32 = 600.;
 const TEXT_STACK_H: f32 = 36.;
 /// The header row: the text stack inside `py 12`.
 const HEADER_H: f32 = TEXT_STACK_H + 2. * layout::ROW_PAD_Y;
-/// The plot (pink `usage.rs` keeps 200 for a full page; a card keeps its
+/// The plot (Pink `usage.rs` keeps 200 for a full page; a card keeps its
 /// value gutter and gap at a card's height).
 const CHART_H: f32 = 120.;
-/// Value-axis gutter and gap (pink `usage.rs` `CHART_AXIS_WIDTH` / `_GAP`).
+/// Value-axis gutter and gap (Pink `usage.rs` `CHART_AXIS_WIDTH` / `_GAP`).
 const CHART_AXIS_W: f32 = 56.;
 const CHART_AXIS_GAP: f32 = 8.;
 /// Axis captions: 11/14, `gap 6` under the plot.
@@ -298,7 +298,7 @@ impl ExperimentCard {
 
 struct State {
     open: bool,
-    /// When the fold last flipped, for pink's fold tween.
+    /// When the fold last flipped, for Pink's fold tween.
     toggled_at: Option<Instant>,
     metric: usize,
     /// The day under the pointer in the chart.
@@ -315,7 +315,7 @@ impl State {
     }
 }
 
-/// Variant colors: the control stays neutral; challengers take pink's data
+/// Variant colors: the control stays neutral; challengers take Pink's data
 /// tones (`usage.rs` `provider_tone`: #5b9bbd, #d97757), then the project
 /// tints.
 fn variant_tone(ix: usize, t: &Pink) -> Hsla {
@@ -328,7 +328,7 @@ fn variant_tone(ix: usize, t: &Pink) -> Hsla {
 }
 
 /// The lift's copy color: the result's tone only when the interval clears
-/// zero (pink's diff counts: `readable_tone(diff_add / diff_del)`).
+/// zero (Pink's diff counts: `readable_tone(diff_add / diff_del)`).
 fn lift_tone(r: &VariantResult, t: &Pink) -> Hsla {
     if !r.significant() {
         t.readable_muted(0.85)
@@ -404,7 +404,7 @@ impl RenderOnce for ExperimentCard {
         let inner_radius = radius::inner(radius::SECTION_CARD, 1.);
         let ring = t.focus_ring();
 
-        // ---- Header: the folded headline (pink settings row + row_tile) ----
+        // ---- Header: the folded headline (Pink settings row + row_tile) ----
         let muted = t.readable_muted(0.85);
         let (glyph, meta): (Option<AnyElement>, String) = match (shipped, self.status) {
             (Some(i), _) => (
@@ -419,7 +419,7 @@ impl RenderOnce for ExperimentCard {
                 if let Some(v) = self.visitors {
                     s.push_str(&format!(" · {} visitors", grouped(v)));
                 }
-                // A live test breathes (pink's working orb).
+                // A live test breathes (Pink's working orb).
                 (Some(loaders::orb_slot(t.accent).into_any_element()), s)
             }
             (None, ExperimentStatus::Paused) => {
@@ -427,7 +427,7 @@ impl RenderOnce for ExperimentCard {
                 if let Some(v) = self.visitors {
                     s.push_str(&format!(" · {} visitors", grouped(v)));
                 }
-                // A waiting state wears its glyph (pink: shape before color).
+                // A waiting state wears its glyph (Pink: shape before color).
                 let pause = svg()
                     .path(ICON_PAUSE)
                     .flex_none()
@@ -474,7 +474,7 @@ impl RenderOnce for ExperimentCard {
                 .cursor_pointer()
                 .focus_visible(move |s| pink::focus_ring(s, ring))
                 .on_key_down(pink::swallow_activation_key)
-                // pink `changes.rs` file header: the fold's header brightens a
+                // Pink `changes.rs` file header: the fold's header brightens a
                 // touch under the pointer.
                 .hover_fill(format!("{key}-head"), t.ink(0.), t.ink(0.05))
                 .on_click(move |_, _, cx| {
@@ -512,7 +512,7 @@ impl RenderOnce for ExperimentCard {
                 .child(disclosure_chevron(progress, &t))
         };
 
-        // ---- Body: chart, variants, footer (folds on pink's tool fold) ----
+        // ---- Body: chart, variants, footer (folds on Pink's tool fold) ----
         let body = (progress > 0.).then(|| {
             let metric = &self.metrics[metric_ix];
             let trend = trend_row(&key, &self, metric_ix, day, &state, &t);
@@ -591,7 +591,7 @@ impl RenderOnce for ExperimentCard {
     }
 }
 
-/// The header's disclosure (pink `changes.rs` file header): alt-arrow-right
+/// The header's disclosure (Pink `changes.rs` file header): alt-arrow-right
 /// at 12 in a 14 slot, `readable_muted(0.7)`, turning a quarter with the fold.
 fn disclosure_chevron(progress: f32, t: &Pink) -> gpui::Div {
     div()
@@ -617,7 +617,7 @@ fn single_line(text: gpui::Div) -> gpui::Div {
         .child(text.flex_1().min_w_0().truncate())
 }
 
-/// The chart row (pink `usage.rs`: the trend row of the summary card): its
+/// The chart row (Pink `usage.rs`: the trend row of the summary card): its
 /// title and a description that reads out the pointed day, the metric switch
 /// as the row's control, then the chart.
 fn trend_row(
@@ -710,7 +710,7 @@ fn trend_row(
         .child(trend_chart(key, card, metric, day, state, t))
 }
 
-/// The lift chart (pink `usage.rs` `usage_chart`): three gridlines in
+/// The lift chart (Pink `usage.rs` `usage_chart`): three gridlines in
 /// `border`, here at +scale, 0 and −scale on a nice-number scale; per
 /// challenger a 12% area to the zero line and a 2 px monotone cubic line
 /// (largest painted first); a 1 px `text_muted` guide on the pointed day; one
@@ -932,11 +932,11 @@ fn hot_key(key: &str, ix: usize) -> String {
     format!("{key}-hot-{ix}")
 }
 
-/// One variant (pink `popover::menu_row`: gap 10, `px 8 / py 6`, radius 8,
+/// One variant (Pink `popover::menu_row`: gap 10, `px 8 / py 6`, radius 8,
 /// 13, `text @ 0.9` → `text`, the hover wash `menu_hover_bg()`, the pick
-/// `card_selected_bg()`): its monogram tile (pink `project_tile`) in the
+/// `card_selected_bg()`): its monogram tile (Pink `project_tile`) in the
 /// variant's tone, its name, its value, the interval and the lift, and a
-/// trailing 14 px check on the pick or the shipped variant (pink
+/// trailing 14 px check on the pick or the shipped variant (Pink
 /// `menu_row_nav`). The control and a shipped test's rows are records, not
 /// controls: same anatomy, no hover, no tab stop.
 #[allow(clippy::too_many_arguments)]
@@ -1122,7 +1122,7 @@ fn variant_row(
         .into_any_element()
 }
 
-/// The footer (pink composer question-wizard footer: a 12 note in
+/// The footer (Pink composer question-wizard footer: a 12 note in
 /// `readable_muted(0.7)` on the left; Ghost actions and one Primary, held at
 /// 45% until there's something to ship, on the right). A new note arrives on
 /// `STATUS_SWAP`.
@@ -1374,7 +1374,7 @@ fn signed_pct(v: f32) -> String {
     format!("{sign}{:.1}%", v.abs() * 100.)
 }
 
-/// 48210 → "48,210" (pink `usage.rs` `count`).
+/// 48210 → "48,210" (Pink `usage.rs` `count`).
 fn grouped(v: u32) -> String {
     let digits = v.to_string();
     let mut out = String::new();

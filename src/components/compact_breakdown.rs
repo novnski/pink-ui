@@ -1,15 +1,15 @@
 //! Compact Breakdown – a total and its parts, laid out like the summary card
-//! on pink's Usage page.
+//! on Pink's Usage page.
 //!
-//! One settings section card (pink: shell/usage.rs `render_usage_page`, the
+//! One settings section card (Pink: shell/usage.rs `render_usage_page`, the
 //! summary `section_card`). The header names the measure over its caption and
-//! carries the period switch (pink's segmented control, as on the Usage
+//! carries the period switch (Pink's segmented control, as on the Usage
 //! page's Period row). The first row holds the total in display type with its
-//! change on the period before, over a split bar: pink's 6 px usage meter
+//! change on the period before, over a split bar: Pink's 6 px usage meter
 //! capsule carrying every part in its series color. Then one row per part,
 //! largest first: its identity tile, series dot and name, its share and
 //! change, and its amount on the right. Switching the period glides the rows
-//! into their new order (pink's sidebar resort glide), and hovering a part on
+//! into their new order (Pink's sidebar resort glide), and hovering a part on
 //! the bar reads it out beside the total, the way the Usage chart's hover
 //! readout does.
 //!
@@ -37,20 +37,20 @@ use crate::{
 };
 
 pub const NAME: &str = "Compact Breakdown";
-pub const DESCRIPTION: &str = "A total and its parts laid out like pink's usage summary – the total in display type over a split bar, one row per part with its series dot, share and change, and a period switch that glides the rows into their new order";
+pub const DESCRIPTION: &str = "A total and its parts laid out like Pink's usage summary – the total in display type over a split bar, one row per part with its series dot, share and change, and a period switch that glides the rows into their new order";
 
-/// The card's width: pink's settings column (720) inside its 32 px gutters.
+/// The card's width: Pink's settings column (720) inside its 32 px gutters.
 const WIDTH: f32 = layout::PAGE_MAX_WIDTH - 2. * 32.;
 /// The split bar's width: the card's content box inside the row padding.
 const BAR_W: f32 = WIDTH - 2. - 2. * layout::ROW_PAD_X;
-/// The split bar's capsule (pink: usage.rs `usage_meter`, 6 pt) and the
+/// The split bar's capsule (Pink: usage.rs `usage_meter`, 6 pt) and the
 /// taller strip around it that catches the pointer.
 const BAR_H: f32 = 6.;
 const BAR_HIT: f32 = 12.;
-/// Parts below this share draw nothing on the bar (pink's meter: "nothing
+/// Parts below this share draw nothing on the bar (Pink's meter: "nothing
 /// drawn below 0.5%, no false stub").
 const BAR_MIN_SHARE: f64 = 0.005;
-/// A part row's height (pink `card_row` around a 13/18 title and a 12/16
+/// A part row's height (Pink `card_row` around a 13/18 title and a 12/16
 /// description 2 apart, plus its 1 px top hairline): the resort glide moves
 /// a row this far per rank.
 const ROW_H: f32 = 2. * layout::ROW_PAD_Y + 18. + 2. + 16. + 1.;
@@ -175,7 +175,7 @@ impl CompactBreakdown {
         self
     }
 
-    /// Formats amounts (default pink's compact counts: "61.2M", "1.46B").
+    /// Formats amounts (default Pink's compact counts: "61.2M", "1.46B").
     pub fn format(mut self, format: impl Fn(f64) -> String + 'static) -> Self {
         self.format = Rc::new(format);
         self
@@ -249,7 +249,7 @@ impl RenderOnce for CompactBreakdown {
                 },
             )
         });
-        // pink: settings/widgets.rs `section_header`, the switch as its
+        // Pink: settings/widgets.rs `section_header`, the switch as its
         // trailing action.
         let header = pink::section_header(self.title.clone(), self.subtitle.clone(), &t)
             .children(switch.map(|s| pink::row_controls().child(s)));
@@ -279,7 +279,7 @@ impl RenderOnce for CompactBreakdown {
         let tones: Vec<Hsla> = (0..count)
             .map(|i| self.parts[i].color.unwrap_or_else(|| series_tone(i, &t)))
             .collect();
-        // Largest first; a part with nothing this period has no row (pink
+        // Largest first; a part with nothing this period has no row (Pink
         // skips providers with no usage).
         let mut order: Vec<usize> = (0..count).filter(|&i| value_of(i) > 0.).collect();
         order.sort_by(|a, b| value_of(*b).total_cmp(&value_of(*a)));
@@ -321,7 +321,7 @@ impl RenderOnce for CompactBreakdown {
             &state,
             &t,
         );
-        // pink: usage.rs summary, the total row (Display, forced semibold).
+        // Pink: usage.rs summary, the total row (Display, forced semibold).
         let total_row = pink::card_row(false, &t)
             .child(
                 div()
@@ -332,7 +332,7 @@ impl RenderOnce for CompactBreakdown {
                     .child((self.format)(total)),
             )
             .when_some(readout, |row, text| {
-                // pink: usage.rs chart row's hover readout (11/14 in
+                // Pink: usage.rs chart row's hover readout (11/14 in
                 // `readable_muted(0.85)`), swapping like the working line's
                 // status (`STATUS_SWAP`).
                 let id = loaders::label_id(&format!("{key}-readout"), &text);
@@ -372,7 +372,7 @@ impl RenderOnce for CompactBreakdown {
     }
 }
 
-/// A part's row on the summary card (pink: usage.rs summary provider row):
+/// A part's row on the summary card (Pink: usage.rs summary provider row):
 /// the identity tile, the series dot beside the name over the share line,
 /// and the amount at 13/18 medium on the right.
 fn part_row(part: &BreakdownPart, tone: Hsla, detail: String, amount: String, t: &Pink) -> Div {
@@ -408,7 +408,7 @@ fn part_row(part: &BreakdownPart, tone: Hsla, detail: String, amount: String, t:
         )
 }
 
-/// A part's identity tile (pink: usage.rs `provider_tile`): the row tile's
+/// A part's identity tile (Pink: usage.rs `provider_tile`): the row tile's
 /// 28 pt frame, radius 7, `border` over `fill(Quaternary)`, with the 16 pt
 /// glyph at full text strength so it reads as identity.
 fn part_tile(icon: SharedString, t: &Pink) -> Div {
@@ -431,7 +431,7 @@ fn part_tile(icon: SharedString, t: &Pink) -> Div {
         )
 }
 
-/// The split bar: pink's 6 pt usage meter capsule (usage.rs
+/// The split bar: Pink's 6 pt usage meter capsule (usage.rs
 /// `usage_meter_with`) carrying the parts in rank order, each in its series
 /// color with 2 px between them, on the meter's `fill(Secondary)` track when
 /// there is nothing to split. `segments` are `(part, id, share, tone)` with
@@ -499,9 +499,9 @@ fn split_bar(
         )
 }
 
-/// A part's series color: pink's usage series (usage.rs `provider_tone`:
+/// A part's series color: Pink's usage series (usage.rs `provider_tone`:
 /// `text`, then its blue and coral), then the project hues green, amber,
-/// violet and pink (`sidebar_projects::PROJECT_HUES`), floored for marks.
+/// violet and Pink (`sidebar_projects::PROJECT_HUES`), floored for marks.
 fn series_tone(index: usize, t: &Pink) -> Hsla {
     match index {
         0 => t.text,
@@ -511,7 +511,7 @@ fn series_tone(index: usize, t: &Pink) -> Hsla {
     }
 }
 
-/// pink `usage.rs` widths for its segmented rows: 150 for two options, 216
+/// Pink `usage.rs` widths for its segmented rows: 150 for two options, 216
 /// for three, 300 for four; 75 per option past that.
 fn segmented_width(count: usize) -> f32 {
     match count {
@@ -522,7 +522,7 @@ fn segmented_width(count: usize) -> f32 {
     }
 }
 
-/// A share as pink's Usage page writes it (usage.rs `usage_percent`):
+/// A share as Pink's Usage page writes it (usage.rs `usage_percent`):
 /// one decimal, "<0.1%" for slivers.
 fn usage_percent(share: f64) -> String {
     let percent = share * 100.;
@@ -557,7 +557,7 @@ fn total_change(growth: f64) -> String {
     }
 }
 
-/// pink's compact counts (usage.rs `compact_tokens`): K/M/B/T with two
+/// Pink's compact counts (usage.rs `compact_tokens`): K/M/B/T with two
 /// decimals under 10, one under 100 and none above, trailing zeros trimmed;
 /// smaller counts grouped by thousands.
 fn compact_number(value: f64) -> String {
@@ -581,7 +581,7 @@ fn compact_number(value: f64) -> String {
             return format!("{trimmed}{suffix}");
         }
     }
-    // pink: usage.rs `count`.
+    // Pink: usage.rs `count`.
     let digits = (value as u64).to_string();
     let mut grouped = String::new();
     for (ix, ch) in digits.chars().enumerate() {

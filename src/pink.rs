@@ -4,37 +4,37 @@
 //! the way the PINK desktop app draws itself, and this module is that app's
 //! kit, value for value:
 //!
-//! - **Tokens** ([`Pink`]): the palette pink paints at runtime for its default
+//! - **Tokens** ([`Pink`]): the palette Pink paints at runtime for its default
 //!   theme (`pink-dark` / `pink-light` with the default Violet accent), not
-//!   the fallback literals in pink's `Theme::dark()`/`Theme::light()`. At boot
-//!   pink resolves the registry variant (`crates/theme/src/builtins.rs`)
+//!   the fallback literals in Pink's `Theme::dark()`/`Theme::light()`. At boot
+//!   Pink resolves the registry variant (`crates/theme/src/builtins.rs`)
 //!   through `Theme::from_variant` and then hardens every secondary tone
 //!   against the surfaces it sits on (`harden_composited_foregrounds`,
 //!   `crates/ui/src/theme.rs`). GPUI here has no backdrop blur, so the kit
-//!   reproduces pink's **Opaque** surface treatment (Settings → Surface →
+//!   reproduces Pink's **Opaque** surface treatment (Settings → Surface →
 //!   Opaque): every plate is an opaque color or a box shadow, and the text
-//!   tones are the ones pink hardens against those same plates.
-//! - **Paint helpers** on [`Pink`]: pink's `ink` / `hairline` / `wash` /
+//!   tones are the ones Pink hardens against those same plates.
+//! - **Paint helpers** on [`Pink`]: Pink's `ink` / `hairline` / `wash` /
 //!   `scrim` tiers, the text-tinted [`FillTier`] ladder and `separator`, the
 //!   selection washes and rings, and the contrast floors (`readable_muted`,
 //!   `readable_tone`, `readable_on`, `focus_ring`, `on_danger`), derived at
-//!   paint time with pink's own `legible_on` over pink's reading surfaces.
+//!   paint time with Pink's own `legible_on` over Pink's reading surfaces.
 //! - **Ladders**: [`radius`], [`space`], [`text`] / [`TextStyle`],
 //!   [`icon_size`], the chrome control ladder ([`chrome`]) and the layout
-//!   constants ([`layout`]), from pink's `theme`, `typography`, `icons`,
+//!   constants ([`layout`]), from Pink's `theme`, `typography`, `icons`,
 //!   `surface_chrome` and `popover` modules.
 //! - **Elevation**: `menu_shadows`, `tooltip_shadows`, GPUI's
 //!   `shadow_sm/md/lg`, the 2 px inset focus ring and the 1 px selection ring,
-//!   verbatim (GPUI `blur_radius` is a Gaussian sigma, as pink writes it).
-//! - **Control kit** (`controls`, `surfaces`, re-exported here): pink's
+//!   verbatim (GPUI `blur_radius` is a Gaussian sigma, as Pink writes it).
+//! - **Control kit** (`controls`, `surfaces`, re-exported here): Pink's
 //!   `button` module (buttons, icon buttons, selects, chips, segmented
 //!   controls, selection rings), settings widgets (switch, section cards and
 //!   rows, badges), popover kit (popover card, menu rows, headings,
 //!   separators, kbd hints, key caps, field frames, tooltips, dialogs).
 //!
-//! Sizes are px at pink's default interface size: pink writes them as
+//! Sizes are px at Pink's default interface size: Pink writes them as
 //! `ui_rems(n)` = `rems(n / 16)` with the window rem at the 16 px default, so
-//! `ui_rems(13.)` paints 13 px. Corners and hairlines are px in pink too.
+//! `ui_rems(13.)` paints 13 px. Corners and hairlines are px in Pink too.
 //!
 //! ```ignore
 //! let t = Pink::get(cx);
@@ -74,9 +74,9 @@ pub const MONO_FALLBACK: &str = "Menlo";
 // Ladders
 // ---------------------------------------------------------------------------
 
-/// Corner radius ladder (pink `theme::radius`, audit DS-10): pick by role, and
+/// Corner radius ladder (Pink `theme::radius`, audit DS-10): pick by role, and
 /// give a nested surface [`radius::inner`] of its container so corners stay
-/// concentric. The named radii below are the ones pink's builders use.
+/// concentric. The named radii below are the ones Pink's builders use.
 pub mod radius {
     /// Inline code, kbd hints, checkboxes, file wells, progress tracks.
     pub const XS: f32 = 4.0;
@@ -137,7 +137,7 @@ pub mod radius {
     }
 }
 
-/// Spacing on the 4 pt grid (pink `theme::space`, audit DS-11). `S6` is the
+/// Spacing on the 4 pt grid (Pink `theme::space`, audit DS-11). `S6` is the
 /// icon-to-label gap, `S10` a control's horizontal padding.
 pub mod space {
     pub const S2: f32 = 2.0;
@@ -163,7 +163,7 @@ pub mod space {
     pub const TEXT_STACK_GAP: f32 = 1.0;
 }
 
-/// Type sizes (pink `typography::TextStyle`, audit DS-01). Prefer
+/// Type sizes (Pink `typography::TextStyle`, audit DS-01). Prefer
 /// [`TextStyle`] with [`TypeStyleExt::type_style`], which sets the size, the
 /// line height and the weight together.
 pub mod text {
@@ -186,22 +186,22 @@ pub mod text {
     /// 26/32 bold: empty states, hero.
     pub const DISPLAY: f32 = 26.0;
 
-    /// Kept for older call sites: pink's 14 pt step is `Prose`.
+    /// Kept for older call sites: Pink's 14 pt step is `Prose`.
     pub const CALLOUT: f32 = PROSE;
-    /// Kept for older call sites: pink has no 16 pt step; card and dialog
+    /// Kept for older call sites: Pink has no 16 pt step; card and dialog
     /// titles are `Title3` (15/20 semibold).
     pub const TITLE: f32 = TITLE3;
-    /// Kept for older call sites: pink's 20 pt step is `Title1`.
+    /// Kept for older call sites: Pink's 20 pt step is `Title1`.
     pub const LARGE: f32 = TITLE1;
 
-    /// Code blocks and diffs (`CODE_FONT_SIZE_DEFAULT`; absolute in pink,
+    /// Code blocks and diffs (`CODE_FONT_SIZE_DEFAULT`; absolute in Pink,
     /// never scaled with the interface size).
     pub const CODE: f32 = 12.5;
     /// The terminal (`TERMINAL_FONT_SIZE_DEFAULT`).
     pub const TERMINAL: f32 = 13.0;
 }
 
-/// The interface type scale (pink `typography::TextStyle`): every step pairs a
+/// The interface type scale (Pink `typography::TextStyle`): every step pairs a
 /// size with its line height and default weight. Apply it with
 /// [`TypeStyleExt::type_style`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -260,7 +260,7 @@ impl TextStyle {
 }
 
 /// `.type_style(TextStyle::Body)`: size, line height and weight together
-/// (pink `typography::TypeStyleExt`).
+/// (Pink `typography::TypeStyleExt`).
 pub trait TypeStyleExt: Styled + Sized {
     fn type_style(self, style: TextStyle) -> Self {
         self.text_size(px(style.size()))
@@ -272,13 +272,13 @@ pub trait TypeStyleExt: Styled + Sized {
 impl<T: Styled> TypeStyleExt for T {}
 
 /// Tabular figures for counters and timers, so ticking digits never shift
-/// the text after them (pink `typography::tabular_figures`):
+/// the text after them (Pink `typography::tabular_figures`):
 /// `.font_features(pink::tabular_figures())`.
 pub fn tabular_figures() -> FontFeatures {
     FontFeatures(Arc::new(vec![("tnum".into(), 1)]))
 }
 
-/// Icon size ladder (pink `icons::size`, audit DS-12), paired with the type
+/// Icon size ladder (Pink `icons::size`, audit DS-12), paired with the type
 /// scale. Pink's glyphs are Solar Linear, 24×24 with 1.5 strokes.
 pub mod icon_size {
     /// Filled status glyphs beside caption text only.
@@ -292,7 +292,7 @@ pub mod icon_size {
 }
 
 /// The chrome control ladder for toolbars, tab strips and sidebar rows
-/// (pink `surface_chrome`, audit SH-10). Push buttons use [`ControlSize`].
+/// (Pink `surface_chrome`, audit SH-10). Push buttons use [`ControlSize`].
 pub mod chrome {
     /// Inline row actions, tab close buttons, chips.
     pub const CONTROL_S: f32 = 20.0;
@@ -314,7 +314,7 @@ pub mod chrome {
     pub const CONTENT_INSET: f32 = 12.0;
 }
 
-/// Layout constants from pink's `theme`, `popover`, `settings` and `shell`.
+/// Layout constants from Pink's `theme`, `popover`, `settings` and `shell`.
 pub mod layout {
     use std::time::Duration;
 
@@ -378,14 +378,14 @@ pub mod layout {
 }
 
 // ---------------------------------------------------------------------------
-// Color math (pink `theme.rs`, verbatim)
+// Color math (Pink `theme.rs`, verbatim)
 // ---------------------------------------------------------------------------
 
 /// WCAG 2.2 AA minimum for normal-size text.
 pub const TEXT_CONTRAST_MIN: f32 = 4.5;
 /// WCAG 2.2 AA minimum for meaningful non-text: icons, focus visuals.
 pub const NON_TEXT_CONTRAST_MIN: f32 = 3.0;
-/// What derived text colors aim for (pink `TEXT_CONTRAST_TARGET`).
+/// What derived text colors aim for (Pink `TEXT_CONTRAST_TARGET`).
 pub const TEXT_CONTRAST_TARGET: f32 = 4.6;
 /// What derived glyph and ring colors aim for (`NON_TEXT_CONTRAST_TARGET`).
 pub const NON_TEXT_CONTRAST_TARGET: f32 = 3.1;
@@ -397,7 +397,7 @@ pub const SCRIM_ALPHA_DARK: f32 = 0.60;
 /// The scrim behind dialogs and palettes (`popover::MODAL_SCRIM`).
 pub const MODAL_SCRIM: f32 = 0.35;
 
-/// OKLCH → color (CSS Color 4 matrices), as pink writes its oklch tokens.
+/// OKLCH → color (CSS Color 4 matrices), as Pink writes its oklch tokens.
 pub fn oklch(l: f32, c: f32, h_deg: f32) -> Hsla {
     let h = h_deg.to_radians();
     let (a, b) = (c * h.cos(), c * h.sin());
@@ -440,7 +440,7 @@ fn hex(rgb: u32) -> Hsla {
     gpui::rgb(rgb).into()
 }
 
-/// `#rrggbbaa`: pink's palette stores 8-bit alphas (`Color::with_alpha`).
+/// `#rrggbbaa`: Pink's palette stores 8-bit alphas (`Color::with_alpha`).
 fn hexa(rgb: u32, alpha: u8) -> Hsla {
     Hsla {
         a: alpha as f32 / 255.0,
@@ -524,7 +524,7 @@ pub fn painted_contrast(fg: Hsla, bg: Hsla) -> f32 {
 }
 
 /// Composite `fg` (maybe translucent) over an opaque `bg`: the color the eye
-/// receives (pink `theme::flatten`).
+/// receives (Pink `theme::flatten`).
 pub fn flatten(fg: Hsla, bg: Hsla) -> Hsla {
     let a = fg.a.clamp(0.0, 1.0);
     let [fr, fg_, fb] = hsl_to_rgb(fg.h, fg.s, fg.l);
@@ -538,7 +538,7 @@ pub fn flatten(fg: Hsla, bg: Hsla) -> Hsla {
 }
 
 /// A label for solid `fills`: `authored` when it reaches the text target on
-/// all of them, otherwise white or black, whichever reads better (pink
+/// all of them, otherwise white or black, whichever reads better (Pink
 /// `theme::on_fill`).
 pub fn on_fill(authored: Hsla, fills: &[Hsla]) -> Hsla {
     let worst = |candidate: Hsla| {
@@ -560,7 +560,7 @@ pub fn on_fill(authored: Hsla, fills: &[Hsla]) -> Hsla {
 
 /// `color` as asked when it clears `min` on every `surfaces` entry; else its
 /// opacity rises, then its lightness moves (toward the side `text` reads on,
-/// then the other) until it does; hue and saturation are kept (pink
+/// then the other) until it does; hue and saturation are kept (Pink
 /// `theme::legible_on`).
 pub fn legible_on(color: Hsla, text: Hsla, surfaces: &[Hsla], min: f32) -> Hsla {
     let worst = |candidate: Hsla| {
@@ -604,7 +604,7 @@ pub fn legible_on(color: Hsla, text: Hsla, surfaces: &[Hsla], min: f32) -> Hsla 
 }
 
 /// A shadow with GPUI's own blur semantics (a Gaussian sigma), exactly as
-/// pink writes its elevations. `primitives::shadow` converts CSS values
+/// Pink writes its elevations. `primitives::shadow` converts CSS values
 /// instead, which would halve these.
 fn shadow(x: f32, y: f32, sigma: f32, spread: f32, color: Hsla) -> BoxShadow {
     BoxShadow {
@@ -628,7 +628,7 @@ fn inset_ring(width: f32, color: Hsla) -> BoxShadow {
     }
 }
 
-/// GPUI's `shadow_sm()` as a list (pink's switch knob, small pills).
+/// GPUI's `shadow_sm()` as a list (Pink's switch knob, small pills).
 pub fn shadow_sm() -> Vec<BoxShadow> {
     vec![
         shadow(0., 1., 3., 0., hsla(0., 0., 0., 0.1)),
@@ -655,7 +655,7 @@ pub fn shadow_lg() -> Vec<BoxShadow> {
 
 /// The keyboard focus ring for `.focus_visible(..)`: a 2 px inset shadow in
 /// `color`, above the fill and below the children, adding nothing to layout
-/// (pink `theme::focus_ring`):
+/// (Pink `theme::focus_ring`):
 /// `.focus_visible(move |s| pink::focus_ring(s, ring))` with
 /// `let ring = t.focus_ring();`.
 pub fn focus_ring(style: gpui::StyleRefinement, color: Hsla) -> gpui::StyleRefinement {
@@ -730,7 +730,7 @@ pub struct Syntax {
 /// Pink's tokens for the active light/dark mode: the runtime palette of
 /// `pink-dark` / `pink-light` with the Violet accent, opaque treatment.
 ///
-/// Read them with [`Pink::get`]. Colors pink derives at paint time are
+/// Read them with [`Pink::get`]. Colors Pink derives at paint time are
 /// methods: [`fill`](Self::fill), [`separator`](Self::separator),
 /// [`focus_ring`](Self::focus_ring), the `readable_*` floors and the
 /// surface recipes.
@@ -793,7 +793,7 @@ pub struct Pink {
     pub success_muted: Hsla,
     /// The working indicator's tone (`activity`): the accent.
     pub busy: Hsla,
-    /// The accent glyph palette `[light, mid, deep]`, in pink's
+    /// The accent glyph palette `[light, mid, deep]`, in Pink's
     /// `GlyphPalette::rows` order (loaders, the mini glyph spinner).
     pub glyph: [Hsla; 3],
     /// The input tint (`raised` at 72% on dark). Paint
@@ -824,9 +824,9 @@ pub struct Pink {
 
 thread_local! {
     /// The appearance of the last [`Pink::get`], for context-free builders
-    /// such as [`glyph`] (pink's `CURRENT_GLYPH_TONE` and friends).
+    /// such as [`glyph`] (Pink's `CURRENT_GLYPH_TONE` and friends).
     static CURRENT_DARK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    /// Paint-time memo for derived foregrounds (pink `Theme::memo_color`).
+    /// Paint-time memo for derived foregrounds (Pink `Theme::memo_color`).
     static MEMO: RefCell<HashMap<(u64, Vec<u32>), Hsla>> = RefCell::new(HashMap::new());
 }
 
@@ -870,7 +870,7 @@ impl Pink {
             border_strong: hsla(0.0, 0.0, 1.0, 0.4263),
             text,
             text_muted: hex(0xa9a9ae),
-            // #85858a hardened to 4.6:1: five of pink's 24 lightness steps
+            // #85858a hardened to 4.6:1: five of Pink's 24 lightness steps
             // toward white (#9e9ea2).
             text_faint: hsla(0.666_667, 0.020_921, 0.629_004, 1.0),
             text_dim: hex(0xa9a9ae),
@@ -934,7 +934,7 @@ impl Pink {
             border_strong: hsla(0.0, 0.0, 0.0, 0.4537),
             text,
             text_muted: hex(0x445064),
-            // #586579 hardened to 4.6:1: one of pink's 24 lightness steps
+            // #586579 hardened to 4.6:1: one of Pink's 24 lightness steps
             // toward black (#546174).
             text_faint: hsla(0.601_010, 0.157_895, 0.392_729, 1.0),
             text_dim: hex(0x445064),
@@ -1030,7 +1030,7 @@ impl Pink {
         table.map(hex)
     }
 
-    // ---- ink tiers (pink `theme::ink` / `hairline` / `wash` / `scrim`) ----
+    // ---- ink tiers (Pink `theme::ink` / `hairline` / `wash` / `scrim`) ----
     // Alphas are quoted in dark-mode terms; the light value is derived.
 
     /// Translucent fill ink for plates and states: white on dark, black on
@@ -1074,7 +1074,7 @@ impl Pink {
     }
 
     /// The recessed band behind a palette or picker header/footer strip
-    /// (pink `theme::band()`): black 16% / 4.5%.
+    /// (Pink `theme::band()`): black 16% / 4.5%.
     pub fn band(&self) -> Hsla {
         hsla(0.0, 0.0, 0.0, if self.dark { 0.16 } else { 0.045 })
     }
@@ -1175,7 +1175,7 @@ impl Pink {
 
     // ---- surfaces as composited (opaque treatment) ----
 
-    /// The shell chrome as painted: `surface` (pink `chrome_surface`; under
+    /// The shell chrome as painted: `surface` (Pink `chrome_surface`; under
     /// frost this is the glass over the desktop).
     pub fn chrome_surface(&self) -> Hsla {
         flatten(self.surface, self.adverse_backdrop())
@@ -1212,7 +1212,7 @@ impl Pink {
         flatten(self.input_bg, self.bg)
     }
 
-    /// The popover, menu, dialog and palette plate (pink
+    /// The popover, menu, dialog and palette plate (Pink
     /// `popover::surface_bg`; opaque: the input plate).
     pub fn surface_bg(&self) -> Hsla {
         self.input_glass_bg()
@@ -1235,7 +1235,7 @@ impl Pink {
     /// The opaque colors text sits on, as composited: chrome, its hover and
     /// selected washes, the canvas, the code plate, raised chips, floating
     /// cards, the input plate, settings cards and dialogs over their scrim
-    /// (pink `Theme::reading_surfaces`, opaque treatment). Derived
+    /// (Pink `Theme::reading_surfaces`, opaque treatment). Derived
     /// foregrounds are floored on the worst of them.
     pub fn reading_surfaces(&self) -> [Hsla; 10] {
         let chrome = self.chrome_surface();
@@ -1257,7 +1257,7 @@ impl Pink {
         ]
     }
 
-    // ---- contrast floors (pink `Theme::readable_*`) ----
+    // ---- contrast floors (Pink `Theme::readable_*`) ----
 
     /// `color` as asked when it clears `min` on every reading surface;
     /// otherwise raised (alpha, then lightness) until it does.
@@ -1371,7 +1371,7 @@ impl Pink {
     }
 
     /// The default tone of a glyph with no other role: `readable_muted(0.95)`
-    /// (pink `current_glyph_tone`).
+    /// (Pink `current_glyph_tone`).
     pub fn glyph_tone(&self) -> Hsla {
         self.readable_muted(0.95)
     }
@@ -1379,7 +1379,7 @@ impl Pink {
     // ---- elevation ----
 
     /// Floating menus and popovers: a soft ambient drop plus a tight contact
-    /// shadow (pink `menu_shadows`, painted on opaque cards).
+    /// shadow (Pink `menu_shadows`, painted on opaque cards).
     pub fn menu_shadows(&self) -> Vec<BoxShadow> {
         let (ambient, contact) = if self.dark {
             (0.45, 0.30)
@@ -1392,7 +1392,7 @@ impl Pink {
         ]
     }
 
-    /// Tooltips and hover cards: one step below menus (pink
+    /// Tooltips and hover cards: one step below menus (Pink
     /// `tooltip_shadows`).
     pub fn tooltip_shadows(&self) -> Vec<BoxShadow> {
         let alpha = if self.dark { 0.35 } else { 0.12 };
@@ -1400,7 +1400,7 @@ impl Pink {
     }
 
     /// The selection outline for rows and chips inside a floating card: a
-    /// 1 px inset ring, white 9% dark, a flat black 7% light (pink
+    /// 1 px inset ring, white 9% dark, a flat black 7% light (Pink
     /// `card_selected_shadows` / `glass_selected_shadows`).
     pub fn card_selected_shadows(&self) -> Vec<BoxShadow> {
         let color = if self.dark {
@@ -1487,7 +1487,7 @@ impl Pink {
 }
 
 /// Hue and capped saturation of the text color: fills carry the palette's
-/// tint (pink `fill_tint`).
+/// tint (Pink `fill_tint`).
 fn fill_tint(text: Hsla) -> (f32, f32) {
     (text.h, text.s.min(0.35))
 }

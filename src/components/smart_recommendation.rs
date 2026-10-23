@@ -1,21 +1,21 @@
 //! Smart Recommendation – one suggested next step and its reason, drawn the
-//! way pink's Git card recommends its next step (pink
+//! way Pink's Git card recommends its next step (Pink
 //! `changes/git_actions.rs`).
 //!
-//! Two parts are pink's own, copied as they are:
+//! Two parts are Pink's own, copied as they are:
 //!
-//! - the next-step line (pink `render_next_git_action`): the step's label in
+//! - the next-step line (Pink `render_next_git_action`): the step's label in
 //!   medium `text` beside its reason in `text_dim`, 11 px, gap 6;
 //! - the rule that the accent belongs to the button that performs the step
-//!   (pink `git_step_button`): Accept wears the Git card's accent plate while
+//!   (Pink `git_step_button`): Accept wears the Git card's accent plate while
 //!   the recommendation is the shown option, and turns back into the plain
 //!   card button once an alternative is picked. Both are the Git card's 26 px
-//!   buttons (pink `git_button` / `git_primary_button`).
+//!   buttons (Pink `git_button` / `git_primary_button`).
 //!
-//! The rest is pink's language around them: the card is the settings card
+//! The rest is Pink's language around them: the card is the settings card
 //! surface with the Git card's insets; its header folds the line away on the
-//! changes pane's file-header recipe (pink `changes.rs render_file_header`);
-//! the confidence signal is pink's subagent status badge (a 6 px dot and an
+//! changes pane's file-header recipe (Pink `changes.rs render_file_header`);
+//! the confidence signal is Pink's subagent status badge (a 6 px dot and an
 //! 11 px medium word); Alternatives opens a keyboard menu above its button
 //! (`popover_card` + `menu_row_nav`, Escape, a click outside or a pick closes
 //! it); and Accept swaps the buttons for one green glyph and word with Undo.
@@ -49,15 +49,15 @@ use crate::{
 pub const NAME: &str = "Smart Recommendation";
 pub const DESCRIPTION: &str = "A suggested next step with its reason and a confidence signal – alternatives to switch to, the accent on the button that accepts it, and undo";
 
-/// The header strip: pink's file-header height (`surface_chrome::HEADER_HEIGHT`,
+/// The header strip: Pink's file-header height (`surface_chrome::HEADER_HEIGHT`,
 /// the 38 pt titlebar).
 const HEAD_HEIGHT: f32 = layout::TITLEBAR_HEIGHT;
-/// The Git card's buttons (pink `git_button_base`): `ui_rems(26)` tall,
+/// The Git card's buttons (Pink `git_button_base`): `ui_rems(26)` tall,
 /// `px 10`, 12 px.
 const GIT_BUTTON_HEIGHT: f32 = 26.0;
 const GIT_BUTTON_PAD_X: f32 = 10.0;
 const GIT_BUTTON_TEXT: f32 = 12.0;
-/// The Git card's row gap (pink `render_git_card`: `gap ui_rems(6)`), also
+/// The Git card's row gap (Pink `render_git_card`: `gap ui_rems(6)`), also
 /// the next-step line's label → reason gap and the commit row's button gap.
 const GIT_GAP: f32 = space::S6;
 
@@ -96,7 +96,7 @@ impl Signal {
         }
     }
 
-    /// The badge's dot, from pink's subagent status tones
+    /// The badge's dot, from Pink's subagent status tones
     /// (`transcript.rs`): done `success`, running `accent`, interrupted
     /// `warning`, anything else `content_faint`.
     fn tone(self, t: &Pink) -> Hsla {
@@ -205,7 +205,7 @@ struct State {
     accepted: Option<SharedString>,
     open: bool,
     /// When the line last folded or unfolded: one clock for the chevron, the
-    /// height and the fade (pink's tool fold).
+    /// height and the fade (Pink's tool fold).
     toggled_at: Option<Instant>,
     menu: bool,
     /// The menu began its `MENU_OUT` fade here.
@@ -367,7 +367,7 @@ impl RenderOnce for SmartRecommendation {
             window.request_animation_frame();
         }
 
-        // ---- Header: folds the line (pink `render_file_header`) -------------
+        // ---- Header: folds the line (Pink `render_file_header`) -------------
         let ring = t.focus_ring();
         let head = div()
             .id("head")
@@ -438,7 +438,7 @@ impl RenderOnce for SmartRecommendation {
             });
 
         // ---- The next-step line, which folds ----------------------------------
-        // pink's tool fold (`transcript.rs`): one clock drives the chevron, the
+        // Pink's tool fold (`transcript.rs`): one clock drives the chevron, the
         // height and the fade (6 px settle); the line stays mounted while the
         // close tween shrinks over it.
         let fold = (open || fold_elapsed.is_some()).then(|| {
@@ -648,7 +648,7 @@ impl RenderOnce for SmartRecommendation {
                     .flex()
                     .flex_col()
                     .child(head)
-                    // pink `render_git_card`: `px SPACE_MD / py SPACE_SM`.
+                    // Pink `render_git_card`: `px SPACE_MD / py SPACE_SM`.
                     .child(
                         div()
                             .flex()
@@ -662,7 +662,7 @@ impl RenderOnce for SmartRecommendation {
     }
 }
 
-/// The next-step line (pink `render_next_git_action`): the label in medium
+/// The next-step line (Pink `render_next_git_action`): the label in medium
 /// `text`, the reason in `text_dim`, 11 px, gap 6, the reason wrapping
 /// beside the label. Pink aligns the two on their baseline; GPUI's text
 /// reports none, and with one type style top alignment lands on the same
@@ -697,7 +697,7 @@ fn next_step_line(option: &Recommendation, t: &Pink) -> Stateful<Div> {
         })
 }
 
-/// The confidence signal as pink's subagent status badge (`transcript.rs`):
+/// The confidence signal as Pink's subagent status badge (`transcript.rs`):
 /// a 6 px dot and an 11 px medium word in `content_muted`, gap 6.
 fn signal_badge(signal: Signal, label: &'static str, t: &Pink) -> Div {
     div()
@@ -719,7 +719,7 @@ fn signal_badge(signal: Signal, label: &'static str, t: &Pink) -> Div {
         .child(label)
 }
 
-/// The Git card's button body without a fill (pink `git_button_base`):
+/// The Git card's button body without a fill (Pink `git_button_base`):
 /// 26 tall, `px 10`, `CONTROL_RADIUS`, a 1 px `border`, 12 px `text`, the
 /// inset focus ring.
 fn git_button_base(id: &'static str, label: impl Into<SharedString>, t: &Pink) -> Stateful<Div> {
@@ -747,7 +747,7 @@ fn git_button_base(id: &'static str, label: impl Into<SharedString>, t: &Pink) -
         .child(label)
 }
 
-/// A plain Git card button (pink `git_button`): `surface_raised`, easing to
+/// A plain Git card button (Pink `git_button`): `surface_raised`, easing to
 /// `surface_raised_hover` under the pointer.
 fn git_button(
     id: &'static str,
@@ -758,7 +758,7 @@ fn git_button(
     git_button_base(id, label, t).hover_fill(hover_key, t.surface_raised, t.surface_raised_hover)
 }
 
-/// The button that performs the shown step (pink `git_step_button`): the
+/// The button that performs the shown step (Pink `git_step_button`): the
 /// Git card's accent plate (`git_primary_button`: `accent_strong` → 88%,
 /// medium `on_accent`, no edge) when it carries the recommendation, the plain
 /// card button otherwise.
@@ -781,7 +781,7 @@ fn git_step_button(
     }
 }
 
-/// The "Recommended" marker beside the first option: pink's "Default" ghost
+/// The "Recommended" marker beside the first option: Pink's "Default" ghost
 /// badge (`pickers.rs default_badge`), bare 11 px semibold `text_muted`.
 fn recommended_marker(t: &Pink) -> Div {
     div()
@@ -792,7 +792,7 @@ fn recommended_marker(t: &Pink) -> Div {
         .child("Recommended")
 }
 
-/// The Alternatives menu, opening above its button's trailing edge (pink
+/// The Alternatives menu, opening above its button's trailing edge (Pink
 /// `anchored_menu_above_end`): a `popover_card` of `menu_row_nav` rows with
 /// one highlight the arrows and the pointer share and a check on the shown
 /// option. It rises 6 px in over `MENU_IN` and fades out over `MENU_OUT`
@@ -852,7 +852,7 @@ fn alternatives_menu(
             let focus_alt = focus_alt.clone();
             move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {
                 let at = state.read(cx).active;
-                // pink `popover::menu_step`: the arrows wrap.
+                // Pink `popover::menu_step`: the arrows wrap.
                 let step = |delta: isize| (at as isize + delta).rem_euclid(count as isize) as usize;
                 let next = match event.keystroke.key.as_str() {
                     "down" => step(1),

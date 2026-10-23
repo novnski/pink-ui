@@ -1,5 +1,5 @@
 //! KPI Chart – a headline total over a period, split by series, over a
-//! smoothed trend (pink: `shell/usage.rs` `render_usage_page`, the Usage
+//! smoothed trend (Pink: `shell/usage.rs` `render_usage_page`, the Usage
 //! page's view card and summary card).
 //!
 //! A "Period" card switches the range with a segmented control. The summary
@@ -31,15 +31,15 @@ use crate::{
 pub const NAME: &str = "KPI Chart";
 pub const DESCRIPTION: &str = "A period's headline total split into one row per series, over smoothed trend lines – point at a period for a guide, a readout and every series' value";
 
-/// The plot height, value-axis gutter and gutter gap (pink `usage.rs`
+/// The plot height, value-axis gutter and gutter gap (Pink `usage.rs`
 /// `CHART_HEIGHT` / `CHART_AXIS_WIDTH` / `CHART_AXIS_GAP`).
 const CHART_HEIGHT: f32 = 200.0;
 const CHART_AXIS_WIDTH: f32 = 56.0;
 const CHART_AXIS_GAP: f32 = 8.0;
 /// The settings page column the Usage page sits in: 720 wide, `px 32`
-/// (pink `settings/widgets.rs` `page_column`).
+/// (Pink `settings/widgets.rs` `page_column`).
 const CONTENT_WIDTH: f32 = layout::PAGE_MAX_WIDTH - 2.0 * 32.0;
-/// Period control width per segment (pink: four periods in 300).
+/// Period control width per segment (Pink: four periods in 300).
 const SEGMENT_WIDTH: f32 = 75.0;
 
 type RangeHandler = Rc<dyn Fn(usize, &mut Window, &mut App)>;
@@ -50,7 +50,7 @@ type Formatter = Rc<dyn Fn(f32) -> String>;
 pub struct KpiSeries {
     pub name: SharedString,
     pub values: Vec<f32>,
-    /// Overrides the series color (pink's provider tones by default).
+    /// Overrides the series color (Pink's provider tones by default).
     pub color: Option<Hsla>,
     /// An icon asset for the row's identity tile.
     pub icon: Option<SharedString>,
@@ -234,12 +234,12 @@ impl KpiChart {
 
 struct State {
     range: usize,
-    /// The period under the pointer (pink `usage_hover_period_start`).
+    /// The period under the pointer (Pink `usage_hover_period_start`).
     hover: Option<usize>,
 }
 
-/// Series colors: pink's provider tones (`usage.rs` `provider_tone`: the
-/// text color, then #5b9bbd and #d97757), then pink's project tints.
+/// Series colors: Pink's provider tones (`usage.rs` `provider_tone`: the
+/// text color, then #5b9bbd and #d97757), then Pink's project tints.
 fn series_tone(ix: usize, t: &Pink) -> Hsla {
     match ix {
         0 => t.text,
@@ -286,7 +286,7 @@ impl RenderOnce for KpiChart {
             .collect();
         let total: f64 = sums.iter().sum();
 
-        // ---- the view card: the period switch (pink `view_card`) ----
+        // ---- the view card: the period switch (Pink `view_card`) ----
         let period_card = (self.ranges.len() > 1).then(|| {
             let segments = self
                 .ranges
@@ -466,7 +466,7 @@ impl RenderOnce for KpiChart {
     }
 }
 
-/// A series' identity tile (pink `usage.rs` `provider_tile`): the row tile
+/// A series' identity tile (Pink `usage.rs` `provider_tile`): the row tile
 /// frame, 28 square, radius 7, 1 px `border`, `fill(Quaternary)`, with the
 /// mark at full `text` strength so it reads as identity, not decoration.
 fn series_tile(icon: SharedString, t: &Pink) -> gpui::Div {
@@ -483,7 +483,7 @@ fn series_tile(icon: SharedString, t: &Pink) -> gpui::Div {
         .child(gpui::svg().path(icon).size(px(16.0)).text_color(t.text))
 }
 
-/// The trend (pink `usage.rs` `usage_chart`): a nice-number scale, three
+/// The trend (Pink `usage.rs` `usage_chart`): a nice-number scale, three
 /// gridlines, a flat 12% area and a 2 px line per series (largest painted
 /// first), a 1 px guide on the hovered period, one hover cell per period
 /// with a tooltip, and 11/14 axis labels in `readable_muted(0.85)`.
@@ -692,7 +692,7 @@ fn trend_chart(
         )
 }
 
-/// A period's hover tooltip (pink `shell.rs` `SurfaceTabTooltip`): the
+/// A period's hover tooltip (Pink `shell.rs` `SurfaceTabTooltip`): the
 /// tooltip card, at most 380 wide, `px 8 / py 5`, 11/14 `text`, one line per
 /// series.
 struct PeriodTooltip {
@@ -714,7 +714,7 @@ impl Render for PeriodTooltip {
 }
 
 /// The value axis' top: a 1-2-5 unit near half the peak, rounded up to a
-/// whole number of units (pink `usage_chart`).
+/// whole number of units (Pink `usage_chart`).
 fn nice_scale(peak: f32) -> f32 {
     if peak <= 0. {
         return 1.;
@@ -729,7 +729,7 @@ fn nice_scale(peak: f32) -> f32 {
     ((peak as f64 / unit).ceil() * unit) as f32
 }
 
-/// Fritsch–Carlson tangents over `(x, y)` points (pink
+/// Fritsch–Carlson tangents over `(x, y)` points (Pink
 /// `monotone_usage_tangents`): a smooth curve that never overshoots the data.
 fn monotone_tangents(points: &[(f32, f32)]) -> Vec<f32> {
     if points.len() < 2 {
@@ -775,7 +775,7 @@ fn monotone_tangents(points: &[(f32, f32)]) -> Vec<f32> {
     tangents
 }
 
-/// A share as pink writes it (`usage_percent`): "38.4%", "<0.1%".
+/// A share as Pink writes it (`usage_percent`): "38.4%", "<0.1%".
 fn percent(share: f64) -> String {
     let percent = share * 100.;
     if percent > 0. && percent < 0.1 {
@@ -785,7 +785,7 @@ fn percent(share: f64) -> String {
     }
 }
 
-/// 48210 → "48,210" (pink `count`).
+/// 48210 → "48,210" (Pink `count`).
 fn grouped(v: f32) -> String {
     let n = v.round() as i64;
     let digits = n.unsigned_abs().to_string();
@@ -799,7 +799,7 @@ fn grouped(v: f32) -> String {
     if n < 0 { format!("-{out}") } else { out }
 }
 
-/// 48210 → "48.21K", 125000 → "125K" (pink `compact_tokens`).
+/// 48210 → "48.21K", 125000 → "125K" (Pink `compact_tokens`).
 fn compact(v: f32) -> String {
     let value = v.max(0.).round() as u64;
     for (threshold, suffix) in [
@@ -829,7 +829,7 @@ fn compact(v: f32) -> String {
     grouped(value as f32)
 }
 
-/// 1234.5 → "$1,234.50" (pink `money`).
+/// 1234.5 → "$1,234.50" (Pink `money`).
 fn money(v: f32) -> String {
     let cents = (v.max(0.) as f64 * 100.).round() as u64;
     format!("${}.{:02}", grouped((cents / 100) as f32), cents % 100)

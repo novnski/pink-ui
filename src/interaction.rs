@@ -4,7 +4,7 @@
 //! it snaps. Pink eases every wash instead, on the shared
 //! [`motion::HOVER_FADE`] (Tailwind `transition-colors`: 150ms
 //! `cubic-bezier(0.4, 0, 0.2, 1)`), through [`HoverFill`]. Colors come from
-//! the caller (pink's washes are its fill tiers, `crate::pink::Pink::fill`).
+//! the caller (Pink's washes are its fill tiers, `crate::pink::Pink::fill`).
 //!
 //! Keys must be unique among the elements on screen: two elements sharing a
 //! key share one fade. Derive the key from the element id, prefixed by the
@@ -34,7 +34,7 @@ pub trait HoverFill: Sized {
     /// Background eases `rest → hover` while the pointer is over the element.
     fn hover_fill(self, key: impl Into<SharedString>, rest: Hsla, hover: Hsla) -> Self;
 
-    /// Pink's standard quiet hover (pink `hover_wash`): transparent at rest,
+    /// Pink's standard quiet hover (Pink `hover_wash`): transparent at rest,
     /// `wash` under the pointer. Pink passes its Tertiary fill
     /// (`Pink::fill(FillTier::Tertiary)`); the rest color is the wash at
     /// zero alpha, so the premultiplied blend never greys mid-fade.

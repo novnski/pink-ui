@@ -1,6 +1,6 @@
 //! Inline Diff – an agent's edits to one file, reviewed where they sit.
 //!
-//! The diff is pink's inline tool diff (pink: transcript.rs `detail_body`,
+//! The diff is Pink's inline tool diff (Pink: transcript.rs `detail_body`,
 //! `ToolDetail::Diff`): a framed code surface whose 28 px header names the
 //! file with its `+N −N`, a hunk band, and unified rows from the changes
 //! pane – the old line on a red wash above the new one on a green wash, the
@@ -8,7 +8,7 @@
 //! marker column.
 //!
 //! Pink records edits; this component also reviews them. A card in the
-//! shape of pink's inline review comment opens under the edit in focus with
+//! shape of Pink's inline review comment opens under the edit in focus with
 //! the agent's note and Keep / Drop. `Y` / `N` decide, `J` / `K` (or the
 //! arrows) move between open edits and `U` undoes the last decision. A
 //! decided edit settles into a plain line: the losing row folds away and the
@@ -43,12 +43,12 @@ use crate::{
 };
 
 pub const NAME: &str = "Inline Diff";
-pub const DESCRIPTION: &str = "An agent's edits to a file as pink's inline diff – old and new lines on red and green washes with the changed words marked, a review card under the edit in focus to keep or drop it with Y / N, and a footer that settles the rest and applies the review";
+pub const DESCRIPTION: &str = "An agent's edits to a file as Pink's inline diff – old and new lines on red and green washes with the changed words marked, a review card under the edit in focus to keep or drop it with Y / N, and a footer that settles the rest and applies the review";
 
 const ICON_NOTE: &str = "icons/inline-diff/chat-round-line.svg";
 const ICON_UNDO: &str = "icons/inline-diff/undo-left.svg";
 
-// Diff metrics (pink: changes.rs layout numbers).
+// Diff metrics (Pink: changes.rs layout numbers).
 /// Code type size and row height (`DIFF_TEXT_SIZE`, `DIFF_LINE_HEIGHT`).
 const DIFF_TEXT_SIZE: f32 = 12.0;
 const DIFF_LINE_HEIGHT: f32 = 21.0;
@@ -64,7 +64,7 @@ const MARKER_WIDTH: f32 = 16.0;
 const ACCENT_BAR_WIDTH: f32 = 3.0;
 const CODE_PADDING_LEFT: f32 = 12.0;
 
-// Code surface (pink: transcript.rs `code_surface_header`, `copy_action`).
+// Code surface (Pink: transcript.rs `code_surface_header`, `copy_action`).
 const CODE_HEADER_HEIGHT: f32 = 28.0;
 const CODE_HEADER_ACTION_PAD: f32 = 5.0;
 const CODE_ACTION_SIZE: f32 = 22.0;
@@ -74,7 +74,7 @@ const DIFF_VIEWPORT_MAX_HEIGHT: f32 = 360.0;
 /// The review footer: a header-like strip holding `ControlSize::Sm` buttons.
 const FOOTER_HEIGHT: f32 = 36.0;
 
-// Review card (pink: comment_ui.rs `render_comment_card`, comments.rs).
+// Review card (Pink: comment_ui.rs `render_comment_card`, comments.rs).
 const CARD_PAD_V: f32 = 20.0;
 const CARD_GAP: f32 = 6.0;
 const CARD_HEADER_HEIGHT: f32 = 22.0;
@@ -110,7 +110,7 @@ enum Piece {
 }
 
 /// Splits word-diff markup into lines of plain code and edits. Tabs expand
-/// to four columns (pink `DIFF_TAB_SIZE`).
+/// to four columns (Pink `DIFF_TAB_SIZE`).
 fn parse(source: &str) -> (Vec<Vec<Piece>>, Vec<DiffEdit>) {
     let mut lines = Vec::new();
     let mut edits = Vec::new();
@@ -166,7 +166,7 @@ fn parse(source: &str) -> (Vec<Vec<Piece>>, Vec<DiffEdit>) {
 // ---- syntax --------------------------------------------------------------
 
 /// The highlight roles a small Rust-flavoured scanner can tell apart, named
-/// after the captures pink's tree-sitter query gives them.
+/// after the captures Pink's tree-sitter query gives them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Token {
     Plain,
@@ -308,7 +308,7 @@ fn token_color(kind: Token, plain: Hsla, syntax: &Syntax) -> Hsla {
     }
 }
 
-/// Paint-only syntax runs for one line (pink: render.rs
+/// Paint-only syntax runs for one line (Pink: render.rs
 /// `runs_for_syntax_line_with_plain`): one font everywhere, so recoloring
 /// never changes layout.
 fn syntax_runs(text: &str, plain: Hsla, syntax: &Syntax, mono: &Font) -> Vec<TextRun> {
@@ -326,7 +326,7 @@ fn syntax_runs(text: &str, plain: Hsla, syntax: &Syntax, mono: &Font) -> Vec<Tex
         .collect()
 }
 
-/// Splits `runs` so the given byte ranges carry `background` (pink:
+/// Splits `runs` so the given byte ranges carry `background` (Pink:
 /// changes.rs `with_word_backgrounds`).
 fn with_word_backgrounds(
     runs: Vec<TextRun>,
@@ -366,7 +366,7 @@ fn with_word_backgrounds(
     out
 }
 
-// ---- diff paint (pink: changes.rs) ---------------------------------------
+// ---- diff paint (Pink: changes.rs) ---------------------------------------
 
 /// A changed row's tint: the hue at 10% dark / 8% light (`diff_row_wash`).
 fn diff_row_wash(tone: Hsla, t: &Pink) -> Hsla {
@@ -402,7 +402,7 @@ fn gutter_width(max_line: usize) -> f32 {
 }
 
 /// Review-card body lines, guessed rather than measured so the fold height
-/// is analytic (pink: comments.rs `card_body_lines`).
+/// is analytic (Pink: comments.rs `card_body_lines`).
 fn card_body_lines(body: &str) -> usize {
     body.lines()
         .map(|line| line.chars().count().div_ceil(CARD_WRAP_COLUMNS).max(1))
@@ -722,7 +722,7 @@ struct Row {
 
 /// Assembles one line from its pieces, taking `side(ix)` of every edit, and
 /// returns the byte ranges of the edits `marked(ix)` picks. Whitespace edges
-/// earn no wash, and a line that is almost all new gets none (pink:
+/// earn no wash, and a line that is almost all new gets none (Pink:
 /// changes.rs `word_changes`): the row tint already says it.
 fn assemble(
     pieces: &[Piece],
@@ -759,7 +759,7 @@ fn assemble(
 }
 
 /// A row with no partner (a whole line added or removed) gets no word
-/// layer (pink: changes.rs `word_changes`).
+/// layer (Pink: changes.rs `word_changes`).
 fn unpaired(paired: bool, marks: [&mut Vec<Range<usize>>; 2]) {
     if !paired {
         marks.into_iter().for_each(Vec::clear);
@@ -1125,7 +1125,7 @@ impl RenderOnce for InlineDiff {
             .child(hunk)
             .children(blocks);
 
-        // ---- header (pink: transcript.rs code_surface_header) ----------
+        // ---- header (Pink: transcript.rs code_surface_header) ----------
         let name: SharedString = self
             .path
             .rsplit(['/', '\\'])
@@ -1371,7 +1371,7 @@ impl RenderOnce for InlineDiff {
 
         motion::keep_alive(window);
         let ring = t.focus_ring();
-        // The frame (pink: transcript.rs code_surface_frame).
+        // The frame (Pink: transcript.rs code_surface_frame).
         pink::code_surface(&t)
             .id(self.id.clone())
             .track_focus(&focus)
@@ -1403,7 +1403,7 @@ struct RowPaint<'a> {
 }
 
 impl RowPaint<'_> {
-    /// One diff line (pink: changes.rs `diff_line_row`): a 3 px spacer, dual
+    /// One diff line (Pink: changes.rs `diff_line_row`): a 3 px spacer, dual
     /// line-number gutters, the marker column and paint-only syntax runs on
     /// the row's wash. The wash, the marker's tone and the word washes fade
     /// with `tint` as a decided row settles; the height folds when it goes.
@@ -1532,11 +1532,11 @@ impl RowPaint<'_> {
     }
 }
 
-/// The review card under the edit in focus, in the shape of pink's inline
-/// review comment (pink: comment_ui.rs `render_comment_card`): an
+/// The review card under the edit in focus, in the shape of Pink's inline
+/// review comment (Pink: comment_ui.rs `render_comment_card`): an
 /// `ink(0.05)` band with a 3 px `solid` bar, a 22 px header with the note
 /// glyph and the mono `path:line`, the note at 12/18, and Keep / Drop. The
-/// bar firms up from 0.35 to 0.7 (pink's draft card) while the diff holds
+/// bar firms up from 0.35 to 0.7 (Pink's draft card) while the diff holds
 /// keyboard focus. It folds open and shut over `DISCLOSURE`.
 #[allow(clippy::too_many_arguments)]
 fn review_card(
@@ -1650,7 +1650,7 @@ fn review_card(
         )
 }
 
-/// A footer key legend (pink: command_palette.rs `command_key_hint`): a
+/// A footer key legend (Pink: command_palette.rs `command_key_hint`): a
 /// `kbd_hint` and its 11 px verb, gap 5.
 fn key_legend(keys: &'static str, label: &'static str, t: &Pink) -> impl IntoElement {
     div()

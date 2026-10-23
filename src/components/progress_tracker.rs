@@ -1,11 +1,11 @@
-//! Progress Tracker – an onboarding checklist on a pink card: a title over
-//! pink's checklist summary ("1/5 · Next: …") and usage meter, then the steps
+//! Progress Tracker – an onboarding checklist on a Pink card: a title over
+//! Pink's checklist summary ("1/5 · Next: …") and usage meter, then the steps
 //! as square checkboxes.
 //!
-//! The header is pink's usage limit row (`shell/usage.rs`): the title and a
+//! The header is Pink's usage limit row (`shell/usage.rs`): the title and a
 //! one-line summary on the left, the share done as a Title2 figure on the
 //! right, the 6 px meter underneath. The summary is the composer checklist's
-//! own line (`composer/checklist.rs`), and the steps are pink's markdown task
+//! own line (`composer/checklist.rs`), and the steps are Pink's markdown task
 //! items (`markdown/render.rs`) with the dialog checkbox, as clickable rows.
 //!
 //! Clicking a step (or Enter / Space on a focused one) checks it off: the
@@ -42,7 +42,7 @@ use crate::{
 pub const NAME: &str = "Progress Tracker";
 pub const DESCRIPTION: &str = "Onboarding checklist card – a done/total summary over a quiet meter, and square checkboxes that tick steps off, one after another in auto play";
 
-/// The card's width: pink's dialog width.
+/// The card's width: Pink's dialog width.
 const WIDTH: f32 = layout::DIALOG_WIDTH;
 
 type ChangeHandler = Rc<dyn Fn(&[ProgressStep], &mut Window, &mut App)>;
@@ -70,7 +70,7 @@ impl ProgressStep {
     }
 }
 
-/// pink: composer/checklist.rs `render_checklist` – the summary line,
+/// Pink: composer/checklist.rs `render_checklist` – the summary line,
 /// `"{done}/{total} · {detail}"`, naming the next open step.
 fn summary(steps: &[(SharedString, bool)]) -> String {
     let done = steps.iter().filter(|(_, d)| *d).count();
@@ -308,7 +308,7 @@ impl RenderOnce for ProgressTracker {
                 let row = step_row(&key, ix, &step, done, fill, &t)
                     .track_focus(&handles[ix])
                     .on_click(toggle);
-                // pink: transcript.rs tool row reveal – rows arrive one after
+                // Pink: transcript.rs tool row reveal – rows arrive one after
                 // another, rising 4 px.
                 let delay = motion::tool_row_arrival_delay(ix, true).as_millis() as u64;
                 motion::rise_in(("row-in", ix), TOOL_ROW_REVEAL.with_delay(delay), 4., row)
@@ -357,9 +357,9 @@ impl RenderOnce for ProgressTracker {
             }
         };
 
-        // pink: settings/widgets.rs section card surface – r12, 1 px
+        // Pink: settings/widgets.rs section card surface – r12, 1 px
         // `border`, `card_glass_bg`, never shadowed; the steps sit under a
-        // rule like the card's rows, inset 4 like pink's menus.
+        // rule like the card's rows, inset 4 like Pink's menus.
         let card = pink::card(&t)
             .id(self.id.clone())
             .w_full()
@@ -385,16 +385,16 @@ impl RenderOnce for ProgressTracker {
             );
 
         motion::keep_alive(window);
-        // pink: motion.rs `fade_in` – new content fades in over a 4 px rise.
+        // Pink: motion.rs `fade_in` – new content fades in over a 4 px rise.
         motion::fade_in_rise(ElementId::NamedChild(Arc::new(self.id), "in".into()), card)
     }
 }
 
-/// pink: shell/usage.rs limit row (a settings `card_row`, `px 16 / py 12`,
+/// Pink: shell/usage.rs limit row (a settings `card_row`, `px 16 / py 12`,
 /// gap 12 / 10): the title (13/18 medium) over the checklist summary (12/16
 /// `readable_muted(0.85)`), the figure in Title2 beside a 12/16 word, and
 /// the meter as the row's full-width block. A new summary or figure swaps in
-/// over `STATUS_SWAP` (pink: transcript.rs status change).
+/// over `STATUS_SWAP` (Pink: transcript.rs status change).
 fn header(key: &str, title: &SharedString, line: &str, percent: u32, fill: f32, t: &Pink) -> Div {
     let text = div()
         .flex_1()
@@ -454,8 +454,8 @@ fn header(key: &str, title: &SharedString, line: &str, percent: u32, fill: f32, 
         .child(meter(fill, t))
 }
 
-/// pink: shell/usage.rs `usage_meter` – a 6 px capsule on a `fill(Secondary)`
-/// track, filled in pink's neutral `text_muted`, nothing drawn below 0.5%.
+/// Pink: shell/usage.rs `usage_meter` – a 6 px capsule on a `fill(Secondary)`
+/// track, filled in Pink's neutral `text_muted`, nothing drawn below 0.5%.
 /// Progress has no warning or danger band, so the fill stays neutral.
 fn meter(progress: f32, t: &Pink) -> Div {
     let progress = progress.clamp(0., 1.);
@@ -475,7 +475,7 @@ fn meter(progress: f32, t: &Pink) -> Div {
         })
 }
 
-/// pink: shell.rs dialog checkbox (the kit's `checkbox_box`): 16 px, r4,
+/// Pink: shell.rs dialog checkbox (the kit's `checkbox_box`): 16 px, r4,
 /// `border` over `glass_hover`, checked an accent plate with a 12 px check in
 /// `on_solid`. Between the two the plate eases over `QUICK`.
 fn check(fill: f32, t: &Pink) -> Div {
@@ -499,10 +499,10 @@ fn check(fill: f32, t: &Pink) -> Div {
         ))
 }
 
-/// One step: pink's markdown task item (markdown/render.rs – the box in a
+/// One step: Pink's markdown task item (markdown/render.rs – the box in a
 /// line-high slot, gap 8) as a clickable row, `px 12 / py 6` so the box
 /// lines up with the header, r8 inside the card's 4 px inset. Hover is
-/// pink's quiet `fill(Tertiary)` wash, focus the inset ring; an open step
+/// Pink's quiet `fill(Tertiary)` wash, focus the inset ring; an open step
 /// reads in `text`, a done one settles to `text_muted` with its box.
 fn step_row(
     key: &str,

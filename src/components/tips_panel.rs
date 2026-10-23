@@ -1,7 +1,7 @@
 //! Tips Panel – a heading over a wrapping grid of tip tiles; each tile is one
 //! action, and a taken tip settles into its done status.
 //!
-//! The panel is pink's Board empty state (pink: `shell/board/page.rs`
+//! The panel is Pink's Board empty state (Pink: `shell/board/page.rs`
 //! `BoardPage::render_empty`): a 15 semibold heading over the
 //! `settings/widgets.rs` `page_subtitle`, then the tiles in one wrapping row,
 //! `gap 10`, each growing from a 180 minimum. A tile is the whole click
@@ -10,18 +10,18 @@
 //! and the 2 px inset focus ring on keyboard focus; inside, an 18 glyph in
 //! `readable_muted(0.9)`, a 13 medium title and a 12/17 description in
 //! `readable_muted(0.85)`. Pink sets no line height on the two titles, so
-//! they keep GPUI's `phi()`. Key caps in a description are pink's
+//! they keep GPUI's `phi()`. Key caps in a description are Pink's
 //! `popover::kbd_hint`.
 //!
-//! What pink's tiles don't have, drawn in its language: the action's verb
+//! What Pink's tiles don't have, drawn in its language: the action's verb
 //! sits at the tile's top right in the description's tone, turning `text`
-//! under the pointer like a tool label, its arrow in pink's half-strength
+//! under the pointer like a tool label, its arrow in Pink's half-strength
 //! trailing tile (`transcript.rs`); a taken tip swaps them for a success
 //! check and its done label over `STATUS_SWAP` and stops being a button. The
 //! done count shares the heading's baseline (`settings/widgets.rs`
 //! `page_header`: 10 after the title, 13 in `readable_muted(0.7)`) and, with
-//! `on_close`, pink's Sm dismiss icon button (`board-notice-dismiss`) ends
-//! the heading. Tiles arrive on pink's `fade_in` (500ms expo, 4 px rise),
+//! `on_close`, Pink's Sm dismiss icon button (`board-notice-dismiss`) ends
+//! the heading. Tiles arrive on Pink's `fade_in` (500ms expo, 4 px rise),
 //! staggered like arriving tool rows (90ms, then 65ms apart).
 //!
 //! ```ignore
@@ -53,23 +53,23 @@ use crate::{
 };
 
 pub const NAME: &str = "Tips Panel";
-pub const DESCRIPTION: &str = "Tips laid out like pink's Board empty state – a heading with a done count over a wrapping grid of quiet tiles, each one action with its verb in the corner, and a taken tip settling into a green check and its done label";
+pub const DESCRIPTION: &str = "Tips laid out like Pink's Board empty state – a heading with a done count over a wrapping grid of quiet tiles, each one action with its verb in the corner, and a taken tip settling into a green check and its done label";
 
 const ICON_CHECK: &str = "icons/tips-panel/check.svg";
 const ICON_CLOSE: &str = "icons/tips-panel/close.svg";
 const ICON_ARROW: &str = "icons/tips-panel/arrow-right.svg";
 
-/// GPUI's default line height (`phi()`), which pink's heading and tile
+/// GPUI's default line height (`phi()`), which Pink's heading and tile
 /// titles inherit: they set sizes but no line heights.
 const PHI: f32 = 1.618_034;
 
-/// The heading (pink `render_empty`): 15 semibold, 4 to the subtitle.
+/// The heading (Pink `render_empty`): 15 semibold, 4 to the subtitle.
 const HEADING_SIZE: f32 = 15.0;
 const HEADER_GAP: f32 = 4.0;
-/// The done count (pink `page_header`): 13, 10 after the title.
+/// The done count (Pink `page_header`): 13, 10 after the title.
 const COUNT_SIZE: f32 = 13.0;
 const COUNT_GAP: f32 = 10.0;
-/// The board empty state's tile grid (pink `render_empty`): the wrap gap, a
+/// The board empty state's tile grid (Pink `render_empty`): the wrap gap, a
 /// tile's minimum width and padding, and its glyph.
 const GRID_GAP: f32 = 10.0;
 const TILE_MIN_W: f32 = 180.0;
@@ -131,7 +131,7 @@ impl Tip {
         }
     }
 
-    /// The tile's glyph: an svg path, tinted like pink's tile glyphs.
+    /// The tile's glyph: an svg path, tinted like Pink's tile glyphs.
     pub fn icon(mut self, path: impl Into<SharedString>) -> Self {
         self.icon = Some(path.into());
         self
@@ -209,7 +209,7 @@ impl TipsPanel {
         self
     }
 
-    /// A line under the heading (pink `page_subtitle`).
+    /// A line under the heading (Pink `page_subtitle`).
     pub fn subtitle(mut self, subtitle: impl Into<SharedString>) -> Self {
         self.subtitle = Some(subtitle.into());
         self
@@ -247,7 +247,7 @@ impl RenderOnce for TipsPanel {
             .enumerate()
             .map(|(ix, tip)| {
                 let tile = tip_tile(&key, tip, is_done(tip), &state, window, &t);
-                // pink `fade_in`, staggered like arriving tool rows
+                // Pink `fade_in`, staggered like arriving tool rows
                 let spec =
                     FADE_IN.with_delay(TOOL_FIRST_ROW_DELAY_MS + ix as u64 * TOOL_ROW_STAGGER_MS);
                 motion::rise_in(
@@ -260,7 +260,7 @@ impl RenderOnce for TipsPanel {
             })
             .collect();
 
-        // pink `render_empty`: one wrapping row, every tile growing from 180.
+        // Pink `render_empty`: one wrapping row, every tile growing from 180.
         let grid = div()
             .flex()
             .flex_row()
@@ -268,7 +268,7 @@ impl RenderOnce for TipsPanel {
             .gap(px(GRID_GAP))
             .children(tiles);
 
-        // pink `page_header`: the count shares the title's baseline.
+        // Pink `page_header`: the count shares the title's baseline.
         let title = div()
             .flex_1()
             .min_w_0()
@@ -293,7 +293,7 @@ impl RenderOnce for TipsPanel {
                     .child(format!("{done_count}/{} done", self.tips.len())),
             );
         let close = self.on_close.clone().map(|on_close| {
-            // pink `board-notice-dismiss`: the Sm close icon button, centered
+            // Pink `board-notice-dismiss`: the Sm close icon button, centered
             // on the title's first line.
             div()
                 .flex_none()
@@ -323,7 +323,7 @@ impl RenderOnce for TipsPanel {
                 el.child(page_subtitle(copy, &t))
             });
 
-        // pink's page sets no line height: the titles keep GPUI's `phi()`.
+        // Pink's page sets no line height: the titles keep GPUI's `phi()`.
         div()
             .id(self.id.clone())
             .w_full()
@@ -339,7 +339,7 @@ impl RenderOnce for TipsPanel {
     }
 }
 
-/// pink: `settings/widgets.rs` `page_subtitle`: 13/19 `readable_muted(0.9)`,
+/// Pink: `settings/widgets.rs` `page_subtitle`: 13/19 `readable_muted(0.9)`,
 /// at most 600 wide, 6 below the heading.
 fn page_subtitle(copy: SharedString, t: &Pink) -> Div {
     div()
@@ -351,7 +351,7 @@ fn page_subtitle(copy: SharedString, t: &Pink) -> Div {
         .child(copy)
 }
 
-/// One tip (pink: `board/page.rs` `render_empty` tile). Untaken, the whole
+/// One tip (Pink: `board/page.rs` `render_empty` tile). Untaken, the whole
 /// tile is a button; taken, it keeps its frame and drops the interaction.
 fn tip_tile(
     key: &str,
@@ -384,7 +384,7 @@ fn tip_tile(
         .into_any_element()
     } else {
         // The verb in the description's tone, turning `text` under the
-        // pointer (pink `transcript.rs` tool label); its arrow is pink's
+        // pointer (Pink `transcript.rs` tool label); its arrow is Pink's
         // trailing chip tile, half strength at rest and full on hover.
         let text = t.text;
         trail_row()
@@ -538,7 +538,7 @@ fn description(runs: &[TipText], window: &Window, t: &Pink) -> Div {
         .mr(-space)
         .children(pieces.into_iter().map(|(piece, is_kbd, gap)| {
             let item = if is_kbd {
-                // pink `popover::kbd_hint`, on the Caption line so the cap
+                // Pink `popover::kbd_hint`, on the Caption line so the cap
                 // stays inside the description's 17 line.
                 pink::kbd_hint(piece, t).line_height(px(TextStyle::Caption.line_height()))
             } else {
@@ -599,7 +599,7 @@ pub fn demo_tips() -> Vec<Tip> {
     ]
 }
 
-/// The demo's close: the panel fades out (pink's exit of `STANDARD`), then a
+/// The demo's close: the panel fades out (Pink's exit of `STANDARD`), then a
 /// fresh one mounts 900ms later.
 struct DemoState {
     generation: u32,

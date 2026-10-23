@@ -1,4 +1,4 @@
-//! Email Draft – an agent-written email waiting for review, on a pink card.
+//! Email Draft – an agent-written email waiting for review, on a Pink card.
 //!
 //! The record the email is about heads the card: its reference, a status
 //! pill and the amount, over the account. Below sits the email: a pop-up
@@ -187,10 +187,10 @@ struct DraftState {
     edited: Option<String>,
     editing: bool,
     menu: bool,
-    /// The menu row under the arrows and the pointer: pink's one shared
+    /// The menu row under the arrows and the pointer: Pink's one shared
     /// highlight (`menu_row_nav`).
     cursor: usize,
-    /// When the menu began closing, for its fade out (pink `menu_out`).
+    /// When the menu began closing, for its fade out (Pink `menu_out`).
     menu_closed_at: Option<Instant>,
     /// Bumps on every close, so each exit plays from the start.
     menu_closes: u64,
@@ -679,8 +679,8 @@ impl RenderOnce for EmailDraft {
 
 impl EmailDraft {
     /// The record the email is about, in the settings card header's recipe
-    /// (pink `widgets::section_header`: `px 16 / pt 14 / pb 12`, gap 3): the
-    /// reference and the amount in Title3, a status pill (pink's sidebar
+    /// (Pink `widgets::section_header`: `px 16 / pt 14 / pb 12`, gap 3): the
+    /// reference and the amount in Title3, a status pill (Pink's sidebar
     /// waiting pill) and the account as a row description.
     fn record(&self, t: &Pink) -> Div {
         let title = |text: SharedString| {
@@ -740,14 +740,14 @@ impl EmailDraft {
     }
 
     /// The agent and its status on the left, Discard and Send on the right,
-    /// laid out like pink's question wizard footer (notes, then one Primary).
+    /// laid out like Pink's question wizard footer (notes, then one Primary).
     fn footer(&self, ctx: &Ctx, t: &Pink, sending: bool) -> Div {
         let status: SharedString = if sending {
             "Sending".into()
         } else {
             "Ready for review".into()
         };
-        // The 12 px slot holds pink's attention dot, or its running mark
+        // The 12 px slot holds Pink's attention dot, or its running mark
         // (`mini_glyph_spinner`) while the email is in flight
         let mark = div()
             .flex_none()
@@ -842,7 +842,7 @@ impl EmailDraft {
     }
 }
 
-/// One row of the card: pink's settings card row in its compact form
+/// One row of the card: Pink's settings card row in its compact form
 /// (`px 16`, a 28 px control line at 48 tall), with the `border` hairline on
 /// top.
 fn row(t: &Pink) -> Div {
@@ -857,7 +857,7 @@ fn row(t: &Pink) -> Div {
         .border_color(t.border)
 }
 
-/// The email (or the receipt) rising in where the other stood: pink's
+/// The email (or the receipt) rising in where the other stood: Pink's
 /// in-place content swap (`TRANSCRIPT_IN`, 160 ms, 4 px).
 fn entrance(id: impl Into<ElementId>, element: impl IntoElement + Styled + 'static) -> AnyElement {
     motion::rise_in(
@@ -930,7 +930,7 @@ fn meta_row(
         .children(attachment(ctx, t, original, cx))
 }
 
-/// The recipient as pink's pop-up button (`button::select_frame`: a
+/// The recipient as Pink's pop-up button (`button::select_frame`: a
 /// Secondary control, the choice and one chevron), with its menu.
 fn recipient(ctx: &Ctx, t: &Pink, window: &mut Window, cx: &mut App) -> Div {
     let s = ctx.state.read(cx);
@@ -1004,7 +1004,7 @@ fn recipient(ctx: &Ctx, t: &Pink, window: &mut Window, cx: &mut App) -> Div {
         )
         .child(pink::select_chevron(t));
 
-    // Below the trigger with pink's 6 px gap, its leading edge pulled out by
+    // Below the trigger with Pink's 6 px gap, its leading edge pulled out by
     // the card inset so the row text lines up with the trigger's
     let top = ControlSize::Md.height() + layout::POPOVER_GAP;
     let menu = open.then(|| {
@@ -1041,7 +1041,7 @@ fn recipient(ctx: &Ctx, t: &Pink, window: &mut Window, cx: &mut App) -> Div {
         .children(dying)
 }
 
-/// The recipient menu (pink `popover_card` with `menu_row_nav` rows): a
+/// The recipient menu (Pink `popover_card` with `menu_row_nav` rows): a
 /// heading, then one row per contact with its avatar, name and address, the
 /// current one checked. `live` wires the keys and the pointer; the closing
 /// copy is inert.
@@ -1163,9 +1163,9 @@ fn menu_panel(
         .children(rows)
 }
 
-/// The attachment as pink's message badge (`badges::render`: 24 tall, `px 8`,
+/// The attachment as Pink's message badge (`badges::render`: 24 tall, `px 8`,
 /// r 8, `ink(0.06)`, 12 medium `text_muted`, a 12 px glyph) with a remove
-/// button in pink's row-action size (`CONTROL_S` 20, `RADIUS_S`, a 12 px
+/// button in Pink's row-action size (`CONTROL_S` 20, `RADIUS_S`, a 12 px
 /// glyph on the quiet hover wash); once removed, a Ghost button adds it back.
 fn attachment(
     ctx: &Ctx,
@@ -1240,7 +1240,7 @@ fn attachment(
     ))
 }
 
-/// A swapped-in attachment fading in (pink `ATTACHMENT_IN`, 240 ms
+/// A swapped-in attachment fading in (Pink `ATTACHMENT_IN`, 240 ms
 /// expo-out), once the reviewer changed it.
 fn reveal(
     id: impl Into<ElementId>,
@@ -1255,10 +1255,10 @@ fn reveal(
         .into_any_element()
 }
 
-/// The email text at pink's chat prose size (14/22), its link drawn the way
-/// pink's markdown draws one: the text color with a 1 px `content_muted`
+/// The email text at Pink's chat prose size (14/22), its link drawn the way
+/// Pink's markdown draws one: the text color with a 1 px `content_muted`
 /// underline. Click the text to edit it in place: the field keeps every
-/// glyph where it was, on pink's field plate (`fill(Quaternary)`, a
+/// glyph where it was, on Pink's field plate (`fill(Quaternary)`, a
 /// `separator(true)` edge, r 8), with the accent caret.
 fn body(ctx: &Ctx, t: &Pink, link: &DraftLink, cx: &mut App) -> Div {
     let s = ctx.state.read(cx);
@@ -1364,9 +1364,9 @@ fn body(ctx: &Ctx, t: &Pink, link: &DraftLink, cx: &mut App) -> Div {
     wrap.child(paragraph)
 }
 
-/// The tone switch as pink's segmented control (two to five fixed options)
+/// The tone switch as Pink's segmented control (two to five fixed options)
 /// with the pen beside it (a small icon button, on the selected fill while
-/// editing), and while editing, pink's key legend.
+/// editing), and while editing, Pink's key legend.
 fn tone_row(ctx: &Ctx, t: &Pink, cx: &mut App) -> Div {
     let s = ctx.state.read(cx);
     let (tone, editing, pen_was_editing) = (s.tone.clone(), s.editing, s.pen_was_editing.clone());
@@ -1452,7 +1452,7 @@ fn tone_row(ctx: &Ctx, t: &Pink, cx: &mut App) -> Div {
         })
 }
 
-/// The one-line receipt after send / discard: pink's answered-question chip
+/// The one-line receipt after send / discard: Pink's answered-question chip
 /// (`transcript::input_chip`) laid bare in a card row – a 20 px tile
 /// (`ink(0.09)`, r 6, a 12 px glyph in `content_muted`), the verdict in
 /// medium `content_muted`, the detail in `text @ 0.9` – then Undo.

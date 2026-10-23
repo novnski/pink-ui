@@ -1,13 +1,13 @@
-//! Integration Settings – the settings card of a connected service (pink:
+//! Integration Settings – the settings card of a connected service (Pink:
 //! settings/accounts.rs `render_provider_card`).
 //!
 //! A section card. Its header holds the service's tile, its name with a
 //! Connected badge and a line under it, and the switch that turns it on or off.
-//! The switch applies at once and folds the card to its header, as pink's
+//! The switch applies at once and folds the card to its header, as Pink's
 //! provider cards do. Settings rows follow: the access token in mono with
 //! show, copy and rotate; the workspace address, checked as you type; the
 //! sync cadence as a segmented control; the time zone as a pop-up menu. The
-//! rows' edits wait in a footer row with Discard and Save (pink's automation
+//! rows' edits wait in a footer row with Discard and Save (Pink's automation
 //! editor footer), which folds open on the first change and closes once
 //! saved.
 //!
@@ -37,7 +37,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Integration Settings";
-pub const DESCRIPTION: &str = "A connected service on a pink settings card – a switch that folds the card to its header when off, a token to show, copy and rotate, an address checked as you type, a sync cadence on a segmented track, a time-zone pop-up menu, and a footer that holds edits until you save";
+pub const DESCRIPTION: &str = "A connected service on a Pink settings card – a switch that folds the card to its header when off, a token to show, copy and rotate, an address checked as you type, a sync cadence on a segmented track, a time-zone pop-up menu, and a footer that holds edits until you save";
 
 const ICON_EYE: &str = "icons/integration-settings/eye.svg";
 const ICON_EYE_CLOSED: &str = "icons/integration-settings/eye-closed.svg";
@@ -47,18 +47,18 @@ const ICON_REFRESH: &str = "icons/integration-settings/refresh.svg";
 
 /// Pink's settings column: `max_w 720` less its 32 px gutters.
 const CARD_W: f32 = 656.;
-/// The header's mark slot (pink: a 16 brand mark in a 20 box).
+/// The header's mark slot (Pink: a 16 brand mark in a 20 box).
 const MARK_SLOT: f32 = 20.;
-/// The address field (pink connections.rs "Nearby address").
+/// The address field (Pink connections.rs "Nearby address").
 const ADDRESS_W: f32 = 260.;
-/// The pop-up button and its menu (pink provider_defaults.rs `SELECT_WIDTH`,
+/// The pop-up button and its menu (Pink provider_defaults.rs `SELECT_WIDTH`,
 /// `MENU_WIDTH`), and the list's height budget before it scrolls.
 const SELECT_W: f32 = 220.;
 const MENU_W: f32 = 260.;
 const MENU_MAX_H: f32 = 320.;
 /// The footer row: its hairline, `py 12` and a Md button.
 const FOOTER_H: f32 = 1. + 12. + 28. + 12.;
-/// How long a copy reads "Copied" (pink devices.rs `copy_id`).
+/// How long a copy reads "Copied" (Pink devices.rs `copy_id`).
 const COPIED: Duration = Duration::from_millis(1500);
 
 /// Sync cadences: label and the line explaining it.
@@ -140,7 +140,7 @@ struct SettingsState {
     /// When the menu's exit fade began; the card stays mounted until it ends.
     menu_closing: Option<Instant>,
     /// The trigger press found the menu mounted, so its click leaves it
-    /// closed (pink `note_trigger_press`).
+    /// closed (Pink `note_trigger_press`).
     menu_pressed_open: bool,
     menu_reap: Option<Task<()>>,
     save: SaveStatus,
@@ -199,7 +199,7 @@ impl SettingsState {
         cx.notify();
     }
 
-    /// The switch applies at once (pink saves settings immediately); the
+    /// The switch applies at once (Pink saves settings immediately); the
     /// rows' pending edits stay in the draft. Returns what was committed.
     fn set_enabled(&mut self, on: bool, cx: &mut Context<Self>) -> SettingsValues {
         self.saved.enabled = on;
@@ -256,7 +256,7 @@ impl SettingsState {
     }
 
     /// Starts the menu's exit fade and unmounts it once the fade has run
-    /// (pink `Popup::close` + `reap_popup`).
+    /// (Pink `Popup::close` + `reap_popup`).
     fn close_menu(&mut self, cx: &mut Context<Self>) {
         if !self.menu_open {
             return;
@@ -354,7 +354,7 @@ fn masked(prefix: &str, token: &str) -> SharedString {
     format!("{prefix}{}{tail}", "•".repeat(8)).into()
 }
 
-/// A segmented control's width from its widest label (pink
+/// A segmented control's width from its widest label (Pink
 /// settings/provider_defaults.rs `segmented_width`).
 fn segmented_width(labels: &[&str]) -> f32 {
     let widest = labels
@@ -487,7 +487,7 @@ impl IntegrationSettings {
             .text_size(px(13.))
             .text_color(t.text)
             .child(self.header(&key, &state, on, saving, &t));
-        // Off folds the card to its header (pink: the provider card returns
+        // Off folds the card to its header (Pink: the provider card returns
         // before its rows).
         if !on {
             return card.into_any_element();
@@ -508,7 +508,7 @@ impl IntegrationSettings {
             .into_any_element()
     }
 
-    /// The card's header (pink: accounts.rs `render_provider_card` header):
+    /// The card's header (Pink: accounts.rs `render_provider_card` header):
     /// the mark, the Title3 name and a Connected badge over the summary, and the
     /// switch. Off dims the mark and the name and says why nothing syncs.
     fn header(
@@ -601,7 +601,7 @@ impl IntegrationSettings {
     }
 }
 
-/// The quiet line under a row title (pink: settings/widgets.rs `meta_line`):
+/// The quiet line under a row title (Pink: settings/widgets.rs `meta_line`):
 /// 12 in `readable_muted(0.8)`, fragments split by a faint "·".
 fn meta_line(fragments: Vec<AnyElement>, t: &Pink) -> Div {
     let dot = if t.dark {
@@ -630,7 +630,7 @@ fn meta_line(fragments: Vec<AnyElement>, t: &Pink) -> Div {
     line
 }
 
-/// The access token (pink: settings/devices.rs `device_row`'s id): a mono
+/// The access token (Pink: settings/devices.rs `device_row`'s id): a mono
 /// 11 fragment under the title that reads "Copied" for a moment after Copy,
 /// with show/hide and copy icon buttons and a Ghost Rotate that reads
 /// "Rotating…" while it runs.
@@ -731,10 +731,10 @@ fn token_row(key: &str, state: &Entity<SettingsState>, t: &Pink, cx: &App) -> Di
         .child(pink::row_controls().child(reveal).child(copy).child(rotate))
 }
 
-/// The workspace address (pink connections.rs "Nearby address" in the
+/// The workspace address (Pink connections.rs "Nearby address" in the
 /// automation editor's field frame): the editable part, then the fixed
 /// domain in the hint tone. The description says where the team signs in,
-/// or, once the address can't be used, why (pink's field notes in the
+/// or, once the address can't be used, why (Pink's field notes in the
 /// danger tone).
 fn address_row(
     key: &str,
@@ -796,7 +796,7 @@ fn address_row(
         )
 }
 
-/// The sync cadence (pink provider_defaults.rs `choice_row`): a Md
+/// The sync cadence (Pink provider_defaults.rs `choice_row`): a Md
 /// segmented control sized from its widest label; the description explains
 /// the chosen cadence.
 fn cadence_row(key: &str, state: &Entity<SettingsState>, t: &Pink, cx: &App) -> Div {
@@ -830,7 +830,7 @@ fn cadence_row(key: &str, state: &Entity<SettingsState>, t: &Pink, cx: &App) -> 
         )))
 }
 
-/// The time zone (pink provider_defaults.rs `select_menu`): a 220 pop-up
+/// The time zone (Pink provider_defaults.rs `select_menu`): a 220 pop-up
 /// button whose 260 menu hangs right-aligned under it, each row the city
 /// over its offset with the current one checked.
 fn zone_row(key: &str, state: &Entity<SettingsState>, t: &Pink, cx: &App) -> Div {
@@ -959,7 +959,7 @@ fn zone_row(key: &str, state: &Entity<SettingsState>, t: &Pink, cx: &App) -> Div
 }
 
 /// A menu hung from the trigger's bottom-right corner, 6 pt below it and
-/// kept 8 pt inside the window (pink popover.rs `anchored_menu_below_end`).
+/// kept 8 pt inside the window (Pink popover.rs `anchored_menu_below_end`).
 /// It drops 6 pt into place on [`motion::MENU_IN`]; while `exit` runs it
 /// fades on [`MENU_OUT`] under an occluder, so the dying rows take no clicks.
 fn anchored_menu_below_end(
@@ -992,7 +992,7 @@ fn anchored_menu_below_end(
 }
 
 /// Swallows the press that dismisses the menu: the card closes on it, and
-/// nothing behind the menu (the trigger included) acts on it too (pink
+/// nothing behind the menu (the trigger included) acts on it too (Pink
 /// `frosted_menu_rounded`'s guard).
 fn press_guard() -> impl IntoElement {
     canvas(
@@ -1009,7 +1009,7 @@ fn press_guard() -> impl IntoElement {
     .inset_0()
 }
 
-/// The footer that holds the rows' edits (pink: automations.rs editor
+/// The footer that holds the rows' edits (Pink: automations.rs editor
 /// footer, a `fill(Quaternary)` card row): the status on the left (what
 /// Save needs, "Saving…", then a success check with "Saved"), Discard and
 /// Save on the right. It folds open and shut over `DISCLOSURE`.
@@ -1045,7 +1045,7 @@ fn footer(
         .items_start()
         .gap(px(space::S6))
         .when(saved, |line| {
-            // pink accounts.rs update message: a 14 check, 1 pt down.
+            // Pink accounts.rs update message: a 14 check, 1 pt down.
             line.child(div().flex_none().mt(px(1.)).child(pink::line_glyph(
                 pink::glyphs::CHECK,
                 14.,

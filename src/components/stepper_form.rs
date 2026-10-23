@@ -1,13 +1,13 @@
-//! Stepper Form – a paged setup flow on pink's question-wizard card.
+//! Stepper Form – a paged setup flow on Pink's question-wizard card.
 //!
-//! Every step is one page of pink's question wizard (pink: composer.rs
+//! Every step is one page of Pink's question wizard (Pink: composer.rs
 //! `Composer::render_wizard`): the composer pill's chrome, a tracked
 //! uppercase header with an "n/4" counter chip, the question in 15/20
-//! medium, then the page's controls – captioned fields (pink: automations.rs
+//! medium, then the page's controls – captioned fields (Pink: automations.rs
 //! `input_frame`), numbered option rows, staged invites or a review – and the
 //! Back / Next footer whose one Primary dims until the page can advance.
 //!
-//! Picking a region moves on by itself after pink's 220ms beat; digits pick,
+//! Picking a region moves on by itself after Pink's 220ms beat; digits pick,
 //! Enter advances and Escape goes back while no field has focus. Next checks
 //! the page and says what's missing under it, the review's Edit links jump
 //! back to a page, and the last page reads "Creating…" before the finished
@@ -39,12 +39,12 @@ pub const DESCRIPTION: &str = "A multi-step setup flow on one paged card – a s
 
 const ICON_CLOSE: &str = "icons/stepper-form/close.svg";
 
-/// A single-choice pick moves to the next page after this beat (pink
+/// A single-choice pick moves to the next page after this beat (Pink
 /// `composer::AUTO_ADVANCE_MS`).
 const AUTO_ADVANCE_MS: u64 = 220;
 /// The demo's "creating" beat before the finished page.
 const CREATE_MS: u64 = 1300;
-/// The line every pink text field lays out on (pink
+/// The line every Pink text field lays out on (Pink
 /// `composer::INPUT_LINE_HEIGHT`, `ComposerInput`'s default).
 const INPUT_LINE_HEIGHT: f32 = 22.75;
 
@@ -110,7 +110,7 @@ struct FormState {
     key: Entity<TextInput>,
     email: Entity<TextInput>,
     /// The card's own focus, so digits, Enter and Escape reach it on the
-    /// pages without a field (pink tracks `wizard_focus` on the panel).
+    /// pages without a field (Pink tracks `wizard_focus` on the panel).
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
     colors_dark: Option<bool>,
@@ -266,7 +266,7 @@ impl FormState {
         });
     }
 
-    /// Escape in an empty field goes back a page (pink
+    /// Escape in an empty field goes back a page (Pink
     /// `wizard_escape_goes_back`).
     fn escape_from(&mut self, field: Field, cx: &mut Context<Self>) {
         let empty = self.input(field).is_none_or(|i| i.read(cx).is_empty());
@@ -275,7 +275,7 @@ impl FormState {
         }
     }
 
-    /// The card's keys while no field has focus (pink `on_wizard_key`): a
+    /// The card's keys while no field has focus (Pink `on_wizard_key`): a
     /// bare digit picks a region, Enter advances, Escape goes back.
     fn on_key(&mut self, event: &KeyDownEvent, window: &Window, cx: &mut Context<Self>) -> bool {
         if self.phase != Phase::Editing
@@ -309,7 +309,7 @@ impl FormState {
         }
     }
 
-    /// A single-choice pick lands, then the page moves on (pink
+    /// A single-choice pick lands, then the page moves on (Pink
     /// `Wizard::select` → `WizardStep::AutoAdvance`).
     fn pick_region(&mut self, ix: usize, cx: &mut Context<Self>) {
         if self.phase != Phase::Editing {
@@ -348,7 +348,7 @@ impl FormState {
     }
 
     /// Whether the page has its answer; the Primary dims to 0.4 until it
-    /// does (pink `can_advance`).
+    /// does (Pink `can_advance`).
     fn can_advance(&self, cx: &App) -> bool {
         match self.step {
             0 => !self.name.read(cx).is_empty() && !self.key.read(cx).is_empty(),
@@ -575,7 +575,7 @@ impl RenderOnce for StepperForm {
             _ => Some(step_review(&key, &state, &t, cx)),
         };
 
-        // pink render_wizard: the question at mt 6 in 15/20 medium, a
+        // Pink render_wizard: the question at mt 6 in 15/20 medium, a
         // 12 px line under it (the multi-select hint's recipe), the page's
         // controls at mt 12 / pb 4 (the answer field's wrapper).
         let page = div()
@@ -602,7 +602,7 @@ impl RenderOnce for StepperForm {
                 // The finished page has no controls; keep their room.
                 None => el.pb(px(12.)),
             });
-        // Pages swap in place: pink's in-place content swap, a 160ms fade
+        // Pages swap in place: Pink's in-place content swap, a 160ms fade
         // with a 4 px settle.
         let page = if epoch == 0 {
             page.into_any_element()
@@ -617,7 +617,7 @@ impl RenderOnce for StepperForm {
         };
 
         let keys = state.clone();
-        // pink composer_surface (opaque): the composer pill's radius, edge,
+        // Pink composer_surface (opaque): the composer pill's radius, edge,
         // input plate and shadow, which the wizard reuses.
         div()
             .id(self.id.clone())
@@ -652,7 +652,7 @@ impl RenderOnce for StepperForm {
     }
 }
 
-/// The wizard header (pink render_wizard): the label tracked uppercase in
+/// The wizard header (Pink render_wizard): the label tracked uppercase in
 /// 11 medium, and the "1/3" counter chip (h 20, px 6, radius 6, `ink(0.06)`).
 fn wizard_header(label: SharedString, counter: Option<SharedString>, t: &Pink) -> Div {
     let tone = t.readable_muted(0.6);
@@ -686,7 +686,7 @@ fn wizard_header(label: SharedString, counter: Option<SharedString>, t: &Pink) -
 }
 
 /// The line under a page's controls: what Next found missing, in the error
-/// copy tone (pink accounts.rs login dialog, `mt 8`, 12), or a hint in the
+/// copy tone (Pink accounts.rs login dialog, `mt 8`, 12), or a hint in the
 /// wizard footer note's tone (`readable_muted(0.7)`).
 fn note(copy: impl Into<SharedString>, error: bool, t: &Pink) -> Div {
     div()
@@ -700,7 +700,7 @@ fn note(copy: impl Into<SharedString>, error: bool, t: &Pink) -> Div {
         .child(copy.into())
 }
 
-/// A captioned field (pink automations.rs `render_editor` `field`): an
+/// A captioned field (Pink automations.rs `render_editor` `field`): an
 /// 11/14 `readable_muted(0.85)` caption over `input_frame`, gap 4, growing
 /// from `min`. Pink frames don't change on focus; the caret says it.
 fn field(
@@ -768,7 +768,7 @@ fn step_project(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> Any
         .into_any_element()
 }
 
-/// One choice (pink render_wizard option rows): px 14 / py 10, gap 12,
+/// One choice (Pink render_wizard option rows): px 14 / py 10, gap 12,
 /// radius 12; picked rows take an `ink(0.16)` edge on `ink(0.09)`, others
 /// ease `ink(0.025)` → `ink(0.06)` under the pointer; the label 13.5 medium
 /// over an 11.5 description, and the 22 px number chip its digit picks.
@@ -891,10 +891,10 @@ fn step_region(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> AnyE
         .into_any_element()
 }
 
-/// A staged invite: pink's message badge (min-h 24, px 8, radius 8,
+/// A staged invite: Pink's message badge (min-h 24, px 8, radius 8,
 /// `ink(0.06)`, 12 medium) holding the address and a 20 px remove control
-/// (pink's sidebar row action: `hover_wash`, glyph `text_muted` → `text`).
-/// It arrives like a staged attachment (pink `ATTACHMENT_IN`).
+/// (Pink's sidebar row action: `hover_wash`, glyph `text_muted` → `text`).
+/// It arrives like a staged attachment (Pink `ATTACHMENT_IN`).
 fn invite_chip(key: &str, email: &SharedString, state: &Entity<FormState>, t: &Pink) -> AnyElement {
     let remove = format!("{key}-invite-remove-{email}");
     let ring = t.focus_ring();
@@ -968,9 +968,9 @@ fn step_team(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> AnyEle
         .into_any_element()
 }
 
-/// The review (pink render_wizard approval context): label 11
+/// The review (Pink render_wizard approval context): label 11
 /// `readable_muted(0.65)` over its value in 12 `text`, gap 2, rows gap 6;
-/// each with an Edit text link (pink accounts.rs `url_link`: 12,
+/// each with an Edit text link (Pink accounts.rs `url_link`: 12,
 /// `text_muted` → `text`).
 fn step_review(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> AnyElement {
     let s = state.read(cx);
@@ -1059,10 +1059,10 @@ fn step_review(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> AnyE
         .into_any_element()
 }
 
-/// The wizard footer (pink render_wizard): no hairline, px 16 / pb 16 /
+/// The wizard footer (Pink render_wizard): no hairline, px 16 / pb 16 /
 /// pt 4, gap 12; quiet ghost actions on the left, one Primary (px 16) on
 /// the right at 0.4 opacity until the page can advance, reading "Next",
-/// "Create project" and "Creating…" (pink "Next" / "Send" / "Sending…").
+/// "Create project" and "Creating…" (Pink "Next" / "Send" / "Sending…").
 fn footer(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> impl IntoElement {
     let s = state.read(cx);
     let (phase, step) = (s.phase, s.step);

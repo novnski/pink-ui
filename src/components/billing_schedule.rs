@@ -1,17 +1,17 @@
 //! Billing Schedule – compose a billing plan and see every invoice it makes,
-//! in pink's settings section cards: the plan and its line items in one
+//! in Pink's settings section cards: the plan and its line items in one
 //! column, the schedule they produce beside them.
 //!
-//! - **Plan**: the customer's header over two editor groups, as in pink's
-//!   automation editor (pink: automations.rs `render_editor`). "Schedule"
+//! - **Plan**: the customer's header over two editor groups, as in Pink's
+//!   automation editor (Pink: automations.rs `render_editor`). "Schedule"
 //!   holds the start month, the term chips and a one-line summary beside a
 //!   clock. "Adjustments" holds a percentage discount and a monthly minimum
 //!   that tops small invoices up, each behind a switch.
-//! - **Line items**: one card row per item, laid out like the rows of pink's
-//!   model price editor (pink: usage.rs `render_usage_price_editor`). Each
+//! - **Line items**: one card row per item, laid out like the rows of Pink's
+//!   model price editor (Pink: usage.rs `render_usage_price_editor`). Each
 //!   row has its cadence pop-up, quantity and amount. "Add item" opens the
 //!   catalog menu.
-//! - **Invoice schedule**: pink's Usage "Estimated cost" card (pink: usage.rs
+//! - **Invoice schedule**: Pink's Usage "Estimated cost" card (Pink: usage.rs
 //!   `render_usage_page`). It shows the Display total, the Totals grid of
 //!   metric cells and the per-invoice area chart with its hover guide,
 //!   readout and tooltip.
@@ -62,16 +62,16 @@ const MONTHS: [&str; 12] = [
 
 /// The whole component, the editor column (plan and line items) and the
 /// least the schedule column takes beside it. The editor fits a line row's
-/// text column (pink's 220) beside its controls without wrapping them.
+/// text column (Pink's 220) beside its controls without wrapping them.
 const WIDTH: f32 = 900.0;
 const EDITOR_W: f32 = 564.0;
 const SUMMARY_MIN_W: f32 = 300.0;
-/// The chart's plot height, value-axis gutter and gutter gap (pink: usage.rs
+/// The chart's plot height, value-axis gutter and gutter gap (Pink: usage.rs
 /// `CHART_HEIGHT`, `CHART_AXIS_WIDTH`, `CHART_AXIS_GAP`).
 const CHART_HEIGHT: f32 = 200.0;
 const CHART_AXIS_WIDTH: f32 = 56.0;
 const CHART_AXIS_GAP: f32 = 8.0;
-/// A setting's label column inside an editor group (pink: automations.rs
+/// A setting's label column inside an editor group (Pink: automations.rs
 /// `render_editor` `setting`).
 const SETTING_LABEL_W: f32 = 112.0;
 /// A line's cadence pop-up and amount column, fixed so the rows' controls
@@ -279,7 +279,7 @@ impl BillingPlan {
     }
 }
 
-/// `$12,345.67` (pink: usage.rs `money`, plus a sign for credits).
+/// `$12,345.67` (Pink: usage.rs `money`, plus a sign for credits).
 pub fn money(cents: i64) -> String {
     let sign = if cents < 0 { "−" } else { "" };
     let cents = cents.abs();
@@ -304,7 +304,7 @@ fn money_short(cents: i64) -> String {
     }
 }
 
-/// A share as `12.3%` (pink: usage.rs `usage_percent`).
+/// A share as `12.3%` (Pink: usage.rs `usage_percent`).
 fn percent(value: f64) -> String {
     let percent = value * 100.0;
     if percent > 0.0 && percent < 0.1 {
@@ -557,7 +557,7 @@ impl BillingSchedule {
         }
 
         // Each column's first card sits at its top edge; the cards below keep
-        // pink's section gap.
+        // Pink's section gap.
         let editor = div()
             .flex_none()
             .w(px(EDITOR_W))
@@ -593,7 +593,7 @@ impl BillingSchedule {
 // Plan card
 // ---------------------------------------------------------------------------
 
-/// An editor group: its name over its controls, one hairline above (pink:
+/// An editor group: its name over its controls, one hairline above (Pink:
 /// automations.rs `render_editor` `group`).
 fn group(id: String, title: &'static str, t: &Pink) -> gpui::Stateful<Div> {
     pink::card_row(false, t)
@@ -612,7 +612,7 @@ fn group(id: String, title: &'static str, t: &Pink) -> gpui::Stateful<Div> {
 }
 
 /// A setting inside a group: its label on a fixed column, the control beside
-/// it, both wrapping in a narrow column (pink: automations.rs
+/// it, both wrapping in a narrow column (Pink: automations.rs
 /// `render_editor` `setting`).
 fn setting(label: &'static str, control: impl IntoElement, t: &Pink) -> Div {
     div()
@@ -635,7 +635,7 @@ fn setting(label: &'static str, control: impl IntoElement, t: &Pink) -> Div {
         .child(div().min_w_0().child(control))
 }
 
-/// A choice chip (pink: automations.rs `render_editor` `choice`, a small
+/// A choice chip (Pink: automations.rs `render_editor` `choice`, a small
 /// `button::chip` announced as a radio button).
 fn choice(id: String, label: String, on: bool, t: &Pink) -> gpui::Stateful<Div> {
     pink::chip(id, on, ControlSize::Sm, t)
@@ -644,7 +644,7 @@ fn choice(id: String, label: String, on: bool, t: &Pink) -> gpui::Stateful<Div> 
         .child(label)
 }
 
-/// A row of choice chips (pink's kind chips: a wrapping row, gap 6).
+/// A row of choice chips (Pink's kind chips: a wrapping row, gap 6).
 fn choices() -> Div {
     div()
         .flex()
@@ -654,7 +654,7 @@ fn choices() -> Div {
         .gap(px(6.0))
 }
 
-/// A switch and what it does, on one line (pink: automations.rs "Archive run
+/// A switch and what it does, on one line (Pink: automations.rs "Archive run
 /// chats": the switch, gap 8, a shrinking row description).
 fn switch_line(control: gpui::Stateful<Div>, extra: Option<Div>, note: String, t: &Pink) -> Div {
     div()
@@ -688,7 +688,7 @@ fn plan_card(
     );
 
     // Schedule: the start month, the term, and what they mean in words
-    // (pink's schedule summary beside CLOCK_CIRCLE).
+    // (Pink's schedule summary beside CLOCK_CIRCLE).
     let start = {
         let state = state.clone();
         stepper(
@@ -858,7 +858,7 @@ fn plan_card(
 }
 
 /// A value between − and + (a month, a quantity, an amount). Pink has no
-/// stepper: this is its Secondary control frame (pink: button.rs Secondary,
+/// stepper: this is its Secondary control frame (Pink: button.rs Secondary,
 /// `fill(Quaternary)`, a `separator(true)` edge, the size's radius) holding
 /// two of its icon buttons inset by the edge, the value in the control's
 /// type with tabular figures between them.
@@ -998,10 +998,10 @@ fn lines_card(
         })
 }
 
-/// One line item: a card row (pink: usage.rs price editor rows, its provider
+/// One line item: a card row (Pink: usage.rs price editor rows, its provider
 /// rows' 13/18 medium amount) with the cadence pop-up, quantity, amount and
 /// a remove button in its controls. Lines added after the builder's rise in
-/// (pink: motion.rs `fade_in`).
+/// (Pink: motion.rs `fade_in`).
 #[allow(clippy::too_many_arguments)]
 fn line_row(
     key: &str,
@@ -1123,7 +1123,7 @@ fn line_row(
     }
 }
 
-/// A menu row's leading check slot (pink: usage.rs environment menu
+/// A menu row's leading check slot (Pink: usage.rs environment menu
 /// `check`): 14 square, holding the check on the current choice.
 fn check_slot(on: bool, t: &Pink) -> Div {
     div().flex_none().size(px(14.0)).when(on, |slot| {
@@ -1241,7 +1241,7 @@ fn catalog_menu(
     )
 }
 
-/// A menu hanging 6 px below its trigger, right-aligned to it (pink:
+/// A menu hanging 6 px below its trigger, right-aligned to it (Pink:
 /// popover.rs `anchored_menu_below_end` + `menu_motion_from`): `MENU_IN`
 /// with a 6 px drop while open, `MENU_OUT` under an occluder while it
 /// closes, kept 8 px inside the window. Put it in a `.relative()` wrapper
@@ -1275,7 +1275,7 @@ fn menu_below_end(id: SharedString, content: AnyElement, exit: Option<f32>) -> A
 }
 
 // ---------------------------------------------------------------------------
-// Invoice schedule card (pink: usage.rs "Estimated cost" + "Totals")
+// Invoice schedule card (Pink: usage.rs "Estimated cost" + "Totals")
 // ---------------------------------------------------------------------------
 
 fn schedule_card(key: &str, state: &Entity<PlanState>, s: &PlanState, t: &Pink) -> Div {
@@ -1395,7 +1395,7 @@ fn invoice_parts(plan: &BillingPlan, m: usize) -> Vec<String> {
     parts
 }
 
-/// One figure in the Totals grid (pink: usage.rs `metric_cell`): a caption
+/// One figure in the Totals grid (Pink: usage.rs `metric_cell`): a caption
 /// label over a Title3 value on the resting plate; cells share a row and wrap
 /// below 96.
 fn metric_cell(label: &'static str, value: String, t: &Pink) -> Div {
@@ -1427,7 +1427,7 @@ fn metric_cell(label: &'static str, value: String, t: &Pink) -> Div {
 }
 
 /// The chart's value scale: the peak rounded up to a 1/2/5 step of half of
-/// it (pink: usage.rs `usage_chart`).
+/// it (Pink: usage.rs `usage_chart`).
 fn chart_scale(peak: f64) -> f64 {
     if peak <= 0.0 {
         return 1.0;
@@ -1443,7 +1443,7 @@ fn chart_scale(peak: f64) -> f64 {
 }
 
 /// Monotone cubic tangents, so the curve never draws a false peak between
-/// two invoices (pink: usage.rs `monotone_usage_tangents`).
+/// two invoices (Pink: usage.rs `monotone_usage_tangents`).
 fn monotone_tangents(points: &[(f32, f32)]) -> Vec<f32> {
     if points.len() < 2 {
         return vec![0.0; points.len()];
@@ -1489,8 +1489,8 @@ fn monotone_tangents(points: &[(f32, f32)]) -> Vec<f32> {
     tangents
 }
 
-/// The per-invoice cost chart (pink: usage.rs `usage_chart`, one series in
-/// pink's neutral series tone, `text`): three `border` gridlines, the area
+/// The per-invoice cost chart (Pink: usage.rs `usage_chart`, one series in
+/// Pink's neutral series tone, `text`): three `border` gridlines, the area
 /// at 12% under a 2 px monotone line, a 1 px `text_muted` guide at the
 /// hovered invoice, a 56 px value-axis gutter and three uppercase month
 /// labels, all 11/14 in `readable_muted(0.85)`. Each invoice owns an equal
@@ -1676,7 +1676,7 @@ fn invoice_chart(
         .into_any_element()
 }
 
-/// The chart's hover tooltip (pink: shell.rs `SurfaceTabTooltip`): the tooltip
+/// The chart's hover tooltip (Pink: shell.rs `SurfaceTabTooltip`): the tooltip
 /// card at `max_w 380`, `px 8 / py 5`, 11/14 in `text`, one line per part.
 struct ChartTooltip(SharedString);
 

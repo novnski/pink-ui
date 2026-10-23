@@ -1,16 +1,16 @@
-//! OTP Input – a one-time code typed one character per cell, in pink's
+//! OTP Input – a one-time code typed one character per cell, in Pink's
 //! dialog-field chrome.
 //!
-//! A pink component. Pink's only code entry is the sign-in dialog's
-//! paste-code step (pink: settings/accounts.rs `render_login_dialog`,
+//! A Pink component. Pink's only code entry is the sign-in dialog's
+//! paste-code step (Pink: settings/accounts.rs `render_login_dialog`,
 //! `LoginFlow::PasteCode`): a mono `dialog_field`, a plain red 12px line
 //! under it when the code is refused, and the dialog's primary button
 //! reading "Verifying…" at half opacity while the code is checked. This field
 //! keeps that anatomy and splits the field into one cell per character:
 //! every cell is a `dialog_field` plate (radius 8, `separator(false)` edge,
-//! Quaternary fill), the active cell wears pink's 2px inset focus ring, which
+//! Quaternary fill), the active cell wears Pink's 2px inset focus ring, which
 //! glides from cell to cell over `QUICK` like the segmented thumb, and an
-//! empty active cell shows pink's composer caret (2px accent, solid while
+//! empty active cell shows Pink's composer caret (2px accent, solid while
 //! typing, blinking 500ms on / 500ms off when idle).
 //!
 //! The field keeps the code itself (or follows `value` when controlled):
@@ -20,7 +20,7 @@
 //! characters dim; a refused code prints the error line and clears for the
 //! next try; an accepted one prints the success label behind a check. The
 //! resend row counts down on a disabled ghost button that turns into
-//! "Resend code" (pink's pairing sheet: an "expires in m:ss" countdown and
+//! "Resend code" (Pink's pairing sheet: an "expires in m:ss" countdown and
 //! `ghost_action` buttons, settings/connections.rs).
 //!
 //! ```ignore
@@ -74,7 +74,7 @@ const CLEAR_AFTER: Duration = Duration::from_millis(700);
 pub enum OtpStatus {
     #[default]
     Idle,
-    /// The cells are read-only and their characters dim (pink keeps the field
+    /// The cells are read-only and their characters dim (Pink keeps the field
     /// and relabels the dialog's primary button "Verifying…").
     Verifying,
     /// The error line under the cells; the code clears for a retry.
@@ -98,7 +98,7 @@ enum Separator {
     After(usize),
 }
 
-/// "0:24" (pink's pairing sheet "expires in {}:{:02}").
+/// "0:24" (Pink's pairing sheet "expires in {}:{:02}").
 fn clock(seconds: u32) -> String {
     format!("{}:{:02}", seconds / 60, seconds % 60)
 }
@@ -234,7 +234,7 @@ impl Layout {
     }
 
     /// The characters' type on the ladder: Title2 17/22 in full-size cells,
-    /// Title3 15/20 and Body 13/18 (pink's code size) as they shrink.
+    /// Title3 15/20 and Body 13/18 (Pink's code size) as they shrink.
     fn style(&self) -> TextStyle {
         if self.size >= CELL {
             TextStyle::Title2
@@ -311,7 +311,7 @@ struct OtpState {
     on_change: Option<CodeHandler>,
     clear_task: Option<Task<()>>,
     countdown: Option<Task<()>>,
-    /// Repaints every half-period while the caret can blink (pink's
+    /// Repaints every half-period while the caret can blink (Pink's
     /// `blink_task`); dropped on blur so an idle field schedules nothing.
     blink_task: Option<Task<()>>,
 }
@@ -385,7 +385,7 @@ impl OtpState {
         }));
     }
 
-    /// Keeps the caret blinking while it can show (pink `caret_shown`).
+    /// Keeps the caret blinking while it can show (Pink `caret_shown`).
     fn arm_blink(&mut self, on: bool, cx: &mut Context<Self>) {
         if !on {
             self.blink_task = None;
@@ -733,7 +733,7 @@ impl OtpInput {
     }
 
     /// The width the field lays out in: the cells grow or shrink to fill it,
-    /// like pink's full-width `dialog_field`. Unset, the cells are 40px.
+    /// like Pink's full-width `dialog_field`. Unset, the cells are 40px.
     pub fn fit_width(mut self, width: Pixels) -> Self {
         self.fit_width = Some(width);
         self
@@ -856,7 +856,7 @@ impl RenderOnce for OtpInput {
         let size = layout.size;
         let style = layout.style();
         let (font, line) = (style.size(), style.line_height());
-        // pink's busy field: the characters drop to the description tone
+        // Pink's busy field: the characters drop to the description tone
         let ink = if verifying {
             t.readable_muted(0.85)
         } else {
@@ -864,7 +864,7 @@ impl RenderOnce for OtpInput {
         };
 
         // ----- Cells: one dialog_field plate per character -----
-        // pink: popover.rs `dialog_field`, the code in the theme's mono font
+        // Pink: popover.rs `dialog_field`, the code in the theme's mono font
         // (accounts.rs `render_login_dialog`)
         let mut cells = Vec::with_capacity(n);
         for i in 0..n {
@@ -888,14 +888,14 @@ impl RenderOnce for OtpInput {
                 cell = if reduced {
                     cell.child(glyph.when(f.clearing, |d| d.opacity(0.)))
                 } else if f.clearing {
-                    // The refused code leaves over pink's exit of the status swap
+                    // The refused code leaves over Pink's exit of the status swap
                     cell.child(glyph.with_animation(
                         ElementId::Name(format!("out-{i}-{stamp}").into()),
                         motion::exit_of(STATUS_SWAP).animation(),
                         |el, t| el.opacity(1. - t),
                     ))
                 } else {
-                    // A character arrives like pink's status label: a fade
+                    // A character arrives like Pink's status label: a fade
                     // and a 2px settle over STATUS_SWAP
                     let delay = f.delays.get(i).copied().unwrap_or(0);
                     cell.child(glyph.with_animation(
@@ -919,7 +919,7 @@ impl RenderOnce for OtpInput {
         });
 
         // ----- The focus ring and the caret -----
-        // pink: theme.rs `focus_ring` (2px inset), gliding like the
+        // Pink: theme.rs `focus_ring` (2px inset), gliding like the
         // segmented thumb over QUICK
         let show_ring = f.focused && !f.read_only;
         let ring_x = motion::follow(&format!("{key}-ring-x"), layout.cell_x(f.active), QUICK);
@@ -938,7 +938,7 @@ impl RenderOnce for OtpInput {
                 .shadow(t.focus_ring_shadows())
                 .opacity(ring_on)
         });
-        // pink: composer.rs caret quad, 2px wide and one line tall
+        // Pink: composer.rs caret quad, 2px wide and one line tall
         let caret = f.caret.then(|| {
             div()
                 .absolute()
@@ -1022,7 +1022,7 @@ impl RenderOnce for OtpInput {
             .child(tracker);
 
         // ----- The line under the cells -----
-        // pink: the paste-code error, `mt 8`, 12px in `danger_muted` at 90%
+        // Pink: the paste-code error, `mt 8`, 12px in `danger_muted` at 90%
         // (accounts.rs `render_login_dialog`); success mirrors it in
         // `success_muted` behind a check, one glyph and one word
         let note = f.note.map(|note| {
@@ -1058,7 +1058,7 @@ impl RenderOnce for OtpInput {
         });
 
         // ----- Resend -----
-        // pink: the pairing sheet's countdown and `ghost_action` buttons
+        // Pink: the pairing sheet's countdown and `ghost_action` buttons
         // (connections.rs), a disabled ghost counting down, then enabled
         let resend = self.on_resend.clone().map(|on_resend| {
             let can = f.left == 0 && !blocked;
@@ -1241,7 +1241,7 @@ impl DemoState {
     }
 }
 
-/// pink's paste-code sign-in dialog (accounts.rs `render_login_dialog`):
+/// Pink's paste-code sign-in dialog (accounts.rs `render_login_dialog`):
 /// title, body copy, a "Reopen…"-style text link, the field at `mt 12`, then
 /// Cancel and a primary that reads "Verifying…" at half opacity while the
 /// code is checked.
@@ -1299,7 +1299,7 @@ impl RenderOnce for OtpDemo {
                 }
             });
 
-        // pink: accounts.rs `url_link` – 12px, muted, brightening on hover
+        // Pink: accounts.rs `url_link` – 12px, muted, brightening on hover
         let change = div()
             .id("otp-change-email")
             .mt(px(space::S6))

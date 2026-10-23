@@ -1,6 +1,6 @@
 //! Model Picker – the composer's model chip and its model menu.
 //!
-//! A pink component, ported from pink's harness/model picker (pink:
+//! A Pink component, ported from Pink's harness/model picker (Pink:
 //! pickers.rs `trigger_chip` + `model_chip_content` and
 //! `render_harness_model_popover`). The chip is a ghost pill: the
 //! provider's mark, the model name and the reasoning level as a muted
@@ -52,33 +52,33 @@ const ICON_BOLT: &str = "icons/model-picker/bolt-fast.svg";
 const ICON_PAPERCLIP: &str = "icons/model-picker/paperclip.svg";
 const ICON_ARROW_UP: &str = "icons/model-picker/arrow-up.svg";
 
-/// The chip's brand mark and fast bolt (pink: pickers.rs `CHIP_ICON`,
+/// The chip's brand mark and fast bolt (Pink: pickers.rs `CHIP_ICON`,
 /// `CHIP_BOLT`).
 const CHIP_ICON: f32 = 16.;
 const CHIP_BOLT: f32 = 13.;
-/// The tab strip and the search row (pink: `render_harness_model_popover`).
+/// The tab strip and the search row (Pink: `render_harness_model_popover`).
 const STRIP_H: f32 = 40.;
 const TAB: f32 = 32.;
-/// The model band: roughly seven compact rows (pink: 216 at the 16 px
+/// The model band: roughly seven compact rows (Pink: 216 at the 16 px
 /// baseline).
 const LIST_H: f32 = 216.;
 const TRAY_MAX_H: f32 = 236.;
 const ROW_STAR: f32 = 22.;
-/// Tray rows and their nested choices (pink: `render_traits_sections`).
+/// Tray rows and their nested choices (Pink: `render_traits_sections`).
 const TRAY_ROW_H: f32 = 30.;
 const CHOICES_W: f32 = 232.;
 const CHOICES_MAX_H: f32 = 240.;
 /// Room a nested choices card needs beside its row before it opens left.
 const NESTED_ROOM: f32 = 244.;
-/// Gap between a tray row and its nested card (pink: `nested_menu`).
+/// Gap between a tray row and its nested card (Pink: `nested_menu`).
 const NESTED_GAP: f32 = layout::CARD_INSET + 6.;
 /// While the pointer heads for an open submenu, a sibling it crosses takes
-/// over only after this pause (pink: `hover_setting`).
+/// over only after this pause (Pink: `hover_setting`).
 const SUBMENU_GRACE: Duration = Duration::from_millis(300);
-/// Tooltip details longer than this wrap (pink: `ControlTooltip`).
+/// Tooltip details longer than this wrap (Pink: `ControlTooltip`).
 const TOOLTIP_WRAP_CHARS: usize = 40;
 /// Settings that carry a provider's speed, and the choices that run fast:
-/// the chip then wears a bolt (pink: `fast_speed`).
+/// the chip then wears a bolt (Pink: `fast_speed`).
 const SPEED_SETTINGS: [&str; 3] = ["serviceTier", "fastMode", "speed"];
 const FAST_CHOICES: [&str; 4] = ["fast", "on", "priority", "ultrafast"];
 
@@ -87,7 +87,7 @@ type ReasoningHandler = Rc<dyn Fn(ReasoningLevel, &mut Window, &mut App)>;
 type SettingHandler = Rc<dyn Fn(&SharedString, &SharedString, &mut Window, &mut App)>;
 type FavoriteHandler = Rc<dyn Fn(&SharedString, bool, &mut Window, &mut App)>;
 
-/// How hard a model thinks before it answers (pink: `ReasoningLevel`).
+/// How hard a model thinks before it answers (Pink: `ReasoningLevel`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ReasoningLevel {
     Minimal,
@@ -99,7 +99,7 @@ pub enum ReasoningLevel {
 }
 
 impl ReasoningLevel {
-    /// pink: `reasoning_label`.
+    /// Pink: `reasoning_label`.
     pub fn label(self) -> &'static str {
         match self {
             ReasoningLevel::Minimal => "Minimal",
@@ -113,7 +113,7 @@ impl ReasoningLevel {
 }
 
 /// The model's default level: High when it offers it, then Medium, then
-/// its first (pink: `default_reasoning_level`).
+/// its first (Pink: `default_reasoning_level`).
 fn default_reasoning(ladder: &[ReasoningLevel]) -> Option<ReasoningLevel> {
     [ReasoningLevel::High, ReasoningLevel::Medium]
         .into_iter()
@@ -121,7 +121,7 @@ fn default_reasoning(ladder: &[ReasoningLevel]) -> Option<ReasoningLevel> {
         .or_else(|| ladder.first().copied())
 }
 
-/// A picked level the model still offers, else its default (pink:
+/// A picked level the model still offers, else its default (Pink:
 /// `clamp_reasoning`).
 fn clamp_reasoning(
     level: Option<ReasoningLevel>,
@@ -133,7 +133,7 @@ fn clamp_reasoning(
     }
 }
 
-/// One more row of the tray (pink: a model option such as Context or
+/// One more row of the tray (Pink: a model option such as Context or
 /// Speed), with its own nested choices.
 #[derive(Clone, Debug)]
 pub struct ModelSetting {
@@ -170,10 +170,10 @@ pub struct ModelOption {
     pub id: SharedString,
     pub name: SharedString,
     /// Who serves the model when its provider routes several vendors, shown
-    /// after the name (pink: the OpenCode attribution). Rows otherwise show
+    /// after the name (Pink: the OpenCode attribution). Rows otherwise show
     /// the name alone.
     pub attribution: Option<SharedString>,
-    /// A small accent capsule after the name (pink: the "New" badge).
+    /// A small accent capsule after the name (Pink: the "New" badge).
     pub tag: Option<SharedString>,
     /// The reasoning ladder; empty hides the tray's Reasoning row.
     pub reasoning: Vec<ReasoningLevel>,
@@ -234,7 +234,7 @@ pub struct ModelProvider {
     /// An SVG path under `assets/`.
     pub icon: SharedString,
     /// A brand tint for the mark; without one it paints in the text tones
-    /// (pink keeps one harness mark in its brand color).
+    /// (Pink keeps one harness mark in its brand color).
     pub tint: Option<Hsla>,
     pub models: Vec<ModelOption>,
 }
@@ -371,7 +371,7 @@ impl ModelPicker {
     }
 
     /// Models starred at first (by id). With any star the menu opens on the
-    /// Favorites tab, as pink's does.
+    /// Favorites tab, as Pink's does.
     pub fn favorites(mut self, ids: impl IntoIterator<Item = impl Into<SharedString>>) -> Self {
         self.favorites = ids.into_iter().map(Into::into).collect();
         self
@@ -447,7 +447,7 @@ struct Props {
     on_favorite_change: Option<FavoriteHandler>,
 }
 
-/// The viewed tab (pink: `ModelRail`).
+/// The viewed tab (Pink: `ModelRail`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Rail {
     Favorites,
@@ -467,7 +467,7 @@ enum GroupKind {
     Setting(usize),
 }
 
-/// One tray row and its choices (pink: `SettingGroup`).
+/// One tray row and its choices (Pink: `SettingGroup`).
 struct Group {
     kind: GroupKind,
     label: SharedString,
@@ -490,7 +490,7 @@ enum Nav {
     Escape,
 }
 
-/// Match rank of `label` for `query`: 0 prefix, 1 substring (pink:
+/// Match rank of `label` for `query`: 0 prefix, 1 substring (Pink:
 /// `popover::match_rank`).
 fn match_rank(query: &str, label: &str) -> Option<usize> {
     let label = label.to_lowercase();
@@ -503,7 +503,7 @@ fn match_rank(query: &str, label: &str) -> Option<usize> {
     }
 }
 
-/// The rows one tab shows (pink: `scoped_model_rows`). A query never leaves
+/// The rows one tab shows (Pink: `scoped_model_rows`). A query never leaves
 /// the viewed tab: it ranks label prefix, then substring, then attribution
 /// hits, stars and input order breaking ties. Without one, a provider tab
 /// lists its stars first and the Favorites tab every star.
@@ -562,7 +562,7 @@ fn scoped_rows(
 }
 
 /// Whether `pointer`, moving away from `origin`, is still heading into
-/// `submenu` (pink: `submenu_corridor`).
+/// `submenu` (Pink: `submenu_corridor`).
 fn submenu_corridor(
     origin: Point<Pixels>,
     pointer: Point<Pixels>,
@@ -644,7 +644,7 @@ impl PickerState {
         })
     }
 
-    /// Where the selected model sits in the visible rows (pink:
+    /// Where the selected model sits in the visible rows (Pink:
     /// `selected_model_index`).
     fn selected_index(&self) -> usize {
         let (p, m) = self.selected;
@@ -699,7 +699,7 @@ impl PickerState {
             .unwrap_or(setting.default.min(last))
     }
 
-    /// The tray rows for the selected model (pink: `setting_groups`).
+    /// The tray rows for the selected model (Pink: `setting_groups`).
     fn groups(&self) -> Vec<Group> {
         let model = self.model();
         let mut groups = Vec::new();
@@ -744,7 +744,7 @@ impl PickerState {
     }
 
     /// Whether any trait departs from its default: the chip's suffix then
-    /// brightens (pink: `traits_customized`).
+    /// brightens (Pink: `traits_customized`).
     fn customized(&self) -> bool {
         let model = self.model();
         self.effective_reasoning() != default_reasoning(&model.reasoning)
@@ -753,7 +753,7 @@ impl PickerState {
                 .any(|si| self.setting_choice(si) != model.settings[si].default)
     }
 
-    /// Whether the effective speed runs faster than standard (pink:
+    /// Whether the effective speed runs faster than standard (Pink:
     /// `fast_speed`).
     fn fast(&self) -> bool {
         let model = self.model();
@@ -767,7 +767,7 @@ impl PickerState {
     }
 
     /// "High · 1M · Fast": the reasoning level and every setting's choice
-    /// (pink: `traits_summary`).
+    /// (Pink: `traits_summary`).
     fn summary(&self) -> Option<SharedString> {
         let model = self.model();
         let mut parts: Vec<SharedString> = Vec::new();
@@ -801,7 +801,7 @@ impl PickerState {
         }
     }
 
-    /// pink: `toggle` opening the model picker. The search clears, the
+    /// Pink: `toggle` opening the model picker. The search clears, the
     /// Favorites tab leads when there are stars, the highlight starts on the
     /// selected row and the search takes focus.
     fn open_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -858,7 +858,7 @@ impl PickerState {
         self.setting_bounds = None;
     }
 
-    /// pink: `open_setting`. The choices open with their cursor on the
+    /// Pink: `open_setting`. The choices open with their cursor on the
     /// current one.
     fn open_setting(&mut self, ix: usize, cx: &mut Context<Self>) {
         self.cancel_setting_hover();
@@ -875,7 +875,7 @@ impl PickerState {
 
     /// The pointer resting on tray row `ix` opens its choices, after a short
     /// grace when it is only crossing on its way into an open submenu
-    /// (pink: `hover_setting`).
+    /// (Pink: `hover_setting`).
     fn hover_setting(
         &mut self,
         ix: usize,
@@ -916,7 +916,7 @@ impl PickerState {
         }
     }
 
-    /// pink: `activate_model_index` + `pick_model`. The card stays open.
+    /// Pink: `activate_model_index` + `pick_model`. The card stays open.
     fn pick_model(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(row) = self.rows().get(ix).copied() else {
             return;
@@ -932,7 +932,7 @@ impl PickerState {
         cx.notify();
     }
 
-    /// pink: `toggle_model_favorite`. A star reorders the list, so the
+    /// Pink: `toggle_model_favorite`. A star reorders the list, so the
     /// highlight goes back to the selected row.
     fn toggle_favorite(&mut self, p: usize, m: usize, window: &mut Window, cx: &mut Context<Self>) {
         let provider = &self.props.providers[p];
@@ -965,7 +965,7 @@ impl PickerState {
         cx.notify();
     }
 
-    /// pink: `activate_setting_choice`.
+    /// Pink: `activate_setting_choice`.
     fn pick_choice(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(gi) = self.setting_menu else {
             return;
@@ -1002,7 +1002,7 @@ impl PickerState {
         cx.notify();
     }
 
-    /// The picker's keys (pink: `on_key_down`). Returns whether it took the
+    /// The picker's keys (Pink: `on_key_down`). Returns whether it took the
     /// key.
     fn nav(&mut self, nav: Nav, window: &mut Window, cx: &mut Context<Self>) -> bool {
         self.cancel_setting_hover();
@@ -1066,7 +1066,7 @@ impl PickerState {
     }
 }
 
-/// One step through `count` rows, wrapping (pink: `popover::menu_step`).
+/// One step through `count` rows, wrapping (Pink: `popover::menu_step`).
 fn step(at: usize, count: usize, up: bool) -> usize {
     if count == 0 {
         return 0;
@@ -1232,7 +1232,7 @@ impl RenderOnce for ModelPicker {
                 .when(!above, |el| el.pt(px(layout::POPOVER_GAP)))
                 .child(menu(&key, s, &t, &state));
             let inner: AnyElement = match exit {
-                // A dying menu takes no clicks (pink: `menu_motion_from`).
+                // A dying menu takes no clicks (Pink: `menu_motion_from`).
                 Some(progress) => motion::menu_out(
                     ElementId::NamedInteger("menu-out".into(), u64::from(s.opened)),
                     progress,
@@ -1246,7 +1246,7 @@ impl RenderOnce for ModelPicker {
                 )
                 .into_any_element(),
             };
-            // pink: `anchored_menu_above_leading` / `_below_leading`. The card
+            // Pink: `anchored_menu_above_leading` / `_below_leading`. The card
             // starts one inset left of the chip so its rows line up with the
             // chip's mark.
             div()
@@ -1275,7 +1275,7 @@ impl RenderOnce for ModelPicker {
             let state = state.clone();
             move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {
                 let keystroke = &event.keystroke;
-                // ⌘1–⌘9 pick the Nth visible row (pink: the rows' hints).
+                // ⌘1–⌘9 pick the Nth visible row (Pink: the rows' hints).
                 if keystroke.modifiers.secondary()
                     && let Ok(n) = keystroke.key.parse::<usize>()
                     && (1..=9).contains(&n)
@@ -1328,7 +1328,7 @@ impl RenderOnce for ModelPicker {
     }
 }
 
-/// The model chip (pink: pickers.rs `trigger_chip` with
+/// The model chip (Pink: pickers.rs `trigger_chip` with
 /// `model_chip_content`): the provider's mark, the model name, a bolt for a
 /// fast speed and the reasoning level as the muted second tone, brighter
 /// when the configuration departs from the model's defaults.
@@ -1390,7 +1390,7 @@ fn trigger(key: &str, s: &PickerState, t: &Pink, state: &Entity<PickerState>) ->
         )
 }
 
-/// The menu card (pink: `popover_frame_flush` at `MENU_W_L` around
+/// The menu card (Pink: `popover_frame_flush` at `MENU_W_L` around
 /// `render_harness_model_popover`): tabs, search, the model band and the
 /// traits tray.
 fn menu(key: &str, s: &PickerState, t: &Pink, state: &Entity<PickerState>) -> Div {
@@ -1435,7 +1435,7 @@ fn menu(key: &str, s: &PickerState, t: &Pink, state: &Entity<PickerState>) -> Di
         )
 }
 
-/// A provider tab (pink: `model_tab`): an announced tab that keeps focus in
+/// A provider tab (Pink: `model_tab`): an announced tab that keeps focus in
 /// the search field when pressed.
 fn tab(id: impl Into<ElementId>, label: SharedString, viewed: bool, t: &Pink) -> Stateful<Div> {
     let ring = t.accent;
@@ -1459,7 +1459,7 @@ fn tab(id: impl Into<ElementId>, label: SharedString, viewed: bool, t: &Pink) ->
 }
 
 /// The viewed tab's 2 px accent bar, sitting on the strip's bottom hairline
-/// (pink: `tab_indicator`).
+/// (Pink: `tab_indicator`).
 fn tab_indicator(t: &Pink) -> Div {
     div()
         .absolute()
@@ -1595,7 +1595,7 @@ fn list(
         .child(body)
 }
 
-/// One model row (pink: `render_model_row`). Hovering moves the shared
+/// One model row (Pink: `render_model_row`). Hovering moves the shared
 /// highlight; the selected row wears the stronger wash and ring. A
 /// provider tab shows the name alone (plus an attribution), the Favorites
 /// tab adds the provider's mark and name underneath.
@@ -1762,7 +1762,7 @@ fn model_row(
     div().pb(px(layout::MENU_GAP)).child(el).into_any_element()
 }
 
-/// The "New" capsule beside a model's name (pink: `new_model_badge`).
+/// The "New" capsule beside a model's name (Pink: `new_model_badge`).
 fn new_badge(label: SharedString, t: &Pink) -> Div {
     div()
         .flex_none()
@@ -1780,7 +1780,7 @@ fn new_badge(label: SharedString, t: &Pink) -> Div {
 }
 
 /// The "Default" marker beside a row's default choice: bare muted text
-/// (pink: `default_badge`).
+/// (Pink: `default_badge`).
 fn default_badge(t: &Pink) -> Div {
     div()
         .flex_none()
@@ -1790,7 +1790,7 @@ fn default_badge(t: &Pink) -> Div {
         .child("Default")
 }
 
-/// The traits tray pinned under the list (pink: the tray around
+/// The traits tray pinned under the list (Pink: the tray around
 /// `render_traits_sections`): the Reasoning row and the model's settings,
 /// each naming its current choice. Hidden when the model has neither.
 fn tray(
@@ -2003,7 +2003,7 @@ fn tray_row(
         .child(row)
 }
 
-/// A tray row's nested choices (pink: the `popover_card` that
+/// A tray row's nested choices (Pink: the `popover_card` that
 /// `render_traits_sections` hands `nested_menu`): a 232 card beside the
 /// row with an uppercase heading, the Default marker and a check.
 fn choices(
@@ -2089,7 +2089,7 @@ fn choices(
         .into_any_element()
 }
 
-/// The chip's tooltip: the model over its configuration (pink: pickers.rs
+/// The chip's tooltip: the model over its configuration (Pink: pickers.rs
 /// `ControlTooltip`).
 struct ControlTooltip {
     title: SharedString,
@@ -2139,7 +2139,7 @@ impl Render for ControlTooltip {
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |_, cx| {
         let t = Pink::get(cx);
-        // pink composer.rs: the opaque composer pill, its textarea and the
+        // Pink composer.rs: the opaque composer pill, its textarea and the
         // controls row (attach, the model chip, the recessed Send disc).
         let attach = div()
             .id("mp-attach")

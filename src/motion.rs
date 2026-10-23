@@ -1,28 +1,28 @@
-//! Motion kit: pink's motion catalog, ported from the Pink app's
+//! Motion kit: Pink's motion catalog, ported from the Pink app's
 //! `crates/ui/src/motion.rs` (and the loader math in
-//! `crates/proto/src/motion.rs`) so components animate exactly the way pink
+//! `crates/proto/src/motion.rs`) so components animate exactly the way Pink
 //! does.
 //!
-//! - [`CubicBezier`] evaluates CSS `cubic-bezier()` exactly; pink's curves are
+//! - [`CubicBezier`] evaluates CSS `cubic-bezier()` exactly; Pink's curves are
 //!   constants ([`EASE_OUT_EXPO`], [`EASE_OUT_QUINT`], [`EASE_TAILWIND`],
 //!   [`CURVE_STANDARD`], [`DISCLOSURE_CURVE`], ...).
 //! - [`MotionSpec`] is one transition (duration + delay + curve) and turns
 //!   into a GPUI [`Animation`] with the delay folded in. The catalog carries
-//!   pink's presets under pink's names: the original catalog ([`FADE_IN`],
+//!   Pink's presets under Pink's names: the original catalog ([`FADE_IN`],
 //!   [`MENU_IN`], [`MENU_OUT`], [`HOVER_FADE`], ...), the DS-15 ladder
 //!   ([`MICRO`], [`QUICK`], [`STANDARD`], [`EMPHASIZED`], [`DISCLOSURE`]),
 //!   the working-line specs ([`ORB_BREATH`], [`STATUS_SHIMMER`],
-//!   [`STATUS_SWAP`]) and the specs pink's surfaces define locally
+//!   [`STATUS_SWAP`]) and the specs Pink's surfaces define locally
 //!   ([`RESORT`], [`TOOL_ROW_REVEAL`], [`TOAST_IN`], ...). pink-ui's older
 //!   names ([`GLIDE`], [`ROW_IN`], [`VIEW_IN`], [`FILL`]) are aliases of the
-//!   pink preset that plays the same role.
+//!   Pink preset that plays the same role.
 //! - Element helpers ([`fade_in`], [`rise_in`], [`pop_in`], [`menu_in_from`],
 //!   [`menu_out`], [`dialog_in`], [`status_swap`], ...) cover the entrance and
-//!   exit keyframes pink's surfaces share.
+//!   exit keyframes Pink's surfaces share.
 //! - The pulse clock ([`pulse_delta`], [`pulse_phase`]) drives every loader
-//!   loop on one shared, self-parking 30fps clock, like pink's; the loaders
+//!   loop on one shared, self-parking 30fps clock, like Pink's; the loaders
 //!   themselves live in [`crate::pink::loaders`].
-//! - Hover fades: GPUI's `.hover()` styles snap, while pink eases every wash
+//! - Hover fades: GPUI's `.hover()` styles snap, while Pink eases every wash
 //!   over [`HOVER_FADE`] (Tailwind `transition-colors`: 150ms
 //!   `cubic-bezier(0.4, 0, 0.2, 1)`). [`hover_t`] and [`hover_listener`]
 //!   (wrapped by [`crate::interaction::HoverFill`]) ease a per-element
@@ -38,14 +38,14 @@
 //! them.
 //!
 //! Reduced motion: [`set_reduced_motion`] drives GPUI's own
-//! `App::reduce_motion` flag, as pink does, so every `with_animation`
+//! `App::reduce_motion` flag, as Pink does, so every `with_animation`
 //! element snaps by itself (oneshots to their end, loops to their start), the
 //! pulse clock parks, and hover fades and followers snap.
 //!
 //! translateY is a relative `top` inset: taffy applies it after layout, so
 //! like a CSS transform it never moves siblings. GPUI has no scale transform
-//! for divs, so pink's scale keyframes (`menu-in`, `dialog-in`) are fade +
-//! translate, exactly as pink approximates them.
+//! for divs, so Pink's scale keyframes (`menu-in`, `dialog-in`) are fade +
+//! translate, exactly as Pink approximates them.
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -64,7 +64,7 @@ pub use gpui::AnimationExt;
 
 /// A CSS `cubic-bezier(x1, y1, x2, y2)` timing function (endpoints fixed at
 /// (0,0) and (1,1)). Solves x(t) = input by 8 Newton steps with a 32-step
-/// bisection fallback, the UnitBezier approach pink uses (`CubicBezier`).
+/// bisection fallback, the UnitBezier approach Pink uses (`CubicBezier`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CubicBezier {
     pub x1: f32,
@@ -145,40 +145,40 @@ impl CubicBezier {
 }
 
 /// Pink's signature entrance curve, `cubic-bezier(0.16, 1, 0.3, 1)`
-/// (pink `EASE_OUT_EXPO`): [`FADE_IN`], [`TOOL_ROW_REVEAL`], toasts.
+/// (Pink `EASE_OUT_EXPO`): [`FADE_IN`], [`TOOL_ROW_REVEAL`], toasts.
 pub const EASE_OUT_EXPO: CubicBezier = CubicBezier::new(0.16, 1.0, 0.3, 1.0);
-/// CSS `ease-out` (pink `EASE_OUT`): width/height, resize, collapse.
+/// CSS `ease-out` (Pink `EASE_OUT`): width/height, resize, collapse.
 pub const EASE_OUT: CubicBezier = CubicBezier::new(0.0, 0.0, 0.58, 1.0);
-/// CSS `ease` (pink `EASE`): quick fades, menu exit, dialog entrance.
+/// CSS `ease` (Pink `EASE`): quick fades, menu exit, dialog entrance.
 pub const EASE: CubicBezier = CubicBezier::new(0.25, 0.1, 0.25, 1.0);
-/// `easeOutQuint`, `cubic-bezier(0.22, 1, 0.36, 1)` (pink `EASE_OUT_QUINT`):
+/// `easeOutQuint`, `cubic-bezier(0.22, 1, 0.36, 1)` (Pink `EASE_OUT_QUINT`):
 /// popovers in, the working-line status swap, connector draws.
 pub const EASE_OUT_QUINT: CubicBezier = CubicBezier::new(0.22, 1.0, 0.36, 1.0);
-/// Sidebar resort glide and the new-thread handoff (pink `EASE_RESORT`, an
+/// Sidebar resort glide and the new-thread handoff (Pink `EASE_RESORT`, an
 /// alias of [`EASE_OUT_QUINT`]).
 pub const EASE_RESORT: CubicBezier = EASE_OUT_QUINT;
-/// CSS `ease-in-out` (pink `EASE_IN_OUT`): the scroll-to-row glide.
+/// CSS `ease-in-out` (Pink `EASE_IN_OUT`): the scroll-to-row glide.
 pub const EASE_IN_OUT: CubicBezier = CubicBezier::new(0.42, 0.0, 0.58, 1.0);
 /// Tailwind's default transition curve, `cubic-bezier(0.4, 0, 0.2, 1)`
-/// (pink `EASE_TAILWIND`): every hover wash rides it ([`HOVER_FADE`]).
+/// (Pink `EASE_TAILWIND`): every hover wash rides it ([`HOVER_FADE`]).
 pub const EASE_TAILWIND: CubicBezier = CubicBezier::new(0.4, 0.0, 0.2, 1.0);
-/// DS-15 standard curve, `cubic-bezier(0.2, 0, 0, 1)` (pink
+/// DS-15 standard curve, `cubic-bezier(0.2, 0, 0, 1)` (Pink
 /// `CURVE_STANDARD`): quick start, gentle landing, for state changes in place.
 pub const CURVE_STANDARD: CubicBezier = CubicBezier::new(0.2, 0.0, 0.0, 1.0);
-/// DS-15 decelerate curve (pink `CURVE_DECELERATE` = [`EASE_OUT_EXPO`]):
+/// DS-15 decelerate curve (Pink `CURVE_DECELERATE` = [`EASE_OUT_EXPO`]):
 /// things arriving on screen (menus, sheets, panes).
 pub const CURVE_DECELERATE: CubicBezier = EASE_OUT_EXPO;
-/// DS-15 accelerate curve, `cubic-bezier(0.4, 0, 1, 1)` (pink
+/// DS-15 accelerate curve, `cubic-bezier(0.4, 0, 1, 1)` (Pink
 /// `CURVE_ACCELERATE`): things leaving the screen ([`exit_of`]).
 pub const CURVE_ACCELERATE: CubicBezier = CubicBezier::new(0.4, 0.0, 1.0, 1.0);
 /// The [`DISCLOSURE`] curve, `cubic-bezier(0.32, 0.72, 0, 1)`: a critically
 /// damped spring sampled as a curve – fast response, no overshoot, soft
-/// landing (pink `DISCLOSURE.curve`).
+/// landing (Pink `DISCLOSURE.curve`).
 pub const DISCLOSURE_CURVE: CubicBezier = CubicBezier::new(0.32, 0.72, 0.0, 1.0);
-/// CSS `ease-in`. pink-ui only: pink's exits use [`CURVE_ACCELERATE`].
+/// CSS `ease-in`. pink-ui only: Pink's exits use [`CURVE_ACCELERATE`].
 pub const EASE_IN: CubicBezier = CubicBezier::new(0.42, 0.0, 1.0, 1.0);
 /// `cubic-bezier(0.34, 1.56, 0.64, 1)`, a small overshoot. pink-ui only:
-/// pink never overshoots (its disclosure "spring" is critically damped), so
+/// Pink never overshoots (its disclosure "spring" is critically damped), so
 /// Pink components should not use it.
 pub const EASE_OUT_BACK: CubicBezier = CubicBezier::new(0.34, 1.56, 0.64, 1.0);
 /// Linear. Pink's loops are linear over their period ([`MotionSpec::repeating`]).
@@ -188,7 +188,7 @@ pub const LINEAR: CubicBezier = CubicBezier::new(0.0, 0.0, 1.0, 1.0);
 // Motion specs
 // ---------------------------------------------------------------------------
 
-/// One transition: duration + optional delay + curve (pink `MotionSpec`).
+/// One transition: duration + optional delay + curve (Pink `MotionSpec`).
 /// GPUI's `Animation` has no delay, so the animation runs for
 /// `delay + duration` and [`progress`](Self::progress) holds 0 until the
 /// delay has passed.
@@ -258,167 +258,167 @@ impl MotionSpec {
     }
 }
 
-// --- Pink's original catalog (pink `motion.rs` "Motion specs") -------------
+// --- Pink's original catalog (Pink `motion.rs` "Motion specs") -------------
 
-/// Entrances: 500ms expo-out fade + 4px rise (pink `FADE_IN`, played by
+/// Entrances: 500ms expo-out fade + 4px rise (Pink `FADE_IN`, played by
 /// [`fade_in_rise`]).
 pub const FADE_IN: MotionSpec = MotionSpec::new(500, EASE_OUT_EXPO);
-/// Quick opacity-only fade: 150ms `ease` (pink `FADE_QUICK`).
+/// Quick opacity-only fade: 150ms `ease` (Pink `FADE_QUICK`).
 pub const FADE_QUICK: MotionSpec = MotionSpec::new(150, EASE);
 /// Popovers and menus opening: 180ms ease-out-quint, a full fade plus a 6pt
-/// travel from the trigger side (pink `MENU_IN`; see [`menu_in_from`]).
+/// travel from the trigger side (Pink `MENU_IN`; see [`menu_in_from`]).
 pub const MENU_IN: MotionSpec = MotionSpec::new(180, EASE_OUT_QUINT);
 /// Popovers closing: 120ms `ease`, opacity only – quicker than the entrance
-/// so a closing menu gets out of the way (pink `MENU_OUT`; see [`menu_out`]).
+/// so a closing menu gets out of the way (Pink `MENU_OUT`; see [`menu_out`]).
 pub const MENU_OUT: MotionSpec = MotionSpec::new(120, EASE);
 /// Dialogs opening: 180ms `ease`, fade + 2px rise standing in for
-/// `scale(0.96)` (pink `DIALOG_IN`; see [`dialog_in`]).
+/// `scale(0.96)` (Pink `DIALOG_IN`; see [`dialog_in`]).
 pub const DIALOG_IN: MotionSpec = MotionSpec::new(180, EASE);
-/// Boot splash exit: 500ms fade + 6px lift after a 150ms hold (pink
+/// Boot splash exit: 500ms fade + 6px lift after a 150ms hold (Pink
 /// `SPLASH_OUT`; see [`splash_out`]).
 pub const SPLASH_OUT: MotionSpec = MotionSpec::new(500, EASE).with_delay(150);
-/// Sidebar / pane width and height transitions: 200ms ease-out (pink `RESIZE`).
+/// Sidebar / pane width and height transitions: 200ms ease-out (Pink `RESIZE`).
 pub const RESIZE: MotionSpec = MotionSpec::new(200, EASE_OUT);
-/// Tab drag-reorder slides: 150ms ease-out (pink `TAB_SLIDE`).
+/// Tab drag-reorder slides: 150ms ease-out (Pink `TAB_SLIDE`).
 pub const TAB_SLIDE: MotionSpec = MotionSpec::new(150, EASE_OUT);
 /// Collapsing heights (diff files, sidebar groups, the composer morph):
-/// 180ms ease-out (pink `COLLAPSE`, pink's most used height tween).
+/// 180ms ease-out (Pink `COLLAPSE`, Pink's most used height tween).
 pub const COLLAPSE: MotionSpec = MotionSpec::new(180, EASE_OUT);
 /// The reversible new-thread ↔ session handoff: 420ms [`EASE_RESORT`]
-/// (pink `NEW_THREAD_TRANSITION`).
+/// (Pink `NEW_THREAD_TRANSITION`).
 pub const NEW_THREAD_TRANSITION: MotionSpec = MotionSpec::new(420, EASE_RESORT);
-/// Scroll-to-row glide: 500ms ease-in-out over the whole distance (pink
+/// Scroll-to-row glide: 500ms ease-in-out over the whole distance (Pink
 /// `SCROLL_GLIDE`).
 pub const SCROLL_GLIDE: MotionSpec = MotionSpec::new(500, EASE_IN_OUT);
 /// Every hover wash: Tailwind `transition-colors`, 150ms over
-/// [`EASE_TAILWIND`] (pink `HOVER_FADE`). [`crate::interaction::HoverFill`]
+/// [`EASE_TAILWIND`] (Pink `HOVER_FADE`). [`crate::interaction::HoverFill`]
 /// and [`hover_t`] ride it.
 pub const HOVER_FADE: MotionSpec = MotionSpec::new(150, EASE_TAILWIND);
-/// Pink wave / mark loader period: 2.4s (pink `PINK_PULSE`; the curve is
+/// Pink wave / mark loader period: 2.4s (Pink `PINK_PULSE`; the curve is
 /// unused, loops are linear). Also the skeleton-row pulse.
 pub const PINK_PULSE: MotionSpec = MotionSpec::new(PINK_PULSE_MS, EASE);
-/// Gradient matrix and mini spinner wave period: 750ms (pink `GRADIENT_SPIN`).
+/// Gradient matrix and mini spinner wave period: 750ms (Pink `GRADIENT_SPIN`).
 pub const GRADIENT_SPIN: MotionSpec = MotionSpec::new(GRADIENT_SPIN_MS, EASE);
 
-// --- DS-15 unified ladder (pink `motion.rs` "Unified motion tokens") ------
+// --- DS-15 unified ladder (Pink `motion.rs` "Unified motion tokens") ------
 //
 // New UI picks from this short ladder instead of a bespoke duration. Exits
 // run at 0.75x their entrance ([`exit_of`]). Reduced motion snaps every
 // oneshot animation and parks every loop.
 
-/// Hover, press and tooltip fades: 120ms [`CURVE_STANDARD`] (pink `MICRO`).
+/// Hover, press and tooltip fades: 120ms [`CURVE_STANDARD`] (Pink `MICRO`).
 pub const MICRO: MotionSpec = MotionSpec::new(120, CURVE_STANDARD);
 /// Switch tracks, segment thumbs, selection rings, chevrons: 160ms
-/// [`CURVE_STANDARD`] (pink `QUICK`; the segmented thumb follows on it).
+/// [`CURVE_STANDARD`] (Pink `QUICK`; the segmented thumb follows on it).
 pub const QUICK: MotionSpec = MotionSpec::new(160, CURVE_STANDARD);
 /// Menus and popovers in, tab slides, toasts: 240ms [`CURVE_DECELERATE`]
-/// (pink `STANDARD`).
+/// (Pink `STANDARD`).
 pub const STANDARD: MotionSpec = MotionSpec::new(240, CURVE_DECELERATE);
-/// Panes, sheets, route changes: 360ms [`CURVE_DECELERATE`] (pink `EMPHASIZED`).
+/// Panes, sheets, route changes: 360ms [`CURVE_DECELERATE`] (Pink `EMPHASIZED`).
 pub const EMPHASIZED: MotionSpec = MotionSpec::new(360, CURVE_DECELERATE);
 /// Disclosures (tool folds, thinking, settings groups, the toggle-switch
-/// knob): 300ms [`DISCLOSURE_CURVE`] (pink `DISCLOSURE`).
+/// knob): 300ms [`DISCLOSURE_CURVE`] (Pink `DISCLOSURE`).
 pub const DISCLOSURE: MotionSpec = MotionSpec::new(300, DISCLOSURE_CURVE);
 
 /// The exit counterpart of an entrance spec: 0.75x as long, accelerating
-/// (pink `exit_of`).
+/// (Pink `exit_of`).
 pub const fn exit_of(spec: MotionSpec) -> MotionSpec {
     MotionSpec::new(spec.duration_ms * 3 / 4, CURVE_ACCELERATE)
 }
 
-/// Working-line orb breath: one slow sine per 1600ms period (pink
+/// Working-line orb breath: one slow sine per 1600ms period (Pink
 /// `ORB_BREATH`; the curve is unused).
 pub const ORB_BREATH: MotionSpec = MotionSpec::new(1600, EASE);
 /// Working-line text shimmer period: 3400ms, the same sweep as the live
-/// tool-group title (pink `STATUS_SHIMMER`; the curve is unused).
+/// tool-group title (Pink `STATUS_SHIMMER`; the curve is unused).
 pub const STATUS_SHIMMER: MotionSpec = MotionSpec::new(3400, EASE);
-/// Working-line status change: a 180ms fade and 2px settle (pink
+/// Working-line status change: a 180ms fade and 2px settle (Pink
 /// `STATUS_SWAP`; see [`status_swap`]).
 pub const STATUS_SWAP: MotionSpec = MotionSpec::new(180, EASE_OUT_QUINT);
 
-// --- Specs pink's surfaces define locally ----------------------------------
+// --- Specs Pink's surfaces define locally ----------------------------------
 
 /// Sidebar resort glide: 260ms [`EASE_RESORT`] per-row translate, the View
-/// Transitions equivalent (pink `shell.rs` `RESORT`).
+/// Transitions equivalent (Pink `shell.rs` `RESORT`).
 pub const RESORT: MotionSpec = MotionSpec::new(260, EASE_RESORT);
 /// A newly selected chat settling in: 160ms [`CURVE_STANDARD`], opacity plus
-/// a 4px settle (pink `shell.rs` "transcript-in"; rise [`TRANSCRIPT_IN_RISE`]).
+/// a 4px settle (Pink `shell.rs` "transcript-in"; rise [`TRANSCRIPT_IN_RISE`]).
 pub const TRANSCRIPT_IN: MotionSpec = MotionSpec::new(160, CURVE_STANDARD);
 /// [`TRANSCRIPT_IN`]'s starting offset: content settles 4px up into place.
 pub const TRANSCRIPT_IN_RISE: f32 = 4.0;
-/// Toast capsule entrance: 220ms expo-out, opacity plus an 8px rise (pink
+/// Toast capsule entrance: 220ms expo-out, opacity plus an 8px rise (Pink
 /// `shell.rs` "toast-in"; rise [`TOAST_IN_RISE`]).
 pub const TOAST_IN: MotionSpec = MotionSpec::new(220, EASE_OUT_EXPO);
 /// [`TOAST_IN`]'s starting offset.
 pub const TOAST_IN_RISE: f32 = 8.0;
 /// Command palette entrance: 160ms ease-out-quint, a short fade and 6pt rise
-/// (pink `command_palette.rs` "command-palette-in"; rise [`PALETTE_IN_RISE`]).
+/// (Pink `command_palette.rs` "command-palette-in"; rise [`PALETTE_IN_RISE`]).
 pub const PALETTE_IN: MotionSpec = MotionSpec::new(160, EASE_OUT_QUINT);
 /// [`PALETTE_IN`]'s starting offset.
 pub const PALETTE_IN_RISE: f32 = 6.0;
-/// Lightbox image entrance: 260ms expo-out, fade plus a 10px rise (pink
+/// Lightbox image entrance: 260ms expo-out, fade plus a 10px rise (Pink
 /// `attachments.rs` "attachment-lightbox-image").
 pub const LIGHTBOX_IN: MotionSpec = MotionSpec::new(260, EASE_OUT_EXPO);
-/// Lightbox backdrop fade: 200ms ease-out, opacity only (pink
+/// Lightbox backdrop fade: 200ms ease-out, opacity only (Pink
 /// `attachments.rs` "attachment-lightbox-in").
 pub const LIGHTBOX_BACKDROP_IN: MotionSpec = MotionSpec::new(200, EASE_OUT);
 /// Composer attachment card entrance: 240ms expo-out, fade plus an 8px rise
-/// (pink `composer.rs` appshot entrance).
+/// (Pink `composer.rs` appshot entrance).
 pub const ATTACHMENT_IN: MotionSpec = MotionSpec::new(240, EASE_OUT_EXPO);
 /// Composer send/stop glyph crossfade: 180ms ease-out-quint, opacity only
-/// (pink `composer.rs` "composer-primary-glyph").
+/// (Pink `composer.rs` "composer-primary-glyph").
 pub const GLYPH_SWAP: MotionSpec = MotionSpec::new(180, EASE_OUT_QUINT);
-/// Workbench hover / drop-preview fade: 120ms `ease` (pink workbench
+/// Workbench hover / drop-preview fade: 120ms `ease` (Pink workbench
 /// `PREVIEW_FADE_MS`).
 pub const PREVIEW_FADE: MotionSpec = MotionSpec::new(120, EASE);
-/// Workbench tab / pane insertion: 160ms ease-out (pink workbench `INSERT_MS`).
+/// Workbench tab / pane insertion: 160ms ease-out (Pink workbench `INSERT_MS`).
 pub const INSERT: MotionSpec = MotionSpec::new(160, EASE_OUT);
-/// Menus below their trigger drop 6pt into place (pink `popover.rs`
+/// Menus below their trigger drop 6pt into place (Pink `popover.rs`
 /// `MENU_RISE_DOWN`); pass to [`menu_in_from`].
 pub const MENU_RISE_DOWN: f32 = -6.0;
-/// Menus above their trigger rise 6pt into place (pink `MENU_RISE_UP`).
+/// Menus above their trigger rise 6pt into place (Pink `MENU_RISE_UP`).
 pub const MENU_RISE_UP: f32 = 6.0;
 
-/// Tool rows and groups fold on the shared disclosure curve (pink
+/// Tool rows and groups fold on the shared disclosure curve (Pink
 /// `transcript.rs` `TOOL_FOLD` = [`DISCLOSURE`]); the chevron turns with it.
 pub const TOOL_FOLD: MotionSpec = DISCLOSURE;
 /// An opening tool body fades in over 180ms ease-out while its height springs
-/// open (pink `TOOL_BODY_FADE_MS`; see [`fold_progress`]).
+/// open (Pink `TOOL_BODY_FADE_MS`; see [`fold_progress`]).
 pub const TOOL_BODY_FADE: MotionSpec = MotionSpec::new(180, EASE_OUT);
 /// A closing tool body is fully transparent by this fraction of the fold
-/// (pink `TOOL_BODY_FADE_OUT_FRACTION`).
+/// (Pink `TOOL_BODY_FADE_OUT_FRACTION`).
 pub const TOOL_BODY_FADE_OUT_FRACTION: f32 = 0.6;
-/// The fading body also settles this far: `top = 6 * (1 - alpha)` (pink
+/// The fading body also settles this far: `top = 6 * (1 - alpha)` (Pink
 /// `transcript.rs` tool panel).
 pub const TOOL_BODY_RISE: f32 = 6.0;
-/// A new tool row grows from 0 to its height over 360ms expo-out (pink
+/// A new tool row grows from 0 to its height over 360ms expo-out (Pink
 /// `TOOL_ROW_REVEAL`; see [`reveal_progress`]).
 pub const TOOL_ROW_REVEAL: MotionSpec = MotionSpec::new(360, EASE_OUT_EXPO);
 /// The activity-rail connector draws briskly and eases into the branch tip:
-/// 480ms ease-out-quint (pink `TOOL_CONNECTOR_REVEAL`; see
+/// 480ms ease-out-quint (Pink `TOOL_CONNECTOR_REVEAL`; see
 /// [`tool_connector_parts`]).
 pub const TOOL_CONNECTOR_REVEAL: MotionSpec = MotionSpec::new(480, EASE_OUT_QUINT);
-/// The first row of a new tool group arrives after this beat (pink
+/// The first row of a new tool group arrives after this beat (Pink
 /// `TOOL_FIRST_ROW_DELAY_MS`).
 pub const TOOL_FIRST_ROW_DELAY_MS: u64 = 90;
-/// Each further arriving row starts this much later (pink `TOOL_ROW_STAGGER_MS`).
+/// Each further arriving row starts this much later (Pink `TOOL_ROW_STAGGER_MS`).
 pub const TOOL_ROW_STAGGER_MS: u64 = 65;
 /// A fold animates while its toggle is younger than this; past it the fold
-/// renders statically so a remount never replays it (pink `FOLD_TWEEN_WINDOW`).
+/// renders statically so a remount never replays it (Pink `FOLD_TWEEN_WINDOW`).
 pub const FOLD_TWEEN_WINDOW: Duration = Duration::from_millis(400);
 
-// --- pink-ui names, now aliases of the pink preset playing the role --------
+// --- pink-ui names, now aliases of the Pink preset playing the role --------
 
 /// Content swapping in place (a new label, panel or message replacing the
-/// old one, with a small rise): pink's [`TRANSCRIPT_IN`], 160ms
+/// old one, with a small rise): Pink's [`TRANSCRIPT_IN`], 160ms
 /// [`CURVE_STANDARD`] with a 4px settle.
 pub const VIEW_IN: MotionSpec = TRANSCRIPT_IN;
-/// Rows and items entering a list: pink's [`TOOL_ROW_REVEAL`], 360ms
-/// expo-out (pink staggers arrivals by [`TOOL_FIRST_ROW_DELAY_MS`] +
+/// Rows and items entering a list: Pink's [`TOOL_ROW_REVEAL`], 360ms
+/// expo-out (Pink staggers arrivals by [`TOOL_FIRST_ROW_DELAY_MS`] +
 /// [`TOOL_ROW_STAGGER_MS`]).
 pub const ROW_IN: MotionSpec = TOOL_ROW_REVEAL;
-/// Heights, widths and positions gliding: pink's [`DISCLOSURE`] (300ms
-/// critically damped spring), the curve of pink's folds and switch knob.
+/// Heights, widths and positions gliding: Pink's [`DISCLOSURE`] (300ms
+/// critically damped spring), the curve of Pink's folds and switch knob.
 /// Pink picks a narrower preset where one fits: [`QUICK`] for thumbs and
 /// chevrons, [`RESORT`] for list reorders, [`RESIZE`] / [`COLLAPSE`] for
 /// pane and height tweens.
@@ -432,7 +432,7 @@ pub const FILL: MotionSpec = EMPHASIZED;
 // Element helpers
 // ---------------------------------------------------------------------------
 
-/// Opacity 0 → 1 over [`FADE_QUICK`]: pink's `fade_quick`. (Pink's own
+/// Opacity 0 → 1 over [`FADE_QUICK`]: Pink's `fade_quick`. (Pink's own
 /// `fade_in`, which also rises, is [`fade_in_rise`]; this name keeps its
 /// opacity-only meaning, so it is safe on absolutely positioned elements.)
 pub fn fade_in<E>(id: impl Into<ElementId>, element: E) -> AnimationElement<E>
@@ -442,7 +442,7 @@ where
     fade_quick(id, element)
 }
 
-/// Quick opacity-only fade over [`FADE_QUICK`] (pink `fade_quick`).
+/// Quick opacity-only fade over [`FADE_QUICK`] (Pink `fade_quick`).
 pub fn fade_quick<E>(id: impl Into<ElementId>, element: E) -> AnimationElement<E>
 where
     E: Styled + IntoElement + 'static,
@@ -450,7 +450,7 @@ where
     element.with_animation(id, FADE_QUICK.animation(), |el, t| el.opacity(t))
 }
 
-/// Pink's standard entrance (pink `fade_in`): opacity 0 → 1 plus
+/// Pink's standard entrance (Pink `fade_in`): opacity 0 → 1 plus
 /// translateY 4 → 0 over [`FADE_IN`] (500ms expo-out). Sets `.relative()`.
 pub fn fade_in_rise<E>(id: impl Into<ElementId>, element: E) -> AnimationElement<E>
 where
@@ -461,7 +461,7 @@ where
     })
 }
 
-/// A composition arriving as one object (pink `settle_down`): opacity 0 → 1
+/// A composition arriving as one object (Pink `settle_down`): opacity 0 → 1
 /// while settling 10px down into place over [`FADE_IN`].
 pub fn settle_down<E>(id: impl Into<ElementId>, element: E) -> AnimationElement<E>
 where
@@ -489,9 +489,9 @@ where
     })
 }
 
-/// Popover entrance for a menu below its trigger: pink's `menu_in`, a fade
+/// Popover entrance for a menu below its trigger: Pink's `menu_in`, a fade
 /// plus a 6pt drop ([`MENU_RISE_DOWN`]) over [`MENU_IN`], standing in for
-/// pink's `scale(0.96)`.
+/// Pink's `scale(0.96)`.
 pub fn pop_in<E>(id: impl Into<ElementId>, element: E) -> AnimationElement<E>
 where
     E: Styled + IntoElement + 'static,
@@ -499,7 +499,7 @@ where
     menu_in(id, element)
 }
 
-/// Popover entrance (pink `menu_in`): fade + translateY −6 → 0 over [`MENU_IN`].
+/// Popover entrance (Pink `menu_in`): fade + translateY −6 → 0 over [`MENU_IN`].
 pub fn menu_in<E>(id: impl Into<ElementId>, element: E) -> AnimationElement<E>
 where
     E: Styled + IntoElement + 'static,
@@ -507,7 +507,7 @@ where
     menu_in_from(id, MENU_RISE_DOWN, element)
 }
 
-/// Popover entrance from the trigger side (pink `menu_in_from`): `rise` is
+/// Popover entrance from the trigger side (Pink `menu_in_from`): `rise` is
 /// the starting offset in pt – [`MENU_RISE_DOWN`] (−6) for a menu below its
 /// trigger, [`MENU_RISE_UP`] (+6) for one above it.
 pub fn menu_in_from<E>(id: impl Into<ElementId>, rise: f32, element: E) -> AnimationElement<E>
@@ -519,11 +519,11 @@ where
     })
 }
 
-/// Popover exit (pink `menu_out`): opacity 1 → 0 over [`MENU_OUT`]. The eased
+/// Popover exit (Pink `menu_out`): opacity 1 → 0 over [`MENU_OUT`]. The eased
 /// progress `t` comes from the caller ([`menu_exit_progress`] of the closing
 /// instant): `with_animation`'s clock replays from 0 on remount, and a replay
 /// mid-exit would flash the menu back to full opacity. The animation wrapper
-/// only pumps frames for the exit's span. Give it a fresh id (pink uses
+/// only pumps frames for the exit's span. Give it a fresh id (Pink uses
 /// `"{id}-out"`), and lay an occluding overlay over the dying menu so its
 /// rows take no clicks.
 pub fn menu_out<E>(id: impl Into<ElementId>, t: f32, element: E) -> AnimationElement<E>
@@ -534,14 +534,14 @@ where
 }
 
 /// Eased [`MENU_OUT`] progress (0..1) for a popover that began closing at
-/// `since`, from the wall clock (pink `popover.rs` `exit_progress`).
+/// `since`, from the wall clock (Pink `popover.rs` `exit_progress`).
 /// Monotonic by construction, unlike an animation element's own clock.
 pub fn menu_exit_progress(since: Instant) -> f32 {
     MENU_OUT.progress_at(since.elapsed())
 }
 
-/// Dialog entrance (pink `dialog_in`): fade + a 2px rise over [`DIALOG_IN`]
-/// (pink's `scale(0.96 → 1)` approximated).
+/// Dialog entrance (Pink `dialog_in`): fade + a 2px rise over [`DIALOG_IN`]
+/// (Pink's `scale(0.96 → 1)` approximated).
 pub fn dialog_in<E>(id: impl Into<ElementId>, element: E) -> AnimationElement<E>
 where
     E: Styled + IntoElement + 'static,
@@ -551,7 +551,7 @@ where
     })
 }
 
-/// Boot-splash exit (pink `splash_out`): hold 150ms, then fade out and lift
+/// Boot-splash exit (Pink `splash_out`): hold 150ms, then fade out and lift
 /// 6px over 500ms ([`SPLASH_OUT`]).
 pub fn splash_out<E>(id: impl Into<ElementId>, element: E) -> AnimationElement<E>
 where
@@ -562,7 +562,7 @@ where
     })
 }
 
-/// A status label arriving (pink's working line): a 180ms fade and 2px
+/// A status label arriving (Pink's working line): a 180ms fade and 2px
 /// settle over [`STATUS_SWAP`]. Key the id on the label
 /// ([`crate::pink::loaders::label_id`]) so every new label replays it; reduced
 /// motion snaps it.
@@ -581,10 +581,10 @@ pub fn lerp(from: f32, to: f32, t: f32) -> f32 {
 }
 
 // ---------------------------------------------------------------------------
-// Tool-row reveal and fold timing (pink `transcript.rs`)
+// Tool-row reveal and fold timing (Pink `transcript.rs`)
 // ---------------------------------------------------------------------------
 
-/// Eased progress of a reveal that started at `start` (pink
+/// Eased progress of a reveal that started at `start` (Pink
 /// `tool_row_reveal_progress` / `tool_connector_reveal_progress`): 1 when
 /// there is no start or motion is reduced. The curve runs over the spec's
 /// whole span.
@@ -607,7 +607,7 @@ pub fn reveal_progress(
 
 /// When the `arrival_ix`-th new row of a tool group starts revealing,
 /// relative to the sync that found it: [`TOOL_FIRST_ROW_DELAY_MS`] for a new
-/// group, then [`TOOL_ROW_STAGGER_MS`] per row (pink `transcript.rs` reveal
+/// group, then [`TOOL_ROW_STAGGER_MS`] per row (Pink `transcript.rs` reveal
 /// starts).
 pub fn tool_row_arrival_delay(arrival_ix: usize, new_group: bool) -> Duration {
     let first = if new_group {
@@ -618,7 +618,7 @@ pub fn tool_row_arrival_delay(arrival_ix: usize, new_group: bool) -> Duration {
     Duration::from_millis(first + arrival_ix as u64 * TOOL_ROW_STAGGER_MS)
 }
 
-/// Splits one arrival into a continuous tree draw (pink
+/// Splits one arrival into a continuous tree draw (Pink
 /// `tool_connector_parts`): `(incoming, branch)` progress of the trunk and
 /// the elbow. A row with a predecessor waits for the previous row's
 /// continuation, then draws its incoming trunk over 0.45..0.72; the branch
@@ -637,7 +637,7 @@ pub fn tool_connector_parts(progress: f32, has_predecessor: bool) -> (f32, f32) 
 }
 
 /// The outgoing trunk belongs to the row already present but is timed by the
-/// next row's arrival (pink `tool_connector_continuation`): it draws over the
+/// next row's arrival (Pink `tool_connector_continuation`): it draws over the
 /// first 45% of that arrival.
 pub fn tool_connector_continuation(next_progress: Option<f32>) -> f32 {
     next_progress
@@ -646,7 +646,7 @@ pub fn tool_connector_continuation(next_progress: Option<f32>) -> f32 {
 }
 
 /// One clock for a fold's chevron, height spring and body fade, so the three
-/// agree mid-fold (pink `transcript.rs` tool fold). `elapsed` is the time
+/// agree mid-fold (Pink `transcript.rs` tool fold). `elapsed` is the time
 /// since the toggle while the fold is animating (`None` once settled, past
 /// [`FOLD_TWEEN_WINDOW`], or under reduced motion). Returns
 /// `(progress, body_alpha)`: `progress` 0 = closed, 1 = open on
@@ -670,13 +670,13 @@ pub fn fold_progress(open: bool, elapsed: Option<Duration>) -> (f32, f32) {
     }
 }
 
-/// Layout transitions take longer when they travel farther (pink
+/// Layout transitions take longer when they travel farther (Pink
 /// `user_resize_duration_ms`): 220ms plus 0.32ms per px, capped at 850ms.
 pub fn user_resize_duration_ms(height_delta: f32) -> u64 {
     (220.0 + height_delta.max(0.0) * 0.32).min(850.0).round() as u64
 }
 
-/// The spec for a distance-scaled height change (pink `user_resize_spec`):
+/// The spec for a distance-scaled height change (Pink `user_resize_spec`):
 /// ease-out for ordinary folds, ease-in-out past 500px so a large fold does
 /// not vanish in its first frames.
 pub fn user_resize_spec(height_delta: f32) -> MotionSpec {
@@ -689,15 +689,15 @@ pub fn user_resize_spec(height_delta: f32) -> MotionSpec {
 }
 
 // ---------------------------------------------------------------------------
-// Resize-edge feedback (pink `motion.rs`)
+// Resize-edge feedback (Pink `motion.rs`)
 // ---------------------------------------------------------------------------
 
 /// A pane resize limit acknowledges a held pointer with this small
-/// displacement (pink `RESIZE_EDGE_NUDGE`).
+/// displacement (Pink `RESIZE_EDGE_NUDGE`).
 pub const RESIZE_EDGE_NUDGE: f32 = 5.0;
-/// The bounce's whole span (pink `RESIZE_EDGE_BOUNCE_MS`).
+/// The bounce's whole span (Pink `RESIZE_EDGE_BOUNCE_MS`).
 pub const RESIZE_EDGE_BOUNCE_MS: u64 = 220;
-/// Share of the span spent easing out to the nudge (pink
+/// Share of the span spent easing out to the nudge (Pink
 /// `RESIZE_EDGE_BOUNCE_OUT_FRACTION`); the rest eases home.
 pub const RESIZE_EDGE_BOUNCE_OUT_FRACTION: f32 = 0.32;
 
@@ -708,7 +708,7 @@ pub enum ResizeEdge {
     Max,
 }
 
-/// One clamped resize sample (pink `ResizeDragSample`).
+/// One clamped resize sample (Pink `ResizeDragSample`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ResizeDragSample {
     pub width: f32,
@@ -717,7 +717,7 @@ pub struct ResizeDragSample {
 }
 
 /// Clamps a resize sample while latching its constrained edge, so a held
-/// pointer starts one bounce rather than one per drag event (pink
+/// pointer starts one bounce rather than one per drag event (Pink
 /// `resize_drag_sample`).
 pub fn resize_drag_sample(
     requested: f32,
@@ -741,7 +741,7 @@ pub fn resize_drag_sample(
     }
 }
 
-/// A running edge bounce (pink `ResizeEdgeBounce`).
+/// A running edge bounce (Pink `ResizeEdgeBounce`).
 #[derive(Debug, Clone, Copy)]
 pub struct ResizeEdgeBounce {
     pub edge: ResizeEdge,
@@ -764,7 +764,7 @@ fn smoothstep(t: f32) -> f32 {
 
 /// Rounded two-phase pulse for a bounce at raw progress `raw` (0..1 of
 /// [`RESIZE_EDGE_BOUNCE_MS`]): smoothstep out to the nudge, then a little
-/// longer smoothstep home; both joins have zero velocity (pink
+/// longer smoothstep home; both joins have zero velocity (Pink
 /// `resize_bounce_offset`). Negative at the min edge.
 pub fn resize_bounce_offset(edge: ResizeEdge, raw: f32) -> f32 {
     let raw = raw.clamp(0.0, 1.0);
@@ -792,10 +792,10 @@ pub fn resize_bounce_offset(edge: ResizeEdge, raw: f32) -> f32 {
 // that paints it; the clock notifies leased views every tick and parks once
 // the last lease lapses. A window with no loader mounted schedules nothing.
 
-/// Repeat-tick interval for the loaders, about 30fps (pink `PULSE_TICK`).
+/// Repeat-tick interval for the loaders, about 30fps (Pink `PULSE_TICK`).
 const PULSE_TICK: Duration = Duration::from_millis(33);
 
-/// How long a view stays ticked after its last loader paint (pink
+/// How long a view stays ticked after its last loader paint (Pink
 /// `PULSE_LEASE`). An unmounted loader stops renewing and the view drops off.
 const PULSE_LEASE: Duration = Duration::from_millis(300);
 
@@ -842,21 +842,21 @@ impl Default for PulseClock {
 }
 
 /// Current phase `[0, 1)` of a looping `spec`, plus a lease that keeps
-/// `view` re-rendering at ~30fps while its loader stays mounted (pink
+/// `view` re-rendering at ~30fps while its loader stays mounted (Pink
 /// `pulse_delta`). Every caller shares one epoch, so instances stay
 /// phase-locked. Reduced motion returns 0 and schedules nothing.
 pub fn pulse_delta(spec: &MotionSpec, view: EntityId, cx: &mut App) -> f32 {
     pulse_delta_every(spec, view, 1, cx)
 }
 
-/// [`pulse_delta`] on a 15Hz stride for coarse cell loaders (pink
+/// [`pulse_delta`] on a 15Hz stride for coarse cell loaders (Pink
 /// `pulse_delta_slow`; the gradient spinner). Period and phase are the same.
 pub fn pulse_delta_slow(spec: &MotionSpec, view: EntityId, cx: &mut App) -> f32 {
     pulse_delta_every(spec, view, 2, cx)
 }
 
 /// Keeps `view` ticking on the pulse clock without reading a phase, for an
-/// animation timed off its own start (pink `pulse_lease`; the tool-group
+/// animation timed off its own start (Pink `pulse_lease`; the tool-group
 /// shimmer). Renew it on every paint while the animation is live.
 pub fn pulse_lease(view: EntityId, cx: &mut App) {
     pulse_lease_every(view, 1, cx);
@@ -941,7 +941,7 @@ fn pulse_lease_every(view: EntityId, stride: u64, cx: &mut App) {
 }
 
 // ---------------------------------------------------------------------------
-// Loader math (pink `crates/proto/src/motion.rs`, rendered by
+// Loader math (Pink `crates/proto/src/motion.rs`, rendered by
 // `crate::pink::loaders`)
 // ---------------------------------------------------------------------------
 //
@@ -952,7 +952,7 @@ fn pulse_lease_every(view: EntityId, stride: u64, cx: &mut App) {
 pub const PINK_PULSE_MS: u64 = 2_400;
 /// Gradient matrix spinner wave period in ms (pink_proto `GRADIENT_SPIN_MS`).
 pub const GRADIENT_SPIN_MS: u64 = 750;
-/// Cells in the pink wave loader (pink_proto `PINK_CELLS`).
+/// Cells in the Pink wave loader (pink_proto `PINK_CELLS`).
 pub const PINK_CELLS: usize = 5;
 /// Side length of the gradient spinner matrix (pink_proto `MATRIX_SIDE`).
 pub const MATRIX_SIDE: usize = 3;
@@ -964,7 +964,7 @@ pub const PULSE_MIN_SCALE: f32 = 0.9;
 /// Per-cell stagger as a fraction of the pulse period, 0.15s of 2.4s
 /// (pink_proto `PULSE_STAGGER`).
 pub const PULSE_STAGGER: f32 = 0.15 / 2.4;
-/// Per-row tints of pink's "sunrise" gradient (pink_proto `GSPIN_ROW_TINTS`):
+/// Per-row tints of Pink's "sunrise" gradient (pink_proto `GSPIN_ROW_TINTS`):
 /// cool blue at the top, through amber, to pink. Pink's GPUI loaders tint
 /// from the accent glyph palette instead; kept for parity.
 pub const GSPIN_ROW_TINTS: [u32; MATRIX_SIDE] = [0xB6D3EF, 0xEDB185, 0xF888A0];
@@ -972,30 +972,30 @@ pub const GSPIN_ROW_TINTS: [u32; MATRIX_SIDE] = [0xB6D3EF, 0xEDB185, 0xF888A0];
 /// `GSPIN_DIM`).
 pub const GSPIN_DIM: f32 = 0.1;
 
-/// A cell's phase, given the loader's raw phase and the cell's index (pink
+/// A cell's phase, given the loader's raw phase and the cell's index (Pink
 /// `staggered_phase`).
 pub fn staggered_phase(raw_delta: f32, index: usize, stagger: f32) -> f32 {
     (raw_delta - index as f32 * stagger).rem_euclid(1.0)
 }
 
-/// Cosine pulse: 0 at phase 0, 1 at phase 0.5, back to 0 at phase 1 (pink
+/// Cosine pulse: 0 at phase 0, 1 at phase 0.5, back to 0 at phase 1 (Pink
 /// `pulse_wave`).
 pub fn pulse_wave(phase: f32) -> f32 {
     0.5 - 0.5 * (phase * std::f32::consts::TAU).cos()
 }
 
-/// Pink loader cell opacity for a phase: 0.08 → 1 → 0.08 (pink `pulse_opacity`).
+/// Pink loader cell opacity for a phase: 0.08 → 1 → 0.08 (Pink `pulse_opacity`).
 pub fn pulse_opacity(phase: f32) -> f32 {
     PULSE_MIN_OPACITY + (1.0 - PULSE_MIN_OPACITY) * pulse_wave(phase)
 }
 
-/// Pink loader cell scale for a phase: 0.9 → 1 → 0.9 (pink `pulse_scale`).
+/// Pink loader cell scale for a phase: 0.9 → 1 → 0.9 (Pink `pulse_scale`).
 pub fn pulse_scale(phase: f32) -> f32 {
     PULSE_MIN_SCALE + (1.0 - PULSE_MIN_SCALE) * pulse_wave(phase)
 }
 
-/// Gradient-spin cell opacity for a local phase `t` (pink `gspin_opacity`,
-/// from pink's `gradient-spin-pulse` keyframes): full at the cycle start,
+/// Gradient-spin cell opacity for a local phase `t` (Pink `gspin_opacity`,
+/// from Pink's `gradient-spin-pulse` keyframes): full at the cycle start,
 /// easing down to `dim` by 45%, resting at `dim` until 92%, then rising back
 /// to full. Per-cell phase offsets sweep this pulse across the grid.
 pub fn gspin_opacity(t: f32, dim: f32) -> f32 {
@@ -1009,8 +1009,8 @@ pub fn gspin_opacity(t: f32, dim: f32) -> f32 {
     }
 }
 
-/// The pink mark's pixels: `(x, y)` of each 100×100 cell on the 820×940
-/// canvas (pink_proto `MARK_CELLS`, from pink's `logo.tsx`).
+/// The Pink mark's pixels: `(x, y)` of each 100×100 cell on the 820×940
+/// canvas (pink_proto `MARK_CELLS`, from Pink's `logo.tsx`).
 #[rustfmt::skip]
 pub const MARK_CELLS: [(f32, f32); 34] = [
     (0., 600.), (0., 720.), (240., 840.), (240., 720.), (120., 840.), (120., 600.), (240., 600.),
@@ -1024,7 +1024,7 @@ pub const MARK_CELLS: [(f32, f32); 34] = [
 /// `MARK_SPREAD`).
 pub const MARK_SPREAD: f32 = 0.55;
 
-/// Per-cell stagger along the mark's flight axis (pink `mark_cell_stagger`).
+/// Per-cell stagger along the mark's flight axis (Pink `mark_cell_stagger`).
 /// It *adds* phase, so a larger value leads: the tail tip `(720, 0)` leads at
 /// about [`MARK_SPREAD`], the head `(0, 840)` trails at 0.
 pub fn mark_cell_stagger(x: f32, y: f32) -> f32 {
@@ -1037,7 +1037,7 @@ pub fn mark_cell_stagger(x: f32, y: f32) -> f32 {
 // ---------------------------------------------------------------------------
 //
 // A per-element-key hover progress, advanced from wall time on every read
-// (pink `HoverFades`). The store is a main-thread thread_local rather than a
+// (Pink `HoverFades`). The store is a main-thread thread_local rather than a
 // GPUI global so builders can blend colors without threading `cx`
 // everywhere. Entries are stamped with the frame counter on every read;
 // [`frame`] prunes entries that went a whole frame unread (their element
@@ -1155,7 +1155,7 @@ pub fn hover_t(key: &str) -> f32 {
 }
 
 /// Hover progress with a fallback for a cached element whose fade entry was
-/// pruned between renders while it stayed hovered (pink `hover_t_or`).
+/// pruned between renders while it stayed hovered (Pink `hover_t_or`).
 pub fn hover_t_or(key: &str, absent: f32) -> f32 {
     HOVER_FADES.with(|fades| fades.borrow_mut().value_at_or(key, Instant::now(), absent))
 }
@@ -1185,7 +1185,7 @@ pub fn hover_listener(
 }
 
 /// True while any hover fade whose key starts with `prefix` is in flight
-/// (pink `hover_fading_with_prefix`): a cached view calls it from its own
+/// (Pink `hover_fading_with_prefix`): a cached view calls it from its own
 /// render to keep its frames coming.
 pub fn hover_fading_with_prefix(prefix: &str) -> bool {
     let now = Instant::now();
@@ -1199,14 +1199,14 @@ pub fn hover_fading_with_prefix(prefix: &str) -> bool {
     })
 }
 
-/// `rest → hover` at `key`'s current hover progress (pink `hover_blend`).
+/// `rest → hover` at `key`'s current hover progress (Pink `hover_blend`).
 pub fn hover_blend(key: &str, rest: Hsla, hover: Hsla) -> Hsla {
     mix(rest, hover, hover_t(key))
 }
 
 /// Blends two colors by `t` the way browsers transition them: sRGB with
 /// premultiplied alpha, so a wash fading in from transparent never goes grey
-/// (pink `mix`).
+/// (Pink `mix`).
 pub fn mix(from: Hsla, to: Hsla, t: f32) -> Hsla {
     let t = t.clamp(0.0, 1.0);
     if t <= 0.0 {
@@ -1233,7 +1233,7 @@ pub fn mix(from: Hsla, to: Hsla, t: f32) -> Hsla {
 // ---------------------------------------------------------------------------
 //
 // A value whose target changes eases from where it was to where it now is
-// (pink `Followers`). The first time a key is seen it settles immediately,
+// (Pink `Followers`). The first time a key is seen it settles immediately,
 // so mounting never replays the motion (the failure `with_animation` has on
 // remount).
 
@@ -1256,7 +1256,7 @@ impl FollowEntry {
         }
         let raw = elapsed.as_secs_f32() / self.duration.as_secs_f32();
         // Holds through the spec's delay, then eases, like a CSS transition
-        // (identical to pink's `curve.eval(raw)` for delay-free specs).
+        // (identical to Pink's `curve.eval(raw)` for delay-free specs).
         lerp(self.origin, self.target, self.spec.progress(raw))
     }
 
@@ -1342,7 +1342,7 @@ impl Followers {
     }
 }
 
-/// The eased value of `key` heading to `target` under `spec` (pink
+/// The eased value of `key` heading to `target` under `spec` (Pink
 /// `follow`). A new key settles at `target` immediately.
 pub fn follow(key: &str, target: f32, spec: MotionSpec) -> f32 {
     let reduced = FRAME_REDUCED.with(|r| r.get());
@@ -1376,7 +1376,7 @@ pub fn frame(window: &mut Window, cx: &App) {
     }
 }
 
-/// The once-per-frame tick behind [`frame`] (pink `hover_fades_active`):
+/// The once-per-frame tick behind [`frame`] (Pink `hover_fades_active`):
 /// advances and prunes the hover fades and followers and reports whether any
 /// is still in flight, for hosts that schedule their own frames.
 pub fn hover_fades_active() -> bool {
@@ -1387,7 +1387,7 @@ pub fn hover_fades_active() -> bool {
 }
 
 /// Records the window's reduced-motion reading for context-free builders
-/// ([`follow`]); [`frame`] calls it (pink `note_frame_reduced`).
+/// ([`follow`]); [`frame`] calls it (Pink `note_frame_reduced`).
 pub fn note_frame_reduced(reduced: bool) {
     FRAME_REDUCED.with(|r| r.set(reduced));
 }
@@ -1420,7 +1420,7 @@ pub fn driver() -> impl IntoElement {
 // Reduced motion and speed
 // ---------------------------------------------------------------------------
 
-/// Dev knob (`PINK_UI_MOTION_SCALE`, or pink's `PINK_MOTION_SCALE`; default
+/// Dev knob (`PINK_UI_MOTION_SCALE`, or Pink's `PINK_MOTION_SCALE`; default
 /// 1, clamped 0.01..100): stretches every timeline, e.g. `10` slows a 150ms
 /// fade to 1.5s for frame-by-frame screenshots.
 pub fn speed_scale() -> f32 {
@@ -1436,14 +1436,14 @@ pub fn speed_scale() -> f32 {
     })
 }
 
-/// Marks the reduced-motion flag as pinned by an explicit caller (pink
+/// Marks the reduced-motion flag as pinned by an explicit caller (Pink
 /// `ReducedMotionPin`), so a system observer leaves it alone.
 struct ReducedMotionPin;
 
 impl Global for ReducedMotionPin {}
 
 /// Turns reduced motion on or off (`prefers-reduced-motion: reduce`) through
-/// GPUI's own flag, as pink does: every `with_animation` element snaps
+/// GPUI's own flag, as Pink does: every `with_animation` element snaps
 /// (oneshots to their end, loops to their start), the pulse clock parks,
 /// hover fades and followers snap, and components skip their own loops.
 pub fn set_reduced_motion(cx: &mut App, reduced: bool) {
@@ -1452,7 +1452,7 @@ pub fn set_reduced_motion(cx: &mut App, reduced: bool) {
     cx.refresh_windows();
 }
 
-/// True once [`set_reduced_motion`] pinned the flag (pink
+/// True once [`set_reduced_motion`] pinned the flag (Pink
 /// `reduced_motion_pinned`).
 pub fn reduced_motion_pinned(cx: &App) -> bool {
     cx.has_global::<ReducedMotionPin>()
@@ -1506,7 +1506,7 @@ mod tests {
 
     #[test]
     fn bezier_matches_pink_reference_values() {
-        // pink motion.rs `bezier_known_values` (80-step bisection references).
+        // Pink motion.rs `bezier_known_values` (80-step bisection references).
         let cases: [(&str, CubicBezier, [f32; 5]); 3] = [
             (
                 "expo",
@@ -1553,7 +1553,7 @@ mod tests {
         assert_eq!(ms(STATUS_SWAP), (180, 0, EASE_OUT_QUINT));
         assert_eq!(PINK_PULSE.duration_ms, 2400);
         assert_eq!(GRADIENT_SPIN.duration_ms, 750);
-        // Aliases follow the pink preset that plays their role.
+        // Aliases follow the Pink preset that plays their role.
         assert_eq!(GLIDE, DISCLOSURE);
         assert_eq!(ROW_IN, TOOL_ROW_REVEAL);
         assert_eq!(VIEW_IN, TRANSCRIPT_IN);
@@ -1565,7 +1565,7 @@ mod tests {
         assert_eq!(spec.progress(0.25), 0.0);
         assert!((spec.progress(0.75) - 0.5).abs() < 1e-3);
         assert_eq!(spec.progress(1.0), 1.0);
-        // pink `spec_delay_holds_then_runs`.
+        // Pink `spec_delay_holds_then_runs`.
         assert_eq!(SPLASH_OUT.total(), Duration::from_millis(650));
         assert_eq!(SPLASH_OUT.progress(0.2), 0.0);
         let mid = SPLASH_OUT.progress(0.65);
@@ -1601,7 +1601,7 @@ mod tests {
 
     #[test]
     fn pulse_stride_reestablishes_after_each_paint() {
-        // pink `pulse_stride_reestablishes_after_each_paint`.
+        // Pink `pulse_stride_reestablishes_after_each_paint`.
         let now = Instant::now();
         let mut lease = PulseLease {
             until: now + PULSE_LEASE,

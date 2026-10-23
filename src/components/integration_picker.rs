@@ -1,11 +1,11 @@
 //! Integration Picker – the integrations page, where apps are connected.
 //!
-//! A pink component, built as a pink settings page (pink: `settings/
+//! A Pink component, built as a Pink settings page (Pink: `settings/
 //! extensions.rs` `ExtensionsPage`): a page title with its count and a
 //! search field, then a Connected and an Available section card of service
-//! rows. Each row is pink's package row – identity tile, name, description
+//! rows. Each row is Pink's package row – identity tile, name, description
 //! and a quiet meta line, a status badge and small push buttons. Connecting
-//! opens pink's enable review, a dialog with one switch per permission where
+//! opens Pink's enable review, a dialog with one switch per permission where
 //! required ones stay locked on; confirming shows a pending badge while the
 //! connection is made, then the row moves into Connected.
 //!
@@ -41,15 +41,15 @@ pub const DESCRIPTION: &str = "A settings page of apps to connect – Connected 
 
 const ICON_SEARCH: &str = "icons/integration-picker/magnifer.svg";
 
-/// The settings plane's corner (pink `workbench/render.rs` `CANVAS_RADIUS`).
+/// The settings plane's corner (Pink `workbench/render.rs` `CANVAS_RADIUS`).
 const CANVAS_RADIUS: f32 = 14.0;
-/// Inset between the plane's edge and its page (pink `VIEWPORT_INSET - 1`).
+/// Inset between the plane's edge and its page (Pink `VIEWPORT_INSET - 1`).
 const PLANE_INSET: f32 = 5.0;
 const PLANE_W: f32 = 760.0;
 const PLANE_H: f32 = 760.0;
 /// The search field in the title bar.
 const SEARCH_W: f32 = 220.0;
-/// The review dialog's width (pink `extensions.rs` `render_review`).
+/// The review dialog's width (Pink `extensions.rs` `render_review`).
 const REVIEW_W: f32 = 460.0;
 /// How long the demo connection takes.
 const HANDSHAKE: Duration = Duration::from_millis(1400);
@@ -250,7 +250,7 @@ pub fn default_integrations() -> Vec<Integration> {
     ]
 }
 
-/// The open review: one service and the switches left on (pink
+/// The open review: one service and the switches left on (Pink
 /// `extensions.rs` `Review`).
 struct Review {
     service: SharedString,
@@ -266,7 +266,7 @@ struct PickerState {
     _subscription: Subscription,
     query: SharedString,
     connected: Vec<SharedString>,
-    /// The service being connected; every row action waits for it (pink's
+    /// The service being connected; every row action waits for it (Pink's
     /// `busy`).
     connecting: Option<SharedString>,
     /// The switches each connected service was given.
@@ -359,7 +359,7 @@ impl PickerState {
         cx.notify();
     }
 
-    /// Opens the review for `id` (pink `open_review`): required and default
+    /// Opens the review for `id` (Pink `open_review`): required and default
     /// permissions on, optional ones off; a connected service starts from
     /// what it was given.
     fn open_review(&mut self, id: SharedString, window: &mut Window, cx: &mut Context<Self>) {
@@ -412,7 +412,7 @@ impl PickerState {
         cx.notify();
     }
 
-    /// Confirms the review (pink `confirm_review`): a save applies at once;
+    /// Confirms the review (Pink `confirm_review`): a save applies at once;
     /// a connection runs while every row action waits, then the row moves
     /// into Connected.
     fn confirm_review(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -452,7 +452,7 @@ impl PickerState {
         cx.notify();
     }
 
-    /// Disconnects `id` at once (pink `disable`).
+    /// Disconnects `id` at once (Pink `disable`).
     fn disconnect(&mut self, id: SharedString, window: &mut Window, cx: &mut Context<Self>) {
         if self.connecting.is_some() {
             return;
@@ -646,7 +646,7 @@ impl RenderOnce for IntegrationPicker {
         });
         let scroll = s.scroll.clone();
 
-        // pink: the file search field (`files/mod.rs` `render_header` on
+        // Pink: the file search field (`files/mod.rs` `render_header` on
         // `surface_chrome::input`), 28 tall like the title bar's actions.
         let search = pink::toolbar_input(&t)
             .flex_none()
@@ -718,7 +718,7 @@ struct RowContext<'a> {
     state: &'a Entity<PickerState>,
 }
 
-/// One service (pink: `extensions.rs` `package_row`): the identity tile, the
+/// One service (Pink: `extensions.rs` `package_row`): the identity tile, the
 /// name over its description and a meta line, then the status badge and the
 /// row's actions – Connect… while available, Permissions… and Disconnect once
 /// connected. Every action waits while a connection is being made.
@@ -737,7 +737,7 @@ fn service_row(service: &Integration, section: Section, rows: &RowContext, t: &P
         meta.push(div().child(service.category.clone()).into_any_element());
     }
     if !service.domain.is_empty() {
-        // pink: the package hash fragment, in mono 11.
+        // Pink: the package hash fragment, in mono 11.
         meta.push(
             div()
                 .font_family(pink::MONO)
@@ -761,7 +761,7 @@ fn service_row(service: &Integration, section: Section, rows: &RowContext, t: &P
     )
     .child(meta_line(meta, t));
 
-    // pink: `badge_active` once connected; MCP's pending badge (warning copy
+    // Pink: `badge_active` once connected; MCP's pending badge (warning copy
     // on the neutral outline) while connecting.
     let badge = match section {
         Section::Connected => Some(("Connected", pink::badge("Connected", Tone::Success, t))),
@@ -773,7 +773,7 @@ fn service_row(service: &Integration, section: Section, rows: &RowContext, t: &P
         Section::Available => None,
     };
     let badge = badge.map(|(label, badge)| {
-        // A status that just changed settles in (pink `STATUS_SWAP`).
+        // A status that just changed settles in (Pink `STATUS_SWAP`).
         if connecting || arrived.is_some() {
             motion::status_swap(
                 label_id(&format!("{key}-badge-{id}-{}", arrived.unwrap_or(0)), label),
@@ -837,7 +837,7 @@ fn service_row(service: &Integration, section: Section, rows: &RowContext, t: &P
         .child(controls);
     match arrived {
         // The row that just changed section arrives like a new list row
-        // (pink `TOOL_ROW_REVEAL`: 360 ms expo-out, 4 px rise).
+        // (Pink `TOOL_ROW_REVEAL`: 360 ms expo-out, 4 px rise).
         Some(generation) => motion::rise_in(
             ElementId::NamedInteger(format!("{key}-arrive-{id}").into(), u64::from(generation)),
             TOOL_ROW_REVEAL,
@@ -849,9 +849,9 @@ fn service_row(service: &Integration, section: Section, rows: &RowContext, t: &P
     }
 }
 
-/// The row's identity tile (pink `widgets::row_tile`: 28, radius 7, `border`
+/// The row's identity tile (Pink `widgets::row_tile`: 28, radius 7, `border`
 /// on a Quaternary plate). The service's initial stands in for the 16 px
-/// icon, sized and weighted like pink's project tile letter.
+/// icon, sized and weighted like Pink's project tile letter.
 fn service_tile(service: &Integration, t: &Pink) -> impl IntoElement {
     div()
         .flex_none()
@@ -870,7 +870,7 @@ fn service_tile(service: &Integration, t: &Pink) -> impl IntoElement {
         .child(service.monogram())
 }
 
-/// The quiet line under a row's title (pink `widgets::meta_line`): 12 in
+/// The quiet line under a row's title (Pink `widgets::meta_line`): 12 in
 /// `readable_muted(0.8)`, fragments 8 apart with a "·" between them that
 /// fades to 30% on dark.
 fn meta_line(fragments: Vec<AnyElement>, t: &Pink) -> impl IntoElement {
@@ -900,7 +900,7 @@ fn meta_line(fragments: Vec<AnyElement>, t: &Pink) -> impl IntoElement {
     line
 }
 
-/// A search that matches nothing (pink's empty package row: a tile and a
+/// A search that matches nothing (Pink's empty package row: a tile and a
 /// row text in a section card).
 fn no_matches(query: &str, t: &Pink) -> impl IntoElement {
     pink::section_card(t).child(
@@ -914,7 +914,7 @@ fn no_matches(query: &str, t: &Pink) -> impl IntoElement {
     )
 }
 
-/// The review (pink: `extensions.rs` `render_review` in `popover::modal`):
+/// The review (Pink: `extensions.rs` `render_review` in `popover::modal`):
 /// a 460 dialog on the scrim with the title, body and the service's domain in
 /// mono, one row per permission with its switch – required ones locked on –
 /// then Cancel and the one Primary action. Escape cancels, Enter confirms.
@@ -946,7 +946,7 @@ fn review_dialog(
         )
     };
 
-    // pink: the empty lifecycle block's `mt 8` plus the capabilities' `mt 12`.
+    // Pink: the empty lifecycle block's `mt 8` plus the capabilities' `mt 12`.
     let mut permissions = div().mt(px(20.)).flex().flex_col().gap(px(10.));
     if service.permissions.is_empty() {
         permissions = permissions.child(pink::dialog_body("This app asks for no permissions.", t));
@@ -1052,7 +1052,7 @@ fn review_dialog(
                 ),
         );
 
-    // pink `popover::modal`: the scrim swallows the pointer and the card
+    // Pink `popover::modal`: the scrim swallows the pointer and the card
     // arrives with `dialog_in`. Here it covers the page's plane.
     pink::modal_scrim(t)
         .id(SharedString::from(format!("{key}-review-scrim")))
@@ -1067,7 +1067,7 @@ fn review_dialog(
         ))
 }
 
-/// pink `widgets::page_column`: the centered page, at most 720 wide,
+/// Pink `widgets::page_column`: the centered page, at most 720 wide,
 /// `px 32 / pt 28 / pb 72`.
 fn page_column() -> gpui::Div {
     div()
@@ -1081,7 +1081,7 @@ fn page_column() -> gpui::Div {
         .flex_col()
 }
 
-/// pink `widgets::page_title_bar` + `page_header`: the Title1 title with its
+/// Pink `widgets::page_title_bar` + `page_header`: the Title1 title with its
 /// count (13, `readable_muted(0.7)`) on one baseline, and the page's actions
 /// on the title's center line at the right. It wraps.
 fn page_title_bar(
@@ -1132,7 +1132,7 @@ fn page_title_bar(
         })
 }
 
-/// pink `widgets::page_subtitle`: `mt 6`, 13/19 `readable_muted(0.9)`, held
+/// Pink `widgets::page_subtitle`: `mt 6`, 13/19 `readable_muted(0.9)`, held
 /// to 600.
 fn page_subtitle(copy: String, t: &Pink) -> gpui::Div {
     div()

@@ -1,7 +1,7 @@
-//! Agent Steering – talk to an agent while it works, at the bottom of a pink
+//! Agent Steering – talk to an agent while it works, at the bottom of a Pink
 //! chat pane.
 //!
-//! The pane reproduces how pink shows a running chat and the notes typed
+//! The pane reproduces how Pink shows a running chat and the notes typed
 //! into it (`transcript.rs`, `composer.rs`, `queue.rs`, `composer/goals.rs`,
 //! `composer/checklist.rs`):
 //!
@@ -79,21 +79,21 @@ const ICON_TERMINAL: &str = "icons/agent-steering/terminal.svg";
 const ICON_TOOLBOX: &str = "icons/agent-steering/toolbox.svg";
 const ICON_LAYERS: &str = "icons/agent-steering/layers-minimalistic.svg";
 
-/// The chat pane: pink's content panel (`radius::PANEL`, `bg`, `border`).
+/// The chat pane: Pink's content panel (`radius::PANEL`, `bg`, `border`).
 const PANEL_W: f32 = 632.;
 const PANEL_H: f32 = 600.;
-/// pink `transcript_row_gutter` (48 from 480 wide up).
+/// Pink `transcript_row_gutter` (48 from 480 wide up).
 const TRANSCRIPT_GUTTER: f32 = 48.;
-/// pink `composer_gutter` (`Theme::SPACE_LG`).
+/// Pink `composer_gutter` (`Theme::SPACE_LG`).
 const COMPOSER_GUTTER: f32 = 16.;
-/// The composer column's gap (pink `Theme::SPACE_SM`).
+/// The composer column's gap (Pink `Theme::SPACE_SM`).
 const STACK_GAP: f32 = 8.;
-/// Trays are inset from the column and tucked behind the next layer (pink
+/// Trays are inset from the column and tucked behind the next layer (Pink
 /// `QUEUE_SIDE_INSET`, `QUEUE_COMPOSER_OVERLAP`).
 const TRAY_INSET: f32 = 16.;
 const TRAY_OVERLAP: f32 = 18.;
 
-/// pink `queue.rs`: compact, borderless rows inside the tray.
+/// Pink `queue.rs`: compact, borderless rows inside the tray.
 const ROW_HEIGHT: f32 = 36.;
 const QUEUE_TEXT_SIZE: f32 = 12.5;
 const ROW_PAD_X: f32 = 8.;
@@ -104,19 +104,19 @@ const QUEUE_PRIMARY_W: f32 = 72.;
 /// Rows shown before the tray scrolls.
 const QUEUE_VISIBLE_ROWS: f32 = 4.;
 
-/// pink `composer/goals.rs`: the goal bar.
+/// Pink `composer/goals.rs`: the goal bar.
 const GOAL_HEADER_HEIGHT: f32 = 38.;
 const GOAL_GLYPH: f32 = 14.;
 const GOAL_CONTROL: f32 = 24.;
-/// pink `GOAL_CHIP_ICON`, the composer's mode chip glyph.
+/// Pink `GOAL_CHIP_ICON`, the composer's mode chip glyph.
 const MODE_CHIP_ICON: f32 = 15.;
 
-/// pink `composer/checklist.rs`.
+/// Pink `composer/checklist.rs`.
 const CHECKLIST_ROW: f32 = 28.;
 const CHECKLIST_TEXT: f32 = 11.5;
 const CHECKLIST_LIST_MAX: f32 = 144.;
 
-/// pink `composer.rs`: the pill's textarea and controls row.
+/// Pink `composer.rs`: the pill's textarea and controls row.
 const INPUT_TEXT_SIZE: f32 = 14.;
 const INPUT_LINE_HEIGHT: f32 = 22.75;
 const TEXTAREA_PAD_TOP: f32 = 16.;
@@ -124,7 +124,7 @@ const TEXTAREA_PAD_BOTTOM: f32 = 4.;
 const SESSION_TEXTAREA_MIN: f32 = 60.;
 const ACTIONS_ROW_HEIGHT: f32 = 46.;
 
-/// pink `transcript.rs`: tool groups, the activity rail and user bubbles.
+/// Pink `transcript.rs`: tool groups, the activity rail and user bubbles.
 const TOOL_GROUP_HEADER_HEIGHT: f32 = 26.;
 const TOOL_TREE_ROW_HEIGHT: f32 = 32.;
 const CHIP_CARD_HEIGHT: f32 = 30.;
@@ -160,14 +160,14 @@ const TICK: Duration = Duration::from_millis(50);
 pub enum SteerMode {
     /// Queued: it waits for the agent's next step.
     Queue,
-    /// Steered into the running step without interrupting it (pink "Steer now").
+    /// Steered into the running step without interrupting it (Pink "Steer now").
     Steer,
-    /// Sent at once (pink "Send now"): interrupts the running step, or
+    /// Sent at once (Pink "Send now"): interrupts the running step, or
     /// resumes a paused run.
     Send,
 }
 
-/// What Enter does with a note while the agent works (pink
+/// What Enter does with a note while the agent works (Pink
 /// `FollowUpBehavior`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum FollowUp {
@@ -370,7 +370,7 @@ enum Entry {
     },
 }
 
-/// The one delivery action a queue row advertises (pink
+/// The one delivery action a queue row advertises (Pink
 /// `QueuePrimaryAction`).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Primary {
@@ -401,7 +401,7 @@ struct Claim {
     since: f32,
 }
 
-/// A note in the queue tray (pink `QueuedMessage`).
+/// A note in the queue tray (Pink `QueuedMessage`).
 #[derive(Clone)]
 struct Queued {
     id: usize,
@@ -410,13 +410,13 @@ struct Queued {
     claim: Option<Claim>,
 }
 
-/// A queue row being dragged (pink `QueueDragPayload`), scoped to its pane.
+/// A queue row being dragged (Pink `QueueDragPayload`), scoped to its pane.
 struct NoteDrag {
     owner: SharedString,
     from: usize,
 }
 
-/// Where the dragged row would land (pink `QueueDragState`).
+/// Where the dragged row would land (Pink `QueueDragState`).
 struct DragState {
     from: usize,
     over: usize,
@@ -617,7 +617,7 @@ impl SteerState {
     }
 
     /// Reveals the activity lines that are due. A line opening a new tool
-    /// group waits for its header (pink `TOOL_FIRST_ROW_DELAY_MS`).
+    /// group waits for its header (Pink `TOOL_FIRST_ROW_DELAY_MS`).
     fn reveal_lines(&mut self, now: Option<Instant>) {
         let Some(step) = self.steps.get(self.current) else {
             return;
@@ -660,7 +660,7 @@ impl SteerState {
         resumed
     }
 
-    /// The step ends: held notes are delivered as the next one starts (pink
+    /// The step ends: held notes are delivered as the next one starts (Pink
     /// drains the queue when the turn ends); notes being edited stay.
     fn end_step(&mut self) {
         let editing = self.editing;
@@ -831,7 +831,7 @@ impl SteerState {
     }
 
     /// ⌘/Ctrl+Enter: on an empty composer, the newest queued note's primary
-    /// action (pink `activate_latest_queued_primary`); otherwise a submit.
+    /// action (Pink `activate_latest_queued_primary`); otherwise a submit.
     fn modifier_submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let empty = self.input.read(cx).text().trim().is_empty();
         if empty && self.editing.is_none() {
@@ -844,7 +844,7 @@ impl SteerState {
     }
 
     /// The row's primary action: Steer now when the note is a steer the agent
-    /// can take mid-step, else Send now (pink `resolve_queue_primary_action`).
+    /// can take mid-step, else Send now (Pink `resolve_queue_primary_action`).
     fn primary_for(&self, note: &Queued) -> Primary {
         if let Some(claim) = note.claim {
             return claim.action;
@@ -856,7 +856,7 @@ impl SteerState {
         }
     }
 
-    /// Why a row can't be delivered right now (pink `QueuePrimaryBlock`).
+    /// Why a row can't be delivered right now (Pink `QueuePrimaryBlock`).
     fn blocked(&self, note: &Queued) -> Option<&'static str> {
         if self.editing == Some(note.id) {
             return Some("Finish editing before sending");
@@ -870,7 +870,7 @@ impl SteerState {
         })
     }
 
-    /// The row's text with its delivery status in front (pink `queue_row`).
+    /// The row's text with its delivery status in front (Pink `queue_row`).
     fn row_text(&self, note: &Queued) -> SharedString {
         let text = one_line(&note.text);
         match note.claim {
@@ -933,7 +933,7 @@ impl SteerState {
         cx.notify();
     }
 
-    /// Moves a queued note into the composer; its row keeps its place (pink
+    /// Moves a queued note into the composer; its row keeps its place (Pink
     /// `begin_queue_edit`).
     fn begin_edit(&mut self, id: usize, window: &mut Window, cx: &mut Context<Self>) {
         if self.editing.is_some() {
@@ -988,7 +988,7 @@ impl SteerState {
         }
     }
 
-    /// Tracks the drop slot while a row is dragged (pink
+    /// Tracks the drop slot while a row is dragged (Pink
     /// `update_queue_drag_over`).
     fn drag_over(&mut self, from: usize, over: usize, cx: &mut Context<Self>) {
         match &mut self.drag {
@@ -1038,12 +1038,12 @@ impl SteerState {
 }
 
 /// One line of a queued note: the newlines that make it a paragraph in the
-/// composer would make it several rows here (pink `one_line`).
+/// composer would make it several rows here (Pink `one_line`).
 fn one_line(text: &str) -> SharedString {
     text.split_whitespace().collect::<Vec<_>>().join(" ").into()
 }
 
-/// The glyph for an activity line, from its verb (pink picks it from the
+/// The glyph for an activity line, from its verb (Pink picks it from the
 /// tool's kind, `tool_icon_path`).
 fn activity_glyph(line: &str) -> &'static str {
     let verb = line
@@ -1069,7 +1069,7 @@ fn activity_glyph(line: &str) -> &'static str {
     }
 }
 
-/// A group's glyph: the rows' shared kind, else the mixed mark (pink
+/// A group's glyph: the rows' shared kind, else the mixed mark (Pink
 /// `tool_group_glyph`).
 fn group_glyph<'a>(mut lines: impl Iterator<Item = &'a SharedString>) -> &'static str {
     let Some(first) = lines.next().map(|line| activity_glyph(line)) else {
@@ -1215,7 +1215,7 @@ enum Block<'a> {
     },
 }
 
-/// The bottom of the transcript (pink `transcript.rs`): bottom-anchored, the
+/// The bottom of the transcript (Pink `transcript.rs`): bottom-anchored, the
 /// older rows passing under a 24px fade at the top. Returns whether a reveal
 /// is still in flight.
 fn transcript_tail(c: &Ctx, task: &SharedString) -> (Div, bool) {
@@ -1317,7 +1317,7 @@ fn transcript_tail(c: &Ctx, task: &SharedString) -> (Div, bool) {
     (tail, in_flight)
 }
 
-/// A user bubble (pink `transcript.rs` user row): right-aligned, at most 80%
+/// A user bubble (Pink `transcript.rs` user row): right-aligned, at most 80%
 /// of the column, `user_bubble_bg` with the light-mode inset edge, radius 16,
 /// `px 16 py 10`, 14/22 `text`. An arriving bubble grows in and fades up
 /// over `TOOL_ROW_REVEAL`.
@@ -1364,7 +1364,7 @@ fn user_bubble(id: SharedString, text: SharedString, p: f32, t: &Pink) -> AnyEle
         .into_any_element()
 }
 
-/// One step's tool group (pink `render_tool_group`): the 24px header plate –
+/// One step's tool group (Pink `render_tool_group`): the 24px header plate –
 /// kind glyph, the step's title shimmering while live, the disclosure
 /// chevron – over its rows on the activity rail. Open while it is the live
 /// tail or a row is still arriving, unless the user chose; the fold rides
@@ -1584,7 +1584,7 @@ fn tool_group(
     )
 }
 
-/// pink `activity_branch_points`: the elbow from the trunk to the branch
+/// Pink `activity_branch_points`: the elbow from the trunk to the branch
 /// tip, cut to `progress` of its length.
 fn branch_points(progress: f32) -> Vec<Point<f32>> {
     let mut path: Vec<Point<f32>> = (0..=24)
@@ -1623,7 +1623,7 @@ fn branch_points(progress: f32) -> Vec<Point<f32>> {
     visible
 }
 
-/// pink `activity_ribbon`: a 1px ribbon contour; nonzero fill unions the
+/// Pink `activity_ribbon`: a 1px ribbon contour; nonzero fill unions the
 /// trunk and the elbow so the fork paints one alpha.
 fn ribbon(path: &mut PathBuilder, points: &[Point<Pixels>]) {
     if points.len() < 2 {
@@ -1648,7 +1648,7 @@ fn ribbon(path: &mut PathBuilder, points: &[Point<Pixels>]) {
     path.close();
 }
 
-/// pink `activity_rail`: the 48px gutter of one row – the trunk at x 12.5
+/// Pink `activity_rail`: the 48px gutter of one row – the trunk at x 12.5
 /// drawing down from the row above, a 6px elbow to x 28 and the row's glyph
 /// (14, `content_muted`) at x 32, or the running row's mini spinner. The
 /// ribbons are `hairline(0.12)`.
@@ -1731,7 +1731,7 @@ fn activity_rail(
         })
 }
 
-/// The working line under the last row (pink `render_working_trailer`): the
+/// The working line under the last row (Pink `render_working_trailer`): the
 /// breathing orb, the live status (verb in `content_muted` shimmering toward
 /// `text`, object in `text`), the step's timer and a "Stop" that shows only
 /// under the pointer.
@@ -1799,7 +1799,7 @@ fn working_line(c: &Ctx) -> Stateful<Div> {
 
 // -- Checklist line -------------------------------------------------------------
 
-/// The run's steps as pink's provider checklist (`composer/checklist.rs`):
+/// The run's steps as Pink's provider checklist (`composer/checklist.rs`):
 /// one quiet "2/6 · In progress: …" line in 11.5 `text_muted` that unfolds
 /// into a "Status · step" line per step.
 fn checklist(c: &Ctx) -> Div {
@@ -1902,7 +1902,7 @@ fn checklist(c: &Ctx) -> Div {
 
 // -- Goal bar ---------------------------------------------------------------------
 
-/// The run as pink's goal bar (`composer/goals.rs` `render_goal_card`): a
+/// The run as Pink's goal bar (`composer/goals.rs` `render_goal_card`): a
 /// tray tucked behind the next layer, its 38px header holding the target in
 /// the status tone, the status, the task, the run clock and Pause / Resume.
 fn goal_bar(c: &Ctx, agent: &SharedString, task: &SharedString) -> Stateful<Div> {
@@ -2022,7 +2022,7 @@ fn goal_bar(c: &Ctx, agent: &SharedString, task: &SharedString) -> Stateful<Div>
         )
 }
 
-/// A goal bar control (pink `goal_control`, icon only): 24px, radius 6, the
+/// A goal bar control (Pink `goal_control`, icon only): 24px, radius 6, the
 /// glyph in `readable_muted(0.85)` brightening to `text` over an `ink(0.08)`
 /// wash; focus washes it in the accent.
 fn goal_control(id: String, label: &'static str, glyph: &'static str, t: &Pink) -> Stateful<Div> {
@@ -2060,7 +2060,7 @@ fn goal_control(id: String, label: &'static str, glyph: &'static str, t: &Pink) 
 
 // -- Queue tray -------------------------------------------------------------------
 
-/// pink `drop_index`: the row slot under a pointer `rel_y` into the list.
+/// Pink `drop_index`: the row slot under a pointer `rel_y` into the list.
 fn drop_index(rel_y: f32, slot: f32, count: usize) -> usize {
     if count == 0 || slot <= 0. {
         return 0;
@@ -2068,7 +2068,7 @@ fn drop_index(rel_y: f32, slot: f32, count: usize) -> usize {
     ((rel_y / slot).floor().max(0.) as usize).min(count - 1)
 }
 
-/// pink `slide_offset`: rows between the dragged row and its slot shift one
+/// Pink `slide_offset`: rows between the dragged row and its slot shift one
 /// slot toward the gap it leaves.
 fn slide_offset(ix: usize, from: usize, over: usize) -> f32 {
     if from < over && ix > from && ix <= over {
@@ -2080,7 +2080,7 @@ fn slide_offset(ix: usize, from: usize, over: usize) -> f32 {
     }
 }
 
-/// pink `queue_drag_offsets`: the dragged row travels to its slot while
+/// Pink `queue_drag_offsets`: the dragged row travels to its slot while
 /// every row in its path slides into the space it leaves.
 fn drag_offsets(ix: usize, from: usize, prev_over: usize, over: usize) -> (f32, f32) {
     if ix == from {
@@ -2096,7 +2096,7 @@ fn drag_offsets(ix: usize, from: usize, prev_over: usize, over: usize) -> (f32, 
     }
 }
 
-/// The queue tray (pink `queue_panel_surface` + `queue_rows`): one surface
+/// The queue tray (Pink `queue_panel_surface` + `queue_rows`): one surface
 /// emerging from behind the composer – radius 18 on top, the popover plate,
 /// a hairline edge and the menu shadow – whose rows sit flush, with no gap.
 /// The whole plate is the drop target for a dragged row.
@@ -2176,7 +2176,7 @@ fn queue_tray(c: &Ctx) -> Stateful<Div> {
         )
 }
 
-/// One queued note (pink `queue_row`): the drag marker, the text with its
+/// One queued note (Pink `queue_row`): the drag marker, the text with its
 /// delivery status in front, then Remove, Edit and the one primary action.
 /// While it is edited in the composer the row washes and offers Save and
 /// Cancel instead.
@@ -2188,7 +2188,7 @@ fn queue_row(c: &Ctx, ix: usize, note: &Queued) -> AnyElement {
     let claimed = note.claim.is_some();
     let primary = s.primary_for(note);
     let blocked = s.blocked(note);
-    // A Steer that can't steer now says why before offering Send now (pink
+    // A Steer that can't steer now says why before offering Send now (Pink
     // `steer_row_note`).
     let tooltip: SharedString = match blocked {
         Some(reason) => reason.into(),
@@ -2367,7 +2367,7 @@ fn queue_row(c: &Ctx, ix: usize, note: &Queued) -> AnyElement {
         .into_any_element()
 }
 
-/// A permanently visible row action (pink `queue_action`): a 28px circle in
+/// A permanently visible row action (Pink `queue_action`): a 28px circle in
 /// `content_muted`, a Tertiary wash and `text` under the pointer, the 13px
 /// glyph in `readable_muted(0.8)`; disabled at 45%.
 fn queue_action_frame(
@@ -2446,7 +2446,7 @@ fn queue_action(
         .child(queue_action_glyph(row_key, slot, glyph, t))
 }
 
-/// The row's one delivery action (pink `queue_primary_action_button`): a
+/// The row's one delivery action (Pink `queue_primary_action_button`): a
 /// 72×28 capsule in 12 medium `text_muted`, `text` over a Tertiary wash
 /// under the pointer; 45% while blocked. Its tooltip explains it.
 fn queue_primary(
@@ -2499,7 +2499,7 @@ fn queue_primary(
 
 // -- Composer ---------------------------------------------------------------------
 
-/// The Send / Queue / Stop disc's mode (pink `send_button_mode`).
+/// The Send / Queue / Stop disc's mode (Pink `send_button_mode`).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum DiscMode {
     Send,
@@ -2507,7 +2507,7 @@ enum DiscMode {
     Stop,
 }
 
-/// The composer pill (pink `composer_surface` in the opaque treatment): radius
+/// The composer pill (Pink `composer_surface` in the opaque treatment): radius
 /// 26, a hairline edge, the input plate and `shadow_lg`. The textarea (`pt 16
 /// pb 4 px 16`, 14/22.75, at least 60 tall) sits over the 46px controls row:
 /// the Steer chip, then the disc.
@@ -2587,7 +2587,7 @@ fn composer_pill(c: &Ctx, focused: bool) -> Stateful<Div> {
         )
 }
 
-/// The composer's Steer switch, drawn like pink's Goal mode chip
+/// The composer's Steer switch, drawn like Pink's Goal mode chip
 /// (`render_goal_mode_chip`): a 28px capsule, 12 medium. On, it is the
 /// accent badge (accent 14% → 20%, label `readable_tone(accent)`); off, the
 /// ghost trigger pill (`element_hover` under the pointer, `text_muted` →
@@ -2672,7 +2672,7 @@ fn steer_chip(c: &Ctx, on: bool) -> Stateful<Div> {
     .child("Steer")
 }
 
-/// The Send / Queue / Stop disc (pink `render_send_button`): one 28px circle,
+/// The Send / Queue / Stop disc (Pink `render_send_button`): one 28px circle,
 /// solid `text` with a `bg` glyph when it can act (hover 0.88, press 0.76),
 /// recessed `ink(0.08)` with the glyph at 35% when there is nothing to send –
 /// the arrow taking the accent while the composer is focused and empty. Only

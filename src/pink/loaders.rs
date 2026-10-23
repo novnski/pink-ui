@@ -1,10 +1,10 @@
 //! Pink's loaders, ported 1:1 from the Pink app: the cell loaders and the
 //! upload ring from `crates/ui/src/loaders.rs`, the text shimmer from
 //! `transcript.rs` (`shimmer_overlay`), the pulsing skeletons from
-//! `popover.rs`, and the building blocks of pink's working trailer (the
+//! `popover.rs`, and the building blocks of Pink's working trailer (the
 //! "thinking" line under the last transcript row).
 //!
-//! All motion routes through [`crate::motion`]: the phase math is pink's
+//! All motion routes through [`crate::motion`]: the phase math is Pink's
 //! (`pulse_opacity`, `gspin_opacity`, ...) and every loop runs on the shared
 //! pulse clock ([`motion::pulse_phase`]), ~30fps (15Hz for the gradient
 //! spinner), phase-locked across instances, parked when nothing is mounted.
@@ -12,7 +12,7 @@
 //! paint-local and never move surrounding layout. Reduced motion rests every
 //! loader at its static frame and schedules nothing.
 //!
-//! Colors come in as parameters, as pink's do from its theme:
+//! Colors come in as parameters, as Pink's do from its theme:
 //!
 //! | Loader | Pink passes |
 //! |---|---|
@@ -24,7 +24,7 @@
 //! | [`skeleton_rows`] / [`skeleton_bar`] | Quaternary / Tertiary fill |
 //!
 //! Loaders are builders: drop them in any element tree, no `Window` or `App`
-//! needed. Sizes are px at pink's default UI scale.
+//! needed. Sizes are px at Pink's default UI scale.
 
 use gpui::{
     AnyElement, App, AppContext, Bounds, ContentMask, Context, Div, Entity, FontFeatures,
@@ -42,7 +42,7 @@ pub use crate::motion::{
     GSPIN_DIM, GSPIN_ROW_TINTS, MARK_CELLS, MATRIX_SIDE, PINK_CELLS, mark_cell_stagger,
 };
 
-/// Pink's control corner radius (pink `Theme::CONTROL_RADIUS`), used by the
+/// Pink's control corner radius (Pink `Theme::CONTROL_RADIUS`), used by the
 /// skeleton rows.
 const CONTROL_RADIUS: f32 = 6.0;
 
@@ -50,7 +50,7 @@ const CONTROL_RADIUS: f32 = 6.0;
 // Pink mark loader
 // ---------------------------------------------------------------------------
 
-/// The animated pink mark (pink `pink_mark_loader`): the full logo pixel grid
+/// The animated Pink mark (Pink `pink_mark_loader`): the full logo pixel grid
 /// with a light wave sweeping tail → head. Each cell rests dim (opacity 0.08,
 /// scale 0.9) and flares to full as the crest passes, over [`PINK_PULSE`]
 /// (2.4s). `height_px` sets the mark's height; the width follows the 820:940
@@ -105,7 +105,7 @@ impl RenderOnce for PinkMarkLoader {
 // Pink wave loader
 // ---------------------------------------------------------------------------
 
-/// The pink wave loader (pink `pink_loader`): a row of 5 cells pulsing
+/// The Pink wave loader (Pink `pink_loader`): a row of 5 cells pulsing
 /// opacity 0.08 → 1 and scale 0.9 → 1 over [`PINK_PULSE`] (2.4s), each 0.15s
 /// behind the last. Cells are `cell_px` slots `cell_px / 2` apart, rounded
 /// `cell_px / 4`. Pink paints it in `theme.text`.
@@ -152,12 +152,12 @@ impl RenderOnce for PinkLoader {
 // Breathing orb
 // ---------------------------------------------------------------------------
 
-/// The orb's box: it sits on a 12–13px text line (pink `ORB_BOX`).
+/// The orb's box: it sits on a 12–13px text line (Pink `ORB_BOX`).
 pub const ORB_BOX: f32 = 12.0;
-/// The solid core's size at full breath (pink `ORB_CORE`).
+/// The solid core's size at full breath (Pink `ORB_CORE`).
 pub const ORB_CORE: f32 = 6.0;
 
-/// The working orb (pink `breathing_orb`): a solid `accent` core inside a
+/// The working orb (Pink `breathing_orb`): a solid `accent` core inside a
 /// soft halo, breathing on one slow sine over [`ORB_BREATH`] (1600ms) – core
 /// 5.1 → 6px (`6 * (0.85 + 0.15 * breath)`), halo `accent` at 16% → 34%.
 /// A 12px box, `flex_none`. Reduced motion rests at full breath. Pink uses it
@@ -178,7 +178,7 @@ impl RenderOnce for BreathingOrb {
         let breath = if cx.reduce_motion() {
             1.0
         } else {
-            // `0.5 - 0.5 * cos(2πt)`: pink's breath is the pulse wave.
+            // `0.5 - 0.5 * cos(2πt)`: Pink's breath is the pulse wave.
             motion::pulse_wave(motion::pulse_phase(&ORB_BREATH, window, cx))
         };
         let core = ORB_CORE * (0.85 + 0.15 * breath);
@@ -204,7 +204,7 @@ impl RenderOnce for BreathingOrb {
 // Gradient matrix spinner (3×3)
 // ---------------------------------------------------------------------------
 
-/// The phase offset of a gradient-spinner cell (pink `gradient_spinner`):
+/// The phase offset of a gradient-spinner cell (Pink `gradient_spinner`):
 /// its distance from the wave origin at the bottom center, `(2 - row) +
 /// |col - 1|`, over 4. Row 0 is the top.
 pub fn gradient_cell_phase(row: usize, col: usize) -> f32 {
@@ -214,10 +214,10 @@ pub fn gradient_cell_phase(row: usize, col: usize) -> f32 {
     if max == 0.0 { 0.0 } else { d / (max + 1.0) }
 }
 
-/// The gradient matrix spinner (pink `gradient_spinner`, the
+/// The gradient matrix spinner (Pink `gradient_spinner`, the
 /// "WorkingIndicator"): a 3×3 grid of round `cell_px` cells, `cell_px / 2`
 /// apart (so `4 * cell_px` square), each row tinted from `tints` (`[light,
-/// mid, deep]`, top to bottom – pink's accent glyph palette). Every cell
+/// mid, deep]`, top to bottom – Pink's accent glyph palette). Every cell
 /// pulses once per [`GRADIENT_SPIN`] (750ms) on [`motion::gspin_opacity`];
 /// the per-cell phase enters at the bottom edge and converges on the top
 /// center, so the wave reads as travelling upward. Runs at 15Hz. Pink sizes:
@@ -266,12 +266,12 @@ impl RenderOnce for GradientSpinner {
 // ---------------------------------------------------------------------------
 
 /// Clockwise ring position of each `(row, col)` cell of the mini spinner,
-/// top-left first: (0,0) → (0,1) → (1,1) → (2,1) → (2,0) → (1,0) (pink
+/// top-left first: (0,0) → (0,1) → (1,1) → (2,1) → (2,0) → (1,0) (Pink
 /// `mini_spinner_cells` `RING`). A cell's phase is its position over 6.
 pub const MINI_RING: [[usize; 2]; 3] = [[0, 1], [5, 2], [4, 3]];
 
-/// The 2×3 activity glyph for compact status slots (pink
-/// `mini_glyph_spinner`, pink's default "running item" mark): three rows of
+/// The 2×3 activity glyph for compact status slots (Pink
+/// `mini_glyph_spinner`, Pink's default "running item" mark): three rows of
 /// two round `cell_px` cells, `cell_px / 2` apart (`2.5 × 4` cells, 5×8px at
 /// cell 2), rows tinted `[light, mid, deep]` from the accent glyph palette.
 /// Brightness snakes around the ring over [`GRADIENT_SPIN`] (750ms) at 30Hz.
@@ -292,9 +292,9 @@ pub fn mini_glyph_spinner(
     }
 }
 
-/// The grayscale [`mini_glyph_spinner`] (pink `mini_mono_spinner`) for
+/// The grayscale [`mini_glyph_spinner`] (Pink `mini_mono_spinner`) for
 /// surfaces where an accent would pull focus: same grid, snake and timing,
-/// one `tint` (pink: `text_muted` for "Reconnecting…").
+/// one `tint` (Pink: `text_muted` for "Reconnecting…").
 pub fn mini_mono_spinner(key: impl Into<SharedString>, cell_px: f32, tint: Hsla) -> MiniSpinner {
     mini_glyph_spinner(key, cell_px, [tint; 3])
 }
@@ -373,15 +373,15 @@ impl Render for MiniSpinnerView {
 // Upload progress ring
 // ---------------------------------------------------------------------------
 
-/// Stroke width of [`upload_progress_ring`] (pink `RING_STROKE`).
+/// Stroke width of [`upload_progress_ring`] (Pink `RING_STROKE`).
 const RING_STROKE: f32 = 2.5;
-/// Polyline segments for a full circle (pink `RING_SEGMENTS`).
+/// Polyline segments for a full circle (Pink `RING_SEGMENTS`).
 const RING_SEGMENTS: f32 = 64.0;
 /// The percent label's size as a share of the diameter: 9 in the 34 ring
-/// (pink `RING_LABEL_RATIO`).
+/// (Pink `RING_LABEL_RATIO`).
 const RING_LABEL_RATIO: f32 = 9.0 / 34.0;
 
-/// Radial upload progress with the percent centered (pink
+/// Radial upload progress with the percent centered (Pink
 /// `upload_progress_ring`), overlaid on an attachment thumbnail while it
 /// uploads: a faint full track (white 22%) and a bright arc (white 95%)
 /// growing clockwise from 12 o'clock, 2.5px strokes; the label is
@@ -444,10 +444,10 @@ pub fn upload_progress_ring(percent: u8, diameter: f32) -> AnyElement {
 // Boot splash
 // ---------------------------------------------------------------------------
 
-/// Pink's full-window boot splash (pink `splash_overlay`): an absolute
-/// `inset_0` layer of `bg` (pink: the glass tint, which is the opaque surface
+/// Pink's full-window boot splash (Pink `splash_overlay`): an absolute
+/// `inset_0` layer of `bg` (Pink: the glass tint, which is the opaque surface
 /// without blur) with a [`gradient_spinner`] at cell 2.5 above a 12px
-/// `label` in `label_color` (pink: "Setting up PINK environment" in
+/// `label` in `label_color` (Pink: "Setting up PINK environment" in
 /// `readable_muted(0.7)`), 12px apart, centered. While `fading` it plays
 /// [`motion::splash_out`]: 150ms hold, then a 500ms fade and 6px lift.
 pub fn splash_overlay(
@@ -481,21 +481,21 @@ pub fn splash_overlay(
 }
 
 // ---------------------------------------------------------------------------
-// Skeletons (pink `popover.rs`)
+// Skeletons (Pink `popover.rs`)
 // ---------------------------------------------------------------------------
 
 /// Per-row stagger of the skeleton pulse, as a fraction of [`PINK_PULSE`]
-/// (pink `skeleton_rows`).
+/// (Pink `skeleton_rows`).
 pub const SKELETON_STAGGER: f32 = 0.08;
 
-/// A skeleton's opacity for a phase: `0.35 + 0.4 * pulse_wave` (pink).
+/// A skeleton's opacity for a phase: `0.35 + 0.4 * pulse_wave` (Pink).
 pub fn skeleton_opacity(phase: f32) -> f32 {
     0.35 + 0.4 * motion::pulse_wave(phase)
 }
 
-/// Pulsing skeleton rows shown while a list loads (pink `skeleton_rows`):
+/// Pulsing skeleton rows shown while a list loads (Pink `skeleton_rows`):
 /// `count` 28px bars, rounded 6, 6px apart with 4px above and below, in
-/// `wash` (pink: the Quaternary fill), pulsing on [`PINK_PULSE`] with
+/// `wash` (Pink: the Quaternary fill), pulsing on [`PINK_PULSE`] with
 /// [`SKELETON_STAGGER`] per row.
 pub fn skeleton_rows(count: usize, wash: Hsla) -> Skeleton {
     Skeleton {
@@ -504,7 +504,7 @@ pub fn skeleton_rows(count: usize, wash: Hsla) -> Skeleton {
     }
 }
 
-/// [`skeleton_rows`] shaped like a loading menu (pink
+/// [`skeleton_rows`] shaped like a loading menu (Pink
 /// `skeleton_menu_rows`): 14px bars rounded 7 at 42/58/48/66% width, 8px
 /// apart, inset 6px vertically and 4px horizontally.
 pub fn skeleton_menu_rows(count: usize, wash: Hsla) -> Skeleton {
@@ -514,8 +514,8 @@ pub fn skeleton_menu_rows(count: usize, wash: Hsla) -> Skeleton {
     }
 }
 
-/// One pulsing ghost label (pink `skeleton_bar`): `width` × 11px, rounded
-/// 5.5, in `wash` (pink: the Tertiary fill).
+/// One pulsing ghost label (Pink `skeleton_bar`): `width` × 11px, rounded
+/// 5.5, in `wash` (Pink: the Tertiary fill).
 pub fn skeleton_bar(width: f32, wash: Hsla) -> Skeleton {
     Skeleton {
         kind: SkeletonKind::Bar(width),
@@ -583,18 +583,18 @@ impl RenderOnce for Skeleton {
 }
 
 // ---------------------------------------------------------------------------
-// Text shimmer (pink `transcript.rs` `shimmer_overlay`)
+// Text shimmer (Pink `transcript.rs` `shimmer_overlay`)
 // ---------------------------------------------------------------------------
 
 /// Half-width of the shimmer's highlight band, as a share of the text width
-/// (pink `TOOL_GROUP_SHIMMER_HALF_WIDTH`).
+/// (Pink `TOOL_GROUP_SHIMMER_HALF_WIDTH`).
 pub const SHIMMER_HALF_WIDTH: f32 = 0.36;
-/// Width of the clip strips the shimmer repaints the line through (pink
+/// Width of the clip strips the shimmer repaints the line through (Pink
 /// `TOOL_GROUP_SHIMMER_STRIP_WIDTH`).
 pub const SHIMMER_STRIP_WIDTH: f32 = 2.0;
 
 /// How lit the text is at `x` (0..1 of its width) for a sweep `phase`
-/// (pink `tool_title_shimmer_amount`): a 300%-wide repeating gradient moving
+/// (Pink `tool_title_shimmer_amount`): a 300%-wide repeating gradient moving
 /// from 200% to −100%. The primary center runs `-2.5 + 6 * phase`, copies sit
 /// three widths apart, and each lights a ±0.36 shoulder. The band crosses the
 /// label twice per period.
@@ -606,7 +606,7 @@ pub fn shimmer_amount(x: f32, phase: f32) -> f32 {
         .fold(0.0, f32::max)
 }
 
-/// The sweep phase of a shimmer that started at `start` (pink
+/// The sweep phase of a shimmer that started at `start` (Pink
 /// `tool_title_shimmer_phase`): elapsed over [`STATUS_SHIMMER`] (3400ms).
 pub fn shimmer_phase_since(start: Instant, now: Instant) -> f32 {
     let period = STATUS_SHIMMER.total().mul_f32(speed_scale()).as_secs_f32();
@@ -614,13 +614,13 @@ pub fn shimmer_phase_since(start: Instant, now: Instant) -> f32 {
     (elapsed / period).fract()
 }
 
-/// The shimmer itself (pink `shimmer_overlay`): an absolute `inset_0` canvas
+/// The shimmer itself (Pink `shimmer_overlay`): an absolute `inset_0` canvas
 /// to lay over a single-line text element of the same `size` / `line_height`
 /// on a `relative` parent. It shapes `text` once to measure it, cuts the
 /// width into 2px strips, and repaints the whole shaped line through each lit
 /// strip in `mix(base, peak, shimmer_amount(x, phase))` – the native
 /// equivalent of CSS `background-clip: text`, without splitting the line's
-/// shaping. The font is the inherited one (pink: Geist regular). Most callers
+/// shaping. The font is the inherited one (Pink: Geist regular). Most callers
 /// want [`shimmer_text`].
 pub fn shimmer_overlay(
     text: SharedString,
@@ -691,12 +691,12 @@ pub fn shimmer_overlay(
     .inset_0()
 }
 
-/// One line of text with pink's live shimmer: a soft highlight sweeping from
+/// One line of text with Pink's live shimmer: a soft highlight sweeping from
 /// `base` to `peak` and back, through [`shimmer_overlay`]. Pink's two uses:
 /// the working-line verb (12/16, `content_muted` → `text`) and the live
 /// tool-group title (12/18, same colors). By default the sweep runs on the
 /// shared clock at [`STATUS_SHIMMER`] (3400ms); [`started_at`] times it from
-/// a start instead (pink's tool groups), [`phase`] drives it by hand. Not
+/// a start instead (Pink's tool groups), [`phase`] drives it by hand. Not
 /// [`live`], or under reduced motion, it is plain `base` text. The wrapper
 /// is `relative`; style it like any div (`.flex_none()` for a status verb,
 /// `.flex_1().min_w_0().overflow_hidden()` for a title). Set size and line
@@ -757,7 +757,7 @@ impl ShimmerText {
         self
     }
 
-    /// Time the sweep from `start` (pink's tool-group title, which starts
+    /// Time the sweep from `start` (Pink's tool-group title, which starts
     /// when the group first appears), on the pulse clock.
     pub fn started_at(mut self, start: Instant) -> Self {
         self.started = Some(start);
@@ -804,7 +804,7 @@ impl RenderOnce for ShimmerText {
 }
 
 // ---------------------------------------------------------------------------
-// Working trailer building blocks (pink `transcript.rs`)
+// Working trailer building blocks (Pink `transcript.rs`)
 // ---------------------------------------------------------------------------
 //
 // Pink's thinking indicator is one row under the last transcript row:
@@ -813,21 +813,21 @@ impl RenderOnce for ShimmerText {
 // ("· 12s") and a hover-only "Stop" (`ml 4, px 6, rounded 6`, 11/16
 // `content_muted`, opacity 0 → 1 on group hover, `hover_wash`).
 
-/// Working-line verb and object size (pink `WORKING_STATUS_SIZE`).
+/// Working-line verb and object size (Pink `WORKING_STATUS_SIZE`).
 pub const WORKING_STATUS_SIZE: f32 = 12.0;
-/// The working line's shared line box (pink `WORKING_STATUS_LINE_HEIGHT`).
+/// The working line's shared line box (Pink `WORKING_STATUS_LINE_HEIGHT`).
 pub const WORKING_STATUS_LINE_HEIGHT: f32 = 16.0;
-/// The elapsed timer, one step quieter (pink `WORKING_TIMER_SIZE`).
+/// The elapsed timer, one step quieter (Pink `WORKING_TIMER_SIZE`).
 pub const WORKING_TIMER_SIZE: f32 = 11.0;
-/// Tool-group title size (pink `TOOL_LABEL_SIZE`).
+/// Tool-group title size (Pink `TOOL_LABEL_SIZE`).
 pub const TOOL_LABEL_SIZE: f32 = 12.0;
-/// Tool-group title line height (pink `TOOL_LABEL_LINE_HEIGHT`).
+/// Tool-group title line height (Pink `TOOL_LABEL_LINE_HEIGHT`).
 pub const TOOL_LABEL_LINE_HEIGHT: f32 = 18.0;
-/// A live status object is ellipsized past this many chars (pink
+/// A live status object is ellipsized past this many chars (Pink
 /// `LIVE_STATUS_OBJECT_CHARS`).
 pub const LIVE_STATUS_OBJECT_CHARS: usize = 44;
 
-/// "1m 32s"-style elapsed time (pink `format_elapsed`): `"12s"` under a
+/// "1m 32s"-style elapsed time (Pink `format_elapsed`): `"12s"` under a
 /// minute, `"1m 5s"` from 60s. Negative input reads as 0.
 pub fn format_elapsed(secs: i64) -> String {
     let secs = secs.max(0);
@@ -838,7 +838,7 @@ pub fn format_elapsed(secs: i64) -> String {
     }
 }
 
-/// Truncates `text` to `max` chars with a trailing `…` (pink
+/// Truncates `text` to `max` chars with a trailing `…` (Pink
 /// `ellipsize_chars`).
 pub fn ellipsize_chars(text: &str, max: usize) -> String {
     if text.chars().count() <= max {
@@ -850,14 +850,14 @@ pub fn ellipsize_chars(text: &str, max: usize) -> String {
 }
 
 /// Tabular (fixed-width) figures for counters and timers, so ticking digits
-/// never shift the text after them (pink `typography::tabular_figures`).
+/// never shift the text after them (Pink `typography::tabular_figures`).
 /// Pass to `.font_features(..)`; gpui-pre forwards OpenType features to the
 /// shaper.
 pub fn tabular_figures() -> FontFeatures {
     FontFeatures(std::sync::Arc::new(vec![("tnum".into(), 1)]))
 }
 
-/// 64-bit FNV-1a (pink `transcript.rs` `fnv1a`), for ids keyed on text.
+/// 64-bit FNV-1a (Pink `transcript.rs` `fnv1a`), for ids keyed on text.
 pub fn fnv1a(bytes: &[u8]) -> u64 {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for b in bytes {
@@ -867,14 +867,14 @@ pub fn fnv1a(bytes: &[u8]) -> u64 {
     hash
 }
 
-/// An element id derived from a label, `"{prefix}-{fnv1a:x}"` (pink's
+/// An element id derived from a label, `"{prefix}-{fnv1a:x}"` (Pink's
 /// `"working-status-in-{:x}"`): a new label gets a new id, so a
 /// [`motion::status_swap`] keyed on it replays.
 pub fn label_id(prefix: &str, label: &str) -> SharedString {
     format!("{prefix}-{:x}", fnv1a(label.as_bytes())).into()
 }
 
-/// The working line's orb slot (pink `render_working_trailer`): a
+/// The working line's orb slot (Pink `render_working_trailer`): a
 /// `flex_none` 16px line box centering the [`breathing_orb`], so the orb
 /// stays on the first line when the status wraps.
 pub fn orb_slot(accent: Hsla) -> Div {
@@ -886,7 +886,7 @@ pub fn orb_slot(accent: Hsla) -> Div {
         .child(breathing_orb(accent))
 }
 
-/// The working line's timer (pink `render_working_trailer`): `"· 12s"` at
+/// The working line's timer (Pink `render_working_trailer`): `"· 12s"` at
 /// 11/16 with tabular figures, `flex_none`, no wrap. Pink colors it
 /// `content_faint`.
 pub fn working_timer(elapsed_secs: i64, color: Hsla) -> Div {
@@ -903,10 +903,10 @@ pub fn working_timer(elapsed_secs: i64, color: Hsla) -> Div {
         )))
 }
 
-/// The working line's status (pink `render_working_trailer` status line):
-/// a 12/16 row, 4px gap, of the `verb` in `tone` (pink: `content_muted`, or
+/// The working line's status (Pink `render_working_trailer` status line):
+/// a 12/16 row, 4px gap, of the `verb` in `tone` (Pink: `content_muted`, or
 /// `warning` for queued and notices) shimmering toward `text` while live,
-/// then an optional object in `text` that truncates (pink ellipsizes it at
+/// then an optional object in `text` that truncates (Pink ellipsizes it at
 /// [`LIVE_STATUS_OBJECT_CHARS`]). Each new label fades in and settles 2px on
 /// [`motion::STATUS_SWAP`]. A [`sentence`](WorkingStatus::sentence) (queued,
 /// provider notices) wraps instead and does not shimmer.

@@ -1,18 +1,18 @@
 //! Decision Inbox – the decisions waiting on you, answered one at a time.
 //!
 //! PINK has no inbox card of its own; this puts three of its pieces together.
-//! The list sits under Activity's section headings (pink: activity_center.rs
+//! The list sits under Activity's section headings (Pink: activity_center.rs
 //! `activity_section_heading`): "Needs you" with its count, then "Answered".
-//! The decision you are on opens in the question panel (pink: composer.rs
+//! The decision you are on opens in the question panel (Pink: composer.rs
 //! `render_wizard`): the r26 composer pill, a tracked uppercase header with a
 //! "1/3" counter, the question, two numbered option rows and a footer with
-//! "Answer later" and Send. Every other decision is a one-line card (pink:
+//! "Answer later" and Send. Every other decision is a one-line card (Pink:
 //! transcript.rs `async_question_card`): an accent edge and "Open · click to
 //! answer" while it waits, a hairline and "Answered: … · click to change"
 //! once it has settled.
 //!
 //! Picking an option shows it picked for 220 ms, then sends it and opens the
-//! next decision (pink's single-select auto-advance). 1 and 2 pick from the
+//! next decision (Pink's single-select auto-advance). 1 and 2 pick from the
 //! keyboard and Enter sends a pick. "Answer later" puts the decision back in
 //! the list; clicking a card opens it in the panel, so an answer can change.
 //!
@@ -49,15 +49,15 @@ pub const DESCRIPTION: &str = "Decisions waiting on you under a Needs you headin
 
 const ICON_QUESTION: &str = "icons/decision-inbox/chat-round-line.svg";
 
-/// A pick shows for this long before it is sent (pink composer.rs
+/// A pick shows for this long before it is sent (Pink composer.rs
 /// `AUTO_ADVANCE_MS`).
 const AUTO_ADVANCE: Duration = Duration::from_millis(220);
-/// An Activity heading row (pink spaces.rs `SIDEBAR_DISCLOSURE_HEADER_HEIGHT`).
+/// An Activity heading row (Pink spaces.rs `SIDEBAR_DISCLOSURE_HEADER_HEIGHT`).
 const HEADING_H: f32 = 28.;
-/// Above every Activity section but the first (pink spaces.rs
+/// Above every Activity section but the first (Pink spaces.rs
 /// `SIDEBAR_SECTION_GAP`).
 const SECTION_GAP: f32 = 12.;
-/// The transcript card's row (pink transcript.rs `async_question_card`).
+/// The transcript card's row (Pink transcript.rs `async_question_card`).
 const CARD_H: f32 = 34.;
 
 /// Which of the two options answered a decision: option 1 or option 2.
@@ -171,7 +171,7 @@ struct InboxState {
     decisions: Vec<Decision>,
     /// Decisions whose `collapsed` / `answered` seeds were applied.
     seen: HashSet<SharedString>,
-    /// Every answer given, oldest first (pink keeps them on the card).
+    /// Every answer given, oldest first (Pink keeps them on the card).
     answers: HashMap<SharedString, Vec<Answer>>,
     /// Put off with "Answer later".
     later: HashSet<SharedString>,
@@ -238,7 +238,7 @@ impl InboxState {
             return;
         };
         self.picked = Some((id, answer));
-        // pink `schedule_auto_advance`: a single-select pick sends itself.
+        // Pink `schedule_auto_advance`: a single-select pick sends itself.
         self._advance = Some(cx.spawn_in(window, async move |this, cx| {
             cx.background_executor().timer(AUTO_ADVANCE).await;
             if let Ok(decided) = this.update(cx, |s, cx| s.advance(cx)) {
@@ -281,7 +281,7 @@ impl InboxState {
         cx.notify();
     }
 
-    /// pink `on_wizard_key`: a bare digit picks, Enter sends, Escape stays
+    /// Pink `on_wizard_key`: a bare digit picks, Enter sends, Escape stays
     /// inside the panel.
     fn on_key(
         &mut self,
@@ -399,7 +399,7 @@ impl RenderOnce for DecisionInbox {
             .flex()
             .flex_col()
             .font_family(pink::SANS)
-            // pink's shell root: 14 px Geist on GPUI's default line height.
+            // Pink's shell root: 14 px Geist on GPUI's default line height.
             .text_size(px(14.))
             .line_height(phi())
             .text_color(t.text);
@@ -420,7 +420,7 @@ impl RenderOnce for DecisionInbox {
         }
         if let Some((d, paging, answers, picked)) = panel {
             let panel = question_panel(&key, &d, paging, &answers, picked, &state, &focus, &t);
-            // pink mounts the panel with `fade_quick("composer-wizard")`.
+            // Pink mounts the panel with `fade_quick("composer-wizard")`.
             root = root.child(motion::fade_quick(
                 eid(format!("{key}-panel-in")),
                 div().pt(px(4.)).pb(px(8.)).child(panel),
@@ -450,7 +450,7 @@ impl RenderOnce for DecisionInbox {
     }
 }
 
-/// An Activity section heading (pink: activity_center.rs
+/// An Activity section heading (Pink: activity_center.rs
 /// `activity_section_heading`): a heading, not a disclosure. The name in 11
 /// semibold, the count beside it; sections after the first keep the sidebar's
 /// section gap above.
@@ -493,7 +493,7 @@ fn section_heading(id: String, label: &'static str, count: usize, first: bool, t
         )
 }
 
-/// Nothing open (pink: shell.rs Activity's empty list): a centred title and
+/// Nothing open (Pink: shell.rs Activity's empty list): a centred title and
 /// the next step under it.
 fn empty_state(t: &Pink) -> Div {
     div()
@@ -519,7 +519,7 @@ fn empty_state(t: &Pink) -> Div {
         )
 }
 
-/// A decision outside the panel (pink: transcript.rs `async_question_card`):
+/// A decision outside the panel (Pink: transcript.rs `async_question_card`):
 /// a 34 px r10 row that is always answerable, so it reads as a control. An
 /// open one has an accent edge and accent status; a settled one a hairline
 /// and the answer in `content_muted`. It arrives like a transcript row.
@@ -612,7 +612,7 @@ fn decision_card(
                     .child(status),
             ),
     );
-    // pink's transcript rows arrive over `TOOL_ROW_REVEAL`, rising 4 px.
+    // Pink's transcript rows arrive over `TOOL_ROW_REVEAL`, rising 4 px.
     motion::rise_in(
         eid(format!("{key}-card-in-{}-{}", d.id, answers.len())),
         TOOL_ROW_REVEAL,
@@ -621,10 +621,10 @@ fn decision_card(
     )
 }
 
-/// The pill chrome the composer and the question panel share (pink:
+/// The pill chrome the composer and the question panel share (Pink:
 /// composer.rs `composer_surface`). Here the panel sits in the list's flow
 /// rather than floating over a transcript, so it goes without the opaque
-/// treatment's `shadow_lg`, as pink's frosted pill does.
+/// treatment's `shadow_lg`, as Pink's frosted pill does.
 fn composer_surface(t: &Pink) -> Div {
     div()
         .rounded(px(radius::COMPOSER))
@@ -633,7 +633,7 @@ fn composer_surface(t: &Pink) -> Div {
         .bg(t.input_glass_bg())
 }
 
-/// One numbered option (pink: composer.rs `render_wizard` option rows).
+/// One numbered option (Pink: composer.rs `render_wizard` option rows).
 fn option_row(
     key: &str,
     d: &Decision,
@@ -724,7 +724,7 @@ fn option_row(
         )
 }
 
-/// The current decision in the question panel (pink: composer.rs
+/// The current decision in the question panel (Pink: composer.rs
 /// `render_wizard`): header and counter, the question, its detail, the two
 /// options, then "Answer later" and Send. `paging` is the decision's place
 /// among the ones that need you.
@@ -752,7 +752,7 @@ fn question_panel(
                 .child(pink::tracked_upper(&d.header)),
         )
         .when(paging.1 > 1, |el| {
-            // pink `Wizard::counter`, shown while paged.
+            // Pink `Wizard::counter`, shown while paged.
             el.child(
                 div()
                     .h(px(20.))
@@ -779,7 +779,7 @@ fn question_panel(
         .text_color(t.text)
         .child(d.title.clone());
 
-    // The note under a question (pink's multi-select hint line).
+    // The note under a question (Pink's multi-select hint line).
     let detail = d.detail.clone().map(|detail| {
         div()
             .mt(px(4.))
@@ -800,7 +800,7 @@ fn question_panel(
             Answer::ALL.map(|answer| option_row(key, d, answer, picked == Some(answer), state, t)),
         );
 
-    // A settled decision reopened from its card (pink's async note).
+    // A settled decision reopened from its card (Pink's async note).
     let note = answers
         .last()
         .map(|last| format!("You answered {}. Send again to change it.", d.label(*last)));

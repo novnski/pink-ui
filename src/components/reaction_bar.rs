@@ -1,16 +1,16 @@
-//! Reaction Bar – a pink component.
+//! Reaction Bar – a Pink component.
 //!
-//! Like, comment, repost and share as a row of pink's quiet transcript
-//! actions (pink: transcript.rs `meta_action` and the hover lane's action
+//! Like, comment, repost and share as a row of Pink's quiet transcript
+//! actions (Pink: transcript.rs `meta_action` and the hover lane's action
 //! row): 24px r6 buttons 2px apart, transparent easing to `ink(0.08)` on
 //! hover, 14px Solar glyphs in `content_muted`, the inset focus ring and a
 //! text tooltip. A count follows its glyph in 12px tabular figures and the
-//! button widens to hold it; with nothing to count the button is pink's bare
+//! button widens to hold it; with nothing to count the button is Pink's bare
 //! 24px square. Taking an action swaps the glyph for its filled twin and
-//! lifts glyph and count to `text` – pink marks a toggle by swapping the
+//! lifts glyph and count to `text` – Pink marks a toggle by swapping the
 //! glyph (Copy → Copied, the model picker's star), never with a colored
-//! chip. The new glyph fades in (pink's composer glyph swap) and the new
-//! count fades and settles 2px (pink's status swap) while the button eases
+//! chip. The new glyph fades in (Pink's composer glyph swap) and the new
+//! count fades and settles 2px (Pink's status swap) while the button eases
 //! to its new width. Arrow keys, Home and End move between the actions,
 //! Enter or Space takes the focused one.
 //!
@@ -38,13 +38,13 @@ use crate::{
 pub const NAME: &str = "Reaction Bar";
 pub const DESCRIPTION: &str = "Like, comment, repost and share as quiet icon actions under a post – each count in tabular figures beside its glyph, a taken action swapping to its filled glyph as the new count settles in";
 
-/// One action's height, and its width with nothing to count (pink:
+/// One action's height, and its width with nothing to count (Pink:
 /// transcript.rs `meta_action`).
 const ACTION_SIZE: f32 = 24.0;
 /// Centers the 14px glyph in the 24px square, and keeps it there when a
 /// count widens the button.
 const GLYPH_INSET: f32 = (ACTION_SIZE - icon_size::SM) / 2.0;
-/// Glyph → count, and the count's trailing pad up to pink's small-control
+/// Glyph → count, and the count's trailing pad up to Pink's small-control
 /// inset (`ControlSize::Sm`: gap 4, pad 8).
 const COUNT_GAP: f32 = ControlSize::Sm.gap();
 const COUNT_END: f32 = ControlSize::Sm.pad_x() - GLYPH_INSET;
@@ -85,7 +85,7 @@ impl ReactionKey {
         }
     }
 
-    /// The tooltip: the verb, or what it became once taken (pink's Copy
+    /// The tooltip: the verb, or what it became once taken (Pink's Copy
     /// reads "Copied").
     fn tooltip(self, active: bool) -> &'static str {
         match (self, active) {
@@ -101,7 +101,7 @@ impl ReactionKey {
     }
 
     /// Solar Linear glyphs; once taken, Solar Bold where the glyph has a
-    /// filled twin (heart, bubble, share). The bubble is pink's own
+    /// filled twin (heart, bubble, share). The bubble is Pink's own
     /// `chat-round-line`.
     fn icon(self, active: bool) -> &'static str {
         match (self, active) {
@@ -222,12 +222,12 @@ impl ReactionBar {
     }
 }
 
-/// The hover fade of one action (pink: `meta_action`'s `tl-{id}`).
+/// The hover fade of one action (Pink: `meta_action`'s `tl-{id}`).
 fn fade_key(bar: &str, key: ReactionKey) -> String {
     format!("tl-{bar}-{}", key.slug())
 }
 
-/// The count's face: Geist regular with tabular figures (pink
+/// The count's face: Geist regular with tabular figures (Pink
 /// `typography::tabular_figures`), so a ticking count never jitters.
 fn count_font() -> Font {
     Font {
@@ -261,7 +261,7 @@ fn count_width(window: &Window, label: &str) -> f32 {
 /// The count after the glyph: 12/16 tabular figures in the action's tone.
 /// Its box eases to the new width over `QUICK` (0 when there is nothing to
 /// count), and a changed count fades in and settles 2px over `STATUS_SWAP`
-/// (pink: transcript.rs working-status swap).
+/// (Pink: transcript.rs working-status swap).
 fn count_view(window: &Window, id: &str, count: u64, taps: u32, tone: Hsla) -> Div {
     let label = (count > 0).then(|| short(count));
     let natural = label.as_deref().map_or(0., |label| {
@@ -299,12 +299,12 @@ fn count_view(window: &Window, id: &str, count: u64, taps: u32, tone: Hsla) -> D
         )
 }
 
-/// One action (pink: transcript.rs `meta_action`): 24px tall, r6,
+/// One action (Pink: transcript.rs `meta_action`): 24px tall, r6,
 /// transparent easing to `ink(0.08)` on hover, a 14px glyph, the inset
 /// focus ring and a text tooltip. Pink's square at rest; a count widens it.
 /// A taken action shows its filled glyph and lifts glyph and count from
 /// `content_muted` to `text`; a fresh swap fades the glyph in over
-/// `GLYPH_SWAP` (pink: composer.rs `composer-primary-glyph`).
+/// `GLYPH_SWAP` (Pink: composer.rs `composer-primary-glyph`).
 #[allow(clippy::too_many_arguments)]
 fn reaction_action(
     window: &Window,
@@ -416,7 +416,7 @@ impl RenderOnce for ReactionBar {
                 let on_react = self.on_react.clone();
                 let click = state.clone();
                 // Enter and Space on a focused action click it too (GPUI);
-                // like pink's meta actions, the key stops there.
+                // like Pink's meta actions, the key stops there.
                 reaction_action(window, &bar, key, count, active, taps, &focus, &t)
                     .on_click(move |_, window, cx| {
                         toggle(&click, ix, on_react.as_ref(), window, cx)
@@ -451,7 +451,7 @@ impl RenderOnce for ReactionBar {
             .flex()
             .flex_row()
             .items_center()
-            // pink: the hover lane's 2px action rhythm
+            // Pink: the hover lane's 2px action rhythm
             .gap(px(space::S2))
             .max_w_full()
             .font_family(pink::SANS)
@@ -500,7 +500,7 @@ const COLUMN: f32 = 560.;
 /// Avatar plus its gap: the body lines up with the name.
 const BODY_INSET: f32 = 20. + space::S8;
 /// The bar sits a glyph inset further out, so the first glyph (not its
-/// hover plate) lines up with the text, like pink's leading-edge menus.
+/// hover plate) lines up with the text, like Pink's leading-edge menus.
 const BAR_INSET: f32 = BODY_INSET - GLYPH_INSET;
 
 struct Post {
@@ -590,7 +590,7 @@ fn bar_id(ix: usize) -> ElementId {
     ElementId::NamedInteger("rb-post".into(), ix as u64)
 }
 
-/// One post: avatar, author and age (pink: the lane's 12px `content_faint`
+/// One post: avatar, author and age (Pink: the lane's 12px `content_faint`
 /// timestamp), the text in 14/22 prose, then the reactions under it.
 fn post(ix: usize, post: &Post, t: &Pink) -> Div {
     let bar = ReactionKey::ALL

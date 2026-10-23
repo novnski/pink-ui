@@ -1,8 +1,8 @@
-//! Tool Call Card – an agent's tool calls drawn the way pink's transcript
-//! draws them (pink: `transcript.rs` `render_tool_group`, `chip_header_row`,
+//! Tool Call Card – an agent's tool calls drawn the way Pink's transcript
+//! draws them (Pink: `transcript.rs` `render_tool_group`, `chip_header_row`,
 //! `activity_rail`, `detail_body`).
 //!
-//! [`ToolCallGroup`] is pink's tool group: a quiet 24px plate that sums the
+//! [`ToolCallGroup`] is Pink's tool group: a quiet 24px plate that sums the
 //! calls up ("Ran 2 commands · read 1 file · 1 failed") beside a kind glyph
 //! and a chevron, with a light sweeping over the summary while the run is
 //! live. Open, it hangs one bare 32px row per call off an activity rail: a
@@ -10,14 +10,14 @@
 //! while the call runs, a red danger circle when it failed), the label and
 //! detail in 12/18 muted text that brightens under the pointer, a red
 //! "Failed" word and a half-strength chevron; a call that names a file shows
-//! pink's file badge for its detail. A row with an invocation or an
-//! output folds open into pink's code surface: "Invocation" or "Command" and
+//! Pink's file badge for its detail. A row with an invocation or an
+//! output folds open into Pink's code surface: "Invocation" or "Command" and
 //! "Output" segments with copy actions, 24 lines with a counted tail and a
 //! "Show full output" affordance. Rows arrive with the rail drawing into
 //! them; the group stays open while live and folds itself shut once the run
 //! settles, unless someone toggled it.
 //!
-//! A [`ToolCallCard`] outside a group is pink's chip card: a 30px bordered
+//! A [`ToolCallCard`] outside a group is Pink's chip card: a 30px bordered
 //! card with an 18px icon tile that folds open the same way.
 //!
 //! Tab reaches every header; Enter or Space toggles it.
@@ -53,16 +53,16 @@ pub const NAME: &str = "Tool Call Card";
 pub const DESCRIPTION: &str = "An agent's tool calls folded into one quiet line that shimmers while the run is live – open it for one row per call on an activity rail, a spinner while it runs or a red Failed when it didn't, and each row folds open to its command and output with copy";
 
 // ---------------------------------------------------------------------------
-// Geometry (pink `transcript.rs` tool row constants)
+// Geometry (Pink `transcript.rs` tool row constants)
 // ---------------------------------------------------------------------------
 
-/// A chip card's row: 30px card centered in 38 (pink `CHIP_HEIGHT`).
+/// A chip card's row: 30px card centered in 38 (Pink `CHIP_HEIGHT`).
 const CHIP_HEIGHT: f32 = 38.0;
-/// The bordered chip card, border-box (pink `CHIP_CARD_HEIGHT`).
+/// The bordered chip card, border-box (Pink `CHIP_CARD_HEIGHT`).
 const CHIP_CARD_HEIGHT: f32 = 30.0;
-/// The header inside the bordered card (pink `CHIP_HEADER_HEIGHT`).
+/// The header inside the bordered card (Pink `CHIP_HEADER_HEIGHT`).
 const CHIP_HEADER_HEIGHT: f32 = CHIP_CARD_HEIGHT - 2.0;
-/// The rail's gutter, trunk, elbow and glyph (pink `ACTIVITY_*`).
+/// The rail's gutter, trunk, elbow and glyph (Pink `ACTIVITY_*`).
 const ACTIVITY_GUTTER_WIDTH: f32 = 48.0;
 const ACTIVITY_TEXT_GAP: f32 = 8.0;
 const ACTIVITY_TRUNK_X: f32 = 12.5;
@@ -70,48 +70,48 @@ const ACTIVITY_BEND_RADIUS: f32 = 6.0;
 const ACTIVITY_BRANCH_END_X: f32 = 28.0;
 const ACTIVITY_ICON_LEFT: f32 = 32.0;
 const ACTIVITY_ICON_SIZE: f32 = pink::icon_size::SM;
-/// Rows and the group summary: 12/18 (pink `TOOL_LABEL_SIZE`).
+/// Rows and the group summary: 12/18 (Pink `TOOL_LABEL_SIZE`).
 const TOOL_TEXT_SIZE: f32 = loaders::TOOL_LABEL_SIZE;
 const TOOL_LINE_HEIGHT: f32 = loaders::TOOL_LABEL_LINE_HEIGHT;
-/// The group header row; its plate is 2px shorter (pink
+/// The group header row; its plate is 2px shorter (Pink
 /// `TOOL_GROUP_HEADER_HEIGHT`).
 const TOOL_GROUP_HEADER_HEIGHT: f32 = 26.0;
-/// One rail row (pink `TOOL_TREE_ROW_HEIGHT`).
+/// One rail row (Pink `TOOL_TREE_ROW_HEIGHT`).
 const TOOL_TREE_ROW_HEIGHT: f32 = 32.0;
-/// Rows and group headers share one chevron (pink `DISCLOSURE_CHEVRON_SIZE`).
+/// Rows and group headers share one chevron (Pink `DISCLOSURE_CHEVRON_SIZE`).
 const DISCLOSURE_CHEVRON_SIZE: f32 = pink::icon_size::XS;
-/// Space above the first rail row (pink `CHIPS_TOP_PAD`).
+/// Space above the first rail row (Pink `CHIPS_TOP_PAD`).
 const CHIPS_TOP_PAD: f32 = 2.0;
-/// Lines an output segment shows before its counted tail (pink
+/// Lines an output segment shows before its counted tail (Pink
 /// `OUTPUT_DETAIL_MAX_LINES`).
 const OUTPUT_DETAIL_MAX_LINES: usize = 24;
-/// The ceiling for an invocation and for a full output (pink
+/// The ceiling for an invocation and for a full output (Pink
 /// `FULL_OUTPUT_MAX_LINES`).
 const FULL_OUTPUT_MAX_LINES: usize = 400;
-/// Invocation and output lines soft-wrap here (pink `CALL_WRAP_COLS`).
+/// Invocation and output lines soft-wrap here (Pink `CALL_WRAP_COLS`).
 const CALL_WRAP_COLS: usize = 80;
-/// The code surface header (pink `OUTPUT_CODE_HEADER_HEIGHT`).
+/// The code surface header (Pink `OUTPUT_CODE_HEADER_HEIGHT`).
 const OUTPUT_CODE_HEADER_HEIGHT: f32 = 28.0;
-/// Code segments scroll past this (pink `OUTPUT_VIEWPORT_MAX_HEIGHT`).
+/// Code segments scroll past this (Pink `OUTPUT_VIEWPORT_MAX_HEIGHT`).
 const OUTPUT_VIEWPORT_MAX_HEIGHT: f32 = 252.0;
-/// One code line: the code size's 12.5/18 rhythm (pink `OUTPUT_LINE_HEIGHT`).
+/// One code line: the code size's 12.5/18 rhythm (Pink `OUTPUT_LINE_HEIGHT`).
 const OUTPUT_LINE_HEIGHT: f32 = 18.0;
-/// The code body's `py 6` × 2 (pink `OUTPUT_BODY_PAD`).
+/// The code body's `py 6` × 2 (Pink `OUTPUT_BODY_PAD`).
 const OUTPUT_BODY_PAD: f32 = 12.0;
-/// The hairline between a row's header and its body (pink
+/// The hairline between a row's header and its body (Pink
 /// `DETAIL_SEPARATOR`).
 const DETAIL_SEPARATOR: f32 = 1.0;
-/// The "Show full output" row (pink `BLOB_AFFORDANCE_HEIGHT`).
+/// The "Show full output" row (Pink `BLOB_AFFORDANCE_HEIGHT`).
 const BLOB_AFFORDANCE_HEIGHT: f32 = 24.0;
-/// The code surface's side padding (pink `render::CODE_PADDING_X`).
+/// The code surface's side padding (Pink `render::CODE_PADDING_X`).
 const CODE_PADDING_X: f32 = 12.0;
-/// Copy actions in the code header (pink `render::CODE_ACTION_SIZE`).
+/// Copy actions in the code header (Pink `render::CODE_ACTION_SIZE`).
 const CODE_ACTION_SIZE: f32 = 22.0;
-/// How long a copy action reads "Copied" (pink `copy_ui_for`).
+/// How long a copy action reads "Copied" (Pink `copy_ui_for`).
 const COPIED_FOR: Duration = Duration::from_millis(1200);
 /// Rows hover their label, detail and chevron together.
 const HEADER_GROUP: &str = "tool-header";
-/// A file badge: a 22px chip, a 20px well, the 14px file-type artwork (pink
+/// A file badge: a 22px chip, a 20px well, the 14px file-type artwork (Pink
 /// `file_badges::render_file_badge`).
 const FILE_BADGE_HEIGHT: f32 = 22.0;
 const FILE_WELL: f32 = 20.0;
@@ -125,8 +125,8 @@ const DANGER_CIRCLE: &str = "icons/tool-call-card/danger-circle.svg";
 const LAYERS: &str = "icons/tool-call-card/layers-minimalistic.svg";
 /// Pink's glyph for a tool it has no kind for.
 const TOOLBOX: &str = "icons/tool-call-card/toolbox.svg";
-/// The polychrome file-type artwork in a file badge's well (pink
-/// `file_icons`, vscode-symbols; dark variants lifted like pink's
+/// The polychrome file-type artwork in a file badge's well (Pink
+/// `file_icons`, vscode-symbols; dark variants lifted like Pink's
 /// `dark_icon_svg`).
 const FILE_RUST: &str = "icons/tool-call-card/file-rust.svg";
 const FILE_RUST_DARK: &str = "icons/tool-call-card/file-rust-dark.svg";
@@ -232,7 +232,7 @@ impl<T: Into<Json>> From<Option<T>> for Json {
     }
 }
 
-/// What a code segment shows, verbatim in mono like pink's tool output:
+/// What a code segment shows, verbatim in mono like Pink's tool output:
 /// JSON pretty-printed, or plain text. Text that holds JSON is
 /// pretty-printed too.
 #[derive(Clone, Debug, PartialEq)]
@@ -513,11 +513,11 @@ impl Parser<'_> {
 }
 
 // ---------------------------------------------------------------------------
-// Code segments (pink `call_block` / `tool_detail` / `detail_body`)
+// Code segments (Pink `call_block` / `tool_detail` / `detail_body`)
 // ---------------------------------------------------------------------------
 
 /// Soft-wraps one raw line into `cols`-char chunks so a long command stays
-/// readable instead of ellipsizing (pink `wrap_cols`).
+/// readable instead of ellipsizing (Pink `wrap_cols`).
 fn wrap_cols(line: &str, cols: usize) -> Vec<SharedString> {
     if line.chars().count() <= cols {
         return vec![SharedString::from(line.to_owned())];
@@ -529,7 +529,7 @@ fn wrap_cols(line: &str, cols: usize) -> Vec<SharedString> {
         .collect()
 }
 
-/// The one-line form of a row's detail (pink `single_line`).
+/// The one-line form of a row's detail (Pink `single_line`).
 fn single_line(text: &str) -> SharedString {
     text.split_whitespace().collect::<Vec<_>>().join(" ").into()
 }
@@ -594,7 +594,7 @@ impl Section {
 
 /// What an open row adds under its header: the separator, the code surface
 /// (two segments share one frame split by a hairline) and the "Show full
-/// output" row. Analytic, like pink's fold heights, so nothing is measured.
+/// output" row. Analytic, like Pink's fold heights, so nothing is measured.
 fn body_height(sections: &[Section], affordance: bool) -> f32 {
     let detail = match sections {
         [one] => DETAIL_SEPARATOR + one.height(),
@@ -613,7 +613,7 @@ fn body_height(sections: &[Section], affordance: bool) -> f32 {
 // State
 // ---------------------------------------------------------------------------
 
-/// One fold's clock (pink `FoldState`): the user's choice, and the height
+/// One fold's clock (Pink `FoldState`): the user's choice, and the height
 /// a tween started from.
 #[derive(Clone, Copy, Default)]
 struct Fold {
@@ -635,7 +635,7 @@ impl Fold {
         self.rendered_open = Some(open);
     }
 
-    /// Time since the toggle while the tween is armed (pink
+    /// Time since the toggle while the tween is armed (Pink
     /// `FOLD_TWEEN_WINDOW`).
     fn elapsed(&self, now: Instant, reduced: bool) -> Option<Duration> {
         let at = self.toggled_at.filter(|_| !reduced)?;
@@ -643,7 +643,7 @@ impl Fold {
         (elapsed < motion::FOLD_TWEEN_WINDOW.mul_f32(motion::speed_scale())).then_some(elapsed)
     }
 
-    /// `(height, disclosure progress, body alpha, animating)` on pink's one
+    /// `(height, disclosure progress, body alpha, animating)` on Pink's one
     /// fold clock.
     fn step(
         &mut self,
@@ -725,7 +725,7 @@ struct Slot {
 // Card
 // ---------------------------------------------------------------------------
 
-/// One tool call: a rail row inside a [`ToolCallGroup`], pink's chip card on
+/// One tool call: a rail row inside a [`ToolCallGroup`], Pink's chip card on
 /// its own.
 #[derive(IntoElement)]
 pub struct ToolCallCard {
@@ -747,7 +747,7 @@ pub struct ToolCallCard {
 }
 
 impl ToolCallCard {
-    /// `name` is the row's label: the kind of call as pink names it ("Run",
+    /// `name` is the row's label: the kind of call as Pink names it ("Run",
     /// "Read", "Search", "Web") or the tool's own name.
     pub fn new(
         id: impl Into<ElementId>,
@@ -781,14 +781,14 @@ impl ToolCallCard {
     }
 
     /// The file the call reads or writes ("src/cart/total.rs"): its detail
-    /// becomes pink's file badge, the file-type artwork beside the file's
+    /// becomes Pink's file badge, the file-type artwork beside the file's
     /// name. Takes the place of [`summary`](Self::summary).
     pub fn file(mut self, path: impl Into<SharedString>) -> Self {
         self.file = Some(path.into());
         self
     }
 
-    /// The row's 14px glyph (an SVG path under `assets/`); defaults to pink's
+    /// The row's 14px glyph (an SVG path under `assets/`); defaults to Pink's
     /// toolbox. A failed call shows a danger circle instead.
     pub fn icon(mut self, path: impl Into<SharedString>) -> Self {
         self.icon = Some(path.into());
@@ -802,7 +802,7 @@ impl ToolCallCard {
         self
     }
 
-    /// A shell command, shown as "Command" (pink labels exec invocations so).
+    /// A shell command, shown as "Command" (Pink labels exec invocations so).
     pub fn command(mut self, command: impl Into<SharedString>) -> Self {
         self.args = Some(ToolPayload::Text(command.into()));
         self.command = true;
@@ -843,7 +843,7 @@ impl ToolCallCard {
     }
 
     /// Lines the output shows before "… N more lines" and "Show full
-    /// output" (default 24, as in pink).
+    /// output" (default 24, as in Pink).
     pub fn max_lines(mut self, lines: usize) -> Self {
         self.max_lines = lines.max(1);
         self
@@ -861,7 +861,7 @@ impl ToolCallCard {
             .unwrap_or_default()
     }
 
-    /// Invocation first (what was asked, whole up to pink's 400-line
+    /// Invocation first (what was asked, whole up to Pink's 400-line
     /// ceiling), then the output (what came back, capped until "Show full
     /// output").
     fn sections(&self, full: bool) -> Vec<Section> {
@@ -891,7 +891,7 @@ impl ToolCallCard {
         asked.into_iter().chain(answer).collect()
     }
 
-    /// The row's fold for this frame (pink: `render_tool_group` row heights).
+    /// The row's fold for this frame (Pink: `render_tool_group` row heights).
     fn geometry(&self, row: &mut RowState, base: f32, now: Instant, reduced: bool) -> Geometry {
         let sections = self.sections(row.full);
         let affordance = (!row.full
@@ -926,7 +926,7 @@ impl ToolCallCard {
     }
 
     /// The rail glyph: the mini spinner while running, a red danger circle
-    /// on failure, else the tool's own glyph (pink `activity_glyph`).
+    /// on failure, else the tool's own glyph (Pink `activity_glyph`).
     fn rail_glyph(&self, key: &str, t: &Pink) -> AnyElement {
         match self.status {
             ToolCallStatus::Running => {
@@ -948,7 +948,7 @@ impl ToolCallCard {
         }
     }
 
-    /// The clickable header of an expandable row (pink: the keyed chip
+    /// The clickable header of an expandable row (Pink: the keyed chip
     /// header button in `render_tool_group`).
     fn header_button(
         &self,
@@ -1080,7 +1080,7 @@ impl ToolCallCard {
         panel
     }
 
-    /// A row on its group's rail (pink `render_tool_group` rows and
+    /// A row on its group's rail (Pink `render_tool_group` rows and
     /// `tool_chip` in rail mode).
     fn render_rail(self, slot: Slot, t: &Pink, cx: &App) -> AnyElement {
         let Slot {
@@ -1147,7 +1147,7 @@ impl ToolCallCard {
         reveal_tool_row(row.into_any_element(), row_height, rail.reveal)
     }
 
-    /// Pink's chip card (pink `tool_chip` / `subagent_chip` card mode): a
+    /// Pink's chip card (Pink `tool_chip` / `subagent_chip` card mode): a
     /// 30px bordered card, `hairline(0.07)` on `ink(0.03)`, centered in a
     /// 38px row.
     fn render_card(
@@ -1223,7 +1223,7 @@ impl RenderOnce for ToolCallCard {
     }
 }
 
-/// The row's one line (pink `chip_header_row`). On the rail: the label and
+/// The row's one line (Pink `chip_header_row`). On the rail: the label and
 /// detail in 12/18 `content_muted`, brightening to `text` with the row's
 /// hover, a spacer, a red "Failed", then an 18px tile holding the 12px
 /// chevron at half strength until hovered. In a card: an 18px icon tile,
@@ -1375,8 +1375,8 @@ fn chip_header_row(
         })
 }
 
-/// The file-type artwork for a path (pink `file_icons::asset_path`, for
-/// the kinds this component carries; anything else is pink's generic
+/// The file-type artwork for a path (Pink `file_icons::asset_path`, for
+/// the kinds this component carries; anything else is Pink's generic
 /// document).
 fn file_icon(path: &str, dark: bool) -> &'static str {
     let rust = file_name(path)
@@ -1390,7 +1390,7 @@ fn file_icon(path: &str, dark: bool) -> &'static str {
     }
 }
 
-/// A badge names the last path component (pink `file_badge_name`).
+/// A badge names the last path component (Pink `file_badge_name`).
 fn file_name(path: &str) -> &str {
     path.rsplit(['/', '\\'])
         .find(|component| !component.is_empty())
@@ -1402,7 +1402,7 @@ fn file_name(path: &str) -> &str {
 /// and the file name in `text` at 85%, brightening with the row's hover.
 fn file_badge(path: &str, hover_text: bool, t: &Pink) -> AnyElement {
     let text = t.text;
-    // pink `file_icons::well_bg`: a counter-shade seat for the artwork
+    // Pink `file_icons::well_bg`: a counter-shade seat for the artwork
     let well = pink::grey(if t.dark { 0 } else { 255 }).opacity(0.16);
     let chip = div()
         .min_w_0()
@@ -1446,7 +1446,7 @@ fn file_badge(path: &str, hover_text: bool, t: &Pink) -> AnyElement {
     }
 }
 
-/// The tree beside a row (pink `activity_rail`): a 1px `hairline(0.12)`
+/// The tree beside a row (Pink `activity_rail`): a 1px `hairline(0.12)`
 /// ribbon down the trunk at x 12.5, bending on a 6px elbow into a branch
 /// that ends at the 14px glyph at x 32. A new row draws its incoming trunk,
 /// then the elbow, then shows its glyph; the trunk continues past the row
@@ -1524,7 +1524,7 @@ fn activity_rail(
 }
 
 /// The elbow and branch, revealed by distance along the path so the speed
-/// doesn't jump at their junction (pink `activity_branch_points`).
+/// doesn't jump at their junction (Pink `activity_branch_points`).
 fn activity_branch_points(progress: f32) -> Vec<Point<f32>> {
     let mut path: Vec<Point<f32>> = (0..=24)
         .map(|step| {
@@ -1563,7 +1563,7 @@ fn activity_branch_points(progress: f32) -> Vec<Point<f32>> {
 }
 
 /// A 1px ribbon contour along `points`; the nonzero fill unions crossing
-/// contours (pink `activity_ribbon`).
+/// contours (Pink `activity_ribbon`).
 fn activity_ribbon(path: &mut PathBuilder, points: &[Point<Pixels>]) {
     if points.len() < 2 {
         return;
@@ -1588,7 +1588,7 @@ fn activity_ribbon(path: &mut PathBuilder, points: &[Point<Pixels>]) {
 }
 
 /// Clips a newly arrived row to its committed height while it reveals
-/// (pink `reveal_tool_row`); the fade and lift ride the row's content, so the
+/// (Pink `reveal_tool_row`); the fade and lift ride the row's content, so the
 /// rail stays at full contrast while it draws.
 fn reveal_tool_row(row: AnyElement, height: f32, progress: f32) -> AnyElement {
     if progress >= 1.0 {
@@ -1603,7 +1603,7 @@ fn reveal_tool_row(row: AnyElement, height: f32, progress: f32) -> AnyElement {
         .into_any_element()
 }
 
-/// The code surface frame (pink `code_surface_frame`): the kit's code
+/// The code surface frame (Pink `code_surface_frame`): the kit's code
 /// surface, r10 with a 1px edge on `ink(0.035)`.
 fn code_surface_frame(t: &Pink) -> Div {
     pink::code_surface(t)
@@ -1614,7 +1614,7 @@ fn code_surface_frame(t: &Pink) -> Div {
         .overflow_hidden()
 }
 
-/// The code surface header (pink `code_surface_header`): 28px, an 11px
+/// The code surface header (Pink `code_surface_header`): 28px, an 11px
 /// medium `content_muted` label, actions trailing, a barely raised
 /// `ink(0.02)` over the body.
 fn code_surface_header(t: &Pink) -> Div {
@@ -1635,7 +1635,7 @@ fn code_surface_header(t: &Pink) -> Div {
         .text_color(t.content_muted)
 }
 
-/// One code segment (pink `detail_body`, output case): the header with its
+/// One code segment (Pink `detail_body`, output case): the header with its
 /// copy action, then verbatim 12.5/18 mono lines in `text` that scroll past
 /// 252px, and the counted tail. A standalone segment draws its own frame; a
 /// segment of a merged frame keeps the same box with transparent edges.
@@ -1698,7 +1698,7 @@ fn detail_body(
     )
 }
 
-/// The counted tail under a capped segment (pink `more_lines_row`).
+/// The counted tail under a capped segment (Pink `more_lines_row`).
 fn more_lines_row(truncated_by: usize, t: &Pink) -> Div {
     div()
         .h(px(OUTPUT_LINE_HEIGHT))
@@ -1713,7 +1713,7 @@ fn more_lines_row(truncated_by: usize, t: &Pink) -> Div {
         }))
 }
 
-/// A code header action (pink `render::copy_action`): 22px, r6, a 12px copy
+/// A code header action (Pink `render::copy_action`): 22px, r6, a 12px copy
 /// glyph in `content_muted` on a transparent → `ink(0.08)` hover; after a
 /// click the glyph checks and "Copied" shows for 1.2s.
 fn copy_action(
@@ -1757,7 +1757,7 @@ fn copy_action(
 }
 
 /// Writes a segment to the clipboard and lets its action read "Copied"
-/// for a moment (pink `copy_ui_for`).
+/// for a moment (Pink `copy_ui_for`).
 fn copy_handler(
     state: Entity<ToolState>,
     key: SharedString,
@@ -1784,7 +1784,7 @@ fn copy_handler(
     }
 }
 
-/// The "Show full output" row under a capped segment (pink's blob
+/// The "Show full output" row under a capped segment (Pink's blob
 /// affordance): a 20px ghost button, r6, 12px `content_muted` with a 12px
 /// arrow, `ink(0.05)` → `ink(0.09)` under the pointer. It lifts the line
 /// cap; the segment then scrolls inside its 252px viewport.
@@ -1841,8 +1841,8 @@ fn show_full_row(
 // Group
 // ---------------------------------------------------------------------------
 
-/// Several calls folded behind one summary plate, on pink's activity rail
-/// (pink `render_tool_group`).
+/// Several calls folded behind one summary plate, on Pink's activity rail
+/// (Pink `render_tool_group`).
 #[derive(IntoElement)]
 pub struct ToolCallGroup {
     id: ElementId,
@@ -1877,7 +1877,7 @@ impl ToolCallGroup {
         self
     }
 
-    /// What the calls did, pink style – "Ran 2 commands · read 1 file";
+    /// What the calls did, Pink style – "Ran 2 commands · read 1 file";
     /// defaults to "Called 3 tools". The group adds "· 1 failed".
     pub fn label(mut self, label: impl Into<SharedString>) -> Self {
         self.label = Some(label.into());
@@ -1917,8 +1917,8 @@ fn plural(n: usize, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
 
-/// The summary line (pink `tool_group_summary`): the caller's segments, or
-/// pink's wording for tools it has no kind for, then "N failed".
+/// The summary line (Pink `tool_group_summary`): the caller's segments, or
+/// Pink's wording for tools it has no kind for, then "N failed".
 fn group_summary(label: Option<&str>, count: usize, failed: usize) -> String {
     let mut summary = match label {
         Some(label) => label.to_string(),
@@ -1930,7 +1930,7 @@ fn group_summary(label: Option<&str>, count: usize, failed: usize) -> String {
     summary
 }
 
-/// The summary's glyph (pink `tool_group_glyph`): the calls' own kind when
+/// The summary's glyph (Pink `tool_group_glyph`): the calls' own kind when
 /// they share one, else the generic layers mark.
 fn group_glyph(cards: &[ToolCallCard]) -> SharedString {
     let mut kinds = cards.iter().map(ToolCallCard::icon_path);
@@ -1941,7 +1941,7 @@ fn group_glyph(cards: &[ToolCallCard]) -> SharedString {
     }
 }
 
-/// The summary, with pink's light sweep laid over it while live (pink
+/// The summary, with Pink's light sweep laid over it while live (Pink
 /// `tool_group_title`); settled, it takes the plate's hover-eased color.
 fn group_title(text: SharedString, phase: Option<f32>, t: &Pink) -> AnyElement {
     let Some(phase) = phase else {
@@ -2383,7 +2383,7 @@ fn demo_summary(commands: usize, reads: usize, searches: usize) -> String {
     summary
 }
 
-/// A user bubble (pink transcript): right-aligned, at most 80% wide,
+/// A user bubble (Pink transcript): right-aligned, at most 80% wide,
 /// `user_bubble_bg` with its inset edge, r16, 14/22.
 fn user_bubble(text: &'static str, t: &Pink) -> Div {
     div().flex().justify_end().child(
@@ -2461,7 +2461,7 @@ fn demo_view(demo: &Entity<Demo>, cx: &App) -> Div {
     let commands = usize::from(step >= 2) + usize::from(step >= 6);
     let group = group.label(demo_summary(commands, 1, usize::from(step >= 1)));
 
-    // The working line under a live run (pink's working trailer)
+    // The working line under a live run (Pink's working trailer)
     let (verb, object) = match step {
         0 => ("Reading", "total.rs"),
         1 => ("Searching", "apply_discount"),

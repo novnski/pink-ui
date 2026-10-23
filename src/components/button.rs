@@ -1,8 +1,8 @@
-//! Button – pink's push buttons: Primary, Secondary, Ghost and Danger in three
+//! Button – Pink's push buttons: Primary, Secondary, Ghost and Danger in three
 //! sizes, with glyphs, icon-only squares and a busy spinner.
 //!
-//! A pink component, built on the kit's control frame (pink: `button.rs`
-//! `button` / `icon_button` / `glyph`). Sizes follow pink's control ladder:
+//! A Pink component, built on the kit's control frame (Pink: `button.rs`
+//! `button` / `icon_button` / `glyph`). Sizes follow Pink's control ladder:
 //! Sm is 24 high with 11/14 type, radius 6 and 12 px glyphs, for toolbars and
 //! inline row actions; Md is 28 high (12/16, radius 8, 14 px glyphs), for the
 //! settings control column and panel headers; Lg is 32 high (13/18, radius 8,
@@ -12,10 +12,10 @@
 //! faint plate with an edge, Ghost a faint plate whose muted label brightens on
 //! hover, and Danger the solid red plate. Hovers ease over 150 ms, keyboard
 //! focus draws the 2 px inset ring, and a disabled button rests at 45%. An
-//! icon-only Ghost button is pink's square icon button: transparent until
+//! icon-only Ghost button is Pink's square icon button: transparent until
 //! hovered, with the glyph brightening alongside the wash. While `loading`,
-//! pink's gradient spinner takes the leading glyph's place. The button then
-//! stops taking clicks but keeps full strength (pink `goal_control`).
+//! Pink's gradient spinner takes the leading glyph's place. The button then
+//! stops taking clicks but keeps full strength (Pink `goal_control`).
 //!
 //! ```ignore
 //! Button::new("save").label("Save changes").on_click(|_, _, _| {});
@@ -42,7 +42,7 @@ use crate::{
 pub const NAME: &str = "Button";
 pub const DESCRIPTION: &str = "Primary, secondary, ghost and danger push buttons in three sizes, with glyphs, icon-only squares and a busy spinner";
 
-/// The demo's glyphs, copied from pink's Solar Linear set: `refresh`, `copy`,
+/// The demo's glyphs, copied from Pink's Solar Linear set: `refresh`, `copy`,
 /// `copy-check`, `more-horizontal` and `arrow-right-up`.
 pub fn icon(name: &str) -> SharedString {
     format!("icons/button/{name}.svg").into()
@@ -51,17 +51,17 @@ pub fn icon(name: &str) -> SharedString {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum ButtonVariant {
     /// The one solid action in a group: a `text`-colored plate (easing to 86%
-    /// on hover) with an `on_solid` label (pink `ButtonKind::Primary`).
+    /// on hover) with an `on_solid` label (Pink `ButtonKind::Primary`).
     #[default]
     Primary,
     /// A faint filled plate with a `separator(true)` edge and a `text` label
-    /// (pink `ButtonKind::Secondary`).
+    /// (Pink `ButtonKind::Secondary`).
     Secondary,
     /// A quiet action on a faint resting plate; the muted label brightens to
-    /// `text` on hover (pink `ButtonKind::Ghost`). Icon-only, it is pink's
+    /// `text` on hover (Pink `ButtonKind::Ghost`). Icon-only, it is Pink's
     /// transparent `icon_button`.
     Ghost,
-    /// The solid red plate for deleting (pink `ButtonKind::Danger`).
+    /// The solid red plate for deleting (Pink `ButtonKind::Danger`).
     Destructive,
 }
 
@@ -75,7 +75,7 @@ impl ButtonVariant {
         }
     }
 
-    /// The glyph tone (pink `button::glyph`): the shared `readable_muted(0.95)`
+    /// The glyph tone (Pink `button::glyph`): the shared `readable_muted(0.95)`
     /// on the faint plates, the label color on the solid ones. It doesn't
     /// follow the hover; only the icon button's glyph does.
     fn glyph_tone(self, t: &Pink) -> Hsla {
@@ -87,7 +87,7 @@ impl ButtonVariant {
     }
 
     /// The spinner's row tints: the accent glyph palette on the faint plates
-    /// (pink `gradient_spinner`), a single label-colored tint on the solid
+    /// (Pink `gradient_spinner`), a single label-colored tint on the solid
     /// plates, where violet would sink into the fill.
     fn spinner_tints(self, t: &Pink) -> [Hsla; 3] {
         match self {
@@ -118,8 +118,8 @@ impl ButtonSize {
         }
     }
 
-    /// The spinner's cell: 2.5 in a 12–14 px glyph box (pink
-    /// `composer/goals.rs` `SPINNER_CELL`), 3 in the 16 px one (pink's
+    /// The spinner's cell: 2.5 in a 12–14 px glyph box (Pink
+    /// `composer/goals.rs` `SPINNER_CELL`), 3 in the 16 px one (Pink's
     /// sign-in poll spinner).
     fn spinner_cell(self) -> f32 {
         match self {
@@ -200,7 +200,7 @@ impl Button {
         self
     }
 
-    /// An SVG under `assets/` after the label, like pink's "Go to chat ↗".
+    /// An SVG under `assets/` after the label, like Pink's "Go to chat ↗".
     pub fn icon_right(mut self, path: impl Into<SharedString>) -> Self {
         self.icon_right = Some(path.into());
         self
@@ -214,7 +214,7 @@ impl Button {
         self
     }
 
-    /// Swaps the leading glyph for pink's gradient spinner and stops taking
+    /// Swaps the leading glyph for Pink's gradient spinner and stops taking
     /// clicks, at full strength. Pair it with a busy label ("Checking…").
     pub fn loading(mut self, loading: bool) -> Self {
         self.loading = loading;
@@ -237,7 +237,7 @@ impl Button {
 }
 
 /// Pink's gradient spinner centered in a glyph-sized box, so it takes the
-/// glyph's place without moving the label (pink: `composer/goals.rs`
+/// glyph's place without moving the label (Pink: `composer/goals.rs`
 /// `goal_control`, spinning).
 fn busy_glyph(variant: ButtonVariant, size: ButtonSize, t: &Pink) -> Div {
     div()
@@ -262,11 +262,11 @@ impl RenderOnce for Button {
         let name = self.label.clone().or(self.tooltip.clone());
 
         let el = if square && self.variant == ButtonVariant::Ghost && !self.loading {
-            // pink: button.rs icon_button
+            // Pink: button.rs icon_button
             let glyph = self.icon.or(self.icon_right).unwrap_or_default();
             pink::icon_button_enabled(id, glyph, size, !self.disabled, &t)
         } else {
-            // pink: button.rs button / button_keyed
+            // Pink: button.rs button / button_keyed
             let tone = self.variant.glyph_tone(&t);
             let leading = if self.loading {
                 Some(busy_glyph(self.variant, self.size, &t).into_any_element())
@@ -421,7 +421,7 @@ impl Demo {
 }
 
 /// A settings row: the title and description on the left, the buttons in
-/// pink's control column on the right.
+/// Pink's control column on the right.
 fn row(title: &'static str, description: &'static str, buttons: Vec<Button>, t: &Pink) -> Div {
     pink::card_row(false, t)
         .child(pink::row_text(title, Some(description.into()), t))
@@ -441,7 +441,7 @@ fn showcase(window: &mut Window, cx: &mut App) -> Div {
     };
     let checking = check == Check::Running;
 
-    // Md: the settings control column (pink's Updates page).
+    // Md: the settings control column (Pink's Updates page).
     let updates = pink::section_card(&t)
         .child(pink::section_header(
             "Updates",
@@ -554,7 +554,7 @@ fn showcase(window: &mut Window, cx: &mut App) -> Div {
             &t,
         ));
 
-    // Lg: a dialog's button row (pink `popover::btn_ghost` / `btn_danger`).
+    // Lg: a dialog's button row (Pink `popover::btn_ghost` / `btn_danger`).
     let lg = ButtonSize::Lg;
     let (title, body, buttons) = match removal {
         Removal::Confirm | Removal::Deleting => (

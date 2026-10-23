@@ -1,15 +1,15 @@
 //! Pink's control kit: buttons, icon buttons, pop-up buttons, chips,
 //! segmented controls, switches, checkboxes, badges, pills, key hints and
-//! identity tiles (pink `button.rs`, `settings/widgets.rs`, `popover.rs`,
+//! identity tiles (Pink `button.rs`, `settings/widgets.rs`, `popover.rs`,
 //! `pickers.rs`, `notice.rs`, `shell.rs`).
 //!
 //! Every control in the kit shares one frame per [`ControlSize`]: one height,
 //! corner, type size and line height; a transparent 1 px border at rest so
 //! outlined and plain kinds measure the same; a tab stop with the 2 px inset
 //! focus ring; Enter/Space reaching `on_click` exactly once. Hovers ease
-//! through [`HoverFill`] (pink's 150 ms `transition-colors`).
+//! through [`HoverFill`] (Pink's 150 ms `transition-colors`).
 //!
-//! The `*_enabled` variants take pink's `enabled` flag: a disabled control
+//! The `*_enabled` variants take Pink's `enabled` flag: a disabled control
 //! paints its resting colors at 45% opacity, with no hover, pointer or tab
 //! stop.
 
@@ -27,7 +27,7 @@ use crate::{
 };
 
 /// Stops Enter/Space key-downs on a push button so GPUI's single keyboard
-/// click is the only activation (pink `swallow_activation_key`).
+/// click is the only activation (Pink `swallow_activation_key`).
 pub fn swallow_activation_key(event: &KeyDownEvent, _: &mut Window, cx: &mut App) {
     if matches!(event.keystroke.key.as_str(), "enter" | "space") {
         cx.stop_propagation();
@@ -118,7 +118,7 @@ pub fn glyph(path: impl Into<SharedString>, size: ControlSize) -> Svg {
 // Sizes and the shared frame
 // ---------------------------------------------------------------------------
 
-/// The control size ladder (pink `button::ControlSize`).
+/// The control size ladder (Pink `button::ControlSize`).
 ///
 /// | Size | Height | Radius | Type  | Side pad | Glyph | Gap |
 /// | ---- | ------ | ------ | ----- | -------- | ----- | --- |
@@ -192,7 +192,7 @@ impl ControlSize {
     }
 }
 
-/// The frame every control shares (pink `control_frame_inner`): role, height,
+/// The frame every control shares (Pink `control_frame_inner`): role, height,
 /// corner, type, the focus ring and a resting transparent border.
 /// `swallow_keys`: push buttons stop Enter/Space key-downs; pop-up triggers
 /// own their keys and opt out.
@@ -235,7 +235,7 @@ fn control_frame(
 // Buttons
 // ---------------------------------------------------------------------------
 
-/// Button emphasis (pink `button::ButtonKind`).
+/// Button emphasis (Pink `button::ButtonKind`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ButtonKind {
     /// The one solid action in a group: a `text`-colored plate.
@@ -305,7 +305,7 @@ pub fn button(
     button_enabled(id, kind, size, true, t)
 }
 
-/// [`button`] with pink's `enabled` flag.
+/// [`button`] with Pink's `enabled` flag.
 pub fn button_enabled(
     id: impl Into<SharedString>,
     kind: ButtonKind,
@@ -343,7 +343,7 @@ pub fn icon_button(
     icon_button_enabled(id, glyph_path, size, true, t)
 }
 
-/// [`icon_button`] with pink's `enabled` flag.
+/// [`icon_button`] with Pink's `enabled` flag.
 pub fn icon_button_enabled(
     id: impl Into<SharedString>,
     glyph_path: impl Into<SharedString>,
@@ -371,7 +371,7 @@ pub fn icon_button_enabled(
 }
 
 /// A pop-up button: a Secondary control showing the current choice and one
-/// chevron (pink `button::select`). Add the click that opens the menu.
+/// chevron (Pink `button::select`). Add the click that opens the menu.
 pub fn select(
     id: impl Into<SharedString>,
     label: impl Into<SharedString>,
@@ -438,7 +438,7 @@ pub fn chip(
     chip_enabled(id, selected, size, true, t)
 }
 
-/// [`chip`] with pink's `enabled` flag.
+/// [`chip`] with Pink's `enabled` flag.
 pub fn chip_enabled(
     id: impl Into<SharedString>,
     selected: bool,
@@ -498,7 +498,7 @@ pub fn selection_ring(selected: bool, inner_radius: f32, t: &Pink, child: impl I
         .child(child)
 }
 
-/// A composer trigger chip, pink's "ghost pill" (model, branch, access):
+/// A composer trigger chip, Pink's "ghost pill" (model, branch, access):
 /// 28 tall, fully rounded, `px 10`, gap 6, 12 medium; no border, no caret.
 /// The label rests at `text @ 0.9` when the choice is `set` (else
 /// `text_muted`) and brightens to `text`; the wash is `element_hover` under
@@ -544,7 +544,7 @@ pub fn trigger_chip(id: impl Into<SharedString>, set: bool, open: bool, t: &Pink
         )
 }
 
-/// A notice's capsule action (pink `notice::notice_action`): 24 tall,
+/// A notice's capsule action (Pink `notice::notice_action`): 24 tall,
 /// `px 10`, fully rounded, `border_strong` edge, medium `text`, the quiet
 /// hover wash.
 pub fn notice_action(id: impl Into<SharedString>, t: &Pink) -> Stateful<Div> {
@@ -598,10 +598,10 @@ impl Segment {
     }
 }
 
-/// Track inset around the thumb (pink `SEGMENT_INSET`).
+/// Track inset around the thumb (Pink `SEGMENT_INSET`).
 const SEGMENT_INSET: f32 = 2.0;
 
-/// A segmented control (pink `button::segmented`): equal-width options on a
+/// A segmented control (Pink `button::segmented`): equal-width options on a
 /// `fill(Quaternary)` track with a `separator(false)` edge, and one thumb
 /// that slides to the chosen option over [`motion::QUICK`] (160 ms). The thumb
 /// is `fill(Primary)` on dark; white with a hairline edge and a
@@ -721,7 +721,7 @@ pub fn segmented(
 // Switch and checkbox
 // ---------------------------------------------------------------------------
 
-/// The switch itself, display only (pink `settings::widgets::toggle_switch`):
+/// The switch itself, display only (Pink `settings::widgets::toggle_switch`):
 /// a 34×20 pill, off `fill(Primary)` (light `text_muted @ 0.45`), on
 /// `accent_strong`, with a white 16 px knob and `shadow_sm`. Knob and track
 /// glide over [`motion::DISCLOSURE`] (300 ms) only when the value flips. `key`
@@ -759,7 +759,7 @@ pub fn toggle_switch(on: bool, key: &str, t: &Pink) -> Div {
         )
 }
 
-/// [`toggle_switch`] as a control (pink `switch_control`): an announced,
+/// [`toggle_switch`] as a control (Pink `switch_control`): an announced,
 /// focusable Switch named `label`. Add `.on_click(..)` to flip it. The focus
 /// ring is a transparent 2 px border that turns the ring color, so focusing
 /// never moves the row.
@@ -813,7 +813,7 @@ pub fn switch_control_disabled(
         .child(toggle_switch(on, &id, t))
 }
 
-/// The checkbox square (pink's dialog checkbox): 16 px, radius 4, 1 px edge;
+/// The checkbox square (Pink's dialog checkbox): 16 px, radius 4, 1 px edge;
 /// unchecked `border` over the hover wash, checked the accent with a 12 px
 /// check in `on_solid`.
 pub fn checkbox_box(checked: bool, t: &Pink) -> Div {
@@ -832,7 +832,7 @@ pub fn checkbox_box(checked: bool, t: &Pink) -> Div {
         })
 }
 
-/// A labelled checkbox row (pink's "Don't show again"): an announced CheckBox
+/// A labelled checkbox row (Pink's "Don't show again"): an announced CheckBox
 /// with the box, gap 8, and the label in dialog body type (13/19
 /// `text_muted`). The row's 4 px inset is cancelled by its margin so the
 /// focus ring clears the box. Add `.on_click(..)`.
@@ -909,7 +909,7 @@ impl Tone {
     }
 }
 
-/// A status badge, pink's settings pill family: fully rounded, `px 8 / py 2`,
+/// A status badge, Pink's settings pill family: fully rounded, `px 8 / py 2`,
 /// 11 regular.
 ///
 /// - `Neutral` (`widgets::badge`): a `border` outline, `text_muted` label.
@@ -917,7 +917,7 @@ impl Tone {
 ///   `readable_tone(success_muted, 0.9)`.
 /// - `Danger` / `Warning` (`project_commands`): the outline in `tone @ 0.35`,
 ///   the label `readable_tone(tone_muted, 0.9)`.
-/// - `Accent` has no pink badge; it follows the outlined family in the accent.
+/// - `Accent` has no Pink badge; it follows the outlined family in the accent.
 pub fn badge(label: impl Into<SharedString>, tone: Tone, t: &Pink) -> Div {
     let base = div()
         .flex_none()
@@ -943,7 +943,7 @@ pub fn badge(label: impl Into<SharedString>, tone: Tone, t: &Pink) -> Div {
     base.child(label.into())
 }
 
-/// A status pill (pink's sidebar waiting pill: "Approve", "Reply",
+/// A status pill (Pink's sidebar waiting pill: "Approve", "Reply",
 /// "Failed"): 16 tall, `px 5`, gap 3, radius 4, a `tone @ 0.12` fill, 11/14
 /// medium, the word and an optional 11 px glyph floored on that fill.
 pub fn status_pill(
@@ -980,7 +980,7 @@ pub fn status_pill(
         .child(label.into())
 }
 
-/// A message badge (pink `badges::render`): at least 24 tall, `px 8`, gap 6,
+/// A message badge (Pink `badges::render`): at least 24 tall, `px 8`, gap 6,
 /// radius 8, an `ink(0.06)` plate, 12 medium `text_muted`. A leading icon is
 /// 12 px in `readable_muted(0.7)`.
 pub fn message_badge(t: &Pink) -> Div {
@@ -1003,7 +1003,7 @@ pub fn message_badge(t: &Pink) -> Div {
 // Keyboard hints
 // ---------------------------------------------------------------------------
 
-/// A keyboard hint inside a menu row or tooltip (pink `popover::kbd_hint`):
+/// A keyboard hint inside a menu row or tooltip (Pink `popover::kbd_hint`):
 /// `px 5 / py 1`, radius 5, `fill(Quaternary)`, 11 Geist Mono `text_muted`.
 pub fn kbd(keys: impl Into<SharedString>, t: &Pink) -> Div {
     div()
@@ -1023,7 +1023,7 @@ pub fn kbd_hint(keys: impl Into<SharedString>, t: &Pink) -> Div {
     kbd(keys, t)
 }
 
-/// A footer key cap holding any children (pink `popover::key_cap`): 22 tall,
+/// A footer key cap holding any children (Pink `popover::key_cap`): 22 tall,
 /// `px 5`, radius 5, gap 4, `fill(Quaternary)`.
 pub fn key_cap(t: &Pink) -> Div {
     div()
@@ -1048,7 +1048,7 @@ fn key_hint_label(label: impl Into<SharedString>, t: &Pink) -> Div {
 }
 
 /// A footer legend: one glyph key cap (12.5 px, `text_muted`) and its verb,
-/// gap 5 (pink `popover::key_hint`).
+/// gap 5 (Pink `popover::key_hint`).
 pub fn key_hint(
     icon_path: impl Into<SharedString>,
     label: impl Into<SharedString>,
@@ -1125,7 +1125,7 @@ pub fn key_hint_pair(
 // Identity
 // ---------------------------------------------------------------------------
 
-/// A 20 px avatar circle (pink's history author): `hairline(0.12)` edge,
+/// A 20 px avatar circle (Pink's history author): `hairline(0.12)` edge,
 /// `wash(0.08)` plate, and the initial at 11/18 in `text_faint`, nudged down
 /// half a pixel. Put an `img()` child over it for a photo.
 pub fn avatar(initial: impl Into<SharedString>, t: &Pink) -> Div {
@@ -1153,8 +1153,8 @@ pub fn avatar(initial: impl Into<SharedString>, t: &Pink) -> Div {
         )
 }
 
-/// The six project hues pink assigns in order (violet, green, amber, blue,
-/// pink, coral), as tints for [`monogram_tile`].
+/// The six project hues Pink assigns in order (violet, green, amber, blue,
+/// Pink, coral), as tints for [`monogram_tile`].
 pub fn project_tint(index: usize) -> Hsla {
     const HUES: [f32; 6] = [250.0, 150.0, 40.0, 205.0, 325.0, 12.0];
     gpui::hsla(HUES[index % HUES.len()] / 360.0, 0.62, 0.68, 1.0)
@@ -1169,7 +1169,7 @@ pub fn monogram(name: &str) -> SharedString {
         .into()
 }
 
-/// A project monogram tile (pink `sidebar_projects::project_tile`): a
+/// A project monogram tile (Pink `sidebar_projects::project_tile`): a
 /// `size` square, radius `round(size × 0.28)`, `tint @ 0.20` (light 0.22), the
 /// monogram semibold at `round(size × 0.5)` in `readable_tone(tint)`.
 pub fn monogram_tile(tint: Hsla, name: &str, size: f32, t: &Pink) -> Div {

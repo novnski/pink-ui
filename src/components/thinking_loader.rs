@@ -1,6 +1,6 @@
 //! Thinking Loader – the live line under a reply while the model works.
 //!
-//! pink: `transcript.rs` `Transcript::render_working_trailer`, the working
+//! Pink: `transcript.rs` `Transcript::render_working_trailer`, the working
 //! trailer under the last transcript row. No chip and no card: a bare row
 //! (`pt 16`, `gap 8`, top-aligned) of the breathing accent orb in a 16px line
 //! box, the status – a calm verb in `content_muted` under a slow shimmer, then
@@ -48,23 +48,23 @@ use crate::{
 pub const NAME: &str = "Thinking Loader";
 pub const DESCRIPTION: &str = "The live line under an AI reply while it works – a breathing orb, a shimmering status that names what it is doing, a ticking timer and a quiet Stop on hover";
 
-/// The phases shown when none are given: pink's calm fallback word – with
+/// The phases shown when none are given: Pink's calm fallback word – with
 /// nothing specific in flight it says "Thinking" rather than inventing
-/// progress (pink `live_status`).
+/// progress (Pink `live_status`).
 pub const DEFAULT_PHASES: [&str; 1] = ["Thinking"];
 
-/// pink: the queued line (`render_working_trailer`).
+/// Pink: the queued line (`render_working_trailer`).
 const QUEUED_LABEL: &str = "Queued — will send automatically";
-/// pink: the line while the host runs the worktree's setup command.
+/// Pink: the line while the host runs the worktree's setup command.
 const SETUP_LABEL: &str = "Setting up worktree";
-/// pink: the send → turn bridge.
+/// Pink: the send → turn bridge.
 const SENDING_LABEL: &str = "Sending";
-/// The group the hover-only Stop listens to (pink `"working-trailer"`).
+/// The group the hover-only Stop listens to (Pink `"working-trailer"`).
 const TRAILER_GROUP: &str = "working-trailer";
 
 type StopHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
-/// One step of the work (pink `LiveStatus`): a present-tense verb and, when
+/// One step of the work (Pink `LiveStatus`): a present-tense verb and, when
 /// the step names one, what it acts on – "Running" + "cargo test". The verb
 /// shimmers; the object reads in primary text and is cut to one line of at
 /// most 44 characters.
@@ -88,7 +88,7 @@ impl LoaderPhase {
         self
     }
 
-    /// The whole line, "Running cargo test" (pink `LiveStatus::label`).
+    /// The whole line, "Running cargo test" (Pink `LiveStatus::label`).
     pub fn label(&self) -> SharedString {
         match &self.object {
             Some(object) => format!("{} {object}", self.verb).into(),
@@ -121,7 +121,7 @@ impl From<(&'static str, &'static str)> for LoaderPhase {
     }
 }
 
-/// The trailer's clock (pink: the turn's `started_at`). It wakes the host
+/// The trailer's clock (Pink: the turn's `started_at`). It wakes the host
 /// view on every whole second for the timer and on every phase boundary, so
 /// both keep moving under reduced motion too, when the pulse clock rests.
 struct Clock {
@@ -164,12 +164,12 @@ impl Clock {
     }
 }
 
-/// pink `single_line`: whitespace runs (newlines included) become one space.
+/// Pink `single_line`: whitespace runs (newlines included) become one space.
 fn single_line(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// A live status object as pink shows it: one line, at most 44 characters.
+/// A live status object as Pink shows it: one line, at most 44 characters.
 fn status_object(object: &str) -> SharedString {
     ellipsize_chars(&single_line(object), LIVE_STATUS_OBJECT_CHARS).into()
 }
@@ -225,7 +225,7 @@ impl ThinkingLoader {
     }
 
     /// Shows a specific phase instead of advancing on a timer – the newest
-    /// unresolved step of your stream, as pink derives it.
+    /// unresolved step of your stream, as Pink derives it.
     pub fn phase(mut self, index: usize) -> Self {
         self.phase = Some(index);
         self
@@ -246,7 +246,7 @@ impl ThinkingLoader {
     }
 
     /// The message is still on its way to the agent: "Sending", no timer and
-    /// no Stop (pink's send → turn bridge).
+    /// no Stop (Pink's send → turn bridge).
     pub fn sending(mut self, sending: bool) -> Self {
         self.sending = sending;
         self
@@ -274,7 +274,7 @@ impl ThinkingLoader {
         self
     }
 
-    /// Shows the hover-only "Stop" (pink: interrupts the turn; the composer's
+    /// Shows the hover-only "Stop" (Pink: interrupts the turn; the composer's
     /// Stop button stays the primary control).
     pub fn on_stop(
         mut self,
@@ -321,7 +321,7 @@ impl RenderOnce for ThinkingLoader {
             .cloned()
             .unwrap_or_else(|| LoaderPhase::new(DEFAULT_PHASES[0]));
 
-        // pink: queued, then setup, then sending, then a provider notice,
+        // Pink: queued, then setup, then sending, then a provider notice,
         // then the live status – one line, three tones.
         let queued = self.queued;
         let setup = (!queued).then_some(self.setup).flatten();
@@ -381,7 +381,7 @@ impl RenderOnce for ThinkingLoader {
     }
 }
 
-/// pink: the trailer's "Stop" – a quiet way out that appears only under the
+/// Pink: the trailer's "Stop" – a quiet way out that appears only under the
 /// pointer (or on keyboard focus), 11/16 `content_muted` with the standard
 /// hover wash.
 fn stop_button(key: &str, on_stop: StopHandler, t: &Pink) -> impl IntoElement {
@@ -413,7 +413,7 @@ fn stop_button(key: &str, on_stop: StopHandler, t: &Pink) -> impl IntoElement {
 // Story
 // ---------------------------------------------------------------------------
 
-/// pink: the user bubble's line height (`transcript.rs` `USER_LINE_HEIGHT`)
+/// Pink: the user bubble's line height (`transcript.rs` `USER_LINE_HEIGHT`)
 /// and assistant markdown's (`markdown/render.rs` `MD_LINE_HEIGHT`), both at
 /// 14px (`MD_TEXT_SIZE`).
 const TRANSCRIPT_LINE_HEIGHT: f32 = 22.;
@@ -424,7 +424,7 @@ const DEMO_REPLY: [&str; 2] = [
     " Switching it to #[tokio::test] fixes it – the whole suite now passes locally in 41s.",
 ];
 
-/// The steps of the demo turn, as pink would name them.
+/// The steps of the demo turn, as Pink would name them.
 fn demo_phases() -> [LoaderPhase; 5] {
     [
         LoaderPhase::new("Thinking"),
@@ -536,7 +536,7 @@ impl Demo {
     }
 }
 
-/// pink: the user message bubble (`transcript.rs` user row) – right-aligned,
+/// Pink: the user message bubble (`transcript.rs` user row) – right-aligned,
 /// 80% wide at most, r16, 14/22 on the bubble wash with a light-mode edge.
 fn user_bubble(text: &'static str, width: f32, t: &Pink) -> impl IntoElement {
     let edge = t.user_bubble_edge();
@@ -564,7 +564,7 @@ fn user_bubble(text: &'static str, width: f32, t: &Pink) -> impl IntoElement {
     )
 }
 
-/// pink: assistant text is bare markdown on the canvas, 14/22.
+/// Pink: assistant text is bare markdown on the canvas, 14/22.
 fn reply(text: String) -> gpui::Div {
     div()
         .pt(px(space::LG))
@@ -627,7 +627,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             })
             .children(trailer);
 
-        // The lines pink shows while a send is held, and a provider warning
+        // The lines Pink shows while a send is held, and a provider warning
         let states = div()
             .flex()
             .flex_col()

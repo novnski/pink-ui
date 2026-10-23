@@ -1,21 +1,21 @@
 //! Profile Menu – the account menu: the signed-in identity, the account
-//! actions and the profile setup progress, on pink's popover card.
+//! actions and the profile setup progress, on Pink's popover card.
 //!
-//! The card is pink's menu card (`popover.rs` `popover_card`, 280 pt wide).
-//! The identity at the top is the avatar and identity text of pink's
-//! Settings > Accounts row; the actions are pink menu rows with one
+//! The card is Pink's menu card (`popover.rs` `popover_card`, 280 pt wide).
+//! The identity at the top is the avatar and identity text of Pink's
+//! Settings > Accounts row; the actions are Pink menu rows with one
 //! highlight that the pointer and the arrow keys share (`menu_row_nav`),
-//! and a "New" pill is pink's model-picker badge. Sign out sits in its own
-//! section after a full-bleed hairline, as pink's Settings footer sets it
+//! and a "New" pill is Pink's model-picker badge. Sign out sits in its own
+//! section after a full-bleed hairline, as Pink's Settings footer sets it
 //! off. The setup block closing the card counts the finished steps over the
-//! 5 pt meter of pink's account usage meter, and its next step is one more
+//! 5 pt meter of Pink's account usage meter, and its next step is one more
 //! row of the same list.
 //!
 //! ↑ and ↓ move the highlight (wrapping), Home and End jump to the ends,
 //! Enter or Space runs the row under it and Esc dismisses. The card takes
-//! focus when it appears, like a pink menu opening. The caller anchors it;
+//! focus when it appears, like a Pink menu opening. The caller anchors it;
 //! the story hangs it above an account button, where it rises 6 pt into
-//! place and fades out like pink's `anchored_menu_above`.
+//! place and fades out like Pink's `anchored_menu_above`.
 //!
 //! ```ignore
 //! ProfileMenu::new("account", "Lena Hartmann", "lena@fastmail.com")
@@ -42,16 +42,16 @@ use crate::{
 pub const NAME: &str = "Profile Menu";
 pub const DESCRIPTION: &str = "The account menu above your name – who is signed in, the account actions on one highlight the pointer and arrow keys share, a New badge, Sign out set apart, and the profile setup count over a quiet meter with its next step";
 
-// Solar Linear glyphs, as pink ships them (`crates/ui/assets/icons`).
+// Solar Linear glyphs, as Pink ships them (`crates/ui/assets/icons`).
 const ICON_SETTINGS: &str = "icons/profile-menu/settings.svg";
 const ICON_DOCUMENT: &str = "icons/profile-menu/document.svg";
 const ICON_WIDGET: &str = "icons/profile-menu/widget.svg";
 const ICON_LOGOUT: &str = "icons/profile-menu/logout-2.svg";
 const ICON_ARROW: &str = "icons/profile-menu/arrow-right.svg";
 
-/// The identity avatar (pink `settings/accounts.rs` `render_account_row`).
+/// The identity avatar (Pink `settings/accounts.rs` `render_account_row`).
 const AVATAR: f32 = 32.0;
-/// The setup meter's track (pink `settings/accounts.rs` `usage_meter`).
+/// The setup meter's track (Pink `settings/accounts.rs` `usage_meter`).
 const METER_HEIGHT: f32 = 5.0;
 
 type Handler = Rc<dyn Fn(&mut Window, &mut App)>;
@@ -66,7 +66,7 @@ pub struct ProfileMenuItem {
     /// A 16 pt leading glyph, an SVG path under `assets/`, tinted
     /// `text_muted`.
     pub icon: Option<SharedString>,
-    /// A pill after the label (pink's "New" badge).
+    /// A pill after the label (Pink's "New" badge).
     pub badge: Option<SharedString>,
     /// Opens a new section: a full-bleed hairline above the row.
     pub separated: bool,
@@ -139,7 +139,7 @@ impl ProfileSetup {
 }
 
 /// Settings, Docs, Apps (with a "New" badge) and, in its own section, Sign
-/// out (pink's Settings account action and its `logout-2` glyph).
+/// out (Pink's Settings account action and its `logout-2` glyph).
 pub fn default_items() -> Vec<ProfileMenuItem> {
     vec![
         ProfileMenuItem::new("settings", "Settings").icon(ICON_SETTINGS),
@@ -153,13 +153,13 @@ pub fn default_items() -> Vec<ProfileMenuItem> {
     ]
 }
 
-/// The card's keyboard state (pink `Popup` with its `menu_cursor`).
+/// The card's keyboard state (Pink `Popup` with its `menu_cursor`).
 struct MenuState {
     /// The one highlight that the arrow keys and the pointer share: an index
     /// into the actions, then the setup's next step.
     cursor: Option<usize>,
     focus: FocusHandle,
-    /// Focus the card on its first frame (pink `pending_menu_focus`).
+    /// Focus the card on its first frame (Pink `pending_menu_focus`).
     pending_focus: bool,
 }
 
@@ -338,7 +338,7 @@ impl RenderOnce for ProfileMenu {
             }
         }
 
-        // pink `on_menu_key`: the arrows, Home and End move the shared
+        // Pink `on_menu_key`: the arrows, Home and End move the shared
         // highlight, Enter or Space runs its row, Esc dismisses.
         let on_key = {
             let state = state.clone();
@@ -395,7 +395,7 @@ impl RenderOnce for ProfileMenu {
     }
 }
 
-/// One row of the highlight list (pink `popover::menu_row_nav` without the
+/// One row of the highlight list (Pink `popover::menu_row_nav` without the
 /// check column): the pointer moves the shared highlight onto it, and a
 /// click runs it.
 fn nav_row(
@@ -424,7 +424,7 @@ fn nav_row(
         .on_click(move |_, window, cx| run(ix, window, cx))
 }
 
-/// The signed-in identity (pink `settings/accounts.rs` `render_account_row`
+/// The signed-in identity (Pink `settings/accounts.rs` `render_account_row`
 /// and `identity_text`): the initial avatar, then the name in 13/18 medium
 /// over the email in 12/16 muted, each with its full text in a tooltip.
 fn identity(key: &str, name: &SharedString, email: &SharedString, t: &Pink) -> Div {
@@ -467,7 +467,7 @@ fn identity_text(id: String, text: &SharedString) -> Stateful<Div> {
         .child(text.clone())
 }
 
-/// pink's account avatar: a 32 pt disc, 1 px `border`, the Quaternary fill
+/// Pink's account avatar: a 32 pt disc, 1 px `border`, the Quaternary fill
 /// and the initial in footnote semibold at `readable_muted(0.9)`.
 fn avatar(initial: SharedString, t: &Pink) -> Div {
     div()
@@ -487,7 +487,7 @@ fn avatar(initial: SharedString, t: &Pink) -> Div {
 }
 
 /// The avatar's letter: the name's first character, uppercased, or "?"
-/// (pink `render_account_row`).
+/// (Pink `render_account_row`).
 fn initial(name: &str) -> SharedString {
     name.chars()
         .next()
@@ -496,7 +496,7 @@ fn initial(name: &str) -> SharedString {
         .into()
 }
 
-/// pink `pickers.rs` `new_model_badge`: 16 tall, `px 5`, radius 4, accent at
+/// Pink `pickers.rs` `new_model_badge`: 16 tall, `px 5`, radius 4, accent at
 /// 0.14, 10.5/14 semibold in the floored accent.
 fn new_badge(label: SharedString, t: &Pink) -> Div {
     div()
@@ -514,9 +514,9 @@ fn new_badge(label: SharedString, t: &Pink) -> Div {
         .child(label)
 }
 
-/// "Profile setup" and its count over the meter. The meter is pink's
+/// "Profile setup" and its count over the meter. The meter is Pink's
 /// account usage track (5 pt capsule, Secondary fill) with the neutral fill
-/// of pink's usage meters, and glides to a new count over `EMPHASIZED`.
+/// of Pink's usage meters, and glides to a new count over `EMPHASIZED`.
 fn setup_progress(key: &str, setup: &ProfileSetup, t: &Pink) -> Div {
     let done = setup.done.min(setup.total);
     let ratio = if setup.total > 0 {
@@ -576,7 +576,7 @@ fn setup_progress(key: &str, setup: &ProfileSetup, t: &Pink) -> Div {
 }
 
 /// Steps the highlight, wrapping at both ends; `None` enters at the end the
-/// step points from (pink `popover::menu_step`).
+/// step points from (Pink `popover::menu_step`).
 fn menu_step(active: Option<usize>, count: usize, delta: isize) -> Option<usize> {
     if count == 0 {
         return None;
@@ -599,13 +599,13 @@ const STEPS: [&str; 5] = [
     "Connect GitHub",
 ];
 
-/// The demo's account button and its menu (pink `Popup`).
+/// The demo's account button and its menu (Pink `Popup`).
 struct Demo {
     open: bool,
     /// When the exit fade began; the card stays mounted until it ends.
     closing: Option<Instant>,
     /// The button press found the menu up, so its click leaves it closed
-    /// (pink `note_trigger_press`).
+    /// (Pink `note_trigger_press`).
     pressed_while_open: bool,
     done: u32,
     trigger: FocusHandle,
@@ -637,10 +637,10 @@ fn close_demo(demo: &Entity<Demo>, window: &mut Window, cx: &mut App) {
 }
 
 /// Hangs the menu above its trigger, 6 pt off it and shifted left by the
-/// card inset so its row text lines up with the button's (pink
+/// card inset so its row text lines up with the button's (Pink
 /// `popover::anchored_menu_above_leading`). It rises 6 pt into place over
 /// `MENU_IN`; while `exit` runs it fades over `MENU_OUT` under an occluder,
-/// so the dying rows take no clicks (pink `menu_motion_up`).
+/// so the dying rows take no clicks (Pink `menu_motion_up`).
 fn anchored_above(card: ProfileMenu, exit: Option<f32>, window: &mut Window) -> impl IntoElement {
     if exit.is_some() {
         window.request_animation_frame();
@@ -724,7 +724,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             anchored_above(card, exit, window)
         });
 
-        // pink `settings_nav_row`: 30 pt, `px 8 / py 5`, radius 8, 13/18;
+        // Pink `settings_nav_row`: 30 pt, `px 8 / py 5`, radius 8, 13/18;
         // transparent easing to the sidebar hover fill, the selected fill
         // while the menu is up.
         let ring = t.focus_ring();

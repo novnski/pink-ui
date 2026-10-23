@@ -1,19 +1,19 @@
-//! Breakdown Chart – a small data cube shown the way pink's Usage page shows
+//! Breakdown Chart – a small data cube shown the way Pink's Usage page shows
 //! spend: a view card that picks what to show, a summary card with the total
 //! and a stacked-column chart, and a Breakdown card with the same numbers as
 //! a table.
 //!
-//! pink: `shell/usage.rs` `render_usage_page`. The view card is its
+//! Pink: `shell/usage.rs` `render_usage_page`. The view card is its
 //! "Show" / "Period" card (settings rows, each with a segmented control);
 //! here the rows pick the measure, the dimension along the x axis and the one
 //! stacked in each column (picking the other row's dimension swaps the two).
-//! The summary card is pink's: the total in Display type, here with the
-//! parts' series dots beside it (pink puts each dot on a provider row), then
+//! The summary card is Pink's: the total in Display type, here with the
+//! parts' series dots beside it (Pink puts each dot on a provider row), then
 //! the chart row. The chart reproduces `usage_chart`'s frame: a 56 px value gutter,
 //! three hairline gridlines, caption labels, and per-column hover cells with
 //! a tooltip and a readout in the row above. Pink has no stacked columns, so
-//! each part is painted the way pink paints an area series: a 12% body under
-//! a 2 px line in the series tone. The table is pink's Breakdown table
+//! each part is painted the way Pink paints an area series: a 12% body under
+//! a 2 px line in the series tone. The table is Pink's Breakdown table
 //! (`usage_table_row` anatomy) with its segmented toggle in the section
 //! header; here it orders the columns and rows, which glide into place.
 //!
@@ -38,26 +38,26 @@ use crate::{
 };
 
 pub const NAME: &str = "Breakdown Chart";
-pub const DESCRIPTION: &str = "A measure split two ways on pink's usage page – Show, Group by and Split by rows on segmented tracks, the total with its parts' series dots, stacked columns in the usage chart's frame with hover readouts, and a Breakdown table whose columns and rows glide into order";
+pub const DESCRIPTION: &str = "A measure split two ways on Pink's usage page – Show, Group by and Split by rows on segmented tracks, the total with its parts' series dots, stacked columns in the usage chart's frame with hover readouts, and a Breakdown table whose columns and rows glide into order";
 
-/// pink `icons::CHART`, the Usage page's empty-state tile.
+/// Pink `icons::CHART`, the Usage page's empty-state tile.
 const ICON_CHART: &str = "icons/breakdown-chart/chart.svg";
 
-/// pink `usage.rs` `CHART_HEIGHT`, `CHART_AXIS_WIDTH`, `CHART_AXIS_GAP`.
+/// Pink `usage.rs` `CHART_HEIGHT`, `CHART_AXIS_WIDTH`, `CHART_AXIS_GAP`.
 const CHART_HEIGHT: f32 = 200.0;
 const CHART_AXIS_WIDTH: f32 = 56.0;
 const CHART_AXIS_GAP: f32 = 8.0;
-/// Headroom above the tallest mark (pink `usage_chart`: `height - 8`).
+/// Headroom above the tallest mark (Pink `usage_chart`: `height - 8`).
 const CHART_HEADROOM: f32 = 8.0;
 /// A column takes 40% of its slot, up to this width.
 const COLUMN_MAX_WIDTH: f32 = 48.0;
-/// A series' line on top of its body (pink `usage_chart`: 2 px stroke).
+/// A series' line on top of its body (Pink `usage_chart`: 2 px stroke).
 const SERIES_LINE: f32 = 2.0;
-/// A series' body under its line (pink `usage_chart`: fill at 12%).
+/// A series' body under its line (Pink `usage_chart`: fill at 12%).
 const SERIES_BODY_ALPHA: f32 = 0.12;
 /// The hovered column's wash reaches this far past its sides.
 const HOVER_WASH_PAD: f32 = 8.0;
-/// pink `usage_table_row`: header and body row heights.
+/// Pink `usage_table_row`: header and body row heights.
 const TABLE_HEADER_HEIGHT: f32 = 30.0;
 const TABLE_ROW_HEIGHT: f32 = 36.0;
 
@@ -84,7 +84,7 @@ impl Measure {
         }
     }
 
-    /// A figure in the chart, the readouts and the table (pink
+    /// A figure in the chart, the readouts and the table (Pink
     /// `compact_tokens`, with a "$" for currency), short enough for the
     /// value gutter and a table with a column per part.
     fn fmt(&self, v: f64) -> String {
@@ -95,7 +95,7 @@ impl Measure {
         }
     }
 
-    /// The summary card's total (pink `money` for cost, `compact_tokens`
+    /// The summary card's total (Pink `money` for cost, `compact_tokens`
     /// for counts).
     fn fmt_total(&self, v: f64) -> String {
         match self.format {
@@ -245,9 +245,9 @@ impl State {
     }
 }
 
-/// The parts' series tones. The first three are pink's Usage chart series
+/// The parts' series tones. The first three are Pink's Usage chart series
 /// (`usage.rs` `provider_tone`: `text`, `#5b9bbd`, `#d97757`); further parts
-/// take pink's project hues (`sidebar_projects.rs` `PROJECT_HUES`) that sit
+/// take Pink's project hues (`sidebar_projects.rs` `PROJECT_HUES`) that sit
 /// clear of those, floored to the non-text contrast target.
 fn series_tones(t: &Pink, count: usize) -> Vec<Hsla> {
     let mut tones = vec![t.text, rgb(0x5b9bbd).into(), rgb(0xd97757).into()];
@@ -258,7 +258,7 @@ fn series_tones(t: &Pink, count: usize) -> Vec<Hsla> {
     (0..count).map(|ix| tones[ix % tones.len()]).collect()
 }
 
-/// pink `usage.rs` widths for its segmented rows: 150 for two options, 216
+/// Pink `usage.rs` widths for its segmented rows: 150 for two options, 216
 /// for three, 300 for four; about 75 per option past that.
 fn segmented_width(count: usize) -> f32 {
     match count {
@@ -270,7 +270,7 @@ fn segmented_width(count: usize) -> f32 {
 }
 
 /// The chart's top value: twice a round half-step at or above half the
-/// peak, so the three gridlines (0, ½, 1) land on round figures (pink
+/// peak, so the three gridlines (0, ½, 1) land on round figures (Pink
 /// `usage_chart` scales the same way, from a coarser 1-2-5 ladder).
 fn chart_scale(peak: f64) -> f64 {
     if peak <= 0.0 {
@@ -335,7 +335,7 @@ impl RenderOnce for BreakdownChart {
         let tones = series_tones(&t, parts.len());
         let muted = t.readable_muted(0.85);
 
-        // Scale: pink's three gridlines at 0, ½ and the top.
+        // Scale: Pink's three gridlines at 0, ½ and the top.
         let peak = totals.iter().copied().fold(0.0_f64, f64::max);
         let scale = chart_scale(peak);
         let axis_labels = [scale, scale / 2.0, 0.0].map(|v| {
@@ -378,7 +378,7 @@ impl RenderOnce for BreakdownChart {
             })
             .collect();
 
-        // --- View card: pink's "Show" / "Period" rows --------------------
+        // --- View card: Pink's "Show" / "Period" rows --------------------
         let measure_control = {
             let state = state.clone();
             pink::segmented(
@@ -471,7 +471,7 @@ impl RenderOnce for BreakdownChart {
             );
 
         // --- Summary card: the total and its parts, then the chart row ----
-        // The parts' key: pink's provider-row title line (an 8 px dot in the
+        // The parts' key: Pink's provider-row title line (an 8 px dot in the
         // series tone, gap 6, the name), here as one wrapping line beside
         // the total instead of a row per part, since the Breakdown table
         // already carries every part's figures.
@@ -500,7 +500,7 @@ impl RenderOnce for BreakdownChart {
                             .child(name.clone()),
                     )
             }));
-        // pink: the total in Display, forced semibold.
+        // Pink: the total in Display, forced semibold.
         let total_row = pink::card_row(false, &t)
             .child(
                 div()
@@ -512,7 +512,7 @@ impl RenderOnce for BreakdownChart {
             )
             .child(parts_key);
 
-        // pink: the hovered period's detail and total.
+        // Pink: the hovered period's detail and total.
         let hover_detail = hot.filter(|sl| *sl < slices.len()).map(|sl| {
             let values: Vec<String> = (0..parts.len())
                 .filter(|g| matrix[sl][*g] > 0.0)
@@ -547,7 +547,7 @@ impl RenderOnce for BreakdownChart {
             &measure,
             axis_labels,
         );
-        // The description becomes the hovered column's detail (pink); it
+        // The description becomes the hovered column's detail (Pink); it
         // keeps to one line so the chart under it never shifts.
         let chart_description = hover_detail.unwrap_or_else(|| {
             format!(
@@ -585,7 +585,7 @@ impl RenderOnce for BreakdownChart {
             .child(total_row)
             .child(chart_row);
 
-        // --- Breakdown card: pink's table under a section header ---------
+        // --- Breakdown card: Pink's table under a section header ---------
         let order_control = {
             let state = state.clone();
             pink::segmented(
@@ -606,7 +606,7 @@ impl RenderOnce for BreakdownChart {
                 },
             )
         };
-        // pink `usage.rs`: the label takes 40%, the figures share the rest.
+        // Pink `usage.rs`: the label takes 40%, the figures share the rest.
         let column_width = 0.60 / (parts.len() + 2) as f32;
         let figure = |value: String, color: Hsla| {
             div()
@@ -719,7 +719,7 @@ impl RenderOnce for BreakdownChart {
             .child(table);
 
         motion::keep_alive(window);
-        // pink: the settings page column, at most 720 wide.
+        // Pink: the settings page column, at most 720 wide.
         div()
             .id(self.id.clone())
             .w_full()
@@ -734,7 +734,7 @@ impl RenderOnce for BreakdownChart {
 }
 
 impl BreakdownChart {
-    /// The chart block (pink `usage_chart`): the value gutter and the plot
+    /// The chart block (Pink `usage_chart`): the value gutter and the plot
     /// side by side, the slice labels under the plot.
     #[allow(clippy::too_many_arguments)]
     fn chart(
@@ -768,7 +768,7 @@ impl BreakdownChart {
                     return;
                 }
                 let at = |x: f32, y: f32| bounds.origin + point(px(x), px(y));
-                // pink: 1 px gridlines in `border` at 0, ½ and the top.
+                // Pink: 1 px gridlines in `border` at 0, ½ and the top.
                 for y in [0.0, (height / 2.0).floor(), height - 1.0] {
                     window.paint_quad(fill(
                         Bounds::new(at(0.0, y), size(px(width), px(1.0))),
@@ -821,8 +821,8 @@ impl BreakdownChart {
         )
         .size_full();
 
-        // Hover cells, one per slot (pink: one per period), each with the
-        // tooltip pink shows for a period.
+        // Hover cells, one per slot (Pink: one per period), each with the
+        // tooltip Pink shows for a period.
         let cells = order.iter().map(|&sl| {
             let detail = std::iter::once(slices[sl].to_string())
                 .chain(
@@ -955,7 +955,7 @@ struct Column {
     hot: f32,
 }
 
-/// pink's hover cells: entering lights the slice, leaving clears it only if
+/// Pink's hover cells: entering lights the slice, leaving clears it only if
 /// it is still the lit one.
 fn set_hot(state: &gpui::Entity<State>, sl: usize, hovered: bool, cx: &mut App) {
     state.update(cx, |s, cx| {
@@ -973,7 +973,7 @@ fn set_hot(state: &gpui::Entity<State>, sl: usize, hovered: bool, cx: &mut App) 
     })
 }
 
-/// The empty state (pink's "No usage yet" card): a row tile and row text.
+/// The empty state (Pink's "No usage yet" card): a row tile and row text.
 fn empty_card(t: &Pink) -> gpui::Div {
     pink::section_card(t)
         .mt_0()
@@ -990,7 +990,7 @@ fn empty_card(t: &Pink) -> gpui::Div {
         )
 }
 
-/// The chart's hover detail (pink `shell.rs` `SurfaceTabTooltip`): the
+/// The chart's hover detail (Pink `shell.rs` `SurfaceTabTooltip`): the
 /// tooltip card up to 380 wide, `px 8 / py 5`, 11/14 `text`, one line per
 /// part.
 struct ChartTooltip(SharedString);
@@ -1008,7 +1008,7 @@ impl Render for ChartTooltip {
     }
 }
 
-/// pink `usage.rs` `count`: thousands separators.
+/// Pink `usage.rs` `count`: thousands separators.
 fn count(value: u64) -> String {
     let text = value.to_string();
     let mut grouped = String::new();
@@ -1021,13 +1021,13 @@ fn count(value: u64) -> String {
     grouped.chars().rev().collect()
 }
 
-/// pink `usage.rs` `money`: "$1,234.56".
+/// Pink `usage.rs` `money`: "$1,234.56".
 fn money(value: f64) -> String {
     let cents = (value.max(0.0) * 100.0).round() as u64;
     format!("${}.{:02}", count(cents / 100), cents % 100)
 }
 
-/// pink `usage.rs` `compact_tokens`: "52.2K", "1.25M", "940".
+/// Pink `usage.rs` `compact_tokens`: "52.2K", "1.25M", "940".
 fn compact(value: f64) -> String {
     let value = value.max(0.0).round() as u64;
     for (threshold, suffix) in [
@@ -1057,7 +1057,7 @@ fn compact(value: f64) -> String {
     count(value)
 }
 
-/// pink `usage.rs` `usage_percent`: "28.4%", "<0.1%".
+/// Pink `usage.rs` `usage_percent`: "28.4%", "<0.1%".
 fn percent(value: f64) -> String {
     let percent = value * 100.0;
     if percent > 0.0 && percent < 0.1 {
@@ -1143,7 +1143,7 @@ pub fn demo_cube() -> Cube {
 }
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
-    // Teams along the x axis, split by their three regions (pink's three
+    // Teams along the x axis, split by their three regions (Pink's three
     // series tones), largest team first.
     story::view(cx, |_, _| {
         BreakdownChart::new("breakdown-chart", "Cloud spend", demo_cube())

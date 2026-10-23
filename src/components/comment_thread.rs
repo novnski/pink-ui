@@ -1,13 +1,13 @@
-//! Comment Thread – a pink component.
+//! Comment Thread – a Pink component.
 //!
-//! An inline review comment grown into a conversation. The thread is pink's
-//! comment card (pink: comment_ui.rs `render_comment_card`): a flat band
+//! An inline review comment grown into a conversation. The thread is Pink's
+//! comment card (Pink: comment_ui.rs `render_comment_card`): a flat band
 //! with a 3px bar, the anchor it is pinned to in the header, and every
-//! message under it with its author. An assistant's reply carries pink's
+//! message under it with its author. An assistant's reply carries Pink's
 //! tool-group summary plate; it folds open onto the activity rail to list
-//! what was done. Mentioning the assistant in a reply shows pink's working
+//! what was done. Mentioning the assistant in a reply shows Pink's working
 //! line (breathing orb, shimmering "Thinking", elapsed timer) until the
-//! answer arrives. The reply field is pink's draft card (pink: comment_ui.rs
+//! answer arrives. The reply field is Pink's draft card (Pink: comment_ui.rs
 //! `render_comment_draft`) with Cancel and Comment. The conversation grows
 //! to its new height when a message lands and glides down to it.
 //!
@@ -45,38 +45,38 @@ use crate::{
 };
 
 pub const NAME: &str = "Comment Thread";
-pub const DESCRIPTION: &str = "An inline review thread pinned to a line – replies with their authors, an assistant whose summary folds open onto the activity rail, a shimmering working line while it answers @mentions, and pink's draft card to reply";
+pub const DESCRIPTION: &str = "An inline review thread pinned to a line – replies with their authors, an assistant whose summary folds open onto the activity rail, a shimmering working line while it answers @mentions, and Pink's draft card to reply";
 
-/// The glyph an assistant without an avatar image wears (pink `icons::BOT`).
+/// The glyph an assistant without an avatar image wears (Pink `icons::BOT`).
 pub const ASSISTANT_MARK: &str = "icons/comment-thread/bot.svg";
-/// Status glyph for edits (pink `icons::FILE_PEN`, the edit tool's glyph).
+/// Status glyph for edits (Pink `icons::FILE_PEN`, the edit tool's glyph).
 pub const EDIT_GLYPH: &str = "icons/comment-thread/file-pen.svg";
-/// Status glyph for mixed work, the default (pink `icons::LAYERS_MINIMALISTIC`).
+/// Status glyph for mixed work, the default (Pink `icons::LAYERS_MINIMALISTIC`).
 pub const STEPS_GLYPH: &str = "icons/comment-thread/layers-minimalistic.svg";
 
 const ICON_COMMENT: &str = "icons/comment-thread/chat-round-line.svg";
 const ICON_REMOVE: &str = "icons/comment-thread/close-circle.svg";
 const ICON_CHEVRON: &str = "icons/comment-thread/alt-arrow-right.svg";
 
-/// pink changes.rs `ACCENT_BAR_WIDTH`: the card's bar, not a border.
+/// Pink changes.rs `ACCENT_BAR_WIDTH`: the card's bar, not a border.
 const ACCENT_BAR_WIDTH: f32 = 3.0;
-/// pink comments.rs card geometry: vertical padding (split top and bottom),
+/// Pink comments.rs card geometry: vertical padding (split top and bottom),
 /// header row, body line, and the slack below the body.
 const CARD_PAD_V: f32 = 20.0;
 const CARD_HEADER_HEIGHT: f32 = 22.0;
 const CARD_LINE_HEIGHT: f32 = 18.0;
 const CARD_GAP: f32 = 6.0;
-/// pink comments.rs `DRAFT_CARD_HEIGHT`, fixed so the draft never jumps.
+/// Pink comments.rs `DRAFT_CARD_HEIGHT`, fixed so the draft never jumps.
 const DRAFT_CARD_HEIGHT: f32 = 116.0;
-/// pink `render_comment_draft`: the input slot, the action row and its padding.
+/// Pink `render_comment_draft`: the input slot, the action row and its padding.
 const DRAFT_INPUT_HEIGHT: f32 = 46.0;
 const DRAFT_ACTIONS_HEIGHT: f32 = 28.0;
 const DRAFT_PAD_V: f32 = 10.0;
-/// pink `comment_action`: 22px buttons, px 10.
+/// Pink `comment_action`: 22px buttons, px 10.
 const ACTION_HEIGHT: f32 = 22.0;
 const ACTION_PAD_X: f32 = 10.0;
 
-/// pink transcript.rs tool group and activity rail geometry.
+/// Pink transcript.rs tool group and activity rail geometry.
 const TOOL_GROUP_HEADER_HEIGHT: f32 = 26.0;
 const ACTIVITY_ICON_SIZE: f32 = 14.0;
 const ACTIVITY_TRUNK_X: f32 = 12.5;
@@ -85,13 +85,13 @@ const ACTIVITY_BRANCH_END_X: f32 = 28.0;
 const DISCLOSURE_CHEVRON_SIZE: f32 = 12.0;
 const TOOL_TREE_ROW_HEIGHT: f32 = 32.0;
 const CHIPS_TOP_PAD: f32 = 2.0;
-/// Detail text starts after pink's 4px break past the branch tip.
+/// Detail text starts after Pink's 4px break past the branch tip.
 const DETAIL_TEXT_X: f32 = ACTIVITY_BRANCH_END_X + 4.0;
 
-/// pink history.rs author avatar; message text starts past it and an 8px gap.
+/// Pink history.rs author avatar; message text starts past it and an 8px gap.
 const AVATAR: f32 = 20.0;
 const TEXT_INDENT: f32 = AVATAR + space::S8;
-/// pink markdown/render.rs inline code plate.
+/// Pink markdown/render.rs inline code plate.
 const INLINE_CODE_RADIUS: f32 = 4.5;
 const INLINE_CODE_PAD_X: f32 = 2.0;
 const INLINE_CODE_INSET_Y: f32 = 2.0;
@@ -129,7 +129,7 @@ impl ThreadAuthor {
         self
     }
 
-    /// pink history.rs `history_author_initial`: the first letter, upper-cased.
+    /// Pink history.rs `history_author_initial`: the first letter, upper-cased.
     fn initial(&self) -> SharedString {
         self.name
             .chars()
@@ -200,7 +200,7 @@ pub type ReplyTask = Task<Option<ThreadMessage>>;
 type ReplyHandler = Rc<dyn Fn(&str, &mut App) -> Option<ReplyTask>>;
 type Handler = Rc<dyn Fn(&mut Window, &mut App)>;
 
-/// pink proto view.rs `format_time_ago`: "now", "3m", "2h", "4d", "1w", "2mo", "1y".
+/// Pink proto view.rs `format_time_ago`: "now", "3m", "2h", "4d", "1w", "2mo", "1y".
 fn time_ago(then: SystemTime, now: SystemTime) -> String {
     let s = now.duration_since(then).map_or(0, |d| d.as_secs());
     if s < 60 {
@@ -229,7 +229,7 @@ fn time_ago(then: SystemTime, now: SystemTime) -> String {
     format!("{}y", d / 365)
 }
 
-/// pink comments.rs `chip_label`.
+/// Pink comments.rs `chip_label`.
 fn count_label(count: usize) -> String {
     if count == 1 {
         "1 comment".into()
@@ -296,7 +296,7 @@ impl ThreadState {
             cx.subscribe_in(&input, window, |this, _, event, window, cx| match event {
                 InputEvent::Change(_) => cx.notify(),
                 InputEvent::Submit(_) => this.send(cx),
-                // pink's draft: Escape cancels
+                // Pink's draft: Escape cancels
                 InputEvent::Escape => this.cancel(cx),
                 InputEvent::Tab => window.focus_next(cx),
                 _ => {}
@@ -385,7 +385,7 @@ impl ThreadState {
         cx.notify();
     }
 
-    /// pink's draft Cancel: drops what was typed.
+    /// Pink's draft Cancel: drops what was typed.
     fn cancel(&mut self, cx: &mut Context<Self>) {
         self.input.update(cx, |input, cx| input.clear(cx));
         cx.notify();
@@ -449,7 +449,7 @@ impl CommentThread {
     }
 
     /// Where the thread is pinned (`path:line`), cited in mono in the header
-    /// and the reply card like pink's comment cards.
+    /// and the reply card like Pink's comment cards.
     pub fn anchor(mut self, anchor: impl Into<SharedString>) -> Self {
         self.anchor = Some(anchor.into());
         self
@@ -508,7 +508,7 @@ impl RenderOnce for CommentThread {
         );
 
         // Mirror the props the state needs to send with Enter, and the colors
-        // (pink `ComposerInput`: placeholder `text_faint`, accent caret)
+        // (Pink `ComposerInput`: placeholder `text_faint`, accent caret)
         let input = state.update(cx, |s, cx| {
             s.on_reply = self.on_reply.clone();
             s.current_user = Some(self.current_user.clone());
@@ -538,7 +538,7 @@ impl RenderOnce for CommentThread {
         let space = space_width(window);
         let mut items: Vec<AnyElement> = Vec::new();
         // Messages there at mount cascade in one part after another; later
-        // ones bring their own short stagger (pink tool-row reveal)
+        // ones bring their own short stagger (Pink tool-row reveal)
         let mut cascade = 0;
         for (ix, msg) in s.messages.iter().enumerate() {
             let mut parts: Vec<AnyElement> = vec![
@@ -647,7 +647,7 @@ impl RenderOnce for CommentThread {
             .pb(px(CARD_PAD_V / 2. + CARD_GAP))
             .children(items);
         // A message landing grows the band to its new height; the distance
-        // sets the time (pink `user_resize_spec`)
+        // sets the time (Pink `user_resize_spec`)
         let measured = f32::from(scroll.bounds().size.height);
         let mut grown = false;
         let height = s.grow.and_then(|(from, started)| {
@@ -664,8 +664,8 @@ impl RenderOnce for CommentThread {
             .when_some(height, |d, h| d.h(px(h)))
             .child(list);
 
-        // pink: comment card header – the glyph, where it's pinned, and here
-        // the count and a close revealed on hover (pink's remove)
+        // Pink: comment card header – the glyph, where it's pinned, and here
+        // the count and a close revealed on hover (Pink's remove)
         let group: SharedString = format!("{key}-thread").into();
         let ring = t.focus_ring();
         let count = s.messages.len();
@@ -688,7 +688,7 @@ impl RenderOnce for CommentThread {
                         .aria_label("Close thread")
                         .tab_index(0)
                         .flex_none()
-                        // 24 pt hit box, 16 pt footprint (pink DS-19)
+                        // 24 pt hit box, 16 pt footprint (Pink DS-19)
                         .size(px(24.))
                         .m(px(-4.))
                         .flex()
@@ -729,7 +729,7 @@ impl RenderOnce for CommentThread {
                     .child(morph),
             );
 
-        // pink: comment draft – header, the 46px field, Cancel and Comment
+        // Pink: comment draft – header, the 46px field, Cancel and Comment
         let cancel = {
             let state = state.clone();
             move |_: &gpui::ClickEvent, _: &mut Window, cx: &mut App| {
@@ -829,13 +829,13 @@ impl RenderOnce for CommentThread {
     }
 }
 
-/// pink comment_ui.rs `comment_accent_bar`: 3px of `solid` at the card's
+/// Pink comment_ui.rs `comment_accent_bar`: 3px of `solid` at the card's
 /// strength (0.35 posted, 0.7 drafting), stretched to the band's height.
 fn accent_bar(color: Hsla) -> gpui::Div {
     div().w(px(ACCENT_BAR_WIDTH)).flex_none().bg(color)
 }
 
-/// pink comment_ui.rs card header: a 12px comment glyph and the location in
+/// Pink comment_ui.rs card header: a 12px comment glyph and the location in
 /// mono 11 `text_faint` (a plain title in sans when there's no anchor).
 fn card_header(anchor: Option<SharedString>, title: SharedString, t: &Pink) -> gpui::Div {
     let label = div()
@@ -866,7 +866,7 @@ fn card_header(anchor: Option<SharedString>, title: SharedString, t: &Pink) -> g
         .child(label)
 }
 
-/// pink comment_ui.rs `comment_action`: 22px, px 10, radius 6, 11 medium.
+/// Pink comment_ui.rs `comment_action`: 22px, px 10, radius 6, 11 medium.
 /// The primary is the `solid` plate; the other is a ghost whose label and
 /// wash brighten under the pointer.
 fn comment_action(id: String, label: &'static str, primary: bool, t: &Pink) -> Stateful<gpui::Div> {
@@ -915,7 +915,7 @@ fn space_width(window: &Window) -> Pixels {
         .width
 }
 
-/// Avatar, name and time (pink history.rs author avatar; the time is the
+/// Avatar, name and time (Pink history.rs author avatar; the time is the
 /// sidebar's 11px tabular stamp).
 fn meta_row(author: &ThreadAuthor, time: Option<String>, t: &Pink) -> gpui::Div {
     div()
@@ -951,7 +951,7 @@ fn meta_row(author: &ThreadAuthor, time: Option<String>, t: &Pink) -> gpui::Div 
         })
 }
 
-/// pink history.rs author avatar: a 20px disc, `hairline(0.12)` edge over
+/// Pink history.rs author avatar: a 20px disc, `hairline(0.12)` edge over
 /// `wash(0.08)`, holding the photo, the initial, or an assistant's mark.
 fn author_avatar(author: &ThreadAuthor, t: &Pink) -> AnyElement {
     match (&author.avatar, author.assistant) {
@@ -1016,9 +1016,9 @@ fn words(text: &str) -> Vec<Word<'_>> {
         .collect()
 }
 
-/// The note at pink's card body (12/18 `text_dim`). Commands read as pink's
+/// The note at Pink's card body (12/18 `text_dim`). Commands read as Pink's
 /// inline code (`code_text` on a rounded `code_wash`, mono); mentions as
-/// pink's composer chat chips (accent on an accent wash). Tagged text is laid
+/// Pink's composer chat chips (accent on an accent wash). Tagged text is laid
 /// out word by word (a GPUI text run can't hold a rounded plate) with the
 /// space as the gap.
 fn body(text: &SharedString, t: &Pink, space: Pixels) -> AnyElement {
@@ -1064,7 +1064,7 @@ fn body(text: &SharedString, t: &Pink, space: Pixels) -> AnyElement {
         .into_any_element()
 }
 
-/// Rises a message part into place (pink transcript.rs new-row reveal:
+/// Rises a message part into place (Pink transcript.rs new-row reveal:
 /// `TOOL_ROW_REVEAL` 360ms expo-out, 4px); `None` shows it as it is.
 fn reveal(id: String, delay: Option<Duration>, part: AnyElement) -> AnyElement {
     match delay {
@@ -1079,7 +1079,7 @@ fn reveal(id: String, delay: Option<Duration>, part: AnyElement) -> AnyElement {
     }
 }
 
-/// pink transcript.rs `render_working_trailer`: the breathing orb in its line
+/// Pink transcript.rs `render_working_trailer`: the breathing orb in its line
 /// box, the shimmering verb and the elapsed timer, top-aligned at gap 8.
 fn working_line(key: &str, secs: i64, t: &Pink) -> Stateful<gpui::Div> {
     div()
@@ -1095,7 +1095,7 @@ fn working_line(key: &str, secs: i64, t: &Pink) -> Stateful<gpui::Div> {
         .child(loaders::working_timer(secs, t.content_faint))
 }
 
-/// pink's working-line Stop: a quiet way out that appears under the pointer.
+/// Pink's working-line Stop: a quiet way out that appears under the pointer.
 fn stop_button(
     group: &str,
     t: &Pink,
@@ -1136,10 +1136,10 @@ struct StatusBlock<'a> {
     t: &'a Pink,
 }
 
-/// The assistant's summary: pink's tool-group header plate (glyph on the
+/// The assistant's summary: Pink's tool-group header plate (glyph on the
 /// rail's trunk, the summary, a chevron turning 0 → 90°), folding open onto
-/// pink's activity rail with one 32px row per detail. Chevron, height and
-/// body fade share pink's fold clock. Returns whether it is animating.
+/// Pink's activity rail with one 32px row per detail. Chevron, height and
+/// body fade share Pink's fold clock. Returns whether it is animating.
 fn status_block(block: StatusBlock) -> (AnyElement, bool) {
     let StatusBlock {
         key,
@@ -1257,7 +1257,7 @@ fn status_block(block: StatusBlock) -> (AnyElement, bool) {
     (column.into_any_element(), elapsed.is_some())
 }
 
-/// One detail on pink's activity rail: the trunk (continuing past the row
+/// One detail on Pink's activity rail: the trunk (continuing past the row
 /// when more follow) rounding its 6px elbow to the branch tip, then the
 /// detail at the tool rows' 12/18 `content_muted`.
 fn detail_row(detail: SharedString, continues: bool, t: &Pink) -> gpui::Div {
@@ -1288,7 +1288,7 @@ fn detail_row(detail: SharedString, continues: bool, t: &Pink) -> gpui::Div {
         )
 }
 
-/// pink transcript.rs `activity_rail`, settled: the trunk and the elbow as
+/// Pink transcript.rs `activity_rail`, settled: the trunk and the elbow as
 /// 1px ribbons unioned into one nonzero fill, so the fork never darkens.
 fn rail(continues: bool, color: Hsla) -> impl IntoElement {
     canvas(
@@ -1320,7 +1320,7 @@ fn rail(continues: bool, color: Hsla) -> impl IntoElement {
     .inset_0()
 }
 
-/// pink transcript.rs `activity_branch_points`: the quarter bend from the
+/// Pink transcript.rs `activity_branch_points`: the quarter bend from the
 /// trunk, then straight out to the branch tip.
 fn branch_points() -> Vec<Point<f32>> {
     let mut path: Vec<_> = (0..=24)
@@ -1339,7 +1339,7 @@ fn branch_points() -> Vec<Point<f32>> {
     path
 }
 
-/// pink transcript.rs `activity_ribbon`: a clockwise 1px contour along `points`.
+/// Pink transcript.rs `activity_ribbon`: a clockwise 1px contour along `points`.
 fn ribbon(path: &mut PathBuilder, points: &[Point<Pixels>]) {
     let mut left = Vec::with_capacity(points.len());
     let mut right = Vec::with_capacity(points.len());

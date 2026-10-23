@@ -4,12 +4,12 @@
 //!
 //! Pink has no calendar, so the parts it does have are copied and the grid
 //! is drawn in the same language. The trigger is the Usage page's pop-up
-//! button (pink `button.rs` `select_frame` + `glyph` + `select_chevron`, as
+//! button (Pink `button.rs` `select_frame` + `glyph` + `select_chevron`, as
 //! `shell/usage.rs` builds its environment select); the presets are the
 //! Usage page's Period control (`shell/usage.rs` `PERIODS` on `button.rs`
-//! `segmented`); the card hangs and moves like pink's dropdowns
+//! `segmented`); the card hangs and moves like Pink's dropdowns
 //! (`popover.rs` `popover_card`, `anchored_menu_below`, `menu_motion_from`);
-//! Cancel / Apply are pink's dialog buttons (`btn_ghost` / `btn_primary`);
+//! Cancel / Apply are Pink's dialog buttons (`btn_ghost` / `btn_primary`);
 //! the compare switch is `settings/widgets.rs` `toggle_switch`. Days are
 //! plates on the control corner with a selection-wash band, quiet hover
 //! fills and the inset focus ring for the keyboard cursor.
@@ -65,7 +65,7 @@ const MONTH_W: f32 = CELL_W * 7.;
 const CONTENT_W: f32 = MONTH_W * 2. + space::S24;
 /// The card's side and top padding.
 const INSET: f32 = chrome::CONTENT_INSET;
-/// The comparison-mode track: pink's two-option `Sm` segmented (the
+/// The comparison-mode track: Pink's two-option `Sm` segmented (the
 /// automation editor's "Each run").
 const COMPARE_W: f32 = 220.;
 
@@ -300,11 +300,11 @@ struct PickerState {
     seeded: bool,
     open: bool,
     /// When the card began closing: it fades out over `MENU_OUT`, then
-    /// unmounts (pink `Popup` closing phase).
+    /// unmounts (Pink `Popup` closing phase).
     closing: Option<Instant>,
-    /// Unmounts the card once the exit has run (pink `reap_popup`).
+    /// Unmounts the card once the exit has run (Pink `reap_popup`).
     reap: Option<Task<()>>,
-    /// Focus the card on the next frame (pink `pending_menu_focus`).
+    /// Focus the card on the next frame (Pink `pending_menu_focus`).
     pending_focus: bool,
     /// Counts openings, so each one plays the entrance afresh.
     opened: usize,
@@ -581,7 +581,7 @@ impl RenderOnce for DateRangePicker {
             });
         }
 
-        // pink `render`: focus the card once it has opened.
+        // Pink `render`: focus the card once it has opened.
         let focus_card = state.update(cx, |s, _| {
             let due = s.pending_focus && s.open;
             if due {
@@ -605,7 +605,7 @@ impl RenderOnce for DateRangePicker {
             )
         };
 
-        // pink `shell/usage.rs` environment select: a Secondary pop-up frame,
+        // Pink `shell/usage.rs` environment select: a Secondary pop-up frame,
         // a leading 14 pt glyph, the choice and the one chevron.
         let label = applied.label();
         let aria: SharedString = match applied_compare {
@@ -691,9 +691,9 @@ fn lower(mode: CompareMode) -> String {
 }
 
 /// The card hung from the trigger's bottom-left corner, 6 pt below it and
-/// kept 8 pt inside the window (pink `popover::anchored_menu_below`). It
+/// kept 8 pt inside the window (Pink `popover::anchored_menu_below`). It
 /// drops 6 pt into place on [`motion::MENU_IN`]; while `exit` runs it fades
-/// on [`MENU_OUT`] under an occluder so the dying card takes no clicks (pink
+/// on [`MENU_OUT`] under an occluder so the dying card takes no clicks (Pink
 /// `menu_motion_from`).
 fn anchored_below(id: SharedString, exit: Option<f32>, card: impl IntoElement) -> AnyElement {
     let inner = div()
@@ -728,7 +728,7 @@ fn anchored_below(id: SharedString, exit: Option<f32>, card: impl IntoElement) -
 
 /// Swallows the press that dismisses the card: the card closes on it during
 /// capture, and this stops it in the bubble phase so nothing behind the card
-/// (the trigger included) acts on it too (pink `frosted_menu_rounded`'s
+/// (the trigger included) acts on it too (Pink `frosted_menu_rounded`'s
 /// guard).
 fn press_guard() -> impl IntoElement {
     canvas(
@@ -749,8 +749,8 @@ fn press_guard() -> impl IntoElement {
 // Card
 // ---------------------------------------------------------------------------
 
-/// The card: pink's `popover_card` without its inset (the panes pad
-/// themselves, as pink's model picker does), the presets track, the months,
+/// The card: Pink's `popover_card` without its inset (the panes pad
+/// themselves, as Pink's model picker does), the presets track, the months,
 /// the comparison switch, and under a rule the range beside Cancel / Apply.
 #[allow(clippy::too_many_arguments)]
 fn card(
@@ -775,7 +775,7 @@ fn card(
     let shown = preview.unwrap_or(draft);
     let compare = s.compare.map(|m| shown.compared(m));
 
-    // pink `shell/usage.rs` Period: the presets on one segmented track, with
+    // Pink `shell/usage.rs` Period: the presets on one segmented track, with
     // a closing Custom segment the thumb rests on for a hand-picked range.
     let ranges: Vec<DateRange> = presets.iter().map(|p| p.range(today)).collect();
     let mut segments: Vec<Segment> = presets
@@ -827,7 +827,7 @@ fn card(
         .gap(px(space::S24))
         .child(grid.month(left, (true, false), cx))
         .child(grid.month(right, (false, true), cx));
-    // A page swap: pink's in-place content swap (`TRANSCRIPT_IN`, fade and a
+    // A page swap: Pink's in-place content swap (`TRANSCRIPT_IN`, fade and a
     // 4 pt settle), the settle running the way the months moved.
     let months = if epoch == 0 {
         months.into_any_element()
@@ -846,7 +846,7 @@ fn card(
     };
 
     // The range as it stands over its length and what it is compared with:
-    // a settings row's text (pink `settings/widgets.rs` `row_text`, the
+    // a settings row's text (Pink `settings/widgets.rs` `row_text`, the
     // description as a `meta_line`).
     let (range_text, meta) = if picking {
         (
@@ -882,8 +882,8 @@ fn card(
         .child(pink::row_title(range_text, t))
         .child(meta_line(meta, t));
 
-    // pink `settings/widgets.rs` `toggle_switch` with its label, then the
-    // mode on pink's two-option `Sm` track while it is on.
+    // Pink `settings/widgets.rs` `toggle_switch` with its label, then the
+    // mode on Pink's two-option `Sm` track while it is on.
     let compare_on = s.compare.is_some();
     let last_compare = s.last_compare;
     let toggle_compare = {
@@ -946,7 +946,7 @@ fn card(
             )
         });
 
-    // pink `popover.rs` `btn_ghost` / `btn_primary`: the dialog-size pair.
+    // Pink `popover.rs` `btn_ghost` / `btn_primary`: the dialog-size pair.
     // Apply waits for the range's second day.
     let cancel = {
         let state = state.clone();
@@ -1077,7 +1077,7 @@ fn card(
         .child(footer)
 }
 
-/// The quiet line under the range (pink `settings/widgets.rs` `meta_line`):
+/// The quiet line under the range (Pink `settings/widgets.rs` `meta_line`):
 /// 12 px fragments in `readable_muted(0.8)`, 8 apart, split by faint dots.
 fn meta_line(fragments: Vec<AnyElement>, t: &Pink) -> gpui::Div {
     let dot = if t.dark {
@@ -1131,7 +1131,7 @@ struct Grid<'a> {
 }
 
 impl Grid<'_> {
-    /// One month: a 24 pt header (pink's `Sm` icon buttons around the title),
+    /// One month: a 24 pt header (Pink's `Sm` icon buttons around the title),
     /// the weekday initials and the weeks.
     fn month(&self, first: Day, (with_prev, with_next): (bool, bool), cx: &App) -> AnyElement {
         let t = self.t;
@@ -1232,7 +1232,7 @@ impl Grid<'_> {
     }
 
     /// One day: the band behind, the comparison bar in the week gap below,
-    /// and the 28 pt plate. Chosen ends are solid (pink's Primary plate),
+    /// and the 28 pt plate. Chosen ends are solid (Pink's Primary plate),
     /// the end still following the pointer is a selected fill, a plain day
     /// takes the hover fill under the pointer, today keeps a hairline edge
     /// and the keyboard cursor wears the inset focus ring.
@@ -1332,7 +1332,7 @@ impl Grid<'_> {
             .when(cursor, |d| d.shadow(t.focus_ring_shadows()))
             .when(disabled, |d| d.opacity(0.45))
             .child(day.day.to_string());
-        // A chosen end settles in (pink `GLYPH_SWAP`).
+        // A chosen end settles in (Pink `GLYPH_SWAP`).
         let number = if solid {
             number
                 .with_animation(

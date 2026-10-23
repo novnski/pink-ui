@@ -1,6 +1,6 @@
 //! Delegate Board – hand work to agents by dropping it on them.
 //!
-//! Drawn as pink's Board page (`shell/board`): a page title with its count
+//! Drawn as Pink's Board page (`shell/board`): a page title with its count
 //! and help, a toolbar, then borderless column wells side by side. The first
 //! column is the Backlog; every other column is an agent and its queue (at
 //! most [`QUEUE_LIMIT`] tasks, the first one running). An agent column also
@@ -8,8 +8,8 @@
 //! is free again.
 //!
 //! Dragging a task over a column previews the drop before you let go: the
-//! column takes pink's accent wash, the meter grows an accent segment, the
-//! free-at time moves and pink's 2 px insertion line marks where the card
+//! column takes Pink's accent wash, the meter grows an accent segment, the
+//! free-at time moves and Pink's 2 px insertion line marks where the card
 //! lands. A full queue refuses with a danger wash. Queued tasks can be
 //! dragged on to another agent or back to the Backlog, or moved with
 //! Alt+Left / Alt+Right from the keyboard. With Auto-assign on, the host
@@ -50,11 +50,11 @@ const ICON_REFUSED: &str = "icons/delegate-board/danger-circle.svg";
 const ICON_INFO: &str = "icons/delegate-board/info-circle.svg";
 const ICON_AUTO: &str = "icons/delegate-board/stopwatch-play.svg";
 
-/// A column's width (pink: board/columns.rs `COLUMN_MIN_WIDTH`).
+/// A column's width (Pink: board/columns.rs `COLUMN_MIN_WIDTH`).
 const COLUMN_W: f32 = 220.;
-/// Between columns (pink: `render_columns`).
+/// Between columns (Pink: `render_columns`).
 const COLUMN_GAP: f32 = 12.;
-/// Between the header, the notice and the columns (pink: the Board page's
+/// Between the header, the notice and the columns (Pink: the Board page's
 /// scroll column).
 const PAGE_GAP: f32 = 14.;
 /// Tasks an agent holds at most, the running one included.
@@ -172,7 +172,7 @@ struct DraggedTask {
 }
 
 /// What follows the pointer while a task is dragged: its tag and title
-/// (pink: board/card.rs `BoardCardGhost`).
+/// (Pink: board/card.rs `BoardCardGhost`).
 struct Ghost {
     tag: SharedString,
     title: SharedString,
@@ -292,10 +292,10 @@ fn clock_label(minutes: u32) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Pieces (pink: board/card.rs, board/columns.rs, board/page.rs)
+// Pieces (Pink: board/card.rs, board/columns.rs, board/page.rs)
 // ---------------------------------------------------------------------------
 
-/// How a badge is toned (pink: board/card.rs `Tone`). Tone is a secondary
+/// How a badge is toned (Pink: board/card.rs `Tone`). Tone is a secondary
 /// cue only: the glyph and the word carry the meaning.
 #[derive(Clone, Copy)]
 enum BadgeTone {
@@ -317,7 +317,7 @@ impl BadgeTone {
 }
 
 /// A small glyph + word badge; a ring, never a filled dot, when nothing has
-/// started (pink: board/card.rs `badge`).
+/// started (Pink: board/card.rs `badge`).
 fn badge(
     glyph: Option<&'static str>,
     label: impl Into<SharedString>,
@@ -353,7 +353,7 @@ fn badge(
 }
 
 /// The status mark beside a column title: a muted ring while nothing runs
-/// (pink's Backlog), a filled accent dot while the agent works (pink's
+/// (Pink's Backlog), a filled accent dot while the agent works (Pink's
 /// Ready). Pink: board/card.rs `column_mark`.
 fn column_mark(running: bool, t: &Pink) -> Div {
     let mark = div()
@@ -368,7 +368,7 @@ fn column_mark(running: bool, t: &Pink) -> Div {
     }
 }
 
-/// A column's title, count and help (pink: board/columns.rs `column_header`).
+/// A column's title, count and help (Pink: board/columns.rs `column_header`).
 fn column_header(
     running: bool,
     label: SharedString,
@@ -409,7 +409,7 @@ fn column_header(
 }
 
 /// A column well: borderless, `fill(Quaternary)` at half strength, radius
-/// 10, `p 8`, its parts 8 apart (pink: board/columns.rs `render_column`).
+/// 10, `p 8`, its parts 8 apart (Pink: board/columns.rs `render_column`).
 fn column_well(id: ElementId, aria: String, wash: Hsla) -> Stateful<Div> {
     div()
         .id(id)
@@ -435,7 +435,7 @@ fn well_washes(t: &Pink) -> (Hsla, Hsla, Hsla) {
     )
 }
 
-/// An empty column's hint (pink: board/columns.rs `render_column`).
+/// An empty column's hint (Pink: board/columns.rs `render_column`).
 fn empty_hint(copy: &'static str, t: &Pink) -> Div {
     div()
         .px(px(4.))
@@ -446,13 +446,13 @@ fn empty_hint(copy: &'static str, t: &Pink) -> Div {
         .child(copy)
 }
 
-/// The insertion line where a dragged card would land (pink: board/card.rs
+/// The insertion line where a dragged card would land (Pink: board/card.rs
 /// `drop_indicator`).
 fn drop_indicator(t: &Pink) -> Div {
     div().w_full().h(px(2.)).rounded_full().bg(t.accent)
 }
 
-/// A status strip under the header (pink: board/page.rs `notice_strip`,
+/// A status strip under the header (Pink: board/page.rs `notice_strip`,
 /// Info tone).
 fn notice_strip(key: &str, note: SharedString, t: &Pink) -> impl IntoElement {
     let color = t.readable_muted(0.95);
@@ -484,7 +484,7 @@ fn notice_strip(key: &str, note: SharedString, t: &Pink) -> impl IntoElement {
     )
 }
 
-/// An agent's load on the shared horizon: pink's usage meter (a 6 px
+/// An agent's load on the shared horizon: Pink's usage meter (a 6 px
 /// capsule, `fill(Secondary)` track, neutral `text_muted` fill; shell/usage.rs
 /// `usage_meter`), with the incoming task as an accent segment while a drag
 /// previews it. `label` trails the bar.
@@ -515,7 +515,7 @@ fn load_meter(busy: f32, extra: f32, label: impl IntoElement, t: &Pink) -> Div {
                 .min_w_0()
                 .rounded_full()
                 .bg(t.fill(FillTier::Secondary))
-                // Nothing drawn below 0.5% (pink: no false stub).
+                // Nothing drawn below 0.5% (Pink: no false stub).
                 .when(with_extra - used >= 0.005, |bar| {
                     bar.child(segment(with_extra, t.accent))
                 })
@@ -548,7 +548,7 @@ struct CardArgs<'a> {
     on_assign: Option<AssignHandler>,
 }
 
-/// One task card (pink: board/card.rs `render_card`): `px 10 py 9`, gap 8,
+/// One task card (Pink: board/card.rs `render_card`): `px 10 py 9`, gap 8,
 /// radius 10, a `separator(true)` edge on `fill(Quaternary)` (accent edge and
 /// wash when selected, an accent edge under the pointer), the top line with
 /// the ticket glyph, a 13 pt medium title clamped to three lines, the phase
@@ -741,7 +741,7 @@ fn task_card(a: CardArgs, t: &Pink) -> AnyElement {
         .child(footer);
 
     // A card arriving in a column (first mount, a drop, Auto-assign) reveals
-    // like pink's new rows: TOOL_ROW_REVEAL with a 4 px rise.
+    // like Pink's new rows: TOOL_ROW_REVEAL with a 4 px rise.
     let column = match &a.column {
         DropTarget::Backlog => SharedString::from("backlog"),
         DropTarget::Agent(agent) => agent.clone(),
@@ -784,7 +784,7 @@ fn track_over(
     }
 }
 
-/// The drop on `target`: clears the drag, selects the card (pink selects
+/// The drop on `target`: clears the drag, selects the card (Pink selects
 /// what was just moved) and reports the move unless it changes nothing or
 /// is refused.
 fn drop_on(
@@ -1112,10 +1112,10 @@ impl RenderOnce for DelegateBoard {
     }
 }
 
-/// The page title with its count, the help line and the toolbar (pink:
+/// The page title with its count, the help line and the toolbar (Pink:
 /// board/filters.rs `render_header`: settings `page_title_bar` – Title1 over
 /// a 13 pt count on its baseline – then `page_subtitle`, then a toolbar of
-/// chips 8 apart). Auto-assign is a toolbar chip like pink's "Needs
+/// chips 8 apart). Auto-assign is a toolbar chip like Pink's "Needs
 /// attention".
 fn page_header(
     key: &str,

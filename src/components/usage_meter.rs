@@ -1,11 +1,11 @@
 //! Usage Meter – a plan's credits against its allowance, laid out like
-//! pink's Usage page.
+//! Pink's Usage page.
 //!
 //! One settings section card. The header names the workspace with its plan
-//! badge (pink: usage.rs `compact_limit_row`), a cycle switch (pink's
-//! segmented control) and the plan action. The quota row is pink's limit row
+//! badge (Pink: usage.rs `compact_limit_row`), a cycle switch (Pink's
+//! segmented control) and the plan action. The quota row is Pink's limit row
 //! (usage.rs `pooled_limit_sections`): the credits used with the reset and
-//! even-pace reading, "NN% left" at Title2 and pink's shared 6 px meter
+//! even-pace reading, "NN% left" at Title2 and Pink's shared 6 px meter
 //! (`usage_meter`), which turns warning at 75% and danger at 90%. When the
 //! cycle is headed over its allowance, a warning strip speaks up under it
 //! (settings/widgets.rs `warning_strip`) and the header action becomes
@@ -40,16 +40,16 @@ use crate::{
 pub const NAME: &str = "Usage Meter";
 pub const DESCRIPTION: &str = "A plan's usage card – the share left over a capsule meter that turns amber, then red, the reset and even-pace reading, a strip that speaks up when the cycle runs ahead of its allowance, spend by category over a daily chart and the plan's other limits as compact meters";
 
-/// The chart's plot height, value-axis gutter and gutter gap (pink: usage.rs
+/// The chart's plot height, value-axis gutter and gutter gap (Pink: usage.rs
 /// `CHART_HEIGHT`, `CHART_AXIS_WIDTH`, `CHART_AXIS_GAP`).
 const CHART_HEIGHT: f32 = 200.;
 const CHART_AXIS_WIDTH: f32 = 56.;
 const CHART_AXIS_GAP: f32 = 8.;
-/// The card's width: pink's settings column (720) inside its 32 px gutters.
+/// The card's width: Pink's settings column (720) inside its 32 px gutters.
 const WIDTH: f32 = layout::PAGE_MAX_WIDTH - 2. * 32.;
-/// One cycle segment (pink: two options in 150, four in 300).
+/// One cycle segment (Pink: two options in 150, four in 300).
 const SEGMENT_W: f32 = 75.;
-/// A compact limit line's columns (pink: usage.rs `compact_limit_row`: a 50
+/// A compact limit line's columns (Pink: usage.rs `compact_limit_row`: a 50
 /// label, the meter, a 30 percentage). The amount column is this
 /// component's own, sized for "41.5 / 50 GB".
 const LINE_LABEL_W: f32 = 50.;
@@ -65,7 +65,7 @@ type Handler = Rc<dyn Fn(&mut Window, &mut App)>;
 #[derive(Clone)]
 pub struct UsageCategory {
     pub name: SharedString,
-    /// The category's series color; pink's usage series tones by default.
+    /// The category's series color; Pink's usage series tones by default.
     pub color: Option<Hsla>,
 }
 
@@ -402,7 +402,7 @@ impl RenderOnce for UsageMeter {
                 b.on_click(move |_, window, cx| f(window, cx))
             })
         };
-        // pink: settings/widgets.rs `section_header`, with the plan badge on
+        // Pink: settings/widgets.rs `section_header`, with the plan badge on
         // the title's line.
         let header = div()
             .w_full()
@@ -454,7 +454,7 @@ impl RenderOnce for UsageMeter {
             )
             .into()
         } else if o.used > allowance {
-            // pink's `quota_pace` has no reading past the limit.
+            // Pink's `quota_pace` has no reading past the limit.
             format!(
                 "Resets in {remaining_days}d · {} {} over",
                 count(o.used - allowance),
@@ -462,7 +462,7 @@ impl RenderOnce for UsageMeter {
             )
             .into()
         } else {
-            // pink: usage.rs `quota_pace`, against the cycle's days.
+            // Pink: usage.rs `quota_pace`, against the cycle's days.
             let elapsed_percent = o.elapsed * 100.;
             let delta = used_percent - elapsed_percent;
             format!(
@@ -536,7 +536,7 @@ impl RenderOnce for UsageMeter {
                 .into(),
             ))
         };
-        // pink: usage.rs `render_usage_page` `notice`, a strip inside the
+        // Pink: usage.rs `render_usage_page` `notice`, a strip inside the
         // card on the rows' text edge.
         let notice = message.map(|(danger, copy)| {
             div()
@@ -546,7 +546,7 @@ impl RenderOnce for UsageMeter {
                 .child(strip(danger, copy, &t))
         });
 
-        // --- One row per category (pink: the Usage page's provider rows) ---
+        // --- One row per category (Pink: the Usage page's provider rows) ---
         let days_counted = elapsed.max(1) as f32;
         let category_rows: Vec<_> = (0..self.categories.len())
             .filter_map(|i| {
@@ -700,7 +700,7 @@ impl RenderOnce for UsageMeter {
     }
 }
 
-/// pink: usage.rs `usage_meter` / `usage_meter_with`. The fill is what's
+/// Pink: usage.rs `usage_meter` / `usage_meter_with`. The fill is what's
 /// used: `text_muted` until 75%, warning from 75%, danger from 90%, on a
 /// `fill(Secondary)` track; a 6 px capsule with nothing drawn below 0.5%.
 fn usage_meter(used_percent: f32, t: &Pink) -> gpui::Div {
@@ -729,8 +729,8 @@ fn usage_meter(used_percent: f32, t: &Pink) -> gpui::Div {
         })
 }
 
-/// A category's series color: pink's usage series tones in order (usage.rs
-/// `provider_tone`: `text`, #5b9bbd, #d97757), then pink's project hues.
+/// A category's series color: Pink's usage series tones in order (usage.rs
+/// `provider_tone`: `text`, #5b9bbd, #d97757), then Pink's project hues.
 fn series_tone(index: usize, t: &Pink) -> Hsla {
     match index {
         0 => t.text,
@@ -740,7 +740,7 @@ fn series_tone(index: usize, t: &Pink) -> Hsla {
     }
 }
 
-/// The plan badge (pink: usage.rs `compact_limit_row`): `px 5 / py 1`,
+/// The plan badge (Pink: usage.rs `compact_limit_row`): `px 5 / py 1`,
 /// radius 5, `surface_raised`, 11/12 in `text_muted`.
 fn plan_badge(plan: SharedString, t: &Pink) -> gpui::Div {
     div()
@@ -755,7 +755,7 @@ fn plan_badge(plan: SharedString, t: &Pink) -> gpui::Div {
         .child(plan)
 }
 
-/// The remaining share (pink: usage.rs `pooled_limit_sections`): the figure
+/// The remaining share (Pink: usage.rs `pooled_limit_sections`): the figure
 /// at Title2 and its word at 12/16 in `readable_muted(0.85)`, on one
 /// baseline, gap 4.
 fn remaining_figure(figure: String, word: &'static str, t: &Pink) -> gpui::Div {
@@ -779,7 +779,7 @@ fn remaining_figure(figure: String, word: &'static str, t: &Pink) -> gpui::Div {
         )
 }
 
-/// pink: settings/widgets.rs `warning_strip` (`danger` false: amber, py 10,
+/// Pink: settings/widgets.rs `warning_strip` (`danger` false: amber, py 10,
 /// 12 text, 14 glyph) and `error_strip` (red, py 12, 12.5 text, 16 glyph):
 /// radius 12, `tone @ 0.2` edge on `tone @ 0.06`, the copy and the danger
 /// triangle in `readable_tone(muted, 0.9)`, gap 8.
@@ -815,7 +815,7 @@ fn strip(danger: bool, message: SharedString, t: &Pink) -> gpui::Div {
         .child(div().min_w_0().child(message))
 }
 
-/// One limit as a compact meter line (pink: usage.rs `compact_limit_row`'s
+/// One limit as a compact meter line (Pink: usage.rs `compact_limit_row`'s
 /// window lines): 11/14 in `text_muted`, gap 6 – the label, the meter, the
 /// used share and the amount, in fixed columns so stacked meters line up.
 fn limit_line(l: &UsageLimit, t: &Pink) -> gpui::Div {
@@ -863,7 +863,7 @@ fn limit_line(l: &UsageLimit, t: &Pink) -> gpui::Div {
         )
 }
 
-/// No cycle to show (pink: usage.rs "No limits reported"): a section card
+/// No cycle to show (Pink: usage.rs "No limits reported"): a section card
 /// with one row, the chart tile and the copy.
 fn empty_card(id: ElementId, workspace: &SharedString, t: &Pink) -> impl IntoElement {
     pink::section_card(t)
@@ -882,7 +882,7 @@ fn empty_card(id: ElementId, workspace: &SharedString, t: &Pink) -> impl IntoEle
         )
 }
 
-/// The daily chart (pink: usage.rs `usage_chart`): a 56 px value gutter of
+/// The daily chart (Pink: usage.rs `usage_chart`): a 56 px value gutter of
 /// three 11/14 labels, a 200 px plot with `border` gridlines at the top,
 /// middle and bottom, one monotone curve per category (a 2 px stroke over a
 /// `tone @ 0.12` area, the largest series painted first), a 1 px
@@ -1110,7 +1110,7 @@ fn daily_chart(
         .into_any_element()
 }
 
-/// pink: usage.rs `monotone_usage_tangents` (Fritsch–Carlson).
+/// Pink: usage.rs `monotone_usage_tangents` (Fritsch–Carlson).
 fn monotone_tangents(points: &[(f32, f32)]) -> Vec<f32> {
     if points.len() < 2 {
         return vec![0.; points.len()];
@@ -1156,7 +1156,7 @@ fn monotone_tangents(points: &[(f32, f32)]) -> Vec<f32> {
     tangents
 }
 
-/// 7180 → "7,180" (pink: usage.rs `count`).
+/// 7180 → "7,180" (Pink: usage.rs `count`).
 fn count(v: f32) -> String {
     let n = v.max(0.).round() as u64;
     let text = n.to_string();
@@ -1170,7 +1170,7 @@ fn count(v: f32) -> String {
     grouped.chars().rev().collect()
 }
 
-/// 1_250 → "1.25K" (pink: usage.rs `compact_tokens`).
+/// 1_250 → "1.25K" (Pink: usage.rs `compact_tokens`).
 fn compact(v: f32) -> String {
     let value = v.max(0.).round() as u64;
     for (threshold, suffix) in [(1_000_000_u64, "M"), (1_000, "K")] {
@@ -1195,7 +1195,7 @@ fn compact(v: f32) -> String {
     count(v)
 }
 
-/// A share as "45.1%", "<0.1%" for a sliver (pink: usage.rs `usage_percent`).
+/// A share as "45.1%", "<0.1%" for a sliver (Pink: usage.rs `usage_percent`).
 fn usage_percent(share: f32) -> String {
     let percent = share * 100.;
     if percent > 0. && percent < 0.1 {

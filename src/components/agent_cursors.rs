@@ -18,9 +18,9 @@
 //!
 //! Pink has no multiplayer pointers, so the parts come from its nearest
 //! pieces: the page is its markdown preview (14/22 prose, the H1/H3 scale,
-//! the code surface), the margin cards are its review-note rows (pink:
+//! the code surface), the margin cards are its review-note rows (Pink:
 //! badges.rs `BadgeCard::row`), agents wear the project tints and monogram
-//! tiles (pink: sidebar_projects.rs `project_tile`), name tags are tooltip
+//! tiles (Pink: sidebar_projects.rs `project_tile`), name tags are tooltip
 //! cards and the header is a surface toolbar with the titlebar's crumb.
 //!
 //! Pointers find their targets by measuring the laid-out text (each target
@@ -62,17 +62,17 @@ const SELECT: f32 = 0.55;
 const LINGER: f32 = 0.8;
 const TYPE_EVERY: f32 = 0.085;
 
-/// Pink's markdown prose, 14/22 (pink: markdown/render.rs `MD_TEXT_SIZE`).
+/// Pink's markdown prose, 14/22 (Pink: markdown/render.rs `MD_TEXT_SIZE`).
 const PROSE_SIZE: f32 = 14.0;
 const PROSE_LINE: f32 = 22.0;
 /// Pink's gap between markdown blocks (`MD_BLOCK_GAP`).
 const BLOCK_GAP: f32 = 12.0;
 /// Markdown H1 and H3, and the extra air above an H3
-/// (pink: markdown/render.rs `heading_metrics`, `heading_top_extra`).
+/// (Pink: markdown/render.rs `heading_metrics`, `heading_top_extra`).
 const H1: (f32, f32) = (19.0, 27.0);
 const H3: (f32, f32) = (15.0, 22.0);
 const H3_TOP_EXTRA: f32 = 8.0;
-/// Code surface metrics (pink: markdown/render.rs `CODE_*`).
+/// Code surface metrics (Pink: markdown/render.rs `CODE_*`).
 const CODE_LINE: f32 = 18.0;
 const CODE_PAD_Y: f32 = 10.0;
 const CODE_HEADER: f32 = 28.0;
@@ -80,7 +80,7 @@ const CODE_HEADER: f32 = 28.0;
 const WORD_GAP: f32 = 3.8;
 /// The advance of a space in Geist Mono (0.6 em) at the code size.
 const MONO_GAP: f32 = text::CODE * 0.6;
-/// Margin cards (pink: badges.rs `BadgeCard::row`): `p 8`, radius 6, gap 8
+/// Margin cards (Pink: badges.rs `BadgeCard::row`): `p 8`, radius 6, gap 8
 /// to a 2 px bar, a column with gap 4.
 const NOTE_PAD: f32 = 8.0;
 const NOTE_RADIUS: f32 = 6.0;
@@ -91,12 +91,12 @@ const NOTE_GAP: f32 = 4.0;
 /// row can fold open from nothing (a negative margin would make GPUI measure
 /// the column as empty).
 const NOTE_ACTIONS: f32 = NOTE_GAP + space::S2 + ControlSize::Sm.height();
-/// The note header row holds an 18 px tile (pink's sidebar tile size).
+/// The note header row holds an 18 px tile (Pink's sidebar tile size).
 const NOTE_TILE: f32 = 18.0;
 /// Header agent buttons hold a 20 px tile in a 28 px chrome control.
 const AGENT_TILE: f32 = 20.0;
 
-/// One agent in the document. Agents take pink's project tints in the order
+/// One agent in the document. Agents take Pink's project tints in the order
 /// they are added.
 #[derive(Clone, Debug)]
 pub struct CursorAgent {
@@ -432,7 +432,7 @@ impl Stage {
 // Rendering helpers
 // ---------------------------------------------------------------------------
 
-/// An agent's colors: pink's project tint in order, as authored for washes
+/// An agent's colors: Pink's project tint in order, as authored for washes
 /// and floored for glyphs (pointer, caret, bar) and for text.
 #[derive(Clone, Copy)]
 struct Tint {
@@ -579,7 +579,7 @@ fn code_tokens(text: &str, syntax: &Syntax, plain: Hsla) -> Vec<(String, Hsla)> 
 }
 
 /// Where each edit sits, for its card: "¶ 2", "Figure 1", "gateway.toml:2"
-/// (pink's review notes name their spot in mono, pink: comment_ui.rs).
+/// (Pink's review notes name their spot in mono, Pink: comment_ui.rs).
 fn locations(blocks: &[DocBlock], count: usize) -> Vec<SharedString> {
     let mut out = vec![SharedString::default(); count];
     let mut set = |ix: usize, label: String| {
@@ -676,8 +676,8 @@ fn chart(line: Hsla, fill: Hsla, target: Hsla, grid: Hsla) -> impl IntoElement {
     .size_full()
 }
 
-/// The typing caret: pink's 2 px caret, solid while typing
-/// (pink: composer.rs `CARET_WIDTH`, `caret_visible`).
+/// The typing caret: Pink's 2 px caret, solid while typing
+/// (Pink: composer.rs `CARET_WIDTH`, `caret_visible`).
 fn caret(color: Hsla, height: f32) -> Div {
     div()
         .w(px(layout::CARET_WIDTH))
@@ -688,7 +688,7 @@ fn caret(color: Hsla, height: f32) -> Div {
 
 /// A header button for one agent: its monogram tile in a 28 px chrome
 /// control, `hover_wash` at rest and `fill(Primary)` while followed
-/// (pink: chrome rows' hover and selected fills).
+/// (Pink: chrome rows' hover and selected fills).
 fn agent_button(
     key: String,
     agent: &CursorAgent,
@@ -770,9 +770,9 @@ impl RenderOnce for AgentCursors {
         };
         let locations = locations(&self.blocks, self.edits.len());
         let syntax = t.syntax();
-        // Agent washes share pink's own alphas: a drag selection at the
+        // Agent washes share Pink's own alphas: a drag selection at the
         // selection token's, a suggestion's underlay at the inline-code
-        // plate's (pink: popover.rs match highlight).
+        // plate's (Pink: popover.rs match highlight).
         let select_alpha = t.selection.a;
         let underlay_alpha = t.code_wash.a;
 
@@ -980,8 +980,8 @@ impl RenderOnce for AgentCursors {
                         .flex_col()
                         .gap(px(space::S8))
                         .child(
-                            // The figure plate is pink's code surface; the
-                            // grab reads as pink's selection ring, 2 px wide
+                            // The figure plate is Pink's code surface; the
+                            // grab reads as Pink's selection ring, 2 px wide
                             // and 2 px outside, in the agent's tint.
                             pink::code_surface(&t)
                                 .relative()
@@ -1054,7 +1054,7 @@ impl RenderOnce for AgentCursors {
                         }
                         row
                     });
-                    // pink: markdown/render.rs `code_block_frame` + `code_block_header`.
+                    // Pink: markdown/render.rs `code_block_frame` + `code_block_header`.
                     pink::code_surface(&t)
                         .relative()
                         .mt(px(BLOCK_GAP))
@@ -1221,7 +1221,7 @@ impl RenderOnce for AgentCursors {
                 let pressed = targets.get(ix).is_some_and(|target| target.2);
                 let tint = tints[ix];
                 let edge = t.bg;
-                // A press settles the arrow over pink's micro step.
+                // A press settles the arrow over Pink's micro step.
                 let scale = motion::follow(
                     &format!("{key}-press-{ix}"),
                     if pressed { 0.86 } else { 1.0 },
@@ -1243,7 +1243,7 @@ impl RenderOnce for AgentCursors {
                         .h(px(19.)),
                     )
                     .child(
-                        // The name tag is pink's text tooltip (pink:
+                        // The name tag is Pink's text tooltip (Pink:
                         // popover.rs `TextTooltip`), led by a 6 px dot in the
                         // agent's tint.
                         pink::tooltip_card(&t)
@@ -1281,7 +1281,7 @@ impl RenderOnce for AgentCursors {
             let Some(b) = s.anchor(&anchor_key) else {
                 continue;
             };
-            // The review row folds open over pink's `DISCLOSURE`, so the
+            // The review row folds open over Pink's `DISCLOSURE`, so the
             // card grows as smoothly as the notes below it restack.
             let reveal = motion::follow(
                 &format!("{key}-card-{ix}-actions-{generation}"),
@@ -1326,7 +1326,7 @@ impl RenderOnce for AgentCursors {
         for (y, ix, height, reveal) in cards {
             let edit = &self.edits[ix];
             let stage = stages[ix];
-            // Cards restack like a re-sorted list (pink's `RESORT`), but a
+            // Cards restack like a re-sorted list (Pink's `RESORT`), but a
             // card the one above grows into steps down at once: notes never
             // overlap mid-glide.
             let y =
@@ -1392,8 +1392,8 @@ impl RenderOnce for AgentCursors {
                     .opacity(reveal)
                     .child(row)
             });
-            // While the agent works, its verb shimmers like pink's live
-            // status line (pink: transcript.rs working trailer).
+            // While the agent works, its verb shimmers like Pink's live
+            // status line (Pink: transcript.rs working trailer).
             let status = busy.then(|| {
                 let verb = match (&edit.kind, stage) {
                     (EditKind::Resize { .. }, _) => "Resizing",
@@ -1459,8 +1459,8 @@ impl RenderOnce for AgentCursors {
                     .right(px(pink::chrome::CONTENT_INSET))
                     .top(px(y))
                     .child(
-                        // pink: badges.rs `BadgeCard::row`, the bar in the
-                        // agent's tint – strong while it works, as pink's
+                        // Pink: badges.rs `BadgeCard::row`, the bar in the
+                        // agent's tint – strong while it works, as Pink's
                         // draft note is, quiet once it waits (a saved note).
                         div()
                             .flex()
@@ -1527,7 +1527,7 @@ impl RenderOnce for AgentCursors {
                                     .children(actions),
                             ),
                     )
-                    // New notes arrive like pink's tool rows: 360 ms expo, 4 px rise.
+                    // New notes arrive like Pink's tool rows: 360 ms expo, 4 px rise.
                     .with_animation(
                         ElementId::Name(format!("{card_key}-in-{generation}").into()),
                         motion::TOOL_ROW_REVEAL.animation(),
@@ -1616,8 +1616,8 @@ impl RenderOnce for AgentCursors {
                 }
             }
         });
-        // A surface toolbar (pink: surface_chrome.rs `toolbar`) with the
-        // titlebar's crumb (pink: shell/tabs.rs `render_title_crumb`).
+        // A surface toolbar (Pink: surface_chrome.rs `toolbar`) with the
+        // titlebar's crumb (Pink: shell/tabs.rs `render_title_crumb`).
         let header = div()
             .flex()
             .items_center()

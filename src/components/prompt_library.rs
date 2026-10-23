@@ -1,11 +1,11 @@
 //! Prompt Library – saved prompts in a menu above the composer, filled in
 //! place.
 //!
-//! A pink component. The library is pink's saved-prompts menu (pink:
+//! A Pink component. The library is Pink's saved-prompts menu (Pink:
 //! composer.rs `render_stash_menu`): a full-width stack popup above the
 //! composer pill whose rows open a saved prompt, with the prompt's blank
 //! count and a Delete button. The open prompt sits in the composer surface
-//! the way pink's question wizard does (pink: composer.rs `composer_surface`
+//! the way Pink's question wizard does (Pink: composer.rs `composer_surface`
 //! and the wizard's header and footer): a tracked title with a counter chip,
 //! the prompt as a sentence whose blanks you type straight into (painted
 //! like the composer's inline chips), a hint line, Copy, and one Primary
@@ -48,13 +48,13 @@ pub const DESCRIPTION: &str = "Saved prompts in a menu above the composer – op
 
 const ICON_NOTEBOOK: &str = "icons/prompt-library/notebook.svg";
 
-/// The composer's input metrics (pink composer.rs `INPUT_TEXT_SIZE`,
+/// The composer's input metrics (Pink composer.rs `INPUT_TEXT_SIZE`,
 /// `INPUT_LINE_HEIGHT`: `text-[14px] leading-relaxed`).
 const INPUT_TEXT_SIZE: f32 = 14.0;
 const INPUT_LINE_HEIGHT: f32 = 22.75;
-/// The saved-prompt list's height cap (pink `render_stash_menu`).
+/// The saved-prompt list's height cap (Pink `render_stash_menu`).
 const STASH_LIST_MAX_H: f32 = 220.0;
-/// Inline chip geometry (pink composer.rs chip quads): the wash sits 2 px
+/// Inline chip geometry (Pink composer.rs chip quads): the wash sits 2 px
 /// inside the line box top and bottom, at radius 5.
 const CHIP_INSET_Y: f32 = 2.0;
 const CHIP_RADIUS: f32 = 5.0;
@@ -298,7 +298,7 @@ impl LibraryState {
     }
 
     /// Opens or closes the menu; a closing menu fades out over `MENU_OUT`
-    /// before it unmounts (pink `completion_exits`).
+    /// before it unmounts (Pink `completion_exits`).
     fn set_open(&mut self, open: bool, cx: &mut Context<Self>) {
         if open == self.open {
             return;
@@ -623,7 +623,7 @@ impl RenderOnce for PromptLibrary {
     }
 }
 
-/// The saved-prompts menu (pink: composer.rs `render_stash_menu` on
+/// The saved-prompts menu (Pink: composer.rs `render_stash_menu` on
 /// popover.rs `full_width_menu_above`): a full-width `stack_popup_card`
 /// 6 px above the pill, rising 6 px in over `MENU_IN` and fading out over
 /// `MENU_OUT`. Rows are menu rows on the popup's 14 pt corner: the title
@@ -774,14 +774,14 @@ fn measure(text: &str, window: &mut Window) -> f32 {
     f32::from(line.width)
 }
 
-/// A filled blank's colors: pink's inline folder chip (composer.rs
+/// A filled blank's colors: Pink's inline folder chip (composer.rs
 /// `composer_chip_palette`): `accent` text on accent at 0.17 dark / 0.10
 /// light.
 fn chip_palette(t: &Pink) -> (gpui::Hsla, gpui::Hsla) {
     (t.accent, t.accent.opacity(if t.dark { 0.17 } else { 0.10 }))
 }
 
-/// The pill holding the open prompt (pink: composer.rs `composer_surface`
+/// The pill holding the open prompt (Pink: composer.rs `composer_surface`
 /// with the question wizard's layout): radius 26, a 1 px `border`, the
 /// input plate and `shadow_lg`; `px 16 / pt 16` body with a tracked header
 /// and counter chip; a footer of quiet controls and notes on the left and
@@ -824,7 +824,7 @@ fn composer(
     let complete = current.is_some() && filled == total;
     let muted = t.readable_muted(0.6);
 
-    // Header (pink wizard): tracked uppercase 11 medium + a counter chip.
+    // Header (Pink wizard): tracked uppercase 11 medium + a counter chip.
     let title = current
         .as_ref()
         .map_or("Saved prompts".into(), |c| c.title.clone());
@@ -1026,7 +1026,7 @@ fn echo(var: &str, value: &SharedString, t: &Pink) -> impl IntoElement {
         })
 }
 
-/// The pill's footer (pink wizard footer: `px 16 / pb 16`, gap 12,
+/// The pill's footer (Pink wizard footer: `px 16 / pb 16`, gap 12,
 /// `justify_between`): the Saved prompts trigger chip (the composer's ghost
 /// pill, washed while the menu is open) and a 12 `readable_muted(0.7)` note
 /// on the left; Ghost Copy and the Primary on the right, both Lg.

@@ -2,14 +2,14 @@
 //! upload as thumbnails.
 //!
 //! Drawn the way PINK takes attachments. At rest the card shows its staged
-//! files and an "Add files" ghost button (pink's brief image editor); while
+//! files and an "Add files" ghost button (Pink's brief image editor); while
 //! files hover over it a "Drop to attach" veil fades in over the whole card
-//! (pink's chat dropzone). Each file is a 112×80 thumbnail with its type's
+//! (Pink's chat dropzone). Each file is a 112×80 thumbnail with its type's
 //! artwork: a pulsing skeleton while it is read, the radial upload ring over a
 //! darkened plate while its bytes go out, the dashed "missing" thumb with
-//! Retry when the transfer stops, and the same spinner pink shows during a
+//! Retry when the transfer stops, and the same spinner Pink shows during a
 //! retry backoff. Files over the size limit or of a type that isn't accepted
-//! never join the strip; pink's error strip says why.
+//! never join the strip; Pink's error strip says why.
 //!
 //! Transfers are simulated (a steady per-file speed) so the component can be
 //! shown on its own; `on_files` hands the real paths to your uploader.
@@ -48,8 +48,8 @@ const ICON_PLUS: &str = "icons/dropzone/plus.svg";
 const ICON_CLOSE: &str = "icons/dropzone/close.svg";
 const ICON_DANGER: &str = "icons/dropzone/danger-circle.svg";
 const ICON_WARNING: &str = "icons/dropzone/danger-triangle.svg";
-/// pink: `file_icons` – the file-type artwork (vscode-symbols); the slate
-/// ones have dark variants lifted like pink's `dark_icon_svg`.
+/// Pink: `file_icons` – the file-type artwork (vscode-symbols); the slate
+/// ones have dark variants lifted like Pink's `dark_icon_svg`.
 const FILE_PDF: &str = "icons/dropzone/file-pdf.svg";
 const FILE_SHEET: &str = "icons/dropzone/file-csv.svg";
 const FILE_IMAGE: &str = "icons/dropzone/file-image.svg";
@@ -59,19 +59,19 @@ const FILE_VIDEO_DARK: &str = "icons/dropzone/file-video-dark.svg";
 const FILE_DOCUMENT: &str = "icons/dropzone/file-document.svg";
 const FILE_DOCUMENT_DARK: &str = "icons/dropzone/file-document-dark.svg";
 
-/// pink: `attachments::MAX_ATTACHMENT_BYTES`.
+/// Pink: `attachments::MAX_ATTACHMENT_BYTES`.
 const DEFAULT_MAX_SIZE: u64 = 24 * MB;
-/// pink: `transcript::ATT_THUMB_W` / `ATT_THUMB_H` (also the brief editor's
+/// Pink: `transcript::ATT_THUMB_W` / `ATT_THUMB_H` (also the brief editor's
 /// `THUMB_W` / `THUMB_H`).
 const THUMB_W: f32 = 112.;
 const THUMB_H: f32 = 80.;
-/// pink: the sending overlay's `upload_progress_ring(pct, 34.0)`.
+/// Pink: the sending overlay's `upload_progress_ring(pct, 34.0)`.
 const RING: f32 = 34.;
-/// pink: the indeterminate sending spinner's cell (`mini_glyph_spinner(.., 3.0, ..)`).
+/// Pink: the indeterminate sending spinner's cell (`mini_glyph_spinner(.., 3.0, ..)`).
 const SPINNER_CELL: f32 = 3.;
 /// The file artwork at its own 24 box.
 const FILE_ICON: f32 = 24.;
-/// pink: `widgets::error_strip` copy size.
+/// Pink: `widgets::error_strip` copy size.
 const STRIP_TEXT: f32 = 12.5;
 
 const TICK: Duration = Duration::from_millis(50);
@@ -126,18 +126,18 @@ fn simulated_speed(name: &str) -> f64 {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Status {
-    /// Being read before upload (pink: `AttachmentSnapshot::Loading`).
+    /// Being read before upload (Pink: `AttachmentSnapshot::Loading`).
     Reading {
         wait: f64,
     },
-    /// Bytes going out (pink: the sending overlay with a percent).
+    /// Bytes going out (Pink: the sending overlay with a percent).
     Uploading,
-    /// Backing off after Retry (pink: the sending overlay without a percent).
+    /// Backing off after Retry (Pink: the sending overlay without a percent).
     Retrying {
         wait: f64,
     },
     Done,
-    /// Stopped part-way (pink: `AttachmentSnapshot::Error`).
+    /// Stopped part-way (Pink: `AttachmentSnapshot::Error`).
     Failed,
 }
 
@@ -169,7 +169,7 @@ struct DropState {
     seeded: bool,
     uploads: Vec<Upload>,
     next_key: u64,
-    /// The last batch's refusals, in pink's copy.
+    /// The last batch's refusals, in Pink's copy.
     notice: Option<SharedString>,
     ticker: Option<Task<()>>,
     browse: Option<Task<()>>,
@@ -190,7 +190,7 @@ impl DropState {
     }
 
     /// Stages a batch; anything refused goes to the error strip instead
-    /// (pink: `add_brief_images` setting `edit.error`).
+    /// (Pink: `add_brief_images` setting `edit.error`).
     fn add(&mut self, files: Vec<QueuedFile>, rules: &Rules, cx: &mut Context<Self>) {
         let mut refused = Vec::new();
         for file in files {
@@ -309,7 +309,7 @@ struct Rules {
 }
 
 impl Rules {
-    /// pink: `attachments::stage_file` – the refusal copy names the file.
+    /// Pink: `attachments::stage_file` – the refusal copy names the file.
     fn check(&self, file: &QueuedFile) -> Result<(), String> {
         if let Some(accept) = &self.accept {
             let ext = extension(&file.name);
@@ -375,7 +375,7 @@ impl Dropzone {
         self
     }
 
-    /// Largest accepted file in bytes (24 MB by default, as in pink).
+    /// Largest accepted file in bytes (24 MB by default, as in Pink).
     pub fn max_size(mut self, bytes: u64) -> Self {
         self.rules.max_size = bytes;
         self
@@ -419,7 +419,7 @@ impl RenderOnce for Dropzone {
 }
 
 impl Dropzone {
-    /// pink: `BoardDetail::render_brief` (a section card holding the brief
+    /// Pink: `BoardDetail::render_brief` (a section card holding the brief
     /// editor) with `Shell::render_main`'s attachment veil over it.
     fn build(self, window: &mut Window, cx: &mut App) -> AnyElement {
         let t = Pink::get(cx);
@@ -439,7 +439,7 @@ impl Dropzone {
             });
         }
 
-        // pink: the skeleton and the sending plate breathe on the shared
+        // Pink: the skeleton and the sending plate breathe on the shared
         // pulse clock; only lease it while something is in flight.
         let live = state.read(cx).uploads.iter().any(|u| u.status.live());
         let pulse = if live {
@@ -468,7 +468,7 @@ impl Dropzone {
             &t,
         );
 
-        // pink: `render_brief_image_editor` – the wrapping strip with Add
+        // Pink: `render_brief_image_editor` – the wrapping strip with Add
         // last, then the hint.
         let image_editor = div()
             .w_full()
@@ -567,7 +567,7 @@ fn summary(uploads: &[Upload]) -> String {
     }
 }
 
-/// pink: `shell.rs` "attachment-drop-overlay" – hidden until files hover,
+/// Pink: `shell.rs` "attachment-drop-overlay" – hidden until files hover,
 /// then a 0.4 (dark) scrim with a centred 13 pt "Drop to attach". GPUI
 /// matches the style against the payload type, so only file drags reveal it.
 fn drop_veil(t: &Pink) -> Div {
@@ -588,7 +588,7 @@ fn drop_veil(t: &Pink) -> Div {
         .child("Drop to attach")
 }
 
-/// pink: the brief editor's "Add image" – a small ghost button, label then
+/// Pink: the brief editor's "Add image" – a small ghost button, label then
 /// a plus, disabled while the picker is open.
 fn add_button(
     key: &str,
@@ -644,7 +644,7 @@ fn add_button(
     })
 }
 
-/// One staged file: pink's 112×80 attachment thumbnail (transcript
+/// One staged file: Pink's 112×80 attachment thumbnail (transcript
 /// `render_user_attachments` states, brief-editor Remove) with a caption.
 fn thumbnail(
     key: &str,
@@ -661,12 +661,12 @@ fn thumbnail(
         .border_1();
 
     let frame = match upload.status {
-        // pink: the loading skeleton (the popover skeletons' wash and pulse).
+        // Pink: the loading skeleton (the popover skeletons' wash and pulse).
         Status::Reading { .. } => frame
             .border_color(t.hairline(0.08))
             .bg(t.ink(0.055))
             .opacity(0.35 + 0.4 * pulse),
-        // pink: the dashed "missing" thumb, holding the inline Retry.
+        // Pink: the dashed "missing" thumb, holding the inline Retry.
         Status::Failed => {
             let state = state.clone();
             let id = upload.key;
@@ -708,14 +708,14 @@ fn thumbnail(
                 ),
                 _ => None,
             };
-            // The artwork stands in for pink's photo; while bytes move the
+            // The artwork stands in for Pink's photo; while bytes move the
             // ring takes its place so the percent stays legible.
             let artwork = indicator.is_none().then(|| {
                 img(file_icon(&upload.file.name, t.dark))
                     .flex_none()
                     .size(px(FILE_ICON))
             });
-            // pink: the sending overlay – the plate dimmed to black 38%,
+            // Pink: the sending overlay – the plate dimmed to black 38%,
             // breathing 5% on the pulse, a fixed white ring on top.
             plate.children(artwork).children(indicator.map(|indicator| {
                 div()
@@ -731,7 +731,7 @@ fn thumbnail(
         }
     };
 
-    // pink: the brief editor's Remove – a small icon button on a near-opaque
+    // Pink: the brief editor's Remove – a small icon button on a near-opaque
     // disc in the corner, always there.
     let remove = {
         let state = state.clone();
@@ -761,7 +761,7 @@ fn thumbnail(
         Status::Done => div()
             .text_color(t.content_muted)
             .child(format_size(upload.file.size)),
-        // pink: one red glyph plus one red word.
+        // Pink: one red glyph plus one red word.
         Status::Failed => div()
             .flex()
             .items_center()
@@ -822,7 +822,7 @@ fn thumbnail(
     )
 }
 
-/// pink: `widgets::error_strip` – the danger plate with a leading triangle.
+/// Pink: `widgets::error_strip` – the danger plate with a leading triangle.
 fn error_strip(message: SharedString, t: &Pink) -> Div {
     let (plate, edge, copy) = pink::strip_colors(t.danger, t.danger_muted, t);
     div()
@@ -856,7 +856,7 @@ fn extension(name: &str) -> String {
         .unwrap_or_default()
 }
 
-/// pink: `file_icons::asset_path` for the kinds a dropzone sees.
+/// Pink: `file_icons::asset_path` for the kinds a dropzone sees.
 fn file_icon(name: &str, dark: bool) -> &'static str {
     match extension(name).as_str() {
         "pdf" => FILE_PDF,

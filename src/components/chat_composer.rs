@@ -1,4 +1,4 @@
-//! Chat Composer – a pink component (pink: `composer.rs` `Composer`).
+//! Chat Composer – a Pink component (Pink: `composer.rs` `Composer`).
 //!
 //! PINK's prompt pill: a 26 pt rounded plate with a hairline edge. Staged
 //! attachments sit above the text as 56 pt square thumbnails, the field
@@ -58,7 +58,7 @@ pub const ICON_BALANCED: &str = "icons/chat-composer/magic-wand.svg";
 pub const ICON_DEEP: &str = "icons/chat-composer/brain.svg";
 const DEMO_HERO: &str = "icons/chat-composer/launch-hero.svg";
 
-// Pill geometry (pink `composer.rs` layout constants, points at 16 px).
+// Pill geometry (Pink `composer.rs` layout constants, points at 16 px).
 
 /// `TEXTAREA_PAD_TOP` / `TEXTAREA_PAD_V`: the field's `pt-4 pb-1`.
 const TEXTAREA_PAD_TOP: f32 = 16.0;
@@ -89,7 +89,7 @@ const STRIP_PAD_X: f32 = 16.0;
 const CONTEXT_ROW_HEIGHT: f32 = 24.0;
 /// Column gap between the checkout row and the pill (`Theme::SPACE_SM`).
 const COLUMN_GAP: f32 = 8.0;
-/// pink `pickers.rs` `TARGET_CHIP_*` / `FOOTER_CHIP_RADIUS`.
+/// Pink `pickers.rs` `TARGET_CHIP_*` / `FOOTER_CHIP_RADIUS`.
 const TARGET_CHIP_HEIGHT: f32 = 22.0;
 const TARGET_CHIP_PAD_X: f32 = 6.0;
 const TARGET_CHIP_TEXT: f32 = 11.5;
@@ -97,13 +97,13 @@ const TARGET_CHIP_GLYPH: f32 = 12.0;
 const TARGET_CHIP_GAP: f32 = 5.0;
 const TARGET_CHIP_CHEVRON: f32 = 10.0;
 const TARGET_CHIP_RADIUS: f32 = 6.0;
-/// pink `goals.rs` `GOAL_CHIP_ICON`: the mode-on chip's glyph.
+/// Pink `goals.rs` `GOAL_CHIP_ICON`: the mode-on chip's glyph.
 const MODE_CHIP_ICON: f32 = 15.0;
-/// pink `pickers.rs`: the permission popover is 340 wide.
+/// Pink `pickers.rs`: the permission popover is 340 wide.
 const ACCESS_MENU_W: f32 = 340.0;
-/// pink `max-w-3xl` (768) less the column's 16 pt gutters.
+/// Pink `max-w-3xl` (768) less the column's 16 pt gutters.
 const DEFAULT_WIDTH: f32 = layout::COMPOSER_MAX_WIDTH - 32.0;
-/// A press on an open menu's own chip closes it (pink
+/// A press on an open menu's own chip closes it (Pink
 /// `note_trigger_press_matching`); the click that follows must not reopen it.
 const REOPEN_GUARD: Duration = Duration::from_millis(250);
 
@@ -171,7 +171,7 @@ impl Attachment {
         }
     }
 
-    /// The picture the thumbnail shows (pink stages image thumbnails).
+    /// The picture the thumbnail shows (Pink stages image thumbnails).
     pub fn preview(mut self, source: impl Into<SharedString>) -> Self {
         self.preview = Some(source.into());
         self
@@ -198,7 +198,7 @@ enum Menu {
     Project,
 }
 
-/// The Send disc's job (pink `SendButtonMode`).
+/// The Send disc's job (Pink `SendButtonMode`).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SendMode {
     Send,
@@ -206,7 +206,7 @@ enum SendMode {
     Stop,
 }
 
-/// pink `send_button_mode`.
+/// Pink `send_button_mode`.
 fn send_mode(running: bool, has_content: bool) -> SendMode {
     match (running, has_content) {
         (false, _) => SendMode::Send,
@@ -225,7 +225,7 @@ struct State {
     ask_first: bool,
     menu: Option<Menu>,
     /// The menu that closed last and when: it fades out over `MENU_OUT`
-    /// (pink's `Popup` closing phase), and its chip ignores the click that
+    /// (Pink's `Popup` closing phase), and its chip ignores the click that
     /// closed it.
     closed: Option<(Menu, Instant)>,
     highlight: usize,
@@ -233,7 +233,7 @@ struct State {
     placeholder: SharedString,
     running: bool,
     /// The pill's natural content height, measured after layout; the pill
-    /// eases toward it (pink's committed-height morph).
+    /// eases toward it (Pink's committed-height morph).
     natural: Rc<Cell<Option<f32>>>,
     /// What a send needs besides the text, refreshed every render.
     snapshot: Option<(Vec<Attachment>, SharedString, Option<SharedString>)>,
@@ -277,7 +277,7 @@ impl State {
         }
     }
 
-    /// pink `on_submit`: Enter never stops a run, and an empty draft sends
+    /// Pink `on_submit`: Enter never stops a run, and an empty draft sends
     /// nothing; a running turn queues the message.
     fn send(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let text: SharedString = self.input.read(cx).text().trim().to_string().into();
@@ -382,7 +382,7 @@ impl ChatComposer {
         self
     }
 
-    /// The empty field's hint (pink: "Do anything…").
+    /// The empty field's hint (Pink: "Do anything…").
     pub fn placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
         self.placeholder = placeholder.into();
         self
@@ -441,7 +441,7 @@ impl ChatComposer {
 // Pieces
 // ---------------------------------------------------------------------------
 
-/// A 28 pt round utility button (pink: `Composer::render` attach): clear at
+/// A 28 pt round utility button (Pink: `Composer::render` attach): clear at
 /// rest, `ink(0.10)` on hover or while `open`, a 16 pt glyph in
 /// `text_muted`.
 fn row_button(
@@ -489,7 +489,7 @@ fn row_button(
         )
 }
 
-/// The Send / Queue / Stop disc (pink `Composer::render_send_button`): one
+/// The Send / Queue / Stop disc (Pink `Composer::render_send_button`): one
 /// stable 28 pt circle. Solid `text` with a `bg` glyph when it can act
 /// (hover 0.88, press 0.76); recessed `ink(0.08)` with the glyph at 35%
 /// while there is nothing to send, the arrow taking the accent when the
@@ -571,7 +571,7 @@ fn send_disc(key: &str, mode: SendMode, recessed: bool, focused: bool, t: &Pink)
     }
 }
 
-/// The staged-attachment strip (pink `Composer::render_attachment_strip`):
+/// The staged-attachment strip (Pink `Composer::render_attachment_strip`):
 /// wrapping 56 pt thumbnails, radius 8, a `hairline(0.10)` edge, 8 apart
 /// inside `px 16 pt 12`. A picture fills its thumbnail; other files show
 /// their kind on a resting plate. The 20 pt raised remove disc overhangs the
@@ -702,7 +702,7 @@ fn file_plate(file: &Attachment, t: &Pink) -> Div {
         })
 }
 
-/// A chip in the checkout row above the pill (pink `Pickers::target_chip`):
+/// A chip in the checkout row above the pill (Pink `Pickers::target_chip`):
 /// 22 pt, `px 6`, radius 6, a 12 pt glyph and 11.5 pt label in
 /// `readable_muted(0.7)` brightening to `text@0.85`, the Tertiary wash on
 /// hover or while open, and a 10 pt chevron.
@@ -766,7 +766,7 @@ fn target_chip(
         ))
 }
 
-/// A menu floating above its chip, from the chip's leading edge (pink
+/// A menu floating above its chip, from the chip's leading edge (Pink
 /// `popover::anchored_menu_above_leading`): shifted left by the card inset
 /// so row text lines up with the chip glyph, 6 pt above it, kept 8 pt inside
 /// the window. It rises 6 pt in over `MENU_IN`; closing (`exit`) fades it
@@ -805,7 +805,7 @@ fn menu_above(id: &str, card: AnyElement, exit: Option<f32>) -> AnyElement {
         .into_any_element()
 }
 
-/// The popover card around a menu's rows (pink `Pickers::popover_frame`):
+/// The popover card around a menu's rows (Pink `Pickers::popover_frame`):
 /// the kit card at `width`, keyboard driven while open — arrows, Home/End,
 /// Enter or Space to pick, Escape to close, ⌘1–9 for a model — and closed
 /// by a press outside it.
@@ -878,7 +878,7 @@ fn menu_card(
         })
 }
 
-/// A popover's section label (pink `render_permission_popover` header):
+/// A popover's section label (Pink `render_permission_popover` header):
 /// `px 10 pt 8 pb 6`, 11 SEMIBOLD `text_muted`, sentence case.
 fn menu_label(label: &'static str, t: &Pink) -> Div {
     div()
@@ -900,7 +900,7 @@ fn set_highlight(state: &Entity<State>, ix: usize, cx: &mut App) {
     })
 }
 
-/// A model row (pink `Pickers::render_model_row`, two-line layout): `px 8
+/// A model row (Pink `Pickers::render_model_row`, two-line layout): `px 8
 /// py 6`, radius 8; the current model wears the selected wash and its inset
 /// ring, the cursor row `ink(0.05)`. A 12.5 MEDIUM name over the model's
 /// 11 pt glyph and description, and its ⌘ digit.
@@ -987,7 +987,7 @@ fn model_row(
     div().pb(px(2.)).child(row)
 }
 
-/// The access choices (pink `PERMISSION_OPTIONS` row anatomy): label,
+/// The access choices (Pink `PERMISSION_OPTIONS` row anatomy): label,
 /// description and whether the choice wears the warning tone.
 const ACCESS: [(&str, &str, bool); 2] = [
     (
@@ -1002,7 +1002,7 @@ const ACCESS: [(&str, &str, bool); 2] = [
     ),
 ];
 
-/// An access row (pink `Pickers::render_permission_popover`): the shared
+/// An access row (Pink `Pickers::render_permission_popover`): the shared
 /// keyboard highlight, a check on the current choice, a label over an 11 pt
 /// description in `text_faint`; the unguarded choice reads in the warning
 /// tone.
@@ -1151,7 +1151,7 @@ impl RenderOnce for ChatComposer {
         // ---- attachments ------------------------------------------------------
         let strip = attachment_strip(&key, &self.attachments, self.on_remove.clone(), &t);
 
-        // ---- the field (pink: textarea `px-4 pt-4 pb-1`, 76/60 → 260) ----------
+        // ---- the field (Pink: textarea `px-4 pt-4 pb-1`, 76/60 → 260) ----------
         let field: AnyElement = if let (true, Some(started)) = (listening, listen_started) {
             let secs = started.elapsed().as_secs() as i64;
             let words = self.listening.clone().unwrap_or_default();
@@ -1221,7 +1221,7 @@ impl RenderOnce for ChatComposer {
                 .into_any_element()
         };
 
-        // ---- controls row (pink: actions row) ---------------------------------
+        // ---- controls row (Pink: actions row) ---------------------------------
         let on_attach = self.on_attach.clone();
         let attach = row_button(
             format!("{key}-attach"),
@@ -1432,8 +1432,8 @@ impl RenderOnce for ChatComposer {
             .child(mic)
             .child(send);
 
-        // ---- the pill (pink `composer_surface`, opaque treatment) -------------
-        // The pill's height eases to its content over `COLLAPSE` (pink's
+        // ---- the pill (Pink `composer_surface`, opaque treatment) -------------
+        // The pill's height eases to its content over `COLLAPSE` (Pink's
         // committed-height morph): the content hangs from the pill's
         // stationary bottom edge, so the controls stay put while the top
         // edge sweeps.
@@ -1559,8 +1559,8 @@ impl RenderOnce for ChatComposer {
     }
 }
 
-/// The web search switch. Off it is a ghost trigger chip (pink
-/// `Pickers::trigger_chip`); on it wears the mode-on capsule of pink's Goal
+/// The web search switch. Off it is a ghost trigger chip (Pink
+/// `Pickers::trigger_chip`); on it wears the mode-on capsule of Pink's Goal
 /// chip (`goals.rs` `render_goal_mode_chip`): `accent@0.14` easing to 0.20 on
 /// hover, label and 15 pt glyph in `readable_tone(accent)`.
 fn search_chip(id: String, on: bool, t: &Pink) -> Stateful<Div> {
@@ -1723,7 +1723,7 @@ impl Demo {
     }
 }
 
-/// A sent message (pink `transcript.rs` user bubble): right-aligned, at most
+/// A sent message (Pink `transcript.rs` user bubble): right-aligned, at most
 /// 80% wide, the bubble wash, radius 16, `px 16 py 10`, 14/22; its files ride
 /// above it as message badges.
 fn user_bubble(ix: usize, message: &Message, t: &Pink) -> impl IntoElement {
@@ -1818,7 +1818,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .gap(px(16.))
             .children(transcript)
             .when_some(running, |col, at| {
-                // pink's working trailer while the turn runs.
+                // Pink's working trailer while the turn runs.
                 col.child(
                     div()
                         .flex()

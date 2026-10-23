@@ -1,12 +1,12 @@
 //! Approval Card – an agent stops and asks before it acts.
 //!
 //! PINK has one approval surface, and this is it. While the request is open,
-//! the question panel takes the composer's place (pink: composer.rs
+//! the question panel takes the composer's place (Pink: composer.rs
 //! `render_wizard`): the same r26 pill, a tracked uppercase header, the
 //! question, the approval context as label-over-value rows ending in the
 //! expiry row, numbered option rows (1–9 pick one), a free answer field and a
 //! footer with the countdown, "Keep waiting" and Send. Above it sits the
-//! passive transcript chip (pink: transcript.rs `input_chip`), reading
+//! passive transcript chip (Pink: transcript.rs `input_chip`), reading
 //! "Awaiting your answer…" until the request is answered, then naming it.
 //!
 //! Picking an option shows it picked for 220 ms and sends it. Enter sends the
@@ -43,10 +43,10 @@ pub const DESCRIPTION: &str = "An agent's request to act, asked in the composer'
 
 const ICON_QUESTION: &str = "icons/approval-card/chat-round-line.svg";
 
-/// A single-select pick shows for this long before it is sent (pink
+/// A single-select pick shows for this long before it is sent (Pink
 /// composer.rs `AUTO_ADVANCE_MS`).
 const AUTO_ADVANCE: Duration = Duration::from_millis(220);
-/// The countdown's tick (pink `ensure_countdown_ticking`).
+/// The countdown's tick (Pink `ensure_countdown_ticking`).
 const TICK: Duration = Duration::from_secs(1);
 /// Space between the transcript chip and the panel in the composer slot.
 const SLOT_GAP: f32 = 16.;
@@ -62,7 +62,7 @@ fn eid(s: impl Into<String>) -> ElementId {
     ElementId::Name(SharedString::from(s.into()))
 }
 
-/// What the agent is told (pink `ApprovalDecision`).
+/// What the agent is told (Pink `ApprovalDecision`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Decision {
     AllowOnce,
@@ -83,7 +83,7 @@ impl Decision {
     }
 }
 
-/// One answer the request offers (pink `ApprovalChoice`: label, scope and
+/// One answer the request offers (Pink `ApprovalChoice`: label, scope and
 /// description, rendered as "scope · description" under the label).
 #[derive(Clone, Debug)]
 pub struct ApprovalOption {
@@ -138,7 +138,7 @@ impl ApprovalOption {
         self
     }
 
-    /// The line under the label (pink: `"{scope} · {description}"`).
+    /// The line under the label (Pink: `"{scope} · {description}"`).
     fn detail(&self) -> Option<SharedString> {
         match (&self.scope, &self.description) {
             (Some(scope), Some(description)) => Some(format!("{scope} · {description}").into()),
@@ -149,7 +149,7 @@ impl ApprovalOption {
     }
 }
 
-/// What the agent wants to do (pink `UserInputQuestion` with its
+/// What the agent wants to do (Pink `UserInputQuestion` with its
 /// `ApprovalRequest`).
 #[derive(Clone, Debug)]
 pub struct ApprovalRequest {
@@ -157,7 +157,7 @@ pub struct ApprovalRequest {
     pub header: SharedString,
     /// The sentence naming the action.
     pub question: SharedString,
-    /// Approval context, label over value (pink `display_rows`).
+    /// Approval context, label over value (Pink `display_rows`).
     pub facts: Vec<(SharedString, SharedString)>,
     /// Clock time the request expires; `None` waits until answered.
     pub expires_at: Option<SharedString>,
@@ -204,7 +204,7 @@ impl ApprovalRequest {
         self
     }
 
-    /// Shows or hides the free answer field (shown by default, as in pink).
+    /// Shows or hides the free answer field (shown by default, as in Pink).
     pub fn reply(mut self, reply: bool) -> Self {
         self.reply = reply;
         self
@@ -222,7 +222,7 @@ impl ApprovalRequest {
         }
     }
 
-    /// The context rows plus the expiry row (pink `approval_expiry_row`).
+    /// The context rows plus the expiry row (Pink `approval_expiry_row`).
     fn context_rows(&self) -> Vec<(SharedString, SharedString)> {
         let mut rows = self.facts.clone();
         rows.push(match &self.expires_at {
@@ -236,7 +236,7 @@ impl ApprovalRequest {
     }
 }
 
-/// How an answered request reads in the transcript chip (pink: transcript.rs
+/// How an answered request reads in the transcript chip (Pink: transcript.rs
 /// `rows_for_entry`, `MessagePart::Input`): its header, plus " · no reply in
 /// time, PINK picked …" when the auto answer fired.
 fn record_value(header: &str, label: &str, by_pink: bool) -> String {
@@ -248,7 +248,7 @@ fn record_value(header: &str, label: &str, by_pink: bool) -> String {
 }
 
 /// A bare digit picks option 1–9, unless a modifier is held or the answer
-/// field has focus (pink `wizard_number_shortcut`).
+/// field has focus (Pink `wizard_number_shortcut`).
 fn number_shortcut(key: &str, modified: bool, reply_focused: bool) -> Option<usize> {
     if modified || reply_focused {
         return None;
@@ -287,7 +287,7 @@ impl CardState {
         let reply = cx.new(|cx| TextInput::new(window, cx).placeholder(PLACEHOLDER));
         let reply_events = cx.subscribe_in(&reply, window, |this, _, event, window, cx| {
             match event {
-                // The field's Enter is its own submit (pink: Enter in the
+                // The field's Enter is its own submit (Pink: Enter in the
                 // answer input runs `wizard_advance`).
                 InputEvent::Submit(_) => this.advance(window, cx),
                 InputEvent::Change(_) => {
@@ -370,7 +370,7 @@ impl CardState {
         true
     }
 
-    /// The user is answering: PINK must not answer for them (pink
+    /// The user is answering: PINK must not answer for them (Pink
     /// `note_wizard_interaction` / `hold_auto_answer`).
     fn hold(&mut self) {
         self.deadline = None;
@@ -393,7 +393,7 @@ impl CardState {
         cx.notify();
     }
 
-    /// Send: a typed answer wins over a pick and goes back as a Deny (pink
+    /// Send: a typed answer wins over a pick and goes back as a Deny (Pink
     /// `approval_decision` finds no option label in it).
     fn advance(&mut self, window: &mut Window, cx: &mut gpui::Context<Self>) {
         if self.decision.is_some() {
@@ -538,7 +538,7 @@ impl RenderOnce for ApprovalCard {
             s.on_reply = on_reply;
             s.decisions = decisions;
             s.labels = labels;
-            // pink composer input: `placeholder` text, accent caret.
+            // Pink composer input: `placeholder` text, accent caret.
             s.reply.update(cx, |input, _| {
                 input.set_colors(Some(t.placeholder), Some(t.caret), Some(t.selection))
             });
@@ -557,7 +557,7 @@ impl RenderOnce for ApprovalCard {
             .flex()
             .flex_col()
             .font_family(pink::SANS)
-            // pink's shell root: 14 px Geist on GPUI's default line height.
+            // Pink's shell root: 14 px Geist on GPUI's default line height.
             .text_size(px(14.))
             .line_height(phi())
             .text_color(t.text)
@@ -573,7 +573,7 @@ impl RenderOnce for ApprovalCard {
     }
 }
 
-/// The transcript's record of the request (pink: transcript.rs `input_chip`):
+/// The transcript's record of the request (Pink: transcript.rs `input_chip`):
 /// a 34 px neutral row that never recolors on resolution.
 fn input_chip(value: SharedString, t: &Pink) -> Div {
     div().py(px(4.)).w_full().child(
@@ -625,7 +625,7 @@ fn input_chip(value: SharedString, t: &Pink) -> Div {
     )
 }
 
-/// The pill chrome the composer and the question panel share (pink:
+/// The pill chrome the composer and the question panel share (Pink:
 /// composer.rs `composer_surface`, opaque treatment).
 fn composer_surface(t: &Pink) -> Div {
     div()
@@ -636,7 +636,7 @@ fn composer_surface(t: &Pink) -> Div {
         .shadow(pink::shadow_lg())
 }
 
-/// One numbered option (pink: composer.rs `render_wizard` option rows).
+/// One numbered option (Pink: composer.rs `render_wizard` option rows).
 fn option_row(
     ix: usize,
     option: &ApprovalOption,
@@ -726,7 +726,7 @@ fn option_row(
         })
 }
 
-/// The question panel in the composer's slot (pink: composer.rs
+/// The question panel in the composer's slot (Pink: composer.rs
 /// `render_wizard` for an approval question).
 fn question_panel(
     req: &ApprovalRequest,
@@ -820,7 +820,7 @@ fn question_panel(
                         .min_w_0()
                         .px(px(8.))
                         .py(px(12.))
-                        // pink composer input: `text-[14px] leading-relaxed`.
+                        // Pink composer input: `text-[14px] leading-relaxed`.
                         .text_size(px(14.))
                         .line_height(px(22.75))
                         .text_color(t.text)

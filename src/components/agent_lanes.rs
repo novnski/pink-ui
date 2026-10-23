@@ -1,10 +1,10 @@
 //! Agent Lanes – what every agent is doing, as columns of time.
 //!
-//! One lane per agent, drawn as pink's board columns (`shell/board`): a quiet
+//! One lane per agent, drawn as Pink's board columns (`shell/board`): a quiet
 //! well headed by the agent's name, role and status. Time runs down each lane
 //! into a **now** line near the bottom, so running work grows into the present
 //! while the past rises and fades out under the lane heads. Each block of work
-//! is a board card sized by its time; hand-offs are pink's activity-rail
+//! is a board card sized by its time; hand-offs are Pink's activity-rail
 //! ribbon (1 px, rounded elbows) from one agent's finished card to the next
 //! agent's, and a card that waits on a person carries its Approve / Deny. The
 //! window switch (5, 15 or 30 minutes) is a segmented control and rescales the
@@ -48,18 +48,18 @@ const WIDTH: f32 = 780.0;
 const INSET: f32 = 12.0;
 /// The time labels' column, left of the first lane.
 const GUTTER: f32 = 48.0;
-/// Between two lane wells (pink board columns: `gap 12`).
+/// Between two lane wells (Pink board columns: `gap 12`).
 const LANE_GAP: f32 = 12.0;
-/// Around the cards inside a well (pink board column: `p 8`).
+/// Around the cards inside a well (Pink board column: `p 8`).
 const WELL_PAD: f32 = 8.0;
-/// Card padding (pink board card: `px 10`).
+/// Card padding (Pink board card: `px 10`).
 const CARD_PAD_X: f32 = 10.0;
 const BODY_H: f32 = 320.0;
 /// The now line sits a little above the bottom, over a sliver of future.
 const NOW_Y: f32 = BODY_H - 24.0;
-/// The past fades out under the lane heads (pink's results fade band).
+/// The past fades out under the lane heads (Pink's results fade band).
 const FADE_BAND: f32 = 18.0;
-/// Hand-off elbow radius (pink `ACTIVITY_BEND_RADIUS`).
+/// Hand-off elbow radius (Pink `ACTIVITY_BEND_RADIUS`).
 const BEND: f32 = 6.0;
 /// A waiting card is always tall enough for its title, wait and buttons.
 const WAITING_MIN_H: f32 = 80.0;
@@ -434,11 +434,11 @@ impl Status {
     }
 }
 
-/// One status badge, shape before color: running work gets pink's mini
-/// spinner and a medium `content_muted` word, finished work a 6 px dot (pink:
+/// One status badge, shape before color: running work gets Pink's mini
+/// spinner and a medium `content_muted` word, finished work a 6 px dot (Pink:
 /// transcript.rs subagent status badge); a decision gets its glyph and word
-/// in the tone (pink: board/card.rs `badge`); waiting on a person is pink's
-/// sidebar status pill with the approval shield (pink: shell.rs status pill).
+/// in the tone (Pink: board/card.rs `badge`); waiting on a person is Pink's
+/// sidebar status pill with the approval shield (Pink: shell.rs status pill).
 fn status_badge(status: Status, key: &str, t: &Pink) -> AnyElement {
     let row = |color: Hsla, gap: f32| {
         div()
@@ -489,7 +489,7 @@ fn status_badge(status: Status, key: &str, t: &Pink) -> AnyElement {
             .child(dot(t.content_faint))
             .child("Idle")
             .into_any_element(),
-        // A ring, never a filled dot: nothing has run yet (pink board).
+        // A ring, never a filled dot: nothing has run yet (Pink board).
         Status::Scheduled => row(t.readable_muted(0.9), 6.)
             .child(
                 div()
@@ -504,7 +504,7 @@ fn status_badge(status: Status, key: &str, t: &Pink) -> AnyElement {
     }
 }
 
-/// A lane head (pink: board/columns.rs `column_header`): the name 12/16
+/// A lane head (Pink: board/columns.rs `column_header`): the name 12/16
 /// semibold `text` with the agent's status on the right, the role 11/14 in
 /// `readable_muted(0.8)` under it, gap 2.
 fn lane_head(agent: &LaneAgent, status: Status, width: f32, key: &str, t: &Pink) -> gpui::Div {
@@ -548,7 +548,7 @@ fn lane_head(agent: &LaneAgent, status: Status, width: f32, key: &str, t: &Pink)
         )
 }
 
-/// A clockwise ribbon contour, 1 px wide (pink: transcript.rs
+/// A clockwise ribbon contour, 1 px wide (Pink: transcript.rs
 /// `activity_ribbon`). Nonzero fill unions crossing ribbons so a crossing
 /// never paints twice.
 fn ribbon(path: &mut PathBuilder, points: &[Point<Pixels>]) {
@@ -575,7 +575,7 @@ fn ribbon(path: &mut PathBuilder, points: &[Point<Pixels>]) {
 }
 
 /// A hand-off's course: down from the source card, across with a rounded
-/// elbow (pink's activity-rail bend, a quadratic sampled 12 times), and down
+/// elbow (Pink's activity-rail bend, a quadratic sampled 12 times), and down
 /// into the target card.
 fn elbow(from: (f32, f32), to: (f32, f32)) -> Vec<(f32, f32)> {
     let ((sx, sy), (tx, ty)) = (from, to);
@@ -636,7 +636,7 @@ impl RenderOnce for AgentLanes {
         // The well as painted: cards and the fade band sit on it opaquely.
         let plate = pink::flatten(well, card_bg);
 
-        // -- Header: pink's section header with the window switch -------------------
+        // -- Header: Pink's section header with the window switch -------------------
         let statuses: Vec<Status> = (0..s.agents.len()).map(|l| s.lane_state(l)).collect();
         let working = statuses.iter().filter(|s| **s == Status::Working).count();
         let waiting = statuses.iter().filter(|s| **s == Status::Waiting).count();
@@ -670,7 +670,7 @@ impl RenderOnce for AgentLanes {
         let header = pink::section_header("Agent lanes", Some(summary.into()), &t)
             .child(pink::row_controls().child(switch));
 
-        // -- Lane wells and heads (pink board columns) -------------------------------
+        // -- Lane wells and heads (Pink board columns) -------------------------------
         let wells = (0..lanes).map(|lane| {
             div()
                 .absolute()
@@ -710,7 +710,7 @@ impl RenderOnce for AgentLanes {
             }
             tick_time += grid_step;
         }
-        // Wall times in the gutter: 11 px tabular `content_faint`, as pink sets
+        // Wall times in the gutter: 11 px tabular `content_faint`, as Pink sets
         // its timers.
         let grid_labels = grid.iter().map(|(y, label)| {
             div()
@@ -814,7 +814,7 @@ impl RenderOnce for AgentLanes {
                 if links.is_empty() {
                     return;
                 }
-                // pink: transcript.rs activity_rail – all ribbons in one
+                // Pink: transcript.rs activity_rail – all ribbons in one
                 // nonzero path, painted once in `hairline`.
                 let mut tree = PathBuilder::fill().with_style(PathStyle::Fill(
                     FillOptions::default().with_fill_rule(FillRule::NonZero),
@@ -951,12 +951,12 @@ impl RenderOnce for AgentLanes {
     }
 }
 
-/// One block of work: pink's board card (board/card.rs `render_card`) sized
+/// One block of work: Pink's board card (board/card.rs `render_card`) sized
 /// by its time – radius 10 (less when thin), a `separator` edge over
 /// `fill(Quaternary)`, the edge easing to `accent @ 0.45` on hover; selected
 /// is `accent_wash` inside an `accent @ 0.7` edge. Finished work recedes to
 /// the quieter `separator(false)` edge with its title in `content_muted`
-/// until hovered. A card waiting on a person is pink's notice wash
+/// until hovered. A card waiting on a person is Pink's notice wash
 /// (`warning @ 0.08` inside `warning @ 0.24`, transcript.rs notice) with the
 /// shield, its wait and Approve / Deny. Fills are flattened onto the well
 /// (`under`) so the grid and the hand-off rail pass beneath a card.
@@ -1093,7 +1093,7 @@ fn block_card(
                 }
             }
         };
-        // One Primary per group; the refusal is a ghost (pink's question
+        // One Primary per group; the refusal is a ghost (Pink's question
         // wizard footer).
         div()
             .mt(px(8.))

@@ -1,13 +1,13 @@
-//! Agent Tree – a pink component.
+//! Agent Tree – a Pink component.
 //!
-//! A multi-agent run as pink's Agents list, nested. Every agent is pink's
+//! A multi-agent run as Pink's Agents list, nested. Every agent is Pink's
 //! agent row: a status dot (the mini glyph spinner while it runs), the title
 //! and a quiet status word, then one meta line of what it is doing, its
 //! model, spend and runtime. Sub-agents hang under the agent that started
-//! them on pink's activity rail (a 1 px hairline ribbon with a 6 px elbow
+//! them on Pink's activity rail (a 1 px hairline ribbon with a 6 px elbow
 //! that draws in as a row arrives), and a branch folds behind the
 //! transcript's disclosure chevron. The header is the run's summary line,
-//! and the inspector beside the list is pink's child-agent card with usage
+//! and the inspector beside the list is Pink's child-agent card with usage
 //! cells, the agent's share of the run and Stop / Retry / Open log.
 //!
 //! Arrow keys walk the outline: Up/Down move, Left folds or jumps to the
@@ -53,11 +53,11 @@ pub const DESCRIPTION: &str = "A multi-agent run as a nested agents list – sta
 const ICON_BOT: &str = "icons/agent-tree/bot.svg";
 const ICON_CHEVRON: &str = "icons/agent-tree/alt-arrow-right.svg";
 
-/// GPUI's default line height (`phi()`), which pink's agent rows inherit:
+/// GPUI's default line height (`phi()`), which Pink's agent rows inherit:
 /// they set sizes but no line heights.
 const PHI: f32 = 1.618_034;
 
-// Agent row (pink: `shell/agents.rs` `render_agents_section`).
+// Agent row (Pink: `shell/agents.rs` `render_agents_section`).
 const ROW_PAD_X: f32 = 10.0;
 const ROW_PAD_Y: f32 = 7.0;
 /// Between the title line and the meta line.
@@ -77,11 +77,11 @@ const ROW_H: f32 = 2.0 * ROW_PAD_Y + TITLE_LINE + ROW_LINE_GAP + META_LINE;
 /// A row and the gap under it: the rail runs through both.
 const SLOT_H: f32 = ROW_H + ROW_GAP;
 const DOT_CY: f32 = ROW_PAD_Y + TITLE_LINE / 2.0;
-/// An arriving row's content settles this far up (pink: `transcript.rs`
+/// An arriving row's content settles this far up (Pink: `transcript.rs`
 /// `tool_chip`, `top(4 * (1 - content_reveal))`).
 const ROW_RISE: f32 = 4.0;
 
-// Activity rail (pink: `transcript.rs` `activity_rail`, trunk x 12.5, elbow
+// Activity rail (Pink: `transcript.rs` `activity_rail`, trunk x 12.5, elbow
 // radius 6, branch to x 28, glyph at x 32).
 const RAIL_ALPHA: f32 = 0.12;
 const BEND_RADIUS: f32 = 6.0;
@@ -96,14 +96,14 @@ const INDENT: f32 = TRUNK_X + RAIL_SPAN - ROW_PAD_X;
 /// The trunk leaves the parent's dot after the same break.
 const RAIL_TOP: f32 = DOT_CY + DOT / 2.0 + BRANCH_GAP;
 
-// Disclosure tile (pink: `transcript.rs` `chip_header_row` trail).
+// Disclosure tile (Pink: `transcript.rs` `chip_header_row` trail).
 const TILE: f32 = 18.0;
 const CHEVRON: f32 = 12.0;
 const ROW_GROUP: &str = "agent-row";
 
-/// The list column: pink's widest right pane.
+/// The list column: Pink's widest right pane.
 const OUTLINE_W: f32 = pink::layout::SIDEBAR_MAX;
-/// Usage cells (pink: `shell/usage.rs` `metric_cell`, min 96 wide).
+/// Usage cells (Pink: `shell/usage.rs` `metric_cell`, min 96 wide).
 const CELL_MIN_W: f32 = 96.0;
 const CELL_GAP: f32 = 8.0;
 const INSPECTOR_PAD: f32 = 16.0;
@@ -137,7 +137,7 @@ impl AgentStatus {
         }
     }
 
-    /// The status dot (pink: `shell/agents.rs` agent row).
+    /// The status dot (Pink: `shell/agents.rs` agent row).
     fn dot(self, t: &Pink) -> Hsla {
         match self {
             AgentStatus::Done => t.readable_tone(t.success, 1.0),
@@ -269,7 +269,7 @@ impl AgentNode {
 // Figures
 // ---------------------------------------------------------------------------
 
-/// `1234` → `1,234` (pink: `shell/usage.rs` `count`).
+/// `1234` → `1,234` (Pink: `shell/usage.rs` `count`).
 fn grouped(value: u64) -> String {
     let digits = value.to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
@@ -282,13 +282,13 @@ fn grouped(value: u64) -> String {
     out
 }
 
-/// `$1,234.56` (pink: `shell/usage.rs` `money`).
+/// `$1,234.56` (Pink: `shell/usage.rs` `money`).
 fn money(dollars: f32) -> String {
     let cents = (dollars.max(0.) * 100.).round() as u64;
     format!("${}.{:02}", grouped(cents / 100), cents % 100)
 }
 
-/// `<1s`, `51s`, `1m 35s`, `1h 05m` (pink: `native_agents.rs` `duration_label`).
+/// `<1s`, `51s`, `1m 35s`, `1h 05m` (Pink: `native_agents.rs` `duration_label`).
 fn duration_label(seconds: u32) -> String {
     match seconds {
         0 => "<1s".into(),
@@ -298,7 +298,7 @@ fn duration_label(seconds: u32) -> String {
     }
 }
 
-/// `30.4k tokens` for meta lines (pink: `claude_advanced.rs` `compact_tokens`).
+/// `30.4k tokens` for meta lines (Pink: `claude_advanced.rs` `compact_tokens`).
 fn tokens_label(tokens: u64) -> String {
     match tokens {
         0..=999 => format!("{tokens} tokens"),
@@ -307,7 +307,7 @@ fn tokens_label(tokens: u64) -> String {
     }
 }
 
-/// `30.4K` for a usage cell (pink: `shell/usage.rs` `compact_tokens`).
+/// `30.4K` for a usage cell (Pink: `shell/usage.rs` `compact_tokens`).
 fn tokens_figure(tokens: u64) -> String {
     for (threshold, suffix) in [(1_000_000_000u64, "B"), (1_000_000, "M"), (1_000, "K")] {
         if tokens >= threshold {
@@ -331,7 +331,7 @@ fn tokens_figure(tokens: u64) -> String {
     grouped(tokens)
 }
 
-/// `48.0%`, `<0.1%` (pink: `shell/usage.rs` `usage_percent`).
+/// `48.0%`, `<0.1%` (Pink: `shell/usage.rs` `usage_percent`).
 fn share_label(share: f32) -> String {
     let percent = share * 100.0;
     if percent > 0.0 && percent < 0.1 {
@@ -374,7 +374,7 @@ fn flatten(
     }
 }
 
-/// Gives every agent seen for the first time its reveal start: pink's
+/// Gives every agent seen for the first time its reveal start: Pink's
 /// arrival stagger, with the first-row beat on the first render.
 fn stamp_arrivals(
     node: &AgentNode,
@@ -398,7 +398,7 @@ fn stamp_arrivals(
 struct TreeState {
     folded: HashSet<SharedString>,
     /// When each branch last folded or unfolded: one clock for its chevron,
-    /// height and body fade (pink tool fold).
+    /// height and body fade (Pink tool fold).
     toggled: HashMap<SharedString, Instant>,
     /// When each agent's row starts revealing.
     arrived: HashMap<SharedString, Instant>,
@@ -529,12 +529,12 @@ impl Ctx<'_> {
         progress
     }
 
-    /// The row's own reveal: height and content (pink `TOOL_ROW_REVEAL`).
+    /// The row's own reveal: height and content (Pink `TOOL_ROW_REVEAL`).
     fn row_reveal(&self, id: &SharedString) -> f32 {
         self.reveal(motion::TOOL_ROW_REVEAL, id)
     }
 
-    /// The row's connector draw (pink `TOOL_CONNECTOR_REVEAL`).
+    /// The row's connector draw (Pink `TOOL_CONNECTOR_REVEAL`).
     fn connector(&self, id: &SharedString) -> f32 {
         self.reveal(motion::TOOL_CONNECTOR_REVEAL, id)
     }
@@ -728,7 +728,7 @@ impl RenderOnce for AgentTree {
 }
 
 /// The run's summary: its title, the counts, tokens, spend and runtime on
-/// one quiet line (pink: `claude_advanced.rs` `task_card` metrics line, in
+/// one quiet line (Pink: `claude_advanced.rs` `task_card` metrics line, in
 /// the settings card header's type), and the run's status badge.
 fn header(root: &AgentNode, title: &SharedString, key: &str, t: &Pink) -> Div {
     let agents = 1 + root.descendants();
@@ -799,7 +799,7 @@ fn run_status(root: &AgentNode, key: &str, t: &Pink) -> Div {
 }
 
 /// A node's slot and, under it, its sub-agents in a body that folds on
-/// pink's disclosure spring. `lines[k]` is the next sibling at rail level
+/// Pink's disclosure spring. `lines[k]` is the next sibling at rail level
 /// `k` along this node's path (the last entry is this node's own).
 fn branch(node: &AgentNode, depth: usize, lines: &[Option<SharedString>], c: &Ctx) -> AnyElement {
     let slot = slot(node, depth, lines, c);
@@ -860,11 +860,11 @@ fn slot(node: &AgentNode, depth: usize, lines: &[Option<SharedString>], c: &Ctx)
         .into_any_element()
 }
 
-/// The agent row (pink: `shell/agents.rs` `render_agents_section`): px 10,
+/// The agent row (Pink: `shell/agents.rs` `render_agents_section`): px 10,
 /// py 7, radius 8, two lines 2 apart, no outlined box. Line one is the 7 px
 /// status dot, the 13 px title (red when failed) and the 11 px medium
 /// status word; line two is the 11.5 px meta line under the title. A
-/// branch adds the transcript's disclosure tile. Hover is pink's quiet
+/// branch adds the transcript's disclosure tile. Hover is Pink's quiet
 /// wash; the selected row takes the chrome selection fill, and the
 /// keyboard ring while the outline has focus.
 fn row(node: &AgentNode, depth: usize, reveal: f32, c: &Ctx) -> impl IntoElement {
@@ -962,7 +962,7 @@ fn row(node: &AgentNode, depth: usize, reveal: f32, c: &Ctx) -> impl IntoElement
         .child(fold_tile);
 
     // The activity, then "model · spend · elapsed" in the trailing column
-    // pink's chip rows share (one right-aligned edge, not trailing the text
+    // Pink's chip rows share (one right-aligned edge, not trailing the text
     // at a varying x): the activity alone gives way when the line runs out.
     let mut activity = if node.task.is_empty() {
         label.to_string()
@@ -1048,7 +1048,7 @@ fn row(node: &AgentNode, depth: usize, reveal: f32, c: &Ctx) -> impl IntoElement
 // Activity rail
 // ---------------------------------------------------------------------------
 
-/// What one slot's rail draws (pink: `transcript.rs` `activity_rail`).
+/// What one slot's rail draws (Pink: `transcript.rs` `activity_rail`).
 #[derive(Clone, Default)]
 struct Rail {
     /// Ancestor trunks passing this slot: x and opacity.
@@ -1075,7 +1075,7 @@ fn trunk_x(level: usize) -> f32 {
     level as f32 * INDENT + TRUNK_X
 }
 
-/// The rail for `node`'s slot. The connector draws on pink's sequence: a
+/// The rail for `node`'s slot. The connector draws on Pink's sequence: a
 /// later sibling's arrival first extends the trunk past the rows above it,
 /// then draws its own trunk, bend and branch.
 fn rail_for(node: &AgentNode, depth: usize, lines: &[Option<SharedString>], c: &Ctx) -> Rail {
@@ -1166,7 +1166,7 @@ fn paint_rail(rail: &Rail, origin: Point<Pixels>, color: Hsla, window: &mut Wind
 }
 
 /// The elbow and branch, revealed by distance so the bend and the straight
-/// leg draw at one speed (pink: `transcript.rs` `activity_branch_points`).
+/// leg draw at one speed (Pink: `transcript.rs` `activity_branch_points`).
 fn branch_points(progress: f32) -> Vec<Point<f32>> {
     let mut path: Vec<_> = (0..=24)
         .map(|step| {
@@ -1198,7 +1198,7 @@ fn branch_points(progress: f32) -> Vec<Point<f32>> {
     visible
 }
 
-/// A 1 px ribbon along `points`, as a clockwise contour (pink:
+/// A 1 px ribbon along `points`, as a clockwise contour (Pink:
 /// `transcript.rs` `activity_ribbon`).
 fn ribbon(path: &mut PathBuilder, points: &[Point<Pixels>]) {
     if points.len() < 2 {
@@ -1233,7 +1233,7 @@ struct Handlers {
     open_log: Option<IdHandler>,
 }
 
-/// The agent's identity tile (pink: `transcript/agent_cards.rs`
+/// The agent's identity tile (Pink: `transcript/agent_cards.rs`
 /// `AgentCard::render`): 28 square, radius 7, `hairline(0.07)` edge on the
 /// resting fill, the 16 px bot glyph.
 fn agent_tile(t: &Pink) -> Div {
@@ -1256,7 +1256,7 @@ fn agent_tile(t: &Pink) -> Div {
         )
 }
 
-/// A quiet type label (pink: `transcript/agent_cards.rs` `type_badge`).
+/// A quiet type label (Pink: `transcript/agent_cards.rs` `type_badge`).
 fn type_badge(label: &'static str, t: &Pink) -> Div {
     div()
         .flex_none()
@@ -1272,7 +1272,7 @@ fn type_badge(label: &'static str, t: &Pink) -> Div {
         .child(label)
 }
 
-/// A label over a value (pink: `composer.rs` approval context rows).
+/// A label over a value (Pink: `composer.rs` approval context rows).
 fn field(label: &'static str, value: SharedString, t: &Pink) -> Div {
     div()
         .flex()
@@ -1287,7 +1287,7 @@ fn field(label: &'static str, value: SharedString, t: &Pink) -> Div {
         .child(div().text_size(px(12.)).text_color(t.text).child(value))
 }
 
-/// One figure on the resting plate (pink: `shell/usage.rs` `metric_cell`).
+/// One figure on the resting plate (Pink: `shell/usage.rs` `metric_cell`).
 fn metric_cell(label: &'static str, value: String, t: &Pink) -> Div {
     div()
         .flex_1()
@@ -1316,7 +1316,7 @@ fn metric_cell(label: &'static str, value: String, t: &Pink) -> Div {
         )
 }
 
-/// A 6 px capsule of what is used (pink: `shell/usage.rs` `usage_meter`):
+/// A 6 px capsule of what is used (Pink: `shell/usage.rs` `usage_meter`):
 /// neutral fill on the Secondary track, nothing drawn below 0.5%. A share
 /// of the run is no limit, so it never turns warning or danger.
 fn usage_meter(share: f32, t: &Pink) -> Div {
@@ -1337,7 +1337,7 @@ fn usage_meter(share: f32, t: &Pink) -> Div {
         })
 }
 
-/// The selected agent, as pink's child-agent card: the tile, the title with
+/// The selected agent, as Pink's child-agent card: the tile, the title with
 /// its type badge and the status line (dot, status, runtime, model), then
 /// its task and parent, its usage cells, its share of the run's spend and
 /// the actions.
@@ -1834,7 +1834,7 @@ mod tests {
 
     #[test]
     fn a_child_dot_sits_where_the_rail_puts_its_glyph() {
-        // Trunk to glyph is pink's 32 − 12.5, one indent per level.
+        // Trunk to glyph is Pink's 32 − 12.5, one indent per level.
         assert_eq!(INDENT + ROW_PAD_X - TRUNK_X, RAIL_SPAN);
         assert_eq!(RAIL_SPAN - BRANCH_GAP, 28.0 - 12.5);
     }

@@ -1,11 +1,11 @@
-//! Project Card – a project on pink's board ticket card, with a progress ring
+//! Project Card – a project on Pink's board ticket card, with a progress ring
 //! that has one segment per subtask.
 //!
-//! The frame, title, status badge and footer are pink's board card (pink:
+//! The frame, title, status badge and footer are Pink's board card (Pink:
 //! shell/board/card.rs `BoardPage::render_card`): a resting
 //! `fill(Quaternary)` plate with a `separator(true)` edge, a 13/18 title over
-//! glyph-and-word badges, and a hairline footer. People are pink's project
-//! tiles. Clicking the header folds the card open on pink's disclosure: a
+//! glyph-and-word badges, and a hairline footer. People are Pink's project
+//! tiles. Clicking the header folds the card open on Pink's disclosure: a
 //! status picker, a people filter and the subtasks. Everything is linked by
 //! hover – point at a subtask and its ring segment lifts, at a person and
 //! their subtasks and segments stand out, at a segment and the footer names
@@ -53,7 +53,7 @@ const RING_STROKE: f32 = 3.0;
 const TILE: f32 = 18.0;
 /// Pink's activity alert row height.
 const ROW_H: f32 = 28.0;
-/// Card padding (pink board card `px 10`), for the picker's width.
+/// Card padding (Pink board card `px 10`), for the picker's width.
 const PAD_X: f32 = 10.0;
 
 /// Where a project stands.
@@ -92,7 +92,7 @@ impl ProjectStatus {
         }
     }
 
-    /// The badge tone (pink: board/card.rs `Tone::color` – Running, Caution,
+    /// The badge tone (Pink: board/card.rs `Tone::color` – Running, Caution,
     /// Danger, Success).
     fn color(self, t: &Pink) -> Hsla {
         match self {
@@ -108,7 +108,7 @@ impl ProjectStatus {
 #[derive(Clone, Debug)]
 pub struct ProjectPerson {
     pub name: SharedString,
-    /// Hue of the tile's tint, in degrees (pink's project hues are 250, 150,
+    /// Hue of the tile's tint, in degrees (Pink's project hues are 250, 150,
     /// 40, 205, 325 and 12).
     pub hue: f32,
 }
@@ -130,7 +130,7 @@ impl ProjectPerson {
             .into()
     }
 
-    /// Pink's tile tint for this hue (pink: sidebar_projects.rs `project_tint`).
+    /// Pink's tile tint for this hue (Pink: sidebar_projects.rs `project_tint`).
     fn tint(&self) -> Hsla {
         gpui::hsla(self.hue.rem_euclid(360.) / 360., 0.62, 0.68, 1.)
     }
@@ -270,7 +270,7 @@ impl ProjectCard {
 
 struct CardState {
     open: bool,
-    /// When the header last toggled the fold (drives pink's fold clock).
+    /// When the header last toggled the fold (drives Pink's fold clock).
     toggled_at: Option<Instant>,
     status: ProjectStatus,
     done: Vec<bool>,
@@ -298,7 +298,7 @@ fn segment_at(bounds: Bounds<Pixels>, pos: gpui::Point<Pixels>, n: usize) -> Opt
     Some(((a / (2. * PI)) * n as f32) as usize % n)
 }
 
-/// A glyph + word badge (pink: board/card.rs `badge`): a 12 px glyph and an
+/// A glyph + word badge (Pink: board/card.rs `badge`): a 12 px glyph and an
 /// 11/14 word, both in the tone, gap 4, no plate.
 fn badge(glyph: &'static str, label: impl Into<SharedString>, color: Hsla) -> Div {
     div()
@@ -321,7 +321,7 @@ fn badge(glyph: &'static str, label: impl Into<SharedString>, color: Hsla) -> Di
         .child(div().min_w_0().truncate().child(label.into()))
 }
 
-/// A subtask's check (pink: markdown/render.rs task list item): 16 px,
+/// A subtask's check (Pink: markdown/render.rs task list item): 16 px,
 /// radius 4, a `border` edge; checked, the accent with a 12 px check in `bg`.
 fn check_box(checked: bool, t: &Pink) -> Div {
     div()
@@ -381,7 +381,7 @@ impl RenderOnce for ProjectCard {
         let done_count = done.iter().filter(|d| **d).count();
         let focus = t.focus_ring();
 
-        // One clock for the chevron, the height and the body fade (pink:
+        // One clock for the chevron, the height and the body fade (Pink:
         // transcript.rs tool fold).
         let window_ms = FOLD_TWEEN_WINDOW.mul_f32(motion::speed_scale());
         let elapsed = toggled_at
@@ -422,7 +422,7 @@ impl RenderOnce for ProjectCard {
             })
             .collect();
         let ring = {
-            // Neutral like pink's usage meter (pink: shell/usage.rs
+            // Neutral like Pink's usage meter (Pink: shell/usage.rs
             // `usage_meter`, `text_muted` for what is used). A 3 px arc needs
             // more than the meter's fill track, so open segments take the
             // card's own edge tone; a lifted segment brightens toward `text`.
@@ -506,7 +506,7 @@ impl RenderOnce for ProjectCard {
                 })
         };
 
-        // ---- header: title, badges, ring (pink board card title + status) ---
+        // ---- header: title, badges, ring (Pink board card title + status) ---
         let status_badge = motion::status_swap(
             SharedString::from(format!("{key}-status-{status:?}")),
             badge(status.glyph(), status.label(), status.color(&t)),
@@ -550,7 +550,7 @@ impl RenderOnce for ProjectCard {
                         .flex_col()
                         .gap(px(space::S8))
                         .child(
-                            // pink: board/card.rs title, with the tool group's
+                            // Pink: board/card.rs title, with the tool group's
                             // turning chevron after it (transcript.rs).
                             div()
                                 .flex()
@@ -626,7 +626,7 @@ impl RenderOnce for ProjectCard {
             )
         };
 
-        // People filter: pink chips, each with the person's tile.
+        // People filter: Pink chips, each with the person's tile.
         let people_row = div()
             .flex()
             .flex_row()
@@ -675,7 +675,7 @@ impl RenderOnce for ProjectCard {
                     )
             }));
 
-        // Subtasks: pink's activity alert rows with its task-list check.
+        // Subtasks: Pink's activity alert rows with its task-list check.
         let rows = tasks.iter().enumerate().map(|(ix, task)| {
             let row_key = format!("{key}-task-{ix}");
             let (_, hot, dim) = segments[ix];
@@ -790,7 +790,7 @@ impl RenderOnce for ProjectCard {
                 d.child(body)
             });
 
-        // ---- footer (pink board card footer) -----------------------------------
+        // ---- footer (Pink board card footer) -----------------------------------
         let first_open = |of: Option<usize>| {
             tasks
                 .iter()
@@ -831,9 +831,9 @@ impl RenderOnce for ProjectCard {
                 (_, Some(next)) => format!("{} left · next: {next}", n - done_count).into(),
             },
         };
-        // The corner swaps content with the fold (pink's sidebar corner):
+        // The corner swaps content with the fold (Pink's sidebar corner):
         // the people at rest, Open once unfolded – the working trailer's quiet
-        // action (pink: transcript.rs Stop, 11/16 `content_muted`, hover wash).
+        // action (Pink: transcript.rs Stop, 11/16 `content_muted`, hover wash).
         let corner = if open {
             let open_key = format!("{key}-open");
             let on_open = self.on_open.clone();
@@ -915,7 +915,7 @@ impl RenderOnce for ProjectCard {
             .child(div().flex_1().min_w_0().truncate().child(meta))
             .child(corner);
 
-        // ---- the card (pink board card frame) ------------------------------
+        // ---- the card (Pink board card frame) ------------------------------
         let hover_edge = t.accent.opacity(0.45);
         div()
             .id(self.id.clone())
@@ -937,7 +937,7 @@ impl RenderOnce for ProjectCard {
     }
 }
 
-/// Pink's project hues (violet, green, amber, blue, pink, coral).
+/// Pink's project hues (violet, green, amber, blue, Pink, coral).
 const HUES: [f32; 6] = [250., 150., 40., 205., 325., 12.];
 
 fn billing() -> ProjectCard {

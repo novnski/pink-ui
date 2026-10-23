@@ -1,18 +1,18 @@
 //! Notification Stack – notices stacked behind each other: dismiss the front
 //! one to reveal the next.
 //!
-//! Every card is PINK's composer notice (pink: notice.rs `notice_chip`): an
+//! Every card is PINK's composer notice (Pink: notice.rs `notice_chip`): an
 //! opaque plate on the stack ladder's notice step (r14), a title row with a
 //! 14 px glyph, the medium label and the actions riding it, and the message on
 //! the line below, all at 12/16. Warning and danger notices tint the plate
 //! with their tone flattened over the canvas and set their copy in it; info
-//! notices are the quiet neutral notice (pink: composer.rs
-//! `composer-recover-unsent`). Actions are pink's 24 px capsules
+//! notices are the quiet neutral notice (Pink: composer.rs
+//! `composer-recover-unsent`). Actions are Pink's 24 px capsules
 //! (`notice_action`); the 20 px button in the copy button's slot dismisses the
-//! card, with the board notice's close glyph (pink: board/page.rs).
+//! card, with the board notice's close glyph (Pink: board/page.rs).
 //!
 //! PINK has no deck of notices, so the stacking borrows its one tucked-behind
-//! pattern, the queue tray behind the composer (pink: composer.rs
+//! pattern, the queue tray behind the composer (Pink: composer.rs
 //! `QUEUE_SIDE_INSET`): each card behind is 16 px narrower per side and shows
 //! a 10 px band below the one in front, its contents hidden. Dismissing the
 //! front card fades it out with a short drift, above the next one gliding
@@ -55,16 +55,16 @@ const ICON_CLOSE: &str = "icons/notification-stack/close.svg";
 
 /// How far each card behind shows below the one in front.
 const PEEK: f32 = space::S10;
-/// How much narrower each card behind is, per side (pink: composer.rs
+/// How much narrower each card behind is, per side (Pink: composer.rs
 /// `QUEUE_SIDE_INSET`, the tray tucked behind the composer).
 const SIDE_INSET: f32 = 16.;
 /// Cards behind the front one that still show; the rest wait unseen.
 const MAX_BEHIND: usize = 2;
-/// The notice plate's padding and row gap (pink: notice.rs `notice_chip`).
+/// The notice plate's padding and row gap (Pink: notice.rs `notice_chip`).
 const PAD_X: f32 = space::S10;
 const PAD_Y: f32 = space::S8;
 const ROW_GAP: f32 = space::S6;
-/// The trailing button in the title row (pink: `notice_chip` copy button).
+/// The trailing button in the title row (Pink: `notice_chip` copy button).
 const TRAILING_BUTTON: f32 = 20.;
 
 /// Cards moving forward and the stack's height: a list reorder.
@@ -81,7 +81,7 @@ const CONTENT_FADE: MotionSpec = motion::TRANSCRIPT_IN;
 type Handler = Rc<dyn Fn(&mut Window, &mut App)>;
 type DismissHandler = Rc<dyn Fn(&Notice, &mut Window, &mut App)>;
 
-/// What a notice is about (pink: board/page.rs `NoticeTone`).
+/// What a notice is about (Pink: board/page.rs `NoticeTone`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum NoticeTone {
     /// Neutral news: the quiet card with an info glyph.
@@ -166,7 +166,7 @@ struct NoticeColors {
 impl NoticeColors {
     fn get(tone: NoticeTone, t: &Pink) -> Self {
         let (accent, muted) = match tone {
-            // pink: composer.rs `composer-recover-unsent`: the card plate and
+            // Pink: composer.rs `composer-recover-unsent`: the card plate and
             // edge, a `text_muted` glyph and message under a `text` label,
             // `glass_hover` washes
             NoticeTone::Info => {
@@ -183,7 +183,7 @@ impl NoticeColors {
             NoticeTone::Warning => (t.warning, t.warning_muted),
             NoticeTone::Danger => (t.danger, t.danger_muted),
         };
-        // pink: notice.rs `notice_chip`: the tint flattened over the canvas,
+        // Pink: notice.rs `notice_chip`: the tint flattened over the canvas,
         // so the cards behind never print through
         let copy = t.readable_tone(muted, 0.9);
         Self {
@@ -408,7 +408,7 @@ struct CardProps<'a> {
     t: &'a Pink,
 }
 
-/// One notice card, placed in the stack (pink: notice.rs `notice_chip`).
+/// One notice card, placed in the stack (Pink: notice.rs `notice_chip`).
 fn card(props: CardProps) -> impl IntoElement {
     let CardProps {
         key,
@@ -449,7 +449,7 @@ fn card(props: CardProps) -> impl IntoElement {
         .size_full()
     };
 
-    // pink: board/page.rs `notice_strip` actions take a Ghost button; the
+    // Pink: board/page.rs `notice_strip` actions take a Ghost button; the
     // composer notice takes the capsule
     let action = notice.action.clone().map(|action| {
         pink::notice_action(format!("{key}-{}-action", notice.id), t)

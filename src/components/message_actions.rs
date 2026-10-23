@@ -1,6 +1,6 @@
-//! Message Actions – a pink component.
+//! Message Actions – a Pink component.
 //!
-//! The hover lane under a transcript entry (pink: transcript.rs
+//! The hover lane under a transcript entry (Pink: transcript.rs
 //! `Transcript::render_row`, the hover-revealed metadata strip). A 28px band
 //! stays reserved under the message, so revealing it never moves the layout.
 //! While the message is hovered the lane fades in over 150ms: the message's
@@ -43,12 +43,12 @@ const ICON_FORK: &str = "icons/message-actions/arrow-fork.svg";
 const ICON_EDIT: &str = "icons/message-actions/pen.svg";
 const ICON_REWIND: &str = "icons/message-actions/restart.svg";
 
-/// The reserved lane (pink: transcript.rs `META_LANE_HEIGHT`): the 24px
+/// The reserved lane (Pink: transcript.rs `META_LANE_HEIGHT`): the 24px
 /// actions plus a 4px lead above them.
 const LANE_HEIGHT: f32 = 28.0;
-/// One action's square (pink: transcript.rs `meta_action`).
+/// One action's square (Pink: transcript.rs `meta_action`).
 const ACTION_SIZE: f32 = 24.0;
-/// How long Copy shows its check (pink: `Transcript::copy_message`).
+/// How long Copy shows its check (Pink: `Transcript::copy_message`).
 const COPIED_FOR: Duration = Duration::from_millis(1200);
 
 type CopyHandler = Rc<dyn Fn(Option<SharedString>, &mut Window, &mut App)>;
@@ -64,7 +64,7 @@ pub enum MessageRole {
 }
 
 impl MessageRole {
-    /// The actions pink offers on this kind of message: history edits (Edit,
+    /// The actions Pink offers on this kind of message: history edits (Edit,
     /// Rewind) only on your own messages.
     pub fn default_actions(self) -> &'static [MessageAction] {
         match self {
@@ -84,7 +84,7 @@ impl MessageRole {
     }
 }
 
-/// One action in the lane. The lane always lays them out in pink's order,
+/// One action in the lane. The lane always lays them out in Pink's order,
 /// whatever order they are given in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MessageAction {
@@ -148,7 +148,7 @@ impl MessageAction {
         }
     }
 
-    /// A longer accessible name where pink gives one.
+    /// A longer accessible name where Pink gives one.
     fn description(self) -> Option<&'static str> {
         match self {
             MessageAction::SideChat => Some("Reply to this message or selection in a side chat"),
@@ -158,7 +158,7 @@ impl MessageAction {
     }
 }
 
-/// The hover fade of one action button (pink: `meta_action`'s `tl-{id}`).
+/// The hover fade of one action button (Pink: `meta_action`'s `tl-{id}`).
 fn action_fade_key(lane: &str, action: MessageAction) -> String {
     format!("tl-{lane}-{}", action.slug())
 }
@@ -200,7 +200,7 @@ impl MessageActionsState {
         self.copied
     }
 
-    /// Copy (pink: `Transcript::copy_message`): writes the text to the
+    /// Copy (Pink: `Transcript::copy_message`): writes the text to the
     /// clipboard and shows the check for 1.2s.
     pub fn copy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let text = self.props.text.clone();
@@ -280,7 +280,7 @@ impl MessageActions {
         self
     }
 
-    /// When the message was sent, already formatted – pink writes
+    /// When the message was sent, already formatted – Pink writes
     /// "Oct 23, 3:42 PM".
     pub fn timestamp(mut self, timestamp: impl Into<SharedString>) -> Self {
         self.timestamp = Some(timestamp.into());
@@ -306,7 +306,7 @@ impl MessageActions {
     }
 
     /// Hidden until the message or the lane is hovered (default true, as in
-    /// pink); false keeps the lane shown.
+    /// Pink); false keeps the lane shown.
     pub fn quiet(mut self, quiet: bool) -> Self {
         self.quiet = quiet;
         self
@@ -340,7 +340,7 @@ impl MessageActions {
     }
 }
 
-/// One action in the lane (pink: transcript.rs `meta_action`): a 24px r6
+/// One action in the lane (Pink: transcript.rs `meta_action`): a 24px r6
 /// square, transparent easing to `ink(0.08)` on hover, a 14px glyph in
 /// `content_muted`, the inset focus ring and a text tooltip on GPUI's
 /// default delay.
@@ -406,8 +406,8 @@ impl RenderOnce for MessageActions {
         let handoff = actions.contains(&MessageAction::SendToMain);
 
         // The strip: a 6px lead, the timestamp, then the actions, 2px apart
-        // (pink: `render_row`'s `metadata`). It mounts only while shown and
-        // fades in each time (pink: `motion::fade_quick`, 150ms ease).
+        // (Pink: `render_row`'s `metadata`). It mounts only while shown and
+        // fades in each time (Pink: `motion::fade_quick`, 150ms ease).
         let strip = shown.then(|| {
             let mut strip = div()
                 .flex()
@@ -486,7 +486,7 @@ impl RenderOnce for MessageActions {
 
 /// The demo's content column.
 const COLUMN: f32 = 600.;
-/// Transcript prose line height (pink: transcript.rs `USER_LINE_HEIGHT` and
+/// Transcript prose line height (Pink: transcript.rs `USER_LINE_HEIGHT` and
 /// markdown `MD_LINE_HEIGHT`, both 22 on 14px text).
 const PROSE_LINE_HEIGHT: f32 = 22.;
 
@@ -557,7 +557,7 @@ struct Demo {
     auto_row: Option<usize>,
     /// The action the auto-play rests on.
     pointed: Option<(usize, MessageAction)>,
-    /// The entry under the real pointer (pink: `hovered_entry`).
+    /// The entry under the real pointer (Pink: `hovered_entry`).
     pointer_row: Option<usize>,
     /// The viewer took over: auto-play stopped and Copy copies the message.
     live: bool,
@@ -646,7 +646,7 @@ impl Demo {
         }
     }
 
-    /// Only the entry that owns the reveal may clear it (pink: `render_row`).
+    /// Only the entry that owns the reveal may clear it (Pink: `render_row`).
     fn hover_row(&mut self, ix: usize, hovered: bool, cx: &mut Context<Self>) {
         if hovered {
             if self.pointer_row != Some(ix) {
@@ -668,7 +668,7 @@ impl Demo {
     }
 }
 
-/// A user bubble (pink: transcript.rs `RowKind::User`): right-aligned, at
+/// A user bubble (Pink: transcript.rs `RowKind::User`): right-aligned, at
 /// most 80% of the column, `user_bubble_bg` with light mode's inset edge,
 /// r16, `px 16 / py 10`, 14/22 text.
 fn user_bubble(text: &'static str, t: &Pink) -> Div {
@@ -696,7 +696,7 @@ fn user_bubble(text: &'static str, t: &Pink) -> Div {
     )
 }
 
-/// A reply: bare prose on the canvas (pink: markdown `MD_TEXT_SIZE` 14 /
+/// A reply: bare prose on the canvas (Pink: markdown `MD_TEXT_SIZE` 14 /
 /// `MD_LINE_HEIGHT` 22, `MD_BLOCK_GAP` 12 between paragraphs).
 fn reply(paragraphs: &'static [&'static str], t: &Pink) -> Div {
     div()
@@ -717,7 +717,7 @@ fn demo_view(demo: &Entity<Demo>, cx: &mut App) -> Stateful<Div> {
     let live = d.live;
     let rows = ENTRIES.iter().enumerate().map(|(ix, entry)| {
         let user = entry.role == MessageRole::User;
-        // Turn rhythm (pink: `top_gap_for`): 16 before a new turn, 8
+        // Turn rhythm (Pink: `top_gap_for`): 16 before a new turn, 8
         // between a message and its reply.
         let gap = match (ix, user) {
             (0, _) => 0.,

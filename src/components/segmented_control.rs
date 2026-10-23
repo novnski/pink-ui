@@ -1,20 +1,20 @@
-//! Segmented Control – a pink component.
+//! Segmented Control – a Pink component.
 //!
-//! Pink's segmented control (pink: `button.rs` `segmented`): equal-width
+//! Pink's segmented control (Pink: `button.rs` `segmented`): equal-width
 //! options on a quiet `fill(Quaternary)` track with a hairline edge, and one
 //! thumb that slides to the chosen option over `motion::QUICK` instead of each
 //! option swapping its own fill. The chosen label is medium `text`; the others
 //! rest in `readable_muted(0.9)` and brighten on hover. Three shapes share the
 //! builder:
 //!
-//! - **Tray** (the default): the segmented control. Give it pink's `width`,
+//! - **Tray** (the default): the segmented control. Give it Pink's `width`,
 //!   let it size every option to the widest one, or fill the container.
-//! - **Buttons**: a row of pink chips (pink: `button.rs` `chip`) for a choice
+//! - **Buttons**: a row of Pink chips (Pink: `button.rs` `chip`) for a choice
 //!   among more options; the chosen chip takes the accent wash and edge.
-//! - **Underline**: a tab strip on a hairline (pink: `pickers.rs` `model_tab`),
+//! - **Underline**: a tab strip on a hairline (Pink: `pickers.rs` `model_tab`),
 //!   the viewed tab marked by a 2 px accent capsule (`tab_indicator`).
 //!
-//! Every option is a tab stop with pink's 2 px inset focus ring; arrow keys,
+//! Every option is a tab stop with Pink's 2 px inset focus ring; arrow keys,
 //! Home and End move and select. Options can carry a glyph, a count or a small
 //! accent badge, and can be disabled.
 //!
@@ -49,18 +49,18 @@ pub const DESCRIPTION: &str = "Switch between two to five options – a thumb th
 
 type ChangeHandler = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
 
-/// Track inset around the thumb (pink `SEGMENT_INSET`).
+/// Track inset around the thumb (Pink `SEGMENT_INSET`).
 const INSET: f32 = 2.0;
-/// A track option's side padding and its glyph → label gap (pink `segmented`).
+/// A track option's side padding and its glyph → label gap (Pink `segmented`).
 const OPTION_PAD_X: f32 = 6.0;
 const OPTION_GAP: f32 = 5.0;
-/// Between chips (pink: automations.rs, the editor's choice rows).
+/// Between chips (Pink: automations.rs, the editor's choice rows).
 const CHIP_GAP: f32 = 6.0;
-/// Between tabs, and how much taller the strip is than a tab (pink: the model
+/// Between tabs, and how much taller the strip is than a tab (Pink: the model
 /// menu's 32 px tabs in a 40 px row).
 const TAB_GAP: f32 = 2.0;
 const TAB_STRIP_EXTRA: f32 = 8.0;
-/// The badge capsule (pink: pickers.rs `new_model_badge`).
+/// The badge capsule (Pink: pickers.rs `new_model_badge`).
 const BADGE_H: f32 = 16.0;
 const BADGE_PAD_X: f32 = 5.0;
 const BADGE_TEXT: f32 = 10.5;
@@ -143,12 +143,12 @@ impl SegmentSize {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SegmentVariant {
-    /// Separate chips, the chosen one in the accent wash (pink `chip`).
+    /// Separate chips, the chosen one in the accent wash (Pink `chip`).
     Buttons,
-    /// A track with a sliding thumb (pink `segmented`).
+    /// A track with a sliding thumb (Pink `segmented`).
     #[default]
     Tray,
-    /// Tabs on a hairline, the viewed one underlined (pink `model_tab`).
+    /// Tabs on a hairline, the viewed one underlined (Pink `model_tab`).
     Underline,
 }
 
@@ -294,7 +294,7 @@ fn natural_width(window: &Window, options: &[SegmentOption], size: ControlSize) 
     option * options.len().max(1) as f32 + (INSET + 1.) * 2.
 }
 
-/// A quiet count after the label, in tabular figures (pink: activity
+/// A quiet count after the label, in tabular figures (Pink: activity
 /// section headings, `readable_faint(0.7)`).
 fn count_text(count: SharedString, t: &Pink) -> Div {
     div()
@@ -305,7 +305,7 @@ fn count_text(count: SharedString, t: &Pink) -> Div {
         .child(count)
 }
 
-/// A small accent capsule (pink: pickers.rs `new_model_badge`).
+/// A small accent capsule (Pink: pickers.rs `new_model_badge`).
 fn badge(label: SharedString, t: &Pink) -> Div {
     div()
         .flex_none()
@@ -359,7 +359,7 @@ fn option_parts(
 }
 
 /// The 2 px capsule under the viewed tab, sitting on the strip's hairline
-/// (pink: pickers.rs `tab_indicator`).
+/// (Pink: pickers.rs `tab_indicator`).
 fn tab_indicator(tint: Hsla) -> Div {
     div()
         .absolute()
@@ -413,7 +413,7 @@ impl Shape {
     }
 
     /// Pointer, the inset focus ring, and Enter/Space reaching `on_click`
-    /// once (pink `segmented` / `model_tab`).
+    /// once (Pink `segmented` / `model_tab`).
     fn focusable(&self, el: Stateful<Div>) -> Stateful<Div> {
         let ring = self.t.focus_ring();
         el.cursor_pointer()
@@ -421,13 +421,13 @@ impl Shape {
             .on_key_down(pink::swallow_activation_key)
     }
 
-    /// A disabled option inside an enabled control: pink's disabled controls
+    /// A disabled option inside an enabled control: Pink's disabled controls
     /// paint at 45%.
     fn dim(&self, o: &SegmentOption) -> bool {
         o.disabled && !self.disabled
     }
 
-    /// pink: button.rs `segmented` – the track, one sliding thumb and
+    /// Pink: button.rs `segmented` – the track, one sliding thumb and
     /// equal-width options. `width: None` fills the container.
     fn tray(&self, options: &[SegmentOption], width: Option<f32>) -> Div {
         let t = &self.t;
@@ -525,7 +525,7 @@ impl Shape {
             )
     }
 
-    /// pink: button.rs `chip` – one chip per option, gap 6; `full` shares
+    /// Pink: button.rs `chip` – one chip per option, gap 6; `full` shares
     /// the row equally.
     fn chips(&self, options: &[SegmentOption], full: bool) -> Div {
         let t = &self.t;
@@ -553,7 +553,7 @@ impl Shape {
             }))
     }
 
-    /// pink: pickers.rs `model_tab` – tabs on a hairline strip, the viewed
+    /// Pink: pickers.rs `model_tab` – tabs on a hairline strip, the viewed
     /// one in `text` with the accent capsule, the others `text_muted` with
     /// the quiet hover wash. Every tab is medium, so picking never reflows
     /// the strip. `full` spans the container; tabs keep their size.
@@ -662,7 +662,7 @@ impl SegmentedControl {
         self
     }
 
-    /// The tray's whole width, shared equally by its options (pink's
+    /// The tray's whole width, shared equally by its options (Pink's
     /// `width`). Without it every option is as wide as the widest.
     pub fn width(mut self, width: f32) -> Self {
         self.width = Some(width);
@@ -779,7 +779,7 @@ impl RenderOnce for SegmentedControl {
             .line_height(px(size.line_height()))
             .text_color(t.text)
             .on_key_down(on_key)
-            // Chips dim one by one (pink `chip` with `enabled: false`)
+            // Chips dim one by one (Pink `chip` with `enabled: false`)
             .when(
                 self.disabled && self.variant != SegmentVariant::Buttons,
                 |el| el.opacity(0.45),
@@ -889,7 +889,7 @@ impl RenderOnce for Demo {
                 });
             }
         };
-        // A settings row: its text, then the control (pink: settings/widgets.rs)
+        // A settings row: its text, then the control (Pink: settings/widgets.rs)
         let row = |first: bool, title: &'static str, copy: &'static str, control: AnyElement| {
             pink::card_row(first, &t)
                 .child(pink::row_text(title, Some(copy.into()), &t))

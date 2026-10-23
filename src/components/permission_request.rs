@@ -1,13 +1,13 @@
-//! Permission Request – the agent stops and asks before it acts (pink:
+//! Permission Request – the agent stops and asks before it acts (Pink:
 //! composer.rs `Composer::render_wizard` in approval mode).
 //!
 //! The request takes the composer's place in the same rounded pill: a
 //! tracked uppercase header, the question, the approval context (the exact
 //! command, where it runs, why, and how long the request waits), one
-//! numbered row per choice naming its grant scope, pink's free answer field
+//! numbered row per choice naming its grant scope, Pink's free answer field
 //! and a single Send. Picking a row answers after a short beat; a typed
 //! answer wins over a pick and goes back as a Deny. The request then folds
-//! into the transcript's passive "Question" record (pink: transcript.rs
+//! into the transcript's passive "Question" record (Pink: transcript.rs
 //! `input_chip`).
 //!
 //! Keys while the request has focus: `1`–`9` pick a choice, `Enter` sends
@@ -41,24 +41,24 @@ pub const DESCRIPTION: &str = "An agent stops to ask before it acts – the comp
 
 const ICON_QUESTION: &str = "icons/permission-request/chat-round-line.svg";
 
-/// A pick answers after this beat, so the picked row reads first (pink:
+/// A pick answers after this beat, so the picked row reads first (Pink:
 /// composer.rs `AUTO_ADVANCE_MS`).
 const AUTO_ADVANCE: Duration = Duration::from_millis(220);
 
-/// The answer rows' corner (pink: composer.rs `render_wizard`, `rounded(12)`).
+/// The answer rows' corner (Pink: composer.rs `render_wizard`, `rounded(12)`).
 const OPTION_RADIUS: f32 = 12.0;
 
-/// The answer field's copy before and after a pick (pink: composer.rs
+/// The answer field's copy before and after a pick (Pink: composer.rs
 /// `answer_placeholder`).
 const PLACEHOLDER: &str = "Type your own answer, or pick an option above";
 const PLACEHOLDER_PICKED: &str =
     "Type your own answer, or leave this blank to use the selected option";
-/// pink composer input: `text-[14px] leading-relaxed`; `ANSWER_PADDING_Y`.
+/// Pink composer input: `text-[14px] leading-relaxed`; `ANSWER_PADDING_Y`.
 const INPUT_TEXT_SIZE: f32 = 14.0;
 const INPUT_LINE_HEIGHT: f32 = 22.75;
 const ANSWER_PADDING_Y: f32 = 12.0;
 
-/// What the person decided (pink: proto `ApprovalDecision`).
+/// What the person decided (Pink: proto `ApprovalDecision`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PermissionOutcome {
     /// Allow only this request.
@@ -74,7 +74,7 @@ pub enum PermissionOutcome {
 }
 
 /// One answer row: its label, the grant's lifetime and what it does
-/// (pink: proto `ApprovalChoice`).
+/// (Pink: proto `ApprovalChoice`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PermissionChoice {
     pub label: SharedString,
@@ -100,7 +100,7 @@ impl PermissionChoice {
         }
     }
 
-    // pink: harness codex/approvals.rs `command_choice`.
+    // Pink: harness codex/approvals.rs `command_choice`.
 
     pub fn allow_once() -> Self {
         Self::new(
@@ -273,7 +273,7 @@ impl PermissionRequest {
         self
     }
 
-    /// Request width in px (default: pink's composer column, 768).
+    /// Request width in px (default: Pink's composer column, 768).
     pub fn width(mut self, width: f32) -> Self {
         self.width = width;
         self
@@ -300,7 +300,7 @@ impl PermissionRequest {
     }
 
     /// A typed answer, sent instead of a choice (it decides as a Deny, as
-    /// pink's `approval_decision` finds no choice in it).
+    /// Pink's `approval_decision` finds no choice in it).
     pub fn on_reply(
         mut self,
         handler: impl Fn(SharedString, &mut Window, &mut App) + 'static,
@@ -309,7 +309,7 @@ impl PermissionRequest {
         self
     }
 
-    /// The approval context rows in pink's order (pink: proto
+    /// The approval context rows in Pink's order (Pink: proto
     /// `ApprovalDetails::display_rows`, then composer.rs
     /// `approval_expiry_row`).
     fn rows(&self) -> Vec<(SharedString, SharedString)> {
@@ -352,7 +352,7 @@ impl PermissionRequest {
 
 struct PermState {
     focus: FocusHandle,
-    /// pink's free answer (`answer_input`).
+    /// Pink's free answer (`answer_input`).
     reply: Entity<TextInput>,
     picked: Option<usize>,
     resolved: bool,
@@ -360,7 +360,7 @@ struct PermState {
     choices: Rc<[PermissionChoice]>,
     on_decide: Option<OutcomeHandler>,
     on_reply: Option<ReplyHandler>,
-    /// The pending answer after a pick (pink: composer.rs
+    /// The pending answer after a pick (Pink: composer.rs
     /// `schedule_auto_advance`); a new pick replaces it.
     advance: Option<Task<()>>,
     _reply_events: Subscription,
@@ -371,7 +371,7 @@ impl PermState {
         let reply = cx.new(|cx| TextInput::new(window, cx).placeholder(PLACEHOLDER));
         let reply_events = cx.subscribe_in(&reply, window, |this, _, event, window, cx| {
             match event {
-                // The field's Enter is its own submit (pink: Enter in the
+                // The field's Enter is its own submit (Pink: Enter in the
                 // answer input runs `wizard_advance`).
                 InputEvent::Submit(_) => this.submit(window, cx),
                 InputEvent::Change(_) => cx.notify(),
@@ -391,7 +391,7 @@ impl PermState {
         }
     }
 
-    /// pink `wizard_select`: the row reads picked, the field's copy changes,
+    /// Pink `wizard_select`: the row reads picked, the field's copy changes,
     /// and the answer goes after `AUTO_ADVANCE`.
     fn pick(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
         if self.resolved || ix >= self.choices.len() {
@@ -409,7 +409,7 @@ impl PermState {
         cx.notify();
     }
 
-    /// Send (pink `wizard_advance` and `approval_decision`): a typed answer
+    /// Send (Pink `wizard_advance` and `approval_decision`): a typed answer
     /// names no choice, so it goes back as a Deny; otherwise the picked row;
     /// without either, nothing.
     fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -451,7 +451,7 @@ impl PermState {
     }
 }
 
-/// The pill the composer and the request share (pink: composer.rs
+/// The pill the composer and the request share (Pink: composer.rs
 /// `composer_surface`, opaque treatment).
 fn composer_surface(t: &Pink) -> Div {
     div()
@@ -484,7 +484,7 @@ impl RenderOnce for PermissionRequest {
             s.choices = choices.clone();
             s.on_decide = on_decide;
             s.on_reply = on_reply;
-            // pink composer input: `placeholder` text, accent caret.
+            // Pink composer input: `placeholder` text, accent caret.
             s.reply.update(cx, |input, _| {
                 input.set_colors(Some(t.placeholder), Some(t.caret), Some(t.selection))
             });
@@ -682,7 +682,7 @@ impl RenderOnce for PermissionRequest {
 }
 
 /// 1–9 pick a choice, unless a modifier is held (app shortcuts) or the
-/// answer field has focus (pink: composer.rs `wizard_number_shortcut`).
+/// answer field has focus (Pink: composer.rs `wizard_number_shortcut`).
 fn number_shortcut(key: &str, modified: bool, reply_focused: bool) -> Option<usize> {
     if modified || reply_focused {
         return None;
@@ -691,11 +691,11 @@ fn number_shortcut(key: &str, modified: bool, reply_focused: bool) -> Option<usi
     (1..=9).contains(&digit).then(|| digit - 1)
 }
 
-/// One answer row (pink: composer.rs `render_wizard` "wizard-option"): r12
+/// One answer row (Pink: composer.rs `render_wizard` "wizard-option"): r12
 /// on an ink wash that deepens on hover, a deeper wash and a faint ink edge
 /// when picked, the 13.5 label over its "scope · description" line, and a
 /// 22 px number chip. Keyboard focus recolors the resting transparent edge
-/// in the accent, as pink does for these rows.
+/// in the accent, as Pink does for these rows.
 fn option_row(
     key: &str,
     ix: usize,
@@ -785,7 +785,7 @@ fn option_row(
         })
 }
 
-/// The answered request as the transcript keeps it (pink: transcript.rs
+/// The answered request as the transcript keeps it (Pink: transcript.rs
 /// `input_chip`): a 34 px neutral chip with the question glyph, "Question"
 /// and the request's header. Resolution never recolors it.
 fn record(header: SharedString, t: &Pink) -> Div {

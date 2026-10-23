@@ -1,19 +1,19 @@
 //! Combobox – pick one or many from a searchable, grouped list.
 //!
-//! A pink component. The list is pink's searchable picker card (pink:
+//! A Pink component. The list is Pink's searchable picker card (Pink:
 //! `shell/project_picker.rs` `ProjectPicker::render`): a popover card under
 //! the field with rows of a 28 px monogram tile, a medium name and an 11 px
 //! subline; one highlight that the arrows and the pointer share; a check on
 //! every pick; uppercase group headings; typed words lit in `code_text` on a
-//! rounded `code_wash` (pink: `popover::search_highlight`); a pinned
+//! rounded `code_wash` (Pink: `popover::search_highlight`); a pinned
 //! "Invite “…”" row under a full-bleed hairline when nothing fits exactly
-//! (pink: `ProjectPicker::footer_row`); and a key legend at the foot (pink:
+//! (Pink: `ProjectPicker::footer_row`); and a key legend at the foot (Pink:
 //! the add-project palette's footer).
 //!
-//! The field is pink-ui's own, drawn as a pink dialog field
-//! (`popover::dialog_field`) that holds the picks as message badges (pink:
+//! The field is pink-ui's own, drawn as a Pink dialog field
+//! (`popover::dialog_field`) that holds the picks as message badges (Pink:
 //! `badges::render`) ahead of the search text. Backspace on an empty field
-//! first marks the last pick (pink's selected-chip wash), then removes it.
+//! first marks the last pick (Pink's selected-chip wash), then removes it.
 //!
 //! Keys: type to filter, ↑/↓ to move, Enter to pick or unpick, Backspace on
 //! an empty field to unpick the last pick, Escape to close.
@@ -54,16 +54,16 @@ const ICON_ARROW_DOWN: &str = "icons/combobox/arrow-down.svg";
 const ICON_GLOBE: &str = "icons/combobox/globe.svg";
 const ICON_COPY: &str = "icons/combobox/copy.svg";
 
-/// A row's tile (pink: `ProjectPicker::render`, `project_tile(.., 28.0, ..)`).
+/// A row's tile (Pink: `ProjectPicker::render`, `project_tile(.., 28.0, ..)`).
 const TILE: f32 = 28.;
 /// The tile inside a pick's badge in the field.
 const BADGE_TILE: f32 = 16.;
-/// A pick's badge: pink's message badge at its 24 px floor.
+/// A pick's badge: Pink's message badge at its 24 px floor.
 const BADGE_H: f32 = 24.;
 /// The field: the badge plus `py 6` and the 1 px edge (a dialog field's
-/// height, pink `popover::dialog_field`).
+/// height, Pink `popover::dialog_field`).
 const FIELD_PAD_Y: f32 = 6.;
-/// The list's scroll budget (pink: the picker's `max_h(ui_rems(224.0))`).
+/// The list's scroll budget (Pink: the picker's `max_h(ui_rems(224.0))`).
 const LIST_MAX: f32 = 224.;
 /// Where created entries are listed.
 const CREATED: &str = "Invited";
@@ -73,11 +73,11 @@ type ChangeHandler = Rc<dyn Fn(&[SharedString], &mut Window, &mut App)>;
 /// What an option shows in its tile.
 #[derive(Clone, Debug)]
 pub enum Avatar {
-    /// A monogram on one of pink's project hues, picked from the id (pink:
+    /// A monogram on one of Pink's project hues, picked from the id (Pink:
     /// `sidebar_projects::project_tile`).
     Initials,
     /// An SVG path under `assets/` on a neutral tile, for teams and groups
-    /// (pink: `sidebar_projects::all_projects_tile`).
+    /// (Pink: `sidebar_projects::all_projects_tile`).
     Icon(SharedString),
 }
 
@@ -118,7 +118,7 @@ impl ComboOption {
         self
     }
 
-    /// One of pink's six project hues, stable for the id.
+    /// One of Pink's six project hues, stable for the id.
     fn tint_index(&self) -> usize {
         (pink::loaders::fnv1a(self.id.as_bytes()) % 6) as usize
     }
@@ -165,7 +165,7 @@ pub fn default_options() -> Vec<ComboOption> {
     ]
 }
 
-/// pink: `popover::match_rank`, extended to the subline: `0` the name starts
+/// Pink: `popover::match_rank`, extended to the subline: `0` the name starts
 /// with the query, `1` the name contains it, `2` only the subline does.
 fn match_rank(query: &str, option: &ComboOption) -> Option<usize> {
     let query = query.trim().to_lowercase();
@@ -188,7 +188,7 @@ fn match_rank(query: &str, option: &ComboOption) -> Option<usize> {
     }
 }
 
-/// pink: `popover::menu_step`. Steps the highlight, wrapping at both ends.
+/// Pink: `popover::menu_step`. Steps the highlight, wrapping at both ends.
 fn menu_step(active: usize, count: usize, delta: isize) -> usize {
     if count == 0 {
         return 0;
@@ -232,7 +232,7 @@ impl ComboState {
     }
 
     /// The listed options: those matching the query, groups kept together in
-    /// the order they first appear, ranked within each group (pink:
+    /// the order they first appear, ranked within each group (Pink:
     /// `popover::filter_indices`).
     fn rows(&self) -> Vec<ComboOption> {
         let mut groups: Vec<Option<SharedString>> = Vec::new();
@@ -266,7 +266,7 @@ impl ComboState {
         self.rows().len() + usize::from(self.create_label().is_some())
     }
 
-    /// pink: the highlight starts on the current choice.
+    /// Pink: the highlight starts on the current choice.
     fn home(&self) -> usize {
         if self.multiple {
             return 0;
@@ -497,7 +497,7 @@ impl Combobox {
         self
     }
 
-    /// The line the card shows when nothing matches (pink: "No matching
+    /// The line the card shows when nothing matches (Pink: "No matching
     /// projects").
     pub fn empty_text(mut self, text: impl Into<SharedString>) -> Self {
         self.empty = text.into();
@@ -620,7 +620,7 @@ impl RenderOnce for Combobox {
 
         let opener = state.clone();
         let measurer = state.clone();
-        // pink-ui's field, on pink's dialog field: a separator edge over the
+        // pink-ui's field, on Pink's dialog field: a separator edge over the
         // Quaternary plate, 14 px text. Pink frames don't change on focus;
         // the caret shows it.
         let field = pink::dialog_field(&t)
@@ -691,7 +691,7 @@ impl RenderOnce for Combobox {
             });
             let inner = div().pt(px(layout::POPOVER_GAP)).child(card);
             let inner: AnyElement = match exit {
-                // A dying card takes no clicks (pink: `menu_motion_from`).
+                // A dying card takes no clicks (Pink: `menu_motion_from`).
                 Some(progress) => motion::menu_out(
                     ElementId::NamedInteger("listbox-out".into(), u64::from(opened)),
                     progress,
@@ -739,9 +739,9 @@ impl RenderOnce for Combobox {
     }
 }
 
-/// A pick in the field: pink's message badge (`badges::render`: 24 tall,
+/// A pick in the field: Pink's message badge (`badges::render`: 24 tall,
 /// radius 8, `ink(0.06)`, 12 medium `text_muted`) holding a 16 px tile, the
-/// name and a remove button. Marked for removal it takes pink's selected
+/// name and a remove button. Marked for removal it takes Pink's selected
 /// chip look (`button::chip`: `accent_wash`, an `accent @ 0.55` edge, the
 /// accent label), eased over `QUICK`; it fades in over `INSERT`.
 fn pick_badge(
@@ -779,7 +779,7 @@ fn pick_badge(
         .child(tile(option, BADGE_TILE, t))
         .child(div().max_w(px(140.)).truncate().child(option.short_label()))
         .child(
-            // pink: the history search's close (a quiet `hover_wash` box, a
+            // Pink: the history search's close (a quiet `hover_wash` box, a
             // small CLOSE glyph that brightens).
             div()
                 .id(SharedString::from(format!("unpick-{}", option.id)))
@@ -811,8 +811,8 @@ fn pick_badge(
         )
 }
 
-/// An option's tile: a monogram on its hue (pink:
-/// `sidebar_projects::project_tile`) or a glyph on the neutral tile (pink:
+/// An option's tile: a monogram on its hue (Pink:
+/// `sidebar_projects::project_tile`) or a glyph on the neutral tile (Pink:
 /// `all_projects_tile`: `text @ 0.07`, glyph `round(size × 0.58)` in
 /// `text_muted`), both radius `round(size × 0.28)`.
 fn tile(option: &ComboOption, size: f32, t: &Pink) -> Div {
@@ -856,7 +856,7 @@ struct Card<'a> {
     t: &'a Pink,
 }
 
-/// The listbox (pink: `ProjectPicker::render`): the popover card over the
+/// The listbox (Pink: `ProjectPicker::render`): the popover card over the
 /// scrolling rows or the empty line, the pinned invite row and the legend.
 fn card(c: Card<'_>) -> Div {
     let t = c.t;
@@ -883,7 +883,7 @@ fn card(c: Card<'_>) -> Div {
 
     let mut card = pink::popover_card(t).w_full().flex().flex_col();
     card = if c.rows.is_empty() {
-        // pink: "No matching projects".
+        // Pink: "No matching projects".
         card.child(
             div()
                 .px(px(8.))
@@ -893,7 +893,7 @@ fn card(c: Card<'_>) -> Div {
                 .child(c.empty.clone()),
         )
     } else {
-        // pink: `popover::menu_scroll_host` / `menu_scroll_list`. The
+        // Pink: `popover::menu_scroll_host` / `menu_scroll_list`. The
         // scroller bleeds through the card's inset and re-pads, so the rows
         // stay put and scroll under the card's edge.
         card.child(
@@ -924,7 +924,7 @@ fn card(c: Card<'_>) -> Div {
     }
     let count = c.selected.len();
     card.child(full_bleed_rule(t)).child(
-        // pink: the add-project palette's footer legends, `gap 12` as in the
+        // Pink: the add-project palette's footer legends, `gap 12` as in the
         // command palette.
         div()
             .px(px(8.))
@@ -959,7 +959,7 @@ fn card(c: Card<'_>) -> Div {
     )
 }
 
-/// pink: the picker's divider over its pinned rows. Full-bleed through the
+/// Pink: the picker's divider over its pinned rows. Full-bleed through the
 /// card's inset (one stopping short of the edges reads as a mistake),
 /// `border @ 0.6`, `my 2`.
 fn full_bleed_rule(t: &Pink) -> Div {
@@ -971,7 +971,7 @@ fn full_bleed_rule(t: &Pink) -> Div {
         .bg(t.border.opacity(0.6))
 }
 
-/// One option (pink: `ProjectPicker::render` rows): `menu_row_nav` with the
+/// One option (Pink: `ProjectPicker::render` rows): `menu_row_nav` with the
 /// tile, the name in medium and the 11 px subline in `readable_faint(0.9)`,
 /// typed words lit in both. The pointer moves the shared highlight.
 fn option_row(
@@ -1030,7 +1030,7 @@ fn option_row(
         .into_any_element()
 }
 
-/// The pinned invite row (pink: `ProjectPicker::footer_row` "New project…"):
+/// The pinned invite row (Pink: `ProjectPicker::footer_row` "New project…"):
 /// `menu_row_nav` with a 12 px plus in `text_muted` and the label.
 fn create_row(
     index: usize,
@@ -1074,7 +1074,7 @@ fn create_row(
         )
 }
 
-/// pink: `popover::search_highlight`. Typed words are recolored `code_text`
+/// Pink: `popover::search_highlight`. Typed words are recolored `code_text`
 /// over rounded (r3) `code_wash` plates painted beneath the shaped glyphs;
 /// the text keeps its font, weight and spacing.
 fn search_highlight(text: SharedString, query: &str, t: &Pink) -> AnyElement {
@@ -1124,7 +1124,7 @@ fn search_highlight(text: SharedString, query: &str, t: &Pink) -> AnyElement {
         .into_any_element()
 }
 
-/// pink: `popover::search_match_ranges`. Every case-insensitive occurrence
+/// Pink: `popover::search_match_ranges`. Every case-insensitive occurrence
 /// of each typed word, as byte ranges of `text`, merged where they touch.
 fn search_match_ranges(text: &str, query: &str) -> Vec<Range<usize>> {
     let folded = text.to_lowercase();
@@ -1155,7 +1155,7 @@ fn search_match_ranges(text: &str, query: &str) -> Vec<Range<usize>> {
     merged
 }
 
-/// pink: `markdown::render::range_rects`. One rectangle per visual row of
+/// Pink: `markdown::render::range_rects`. One rectangle per visual row of
 /// `range`, widened by `pad_x` and inset by `inset_y` from the line box.
 fn range_rects(
     layout: &TextLayout,
@@ -1217,7 +1217,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |_, cx| {
         let t = Pink::get(cx);
         div().h(px(470.)).flex().flex_col().child(
-            // A share dialog (pink: `popover::dialog_card`, title, body,
+            // A share dialog (Pink: `popover::dialog_card`, title, body,
             // controls at `mt 16`, Lg buttons at the end).
             pink::dialog_card(&t)
                 .w(px(440.))

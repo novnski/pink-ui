@@ -1,16 +1,16 @@
-//! Trace Waterfall – a pink component.
+//! Trace Waterfall – a Pink component.
 //!
-//! An agent run laid out against time. The step column is pink's tool
-//! activity group (pink: `transcript.rs` `render_tool_group`): the run is the
+//! An agent run laid out against time. The step column is Pink's tool
+//! activity group (Pink: `transcript.rs` `render_tool_group`): the run is the
 //! group's header plate, its model and tool calls hang off the activity rail
 //! (a 1 px hairline ribbon with a 6 px elbow), and sub-agents are rows with
-//! pink's agent tile that fold their own steps away behind the disclosure
+//! Pink's agent tile that fold their own steps away behind the disclosure
 //! chevron. Beside every step its duration sits on a shared time axis as a
-//! 6 px capsule (pink's usage meter), labelled with its time and cost in
-//! pink's timer type. While the run is live, steps arrive on pink's reveal
+//! 6 px capsule (Pink's usage meter), labelled with its time and cost in
+//! Pink's timer type. While the run is live, steps arrive on Pink's reveal
 //! (the rail draws in, the row rises), the axis rescales, a now-line sweeps
-//! right and the header carries pink's working line: breathing orb,
-//! shimmering verb and "· 14s". Run totals sit in pink's usage metric cells;
+//! right and the header carries Pink's working line: breathing orb,
+//! shimmering verb and "· 14s". Run totals sit in Pink's usage metric cells;
 //! the strip at the bottom reads out the step under the pointer (or the
 //! selection). ↑ / ↓ move the selection, ← / → fold and unfold, R replays.
 //!
@@ -59,16 +59,16 @@ const ICON_DANGER: &str = "icons/trace-waterfall/danger-circle.svg";
 const ICON_CHEVRON: &str = "icons/trace-waterfall/alt-arrow-right.svg";
 const ICON_RESTART: &str = "icons/trace-waterfall/restart.svg";
 
-// Step column (pink: `transcript.rs` tool-group and activity-rail constants).
+// Step column (Pink: `transcript.rs` tool-group and activity-rail constants).
 /// The group header row; its plate is 2 px shorter
-/// (pink `TOOL_GROUP_HEADER_HEIGHT`).
+/// (Pink `TOOL_GROUP_HEADER_HEIGHT`).
 const HEADER_H: f32 = 26.0;
-/// A step on the rail (pink `TOOL_TREE_ROW_HEIGHT`).
+/// A step on the rail (Pink `TOOL_TREE_ROW_HEIGHT`).
 const ROW_H: f32 = 32.0;
-/// Between the header and its first step (pink `CHIPS_TOP_PAD`).
+/// Between the header and its first step (Pink `CHIPS_TOP_PAD`).
 const BODY_TOP_PAD: f32 = 2.0;
 /// The rail's gutter: trunk, elbow, branch and glyph
-/// (pink `ACTIVITY_GUTTER_WIDTH`, `ACTIVITY_TEXT_GAP`).
+/// (Pink `ACTIVITY_GUTTER_WIDTH`, `ACTIVITY_TEXT_GAP`).
 const GUTTER_W: f32 = 48.0;
 const TEXT_GAP: f32 = 8.0;
 const TRUNK_X: f32 = 12.5;
@@ -77,11 +77,11 @@ const BRANCH_END_X: f32 = 28.0;
 const ICON_LEFT: f32 = 32.0;
 const ICON_SIZE: f32 = 14.0;
 const RAIL_ALPHA: f32 = 0.12;
-/// The sub-agent tile (pink `chip_header_row`: 18, radius 6, `ink(0.08)`,
+/// The sub-agent tile (Pink `chip_header_row`: 18, radius 6, `ink(0.08)`,
 /// a 12 icon).
 const TILE: f32 = 18.0;
 const TILE_ICON: f32 = 12.0;
-/// Disclosure chevron (pink `DISCLOSURE_CHEVRON_SIZE`).
+/// Disclosure chevron (Pink `DISCLOSURE_CHEVRON_SIZE`).
 const CHEVRON: f32 = 12.0;
 /// A sub-agent's steps hang from its tile: their trunk runs under the tile's
 /// centre, on a half pixel so the 1 px ribbon stays crisp.
@@ -96,10 +96,10 @@ const MAX_DEPTH: usize = 8;
 /// Steps starting this close together arrive as one staggered batch.
 const SAME_ARRIVAL: f32 = 0.05;
 
-// Time axis (pink-ui; pink's usage meter, table header and timer type).
-/// Header row of the table (pink `usage_table_row` header, `min_h 30`).
+// Time axis (pink-ui; Pink's usage meter, table header and timer type).
+/// Header row of the table (Pink `usage_table_row` header, `min_h 30`).
 const AXIS_H: f32 = 30.0;
-/// A step's bar: pink's 6 pt usage-meter capsule.
+/// A step's bar: Pink's 6 pt usage-meter capsule.
 const BAR_H: f32 = 6.0;
 const PAD_L: f32 = 12.0;
 /// Room after the axis for the longest bar's label.
@@ -123,7 +123,7 @@ pub enum SpanKind {
 }
 
 impl SpanKind {
-    /// Pink's glyph for the kind (pink `tool_icon_path`: bot for agents,
+    /// Pink's glyph for the kind (Pink `tool_icon_path`: bot for agents,
     /// brain for model thinking, toolbox for tools).
     fn icon(self) -> &'static str {
         match self {
@@ -377,7 +377,7 @@ fn tick_step(scale: f32) -> f32 {
 }
 
 /// A step's duration: tenths under 10 s, whole seconds to a minute, then
-/// pink's `1m 05s` (pink `native_agents::duration_label`).
+/// Pink's `1m 05s` (Pink `native_agents::duration_label`).
 fn fmt_secs(s: f32) -> String {
     let s = s.max(0.);
     if s < 10. {
@@ -399,7 +399,7 @@ fn fmt_tick(s: f32) -> String {
     }
 }
 
-/// Live spend (pink `usage_live::live_money`): mills under a dollar.
+/// Live spend (Pink `usage_live::live_money`): mills under a dollar.
 fn fmt_cost(c: f32) -> String {
     if c < 1. {
         format!("${:.3}", c.max(0.))
@@ -409,7 +409,7 @@ fn fmt_cost(c: f32) -> String {
     }
 }
 
-/// Token counts (pink `usage::compact_tokens`): `640`, `2.14K`, `32.1K`.
+/// Token counts (Pink `usage::compact_tokens`): `640`, `2.14K`, `32.1K`.
 fn fmt_tokens(n: f32) -> String {
     let value = n.max(0.).round() as u64;
     for (threshold, suffix) in [(1_000_000_000_u64, "B"), (1_000_000, "M"), (1_000, "K")] {
@@ -464,7 +464,7 @@ fn totals(spans: &[TraceSpan], ix: usize, now: f32) -> (f32, f32, f32) {
     acc
 }
 
-/// A fold on one clock (pink: `transcript.rs` tool fold): the body height,
+/// A fold on one clock (Pink: `transcript.rs` tool fold): the body height,
 /// chevron turn and body fade all read it, so they agree mid-fold.
 #[derive(Clone, Copy)]
 struct Fold {
@@ -477,7 +477,7 @@ struct Fold {
 }
 
 /// Where a fold is at `clock`, turning on [`TOOL_FOLD`] from how open it
-/// was when last toggled (pink lerps from the rendered height the same way).
+/// was when last toggled (Pink lerps from the rendered height the same way).
 fn fold_at(open: bool, toggled: Option<(Instant, f32)>, clock: Instant, reduced: bool) -> Fold {
     let target = if open { 1. } else { 0. };
     let settled = Fold {
@@ -580,7 +580,7 @@ impl RenderOnce for TraceWaterfall {
             })
             .collect();
 
-        // Arrivals (pink: `transcript.rs` row reveal starts): a step reveals
+        // Arrivals (Pink: `transcript.rs` row reveal starts): a step reveals
         // when the playback clock reaches it; a group's first step waits
         // 90 ms and steps arriving together stagger by 65 ms.
         let scale_motion = motion::speed_scale();
@@ -733,7 +733,7 @@ impl RenderOnce for TraceWaterfall {
 
         // ---- header ---------------------------------------------------------
         let run_status = if live {
-            // Pink's working line (pink: `transcript.rs` `render_working_trailer`).
+            // Pink's working line (Pink: `transcript.rs` `render_working_trailer`).
             div()
                 .flex()
                 .items_center()
@@ -743,7 +743,7 @@ impl RenderOnce for TraceWaterfall {
                 .child(loaders::working_timer(now as i64, t.content_faint))
                 .into_any_element()
         } else {
-            // Pink's status read (pink: `transcript/agent_cards.rs` meta line):
+            // Pink's status read (Pink: `transcript/agent_cards.rs` meta line):
             // a dot and a quiet word, then the settled duration.
             div()
                 .flex()
@@ -768,7 +768,7 @@ impl RenderOnce for TraceWaterfall {
                 )
                 .into_any_element()
         };
-        // Pink's section header (pink: `settings/widgets.rs` `section_header`)
+        // Pink's section header (Pink: `settings/widgets.rs` `section_header`)
         // with the run's status and replay in its trailing controls, centred
         // on the title's line.
         let header = pink::section_header(self.title.clone(), self.subtitle.clone(), &t)
@@ -797,7 +797,7 @@ impl RenderOnce for TraceWaterfall {
                     }),
             );
 
-        // ---- totals (pink: `shell/usage.rs` Totals grid of metric cells) ----
+        // ---- totals (Pink: `shell/usage.rs` Totals grid of metric cells) ----
         let roots = &kids[n];
         let (run_tokens, run_cost) = roots.iter().fold((0., 0.), |acc, ix| {
             let (tin, tout, cost) = totals(&spans, *ix, now);
@@ -924,8 +924,8 @@ impl RenderOnce for TraceWaterfall {
                     .map(|(k, ix)| frame.block(*ix, 0, k > 0, roots.get(k + 1).copied())),
             )
             .when(live, |body| {
-                // The now-line: where the run has got to, in pink's Working
-                // status tone (pink: `shell/spaces.rs` `busy@0.55`).
+                // The now-line: where the run has got to, in Pink's Working
+                // status tone (Pink: `shell/spaces.rs` `busy@0.55`).
                 body.child(
                     div()
                         .absolute()
@@ -988,7 +988,7 @@ impl RenderOnce for TraceWaterfall {
     }
 }
 
-/// One figure of the run's totals (pink: `shell/usage.rs` `metric_cell`):
+/// One figure of the run's totals (Pink: `shell/usage.rs` `metric_cell`):
 /// a caption over a Title3 value on the resting plate.
 fn metric_cell(label: &'static str, value: String, t: &Pink) -> Div {
     div()
@@ -1069,7 +1069,7 @@ impl Frame<'_> {
         line_h(depth) + self.body_h(ix, depth) * self.folds[ix].progress
     }
 
-    /// One step with its folding body (pink: `transcript.rs`
+    /// One step with its folding body (Pink: `transcript.rs`
     /// `render_tool_group` and `reveal_tool_row`): the line, the steps under
     /// it clipped to the fold, and for steps on a rail their connector. An
     /// arriving step is clipped to its reveal.
@@ -1098,7 +1098,7 @@ impl Frame<'_> {
                         .enumerate()
                         .map(|(k, c)| self.block(*c, depth + 1, k > 0, kids.get(k + 1).copied())),
                 );
-            // A sub-agent's steps fade and settle like pink's row bodies; the
+            // A sub-agent's steps fade and settle like Pink's row bodies; the
             // group under the header only clips.
             if depth > 0 && fold.alpha < 1. {
                 content = content
@@ -1133,7 +1133,7 @@ impl Frame<'_> {
     }
 
     /// The row a step reads on: the step cell and its bar. Hover is a
-    /// Tertiary wash, the selection the Primary fill (pink's chrome rows).
+    /// Tertiary wash, the selection the Primary fill (Pink's chrome rows).
     fn line(&self, ix: usize, depth: usize, has_pred: bool) -> Stateful<Div> {
         let t = self.t;
         let row_key = format!("{}-row-{ix}", self.key);
@@ -1150,7 +1150,7 @@ impl Frame<'_> {
             sel,
         );
         let height = line_h(depth);
-        // Text rises in with the branch (pink: `tool_connector_parts(..).1`).
+        // Text rises in with the branch (Pink: `tool_connector_parts(..).1`).
         let content = if depth == 0 {
             1.
         } else {
@@ -1197,7 +1197,7 @@ impl Frame<'_> {
         }
     }
 
-    /// A root step as the group's header plate (pink: `transcript.rs`
+    /// A root step as the group's header plate (Pink: `transcript.rs`
     /// `render_tool_group` header): kind glyph on the rail's trunk, the
     /// summary (shimmering while live) and a chevron that turns as the group
     /// opens, on a resting fill that brightens under the pointer.
@@ -1303,7 +1303,7 @@ impl Frame<'_> {
             .child(div().size(px(TILE)).flex_none())
     }
 
-    /// A step on the rail (pink: `transcript.rs` `chip_header_row`): the
+    /// A step on the rail (Pink: `transcript.rs` `chip_header_row`): the
     /// label in `content_muted` brightening under the pointer (medium for a
     /// sub-agent), then the trailing slot – "Failed" as one red word, the
     /// model or tool in faint 11 and the disclosure tile, half strength until
@@ -1323,7 +1323,7 @@ impl Frame<'_> {
         } else {
             0
         };
-        // A folded sub-agent says what it holds, like pink's group summary.
+        // A folded sub-agent says what it holds, like Pink's group summary.
         let detail: Option<SharedString> = match (folded, span.detail.clone()) {
             (0, detail) => detail,
             (n, Some(detail)) => Some(format!("{n} steps · {detail}").into()),
@@ -1351,8 +1351,8 @@ impl Frame<'_> {
             .child(div().flex_1().min_w(px(4.)))
             .when(status == Status::Failed, |cell| cell.child(failed_word(t)))
             .when_some(detail, |cell, detail| cell.child(trailing_meta(detail, t)))
-            // A running sub-agent shows pink's working-row spinner in the
-            // trailing slot (pink: `chip_header_row` for a running child).
+            // A running sub-agent shows Pink's working-row spinner in the
+            // trailing slot (Pink: `chip_header_row` for a running child).
             .when(agent && status == Status::Running, |cell| {
                 cell.child(div().flex_none().child(loaders::mini_glyph_spinner(
                     format!("{}-spin-{ix}", self.key),
@@ -1393,12 +1393,12 @@ impl Frame<'_> {
         }
     }
 
-    /// The step's connector and glyph (pink: `transcript.rs` `activity_rail`):
+    /// The step's connector and glyph (Pink: `transcript.rs` `activity_rail`):
     /// the trunk comes down from the row above, bends on a 6 px radius into
     /// the branch and reveals the glyph at its tip; a later sibling's arrival
     /// first carries the trunk on past this row. One nonzero path, so the
-    /// joints never double their alpha. A sub-agent's glyph is pink's agent
-    /// tile; a running step shows pink's item spinner in its glyph slot, a
+    /// joints never double their alpha. A sub-agent's glyph is Pink's agent
+    /// tile; a running step shows Pink's item spinner in its glyph slot, a
     /// failure the danger circle.
     fn rail(&self, ix: usize, depth: usize, has_pred: bool, next: Option<usize>) -> Div {
         let t = self.t;
@@ -1506,11 +1506,11 @@ impl Frame<'_> {
             .child(glyph)
     }
 
-    /// The step's bar on the time axis: pink's 6 pt usage-meter capsule,
-    /// neutral when settled (pink's meter fill), `busy` at 55% while it runs
-    /// (pink's Working status tone), danger when it failed and warning for the
+    /// The step's bar on the time axis: Pink's 6 pt usage-meter capsule,
+    /// neutral when settled (Pink's meter fill), `busy` at 55% while it runs
+    /// (Pink's Working status tone), danger when it failed and warning for the
     /// slowest step; a sub-agent's bar is the meter's track it brackets.
-    /// The label is pink's timer type: 11 tabular `content_faint`.
+    /// The label is Pink's timer type: 11 tabular `content_faint`.
     fn bar_cell(&self, ix: usize, height: f32, reveal: f32) -> Div {
         let t = self.t;
         let span = &self.spans[ix];
@@ -1521,7 +1521,7 @@ impl Frame<'_> {
         let color = match (span.kind, status) {
             (_, Status::Failed) => t.readable_tone(t.danger, 1.),
             (SpanKind::Agent, _) => t.fill(FillTier::Secondary),
-            // pink's Working status tone (`shell/spaces.rs`: `busy@0.55`).
+            // Pink's Working status tone (`shell/spaces.rs`: `busy@0.55`).
             (_, Status::Running) => t.busy.opacity(0.55),
             _ if slowest => t.readable_tone(t.warning, 1.),
             _ => t.text_muted,
@@ -1574,7 +1574,7 @@ impl Frame<'_> {
     }
 }
 
-/// Pink's failure word (pink: `chip_header_row`): 11 medium, danger.
+/// Pink's failure word (Pink: `chip_header_row`): 11 medium, danger.
 fn failed_word(t: &Pink) -> Div {
     div()
         .flex_none()
@@ -1584,7 +1584,7 @@ fn failed_word(t: &Pink) -> Div {
         .child("Failed")
 }
 
-/// The trailing model / tool slot (pink: `chip_header_row` model): bare
+/// The trailing model / tool slot (Pink: `chip_header_row` model): bare
 /// faint 11 text, not a pill.
 fn trailing_meta(text: SharedString, t: &Pink) -> Div {
     div()
@@ -1598,7 +1598,7 @@ fn trailing_meta(text: SharedString, t: &Pink) -> Div {
 }
 
 /// The elbow and branch, revealed by distance so the bend and the straight
-/// leg draw at one speed (pink: `transcript.rs` `activity_branch_points`).
+/// leg draw at one speed (Pink: `transcript.rs` `activity_branch_points`).
 fn branch_points(progress: f32) -> Vec<Point<f32>> {
     let mut path: Vec<_> = (0..=24)
         .map(|step| {
@@ -1631,7 +1631,7 @@ fn branch_points(progress: f32) -> Vec<Point<f32>> {
 }
 
 /// A 1 px ribbon along `points` as a clockwise contour; a nonzero fill
-/// unions the contours (pink: `transcript.rs` `activity_ribbon`).
+/// unions the contours (Pink: `transcript.rs` `activity_ribbon`).
 fn ribbon(path: &mut PathBuilder, points: &[Point<Pixels>]) {
     if points.len() < 2 {
         return;
@@ -1758,8 +1758,8 @@ fn run(
 }
 
 /// The strip under the steps: the hovered or selected step in numbers, laid
-/// out like pink's settings row (title over a muted line) and usage figures
-/// (11 caption over a 13 value), with the step's share of the run on pink's
+/// out like Pink's settings row (title over a muted line) and usage figures
+/// (11 caption over a 13 value), with the step's share of the run on Pink's
 /// usage meter.
 fn readout(
     key: &str,

@@ -1,15 +1,15 @@
 //! Agent Plan – the steps an agent proposes, shaped by you, then followed
-//! as they run. The plan rides on the composer, the way pink stacks its own
+//! as they run. The plan rides on the composer, the way Pink stacks its own
 //! pieces there (`composer.rs`: checklist, notices and the queue tray sit in
 //! the column above the pill).
 //!
 //! In **draft** the plan is a tray emerging from behind the composer, drawn
-//! like pink's message queue (`queue.rs`) under the goal card's header bar
+//! like Pink's message queue (`queue.rs`) under the goal card's header bar
 //! (`composer/goals.rs`): drag a row to reorder it, rename a
 //! step with the pen (or a double-click), remove one, add your own, then
-//! **Run plan**. The run is pink's provider checklist
+//! **Run plan**. The run is Pink's provider checklist
 //! (`composer/checklist.rs`): one quiet "2/5 · In progress: …" line that
-//! unfolds into a "Status · step" line per step. A failed step raises pink's
+//! unfolds into a "Status · step" line per step. A failed step raises Pink's
 //! composer notice (`notice.rs`) with "Retry from here" and "Skip step"; the
 //! checklist's close button ends the run and hands the plan back to you.
 //!
@@ -65,24 +65,24 @@ const ICON_CANCEL: &str = "icons/agent-plan/queue-close.svg";
 
 /// Width of the composer column the plan stacks in.
 const WIDTH: f32 = 600.0;
-/// The composer stack's column gap (pink `Theme::SPACE_SM`).
+/// The composer stack's column gap (Pink `Theme::SPACE_SM`).
 const STACK_GAP: f32 = 8.0;
-/// The tray is inset from the column and tucked behind the composer (pink
+/// The tray is inset from the column and tucked behind the composer (Pink
 /// `QUEUE_SIDE_INSET`, `QUEUE_COMPOSER_OVERLAP`).
 const TRAY_INSET: f32 = 16.0;
 const TRAY_OVERLAP: f32 = 18.0;
-/// The tray's header bar and its glyph (pink goals.rs `HEADER_HEIGHT`,
+/// The tray's header bar and its glyph (Pink goals.rs `HEADER_HEIGHT`,
 /// `GLYPH`).
 const TRAY_HEADER_H: f32 = 38.0;
 const TRAY_GLYPH: f32 = 14.0;
-/// Tray rows (pink `queue.rs`: `ROW_HEIGHT`, `QUEUE_TEXT_SIZE`, `ROW_PAD_X`,
+/// Tray rows (Pink `queue.rs`: `ROW_HEIGHT`, `QUEUE_TEXT_SIZE`, `ROW_PAD_X`,
 /// `ROW_RADIUS`, `QUEUE_ICON_SIZE`).
 const ROW_H: f32 = 36.0;
 const ROW_TEXT: f32 = 12.5;
 const ROW_PAD_X: f32 = 8.0;
 const ROW_RADIUS: f32 = radius::MD;
 const TRAY_ICON: f32 = 13.0;
-/// The checklist (pink `render_checklist`): 11.5 text, a 28 disclosure row,
+/// The checklist (Pink `render_checklist`): 11.5 text, a 28 disclosure row,
 /// a 24 close button, at most 144 of step lines.
 const CHECKLIST_TEXT: f32 = 11.5;
 const CHECKLIST_ROW_H: f32 = 28.0;
@@ -136,7 +136,7 @@ pub enum StepStatus {
 }
 
 impl StepStatus {
-    /// The checklist's status word (pink `render_checklist`; "Failed" and
+    /// The checklist's status word (Pink `render_checklist`; "Failed" and
     /// "Skipped" are the plan's own).
     fn word(self) -> &'static str {
         match self {
@@ -195,7 +195,7 @@ impl AgentPlan {
         self
     }
 
-    /// Opens the run's checklist unfolded (pink starts it folded).
+    /// Opens the run's checklist unfolded (Pink starts it folded).
     pub fn expanded(mut self, expanded: bool) -> Self {
         self.expanded = expanded;
         self
@@ -268,13 +268,13 @@ impl Step {
     }
 }
 
-/// A tray row being dragged (pink `QueueDragPayload`), scoped to its plan.
+/// A tray row being dragged (Pink `QueueDragPayload`), scoped to its plan.
 struct StepDrag {
     plan: SharedString,
     from: usize,
 }
 
-/// Where the dragged row would land (pink `QueueDragState`).
+/// Where the dragged row would land (Pink `QueueDragState`).
 struct DragState {
     from: usize,
     over: usize,
@@ -629,7 +629,7 @@ impl PlanState {
         cx.notify();
     }
 
-    /// Tracks the drop slot while a row is dragged (pink
+    /// Tracks the drop slot while a row is dragged (Pink
     /// `update_queue_drag_over`).
     fn drag_over(&mut self, from: usize, over: usize, cx: &mut Context<Self>) {
         match &mut self.drag {
@@ -659,7 +659,7 @@ impl PlanState {
         }
     }
 
-    /// Moves the row at `from` to `to` (pink `move_queued`).
+    /// Moves the row at `from` to `to` (Pink `move_queued`).
     fn move_step(&mut self, from: usize, to: usize, window: &mut Window, cx: &mut Context<Self>) {
         if from != to && from < self.steps.len() {
             let step = self.steps.remove(from);
@@ -670,7 +670,7 @@ impl PlanState {
     }
 }
 
-/// A pointer inside the step list as a row slot (pink `terminal/panel.rs`
+/// A pointer inside the step list as a row slot (Pink `terminal/panel.rs`
 /// `drop_index`).
 fn drop_index(rel_y: f32, slot: f32, count: usize) -> usize {
     if count == 0 || slot <= 0.0 {
@@ -680,7 +680,7 @@ fn drop_index(rel_y: f32, slot: f32, count: usize) -> usize {
 }
 
 /// Rows between the dragged one and its target shift one slot toward the
-/// gap it leaves (pink `terminal/panel.rs` `slide_offset`).
+/// gap it leaves (Pink `terminal/panel.rs` `slide_offset`).
 fn slide_offset(ix: usize, from: usize, over: usize) -> f32 {
     if from < over && ix > from && ix <= over {
         -1.0
@@ -691,7 +691,7 @@ fn slide_offset(ix: usize, from: usize, over: usize) -> f32 {
     }
 }
 
-/// Start and target offsets of a row's slide (pink `queue_drag_offsets`):
+/// Start and target offsets of a row's slide (Pink `queue_drag_offsets`):
 /// the dragged row travels to the hovered slot, the rows in its path slide
 /// into the space it left.
 fn drag_offsets(ix: usize, from: usize, prev_over: usize, over: usize) -> (f32, f32) {
@@ -727,7 +727,7 @@ fn status_text(text: String, red: Option<Range<usize>>, t: &Pink) -> StyledText 
     }
 }
 
-/// The run as pink's provider checklist (pink: composer/checklist.rs
+/// The run as Pink's provider checklist (Pink: composer/checklist.rs
 /// `Composer::render_checklist`): a 28 disclosure row reading
 /// "done/total · detail" beside a 24 close button, unfolding into one
 /// "Status · step" line per step and a closing note, all 11.5 `text_muted`.
@@ -913,7 +913,7 @@ fn checklist(key: &str, s: &PlanState, state: &Entity<PlanState>, t: &Pink) -> S
         )
 }
 
-/// A failed step's notice above the composer (pink: notice.rs `notice_chip`,
+/// A failed step's notice above the composer (Pink: notice.rs `notice_chip`,
 /// the danger variant, docked `mx 4` like the composer's failure notice):
 /// an opaque tint, the triangle, a medium title, capsule actions and a copy
 /// button on the title row, the error under it.
@@ -1021,7 +1021,7 @@ fn failure_notice(key: &str, s: &PlanState, state: &Entity<PlanState>, t: &Pink)
     )
 }
 
-/// A tray row's glyph action (pink: queue.rs `queue_action`): a 28 circle,
+/// A tray row's glyph action (Pink: queue.rs `queue_action`): a 28 circle,
 /// transparent → `fill(Tertiary)`, the 13 glyph brightening to `text` with
 /// it, a tooltip after the usual delay. Callers add the handlers.
 fn tray_action(
@@ -1064,7 +1064,7 @@ fn tray_action(
         )
 }
 
-/// The 20 × 28 leading slot of a tray row (pink `queue_row`'s marker).
+/// The 20 × 28 leading slot of a tray row (Pink `queue_row`'s marker).
 fn row_slot(glyph: &'static str, size: f32, color: gpui::Hsla) -> Div {
     div()
         .w(px(20.))
@@ -1083,7 +1083,7 @@ fn row_slot(glyph: &'static str, size: f32, color: gpui::Hsla) -> Div {
         )
 }
 
-/// A row frame shared by the tray's step and add rows (pink `queue_row`):
+/// A row frame shared by the tray's step and add rows (Pink `queue_row`):
 /// 36 tall, `px 8`, gap 8, radius 8.
 fn row_frame(id: String) -> Stateful<Div> {
     div()
@@ -1098,7 +1098,7 @@ fn row_frame(id: String) -> Stateful<Div> {
         .rounded(px(ROW_RADIUS))
 }
 
-/// Save and cancel for a row being typed into (pink's queue edit actions).
+/// Save and cancel for a row being typed into (Pink's queue edit actions).
 /// They act on mouse-down, before the field's blur commits the text.
 fn edit_actions(
     row_key: &str,
@@ -1167,7 +1167,7 @@ fn edit_actions(
         )
 }
 
-/// One step of the draft (pink: queue.rs `queue_row`): the drag marker, the
+/// One step of the draft (Pink: queue.rs `queue_row`): the drag marker, the
 /// title over its tool and estimate, remove and edit always present. The
 /// whole row drags; the row being renamed takes the Tertiary fill and the
 /// field in place of its title.
@@ -1361,7 +1361,7 @@ fn add_row(key: &str, s: &PlanState, state: &Entity<PlanState>, t: &Pink) -> Sta
         })
 }
 
-/// The tray's header bar (pink: composer/goals.rs `render_goal_card`, the
+/// The tray's header bar (Pink: composer/goals.rs `render_goal_card`, the
 /// goal bar on the same stack tray): a 38 strip reading "Plan · objective",
 /// the step count and estimate trailing in 12 tabular figures, then the
 /// controls; here the one Primary button.
@@ -1476,7 +1476,7 @@ fn tray_header(
         )
 }
 
-/// The draft as a tray above the composer (pink: queue.rs
+/// The draft as a tray above the composer (Pink: queue.rs
 /// `render_queue_panel` / `queue_panel_surface`): one opaque plate with a
 /// hairline edge, the goal bar's header and borderless rows. Docked on a
 /// composer it takes only top corners and tucks its last 18 px behind the
@@ -1531,7 +1531,7 @@ fn plan_tray(
         .border_1()
         .border_color(edge)
         // Docked, the tray floats over the transcript with the composer and
-        // takes pink's opaque-treatment `menu_shadows`; on its own it lies flat.
+        // takes Pink's opaque-treatment `menu_shadows`; on its own it lies flat.
         .when(docked, |el| {
             el.mx(px(TRAY_INSET))
                 .mb(px(-(STACK_GAP + TRAY_OVERLAP)))
@@ -1540,7 +1540,7 @@ fn plan_tray(
                 .shadow(t.menu_shadows())
         })
         .when(!docked, |el| el.rounded(px(radius::STACK_TRAY)))
-        // The whole plate is the drop target (pink: its padding included).
+        // The whole plate is the drop target (Pink: its padding included).
         .on_drop::<StepDrag>({
             let state = state.clone();
             move |payload: &StepDrag, window, cx| {
@@ -1630,7 +1630,7 @@ impl RenderOnce for AgentPlan {
     }
 }
 
-/// The composer the demo stacks the plan on (pink: composer.rs
+/// The composer the demo stacks the plan on (Pink: composer.rs
 /// `composer_surface` in the opaque treatment, holding an empty session
 /// draft and the recessed Send disc of `render_send_button`).
 fn demo_composer(t: &Pink) -> Div {

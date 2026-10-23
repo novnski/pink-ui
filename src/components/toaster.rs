@@ -1,6 +1,6 @@
-//! Toaster – pink's feedback toast (pink: shell.rs `Shell::render_toast`).
+//! Toaster – Pink's feedback toast (Pink: shell.rs `Shell::render_toast`).
 //!
-//! A [`Toasts`] entity holds the one notice on screen, like pink's
+//! A [`Toasts`] entity holds the one notice on screen, like Pink's
 //! `Shell::sidebar_notice`: `push` a [`Toast`] and it takes the place of
 //! whatever was showing, `replace` swaps the content of a toast you pushed,
 //! and `promise` keeps a progress notice up until a future resolves into its
@@ -38,37 +38,37 @@ use crate::{
 pub const NAME: &str = "Toaster";
 pub const DESCRIPTION: &str = "One quiet capsule of feedback above the composer – a status or error glyph and a single line that fade and rise into place, an optional action, and a notice that clears itself after a few seconds or on dismiss";
 
-/// pink: icons.rs `INFO_CIRCLE` (Solar Linear), the status glyph.
+/// Pink: icons.rs `INFO_CIRCLE` (Solar Linear), the status glyph.
 const ICON_STATUS: &str = "icons/toaster/info-circle.svg";
-/// pink: icons.rs `DANGER_TRIANGLE` (Solar Linear), the error glyph.
+/// Pink: icons.rs `DANGER_TRIANGLE` (Solar Linear), the error glyph.
 const ICON_ERROR: &str = "icons/toaster/danger-triangle.svg";
-/// pink: icons.rs `CLOSE`, the dismiss glyph.
+/// Pink: icons.rs `CLOSE`, the dismiss glyph.
 const ICON_CLOSE: &str = "icons/toaster/close.svg";
 
-/// Capsule height (pink: shell.rs `TOAST_HEIGHT`).
+/// Capsule height (Pink: shell.rs `TOAST_HEIGHT`).
 pub const TOAST_HEIGHT: f32 = 34.;
-/// Space between the capsule and its anchor's top edge (pink: render_toast
+/// Space between the capsule and its anchor's top edge (Pink: render_toast
 /// places the lane at `top(-(TOAST_HEIGHT + 8))`).
 pub const ANCHOR_GAP: f32 = 8.;
-/// Widest the capsule grows before the message truncates (pink: render_toast).
+/// Widest the capsule grows before the message truncates (Pink: render_toast).
 const MAX_WIDTH: f32 = 520.;
-/// Message size (pink: render_toast `ui_rems(12.5)`).
+/// Message size (Pink: render_toast `ui_rems(12.5)`).
 const TEXT_SIZE: f32 = 12.5;
-/// The round dismiss button (pink: render_toast "toast-dismiss").
+/// The round dismiss button (Pink: render_toast "toast-dismiss").
 const DISMISS_SIZE: f32 = 24.;
-/// Its close glyph (pink: render_toast `CLOSE` at 10).
+/// Its close glyph (Pink: render_toast `CLOSE` at 10).
 const DISMISS_GLYPH: f32 = 10.;
 
-/// A status notice's lifetime (pink: `SidebarNotice::transient_status`).
+/// A status notice's lifetime (Pink: `SidebarNotice::transient_status`).
 const STATUS_LIFETIME: Duration = Duration::from_secs(4);
-/// An error notice's lifetime (pink: `SidebarNotice::transient_error`).
+/// An error notice's lifetime (Pink: `SidebarNotice::transient_error`).
 const ERROR_LIFETIME: Duration = Duration::from_secs(10);
 
 pub type ToastId = u64;
 
 type ActionHandler = Rc<dyn Fn(ToastId, &mut Window, &mut App)>;
 
-/// What a notice reports; picks its glyph and tone (pink: `SidebarNoticeTone`).
+/// What a notice reports; picks its glyph and tone (Pink: `SidebarNoticeTone`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToastKind {
     /// Confirmation or progress: `INFO_CIRCLE` in the accent.
@@ -115,12 +115,12 @@ impl Toast {
         }
     }
 
-    /// A status notice that clears after 4s (pink `transient_status`).
+    /// A status notice that clears after 4s (Pink `transient_status`).
     pub fn status(message: impl Into<SharedString>) -> Self {
         Self::new(message)
     }
 
-    /// An error notice that clears after 10s (pink `transient_error`).
+    /// An error notice that clears after 10s (Pink `transient_error`).
     pub fn error(message: impl Into<SharedString>) -> Self {
         Self::new(message).kind(ToastKind::Error)
     }
@@ -153,7 +153,7 @@ impl Toast {
         self
     }
 
-    /// Stays until dismissed or replaced (pink `SidebarNotice::status`).
+    /// Stays until dismissed or replaced (Pink `SidebarNotice::status`).
     pub fn sticky(mut self) -> Self {
         self.duration = None;
         self
@@ -161,7 +161,7 @@ impl Toast {
 }
 
 /// The notice on screen. `version` is bumped by `replace`, so the capsule
-/// arrives again just as a newly published pink notice does.
+/// arrives again just as a newly published Pink notice does.
 #[derive(Clone)]
 struct Notice {
     id: ToastId,
@@ -225,7 +225,7 @@ impl Toasts {
     }
 
     /// Shows `progress` until `future` resolves, then its result. The result
-    /// is published even if the progress notice was dismissed, as pink's
+    /// is published even if the progress notice was dismissed, as Pink's
     /// progress messages are.
     pub fn promise(
         &mut self,
@@ -293,7 +293,7 @@ impl Toasts {
     }
 }
 
-/// Renders a [`Toasts`] slot as pink's toast capsule. Place it as a child of
+/// Renders a [`Toasts`] slot as Pink's toast capsule. Place it as a child of
 /// the element it floats above, which must be `.relative()`: the capsule sits
 /// centered, [`TOAST_HEIGHT`] + [`ANCHOR_GAP`] above that element's top edge.
 #[derive(IntoElement)]
@@ -315,7 +315,7 @@ impl RenderOnce for Toaster {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Pink::get(cx);
         let key = self.id.to_string();
-        // pink: render_toast's lane, centered over the composer column.
+        // Pink: render_toast's lane, centered over the composer column.
         let lane = div()
             .absolute()
             .top(px(-(TOAST_HEIGHT + ANCHOR_GAP)))
@@ -333,7 +333,7 @@ impl RenderOnce for Toaster {
     }
 }
 
-/// The capsule itself (pink: shell.rs `Shell::render_toast`): a 34pt pill on
+/// The capsule itself (Pink: shell.rs `Shell::render_toast`): a 34pt pill on
 /// the opaque tooltip surface with a hairline edge and the menu shadows, a
 /// 14pt tone glyph, one truncating line of 12.5pt copy, an optional action
 /// capsule and a 24pt round Dismiss. It arrives over [`TOAST_IN`]: 220ms
@@ -376,7 +376,7 @@ fn capsule(key: &str, notice: Notice, toasts: &Entity<Toasts>, t: &Pink) -> impl
             )
     };
 
-    // Not in pink's toast: an action in pink's notice-action capsule (pink:
+    // Not in Pink's toast: an action in Pink's notice-action capsule (Pink:
     // notice.rs `notice_action`), riding the row as notice chips' do.
     let action = toast.action.clone().map(|action| {
         let toasts = toasts.clone();
@@ -437,7 +437,7 @@ const ICON_FORK: &str = "icons/toaster/arrow-fork.svg";
 const ICON_ATTACH: &str = "icons/toaster/paperclip.svg";
 const ICON_SEND: &str = "icons/toaster/arrow-up.svg";
 
-/// The transcript's row gutter (pink: transcript.rs, 48 at desktop widths).
+/// The transcript's row gutter (Pink: transcript.rs, 48 at desktop widths).
 const TRANSCRIPT_GUTTER: f32 = 48.;
 
 fn copy_link(q: &mut Toasts, cx: &mut Context<Toasts>) {
@@ -549,7 +549,7 @@ fn trigger(
     })
 }
 
-/// A 1px inset edge (the light user bubble's, pink: transcript.rs).
+/// A 1px inset edge (the light user bubble's, Pink: transcript.rs).
 fn inset_edge(color: gpui::Hsla) -> Vec<BoxShadow> {
     vec![BoxShadow {
         color,
@@ -560,7 +560,7 @@ fn inset_edge(color: gpui::Hsla) -> Vec<BoxShadow> {
     }]
 }
 
-/// The bottom of a chat: the last exchange (pink: transcript.rs user bubble
+/// The bottom of a chat: the last exchange (Pink: transcript.rs user bubble
 /// and bare assistant prose, 14/22).
 fn exchange(t: &Pink) -> impl IntoElement {
     div()
@@ -589,7 +589,7 @@ fn exchange(t: &Pink) -> impl IntoElement {
         ))
 }
 
-/// A resting composer pill for the toast to float above (pink: composer.rs
+/// A resting composer pill for the toast to float above (Pink: composer.rs
 /// `composer_surface`, opaque: `input_glass_bg` with `shadow_lg`; recessed
 /// Send disc, Attach at rest).
 fn composer(t: &Pink) -> impl IntoElement {
@@ -703,8 +703,8 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .font_family(pink::SANS)
             .child(triggers)
             .child(
-                // The bottom of a chat pane on pink's content canvas, with
-                // the transcript's 48pt gutter (pink: transcript.rs).
+                // The bottom of a chat pane on Pink's content canvas, with
+                // the transcript's 48pt gutter (Pink: transcript.rs).
                 div()
                     .px(px(TRANSCRIPT_GUTTER))
                     .pt(px(space::S24))
@@ -721,7 +721,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                             .child(exchange(&t))
                             .child(
                                 // The composer column the toast mounts in
-                                // (pink: shell.rs "persistent-composer"),
+                                // (Pink: shell.rs "persistent-composer"),
                                 // with room above it for the capsule's lane.
                                 div()
                                     .relative()

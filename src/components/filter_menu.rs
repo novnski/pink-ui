@@ -1,4 +1,4 @@
-//! Filter Menu – the Board toolbar's Filters pop-up (pink
+//! Filter Menu – the Board toolbar's Filters pop-up (Pink
 //! `shell/board/filters.rs` `render_filters_select` + `page.rs`
 //! `render_menu_card`).
 //!
@@ -11,7 +11,7 @@
 //!
 //! The pointer and the arrow keys share one highlight. ↑ and ↓ move it
 //! (wrapping, skipping dimmed rows), Enter or Space applies the row under
-//! it, Esc closes; every pick closes the menu, the way pink's Board does. The
+//! it, Esc closes; every pick closes the menu, the way Pink's Board does. The
 //! card drops 6 pt into place over 180 ms and fades out over 120 ms.
 //!
 //! ```ignore
@@ -50,7 +50,7 @@ pub const DESCRIPTION: &str = "A Filters pop-up button with an active count that
 const ICON_FILTER: &str = "icons/filter-menu/filter.svg";
 const ICON_ATTENTION: &str = "icons/filter-menu/danger-triangle.svg";
 
-/// The Board menu card's height budget before it scrolls (pink
+/// The Board menu card's height budget before it scrolls (Pink
 /// `render_menu_card` `max_h 420`).
 const MENU_MAX_H: f32 = 420.0;
 
@@ -64,7 +64,7 @@ type ChangeHandler = Rc<dyn Fn(&FilterValue, &mut Window, &mut App)>;
 pub struct FilterOption {
     pub id: SharedString,
     pub label: SharedString,
-    /// A 14 pt leading glyph (pink's provider marks), tinted
+    /// A 14 pt leading glyph (Pink's provider marks), tinted
     /// `readable_muted(0.9)`.
     pub glyph: Option<SharedString>,
 }
@@ -90,12 +90,12 @@ pub struct FilterGroup {
     /// The group's menu heading ("Source").
     pub label: SharedString,
     pub options: Vec<FilterOption>,
-    /// Independent switches (pink's Attention and Archive rows) instead of
-    /// one choice with an "Any …" row (pink's Provider and Source).
+    /// Independent switches (Pink's Attention and Archive rows) instead of
+    /// one choice with an "Any …" row (Pink's Provider and Source).
     pub multiple: bool,
     /// The single-choice group's first row; "Any <label>" when unset.
     pub any_label: Option<SharedString>,
-    /// Whether this group adds to the trigger's "Filters · N" (pink leaves
+    /// Whether this group adds to the trigger's "Filters · N" (Pink leaves
     /// out Attention, which has its own toolbar chip).
     pub counted: bool,
 }
@@ -147,7 +147,7 @@ impl FilterGroup {
     }
 }
 
-/// What a menu row does (pink `MenuAction`), by group and option index.
+/// What a menu row does (Pink `MenuAction`), by group and option index.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Action {
     Any(usize),
@@ -155,7 +155,7 @@ enum Action {
     Clear,
 }
 
-/// One row of the menu (pink `MenuEntry`).
+/// One row of the menu (Pink `MenuEntry`).
 #[derive(Clone, Debug)]
 struct Entry {
     key: SharedString,
@@ -171,7 +171,7 @@ fn picked<'a>(value: &'a FilterValue, group: &str) -> &'a [SharedString] {
     value.get(group).map_or(&[], |list| list.as_slice())
 }
 
-/// The rows, top to bottom (pink `filter_menu_entries`): per group a heading
+/// The rows, top to bottom (Pink `filter_menu_entries`): per group a heading
 /// on its first row, the "Any …" row for single-choice groups, the options,
 /// and "Clear all filters" last.
 fn entries(groups: &[FilterGroup], value: &FilterValue) -> Vec<Entry> {
@@ -214,7 +214,7 @@ fn entries(groups: &[FilterGroup], value: &FilterValue) -> Vec<Entry> {
     rows
 }
 
-/// The value after a row runs (pink `run_menu_action`).
+/// The value after a row runs (Pink `run_menu_action`).
 fn apply(groups: &[FilterGroup], action: Action, mut value: FilterValue) -> FilterValue {
     match action {
         Action::Clear => FilterValue::new(),
@@ -245,7 +245,7 @@ fn apply(groups: &[FilterGroup], action: Action, mut value: FilterValue) -> Filt
     }
 }
 
-/// The trigger's N (pink `active_filter_count`): one per set single-choice
+/// The trigger's N (Pink `active_filter_count`): one per set single-choice
 /// group, one per switched-on option, counted groups only.
 fn active_count(groups: &[FilterGroup], value: &FilterValue) -> usize {
     groups
@@ -262,13 +262,13 @@ fn active_count(groups: &[FilterGroup], value: &FilterValue) -> usize {
         .sum()
 }
 
-/// Whether "Clear all filters" has anything to clear (pink `any_filter`).
+/// Whether "Clear all filters" has anything to clear (Pink `any_filter`).
 fn any_filter(value: &FilterValue) -> bool {
     value.values().any(|list| !list.is_empty())
 }
 
 /// Steps the cursor, wrapping at both ends; `None` enters at the edge
-/// matching the direction (pink `popover::menu_step`).
+/// matching the direction (Pink `popover::menu_step`).
 fn menu_step(active: Option<usize>, count: usize, delta: isize) -> Option<usize> {
     if count == 0 {
         return None;
@@ -282,7 +282,7 @@ fn menu_step(active: Option<usize>, count: usize, delta: isize) -> Option<usize>
     Some(next as usize)
 }
 
-/// [`menu_step`] that skips rows `enabled` rejects (pink
+/// [`menu_step`] that skips rows `enabled` rejects (Pink
 /// `popover::menu_step_where`).
 fn menu_step_where(
     active: Option<usize>,
@@ -301,22 +301,22 @@ fn menu_step_where(
     None
 }
 
-/// The menu's lifecycle (pink `Popup` + the Board page's `menu_cursor`).
+/// The menu's lifecycle (Pink `Popup` + the Board page's `menu_cursor`).
 struct MenuState {
     picked: FilterValue,
     open: bool,
     /// When the exit fade began; the card stays mounted until it ends.
     closing: Option<Instant>,
     /// The trigger press found the menu mounted, so its click leaves it
-    /// closed (pink `note_trigger_press`).
+    /// closed (Pink `note_trigger_press`).
     pressed_while_open: bool,
     /// The one highlight that the arrows and the pointer share.
     cursor: Option<usize>,
-    /// Focus the card on the next frame (pink `pending_menu_focus`).
+    /// Focus the card on the next frame (Pink `pending_menu_focus`).
     pending_focus: bool,
     trigger: FocusHandle,
     menu: FocusHandle,
-    /// Unmounts the card once the exit fade has run (pink `reap_popup`).
+    /// Unmounts the card once the exit fade has run (Pink `reap_popup`).
     reap: Option<Task<()>>,
 }
 
@@ -457,7 +457,7 @@ impl RenderOnce for FilterMenu {
             )
         };
 
-        // pink `render`: focus the card once it has opened.
+        // Pink `render`: focus the card once it has opened.
         let focus_menu = state.update(cx, |s, _| {
             let due = s.pending_focus && s.open;
             if due {
@@ -488,7 +488,7 @@ impl RenderOnce for FilterMenu {
             let groups = groups.clone();
             let on_change = self.on_change.clone();
             Rc::new(move |action, window, cx| {
-                // pink `run_menu_action`: close first, then apply.
+                // Pink `run_menu_action`: close first, then apply.
                 close(&state, true, window, cx);
                 let current = controlled
                     .clone()
@@ -509,7 +509,7 @@ impl RenderOnce for FilterMenu {
         let rows = Rc::new(entries(&groups, &value));
         let first_enabled = rows.iter().position(|e| e.enabled);
 
-        // ---------- Trigger (pink `render_filters_select`) ----------
+        // ---------- Trigger (Pink `render_filters_select`) ----------
         let active = active_count(&groups, &value);
         let label: SharedString = if active == 0 {
             self.title.clone()
@@ -541,7 +541,7 @@ impl RenderOnce for FilterMenu {
                         if was_open {
                             return;
                         }
-                        // pink `open_menu`: the keyboard lands on the first live
+                        // Pink `open_menu`: the keyboard lands on the first live
                         // row, the pointer on none.
                         let cursor = if event.is_keyboard() {
                             first_enabled
@@ -583,7 +583,7 @@ impl RenderOnce for FilterMenu {
 }
 
 /// The menu card: headed groups of rows with one shared keyboard/pointer
-/// highlight (pink `page.rs` `render_menu_card`).
+/// highlight (Pink `page.rs` `render_menu_card`).
 fn menu_card(
     key: &str,
     t: &Pink,
@@ -645,7 +645,7 @@ fn menu_card(
         );
     }
 
-    // pink `on_menu_key`: Up/Down/Enter/Space/Escape inside the open menu;
+    // Pink `on_menu_key`: Up/Down/Enter/Space/Escape inside the open menu;
     // Tab closes it and moves on.
     let on_key = {
         let state = state.clone();
@@ -707,10 +707,10 @@ fn menu_card(
 }
 
 /// A dropdown hung from the trigger's bottom-left corner, 6 pt below it,
-/// kept 8 pt inside the window (pink `popover::anchored_menu_below`). It
+/// kept 8 pt inside the window (Pink `popover::anchored_menu_below`). It
 /// drops 6 pt into place on [`motion::MENU_IN`]; while `exit` runs it fades
 /// on [`MENU_OUT`] under an occluder so the dying rows take no clicks
-/// (pink `menu_motion_from`).
+/// (Pink `menu_motion_from`).
 fn anchored_menu_below(
     id: SharedString,
     exit: Option<f32>,
@@ -742,7 +742,7 @@ fn anchored_menu_below(
 
 /// Swallows the press that dismisses the menu: the card closes on it during
 /// capture, and this stops it in the bubble phase so nothing behind the menu
-/// (the trigger included) acts on it too (pink `frosted_menu_rounded`'s
+/// (the trigger included) acts on it too (Pink `frosted_menu_rounded`'s
 /// guard).
 fn press_guard() -> impl IntoElement {
     canvas(
@@ -759,7 +759,7 @@ fn press_guard() -> impl IntoElement {
     .inset_0()
 }
 
-/// The Board's filters (pink `filter_menu_entries`): Attention, Source and
+/// The Board's filters (Pink `filter_menu_entries`): Attention, Source and
 /// Archive.
 pub fn demo_groups() -> Vec<FilterGroup> {
     vec![
@@ -806,9 +806,9 @@ fn matching(value: &FilterValue) -> usize {
         .count()
 }
 
-/// The Board header and toolbar around the Filters pop-up (pink
+/// The Board header and toolbar around the Filters pop-up (Pink
 /// `render_header` / `render_toolbar`): the "Needs attention" chip drives
-/// the same Attention filter, and nothing matching shows pink's
+/// the same Attention filter, and nothing matching shows Pink's
 /// `render_no_matches`.
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |window, cx| {
@@ -927,7 +927,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     })
 }
 
-/// pink `widgets::page_subtitle`: body copy in the secondary tone.
+/// Pink `widgets::page_subtitle`: body copy in the secondary tone.
 fn subtitle(copy: &'static str, t: &Pink) -> gpui::Div {
     div()
         .mt(px(6.))

@@ -1,24 +1,24 @@
 //! Command Menu – a ⌘K palette: one search field over everything you can run.
 //!
-//! pink: `shell/command_palette.rs` `Shell::render_command_palette`. A card
+//! Pink: `shell/command_palette.rs` `Shell::render_command_palette`. A card
 //! 560 wide (radius 16, `border`, the popover plate, `shadow_lg`) that
 //! arrives as one object, a 160ms fade with a 6pt rise. On top, a 44px search
 //! row: the 16px palette glyph, a 14px field and a ⌘K hint over a 0.06
 //! hairline. Below it the results: ungrouped actions first, then each group
 //! under an 11px heading with a rule above it. A footer of key hints closes
-//! the card. Rows are pink's `menu_row` at radius 8 with a 16px glyph in
+//! the card. Rows are Pink's `menu_row` at radius 8 with a 16px glyph in
 //! `text_muted`. The keyboard's row wears the selected wash and the pointer a
 //! lighter one. Typed words light up in `code_text` on rounded `code_wash`
 //! plates. The list stops at the window height minus 180 (100–360) and fades
 //! whichever edge has more to scroll.
 //!
-//! Quick actions are an app's commands, named beside their label like pink's
+//! Quick actions are an app's commands, named beside their label like Pink's
 //! extension commands. They come first and run with ⌘1–⌘9 from anywhere in
-//! the menu. A command with a `detail` gets pink's two-line result row. Enter
+//! the menu. A command with a `detail` gets Pink's two-line result row. Enter
 //! runs the highlighted row. Esc, ⌘K or a click outside the card calls
 //! `on_dismiss`. Pink closes the palette after a run, so hosts usually hide it
-//! from `on_run` too. The host lays the scrim (pink: `scrim(0.35)`) and keeps
-//! the card's top fixed (pink: 20% down the window) so results grow downward.
+//! from `on_run` too. The host lays the scrim (Pink: `scrim(0.35)`) and keeps
+//! the card's top fixed (Pink: 20% down the window) so results grow downward.
 //!
 //! ```ignore
 //! CommandMenu::new("palette")
@@ -48,7 +48,7 @@ pub const NAME: &str = "Command Menu";
 pub const DESCRIPTION: &str = "A ⌘K palette for running anything – one search field over app actions and grouped commands, typed words lit as you type, shortcuts on every row and a footer of key hints";
 
 const ICON_SEARCH: &str = "icons/command-menu/palette-search.svg";
-/// pink: `contributions::icon_for`'s fallback for a command without a glyph.
+/// Pink: `contributions::icon_for`'s fallback for a command without a glyph.
 const ICON_DEFAULT: &str = "icons/command-menu/widget.svg";
 const ICON_PULL_REQUEST: &str = "icons/command-menu/git-pull-request.svg";
 const ICON_CALENDAR: &str = "icons/command-menu/calendar.svg";
@@ -68,21 +68,21 @@ const ICON_SETTINGS: &str = "icons/command-menu/settings-minimalistic.svg";
 const ICON_LOGOUT: &str = "icons/command-menu/logout-2.svg";
 const ICON_DOCUMENT: &str = "icons/command-menu/document.svg";
 
-/// pink: the card's `560 × ui_scale`, kept 16px clear of each window edge.
+/// Pink: the card's `560 × ui_scale`, kept 16px clear of each window edge.
 const WIDTH: f32 = 560.;
 const WINDOW_CLEARANCE: f32 = 32.;
-/// pink: the search row's `min_h`.
+/// Pink: the search row's `min_h`.
 const FIELD_MIN_H: f32 = 44.;
-/// pink: `ComposerInput`'s default metrics, which the palette field keeps.
+/// Pink: `ComposerInput`'s default metrics, which the palette field keeps.
 const FIELD_TEXT: f32 = 14.;
 const FIELD_LINE_HEIGHT: f32 = 22.75;
-/// pink: the result list is the window height less 180, clamped to 100–360.
+/// Pink: the result list is the window height less 180, clamped to 100–360.
 const LIST_VIEWPORT_INSET: f32 = 180.;
 const LIST_MIN: f32 = 100.;
 const LIST_MAX: f32 = 360.;
-/// pink: `RESULTS_FADE_BAND`.
+/// Pink: `RESULTS_FADE_BAND`.
 const RESULTS_FADE_BAND: f32 = 18.;
-/// pink: the action row's `min_h`, and the two-line result row's.
+/// Pink: the action row's `min_h`, and the two-line result row's.
 const ROW_MIN_H: f32 = 32.;
 const RESULT_ROW_MIN_H: f32 = 44.;
 /// Quick actions with a ⌘ digit.
@@ -96,7 +96,7 @@ type DismissHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 pub struct Command {
     pub id: SharedString,
     pub label: SharedString,
-    /// A second line under the label (pink's two-line result row), e.g.
+    /// A second line under the label (Pink's two-line result row), e.g.
     /// "Document · Product · Edited 2h ago".
     pub detail: Option<SharedString>,
     /// Faint text at the row's end: the app a command belongs to, a count.
@@ -142,7 +142,7 @@ impl Command {
         self
     }
 
-    /// The app a command belongs to: named at the row's end (pink
+    /// The app a command belongs to: named at the row's end (Pink
     /// `render_contributed_command_row`) and matched by the search.
     pub fn app(mut self, name: impl Into<SharedString>) -> Self {
         let name: SharedString = name.into();
@@ -215,7 +215,7 @@ pub fn default_quick_actions() -> Vec<Command> {
 }
 
 /// Navigate, Create, Preferences and Recent documents. `dark` is the current
-/// appearance: the theme command offers the other one (pink: `ToggleTheme`
+/// appearance: the theme command offers the other one (Pink: `ToggleTheme`
 /// targets the opposite resolved appearance).
 pub fn default_commands(dark: bool) -> Vec<Command> {
     let (theme_label, theme_icon) = if dark {
@@ -283,7 +283,7 @@ pub fn default_commands(dark: bool) -> Vec<Command> {
     ]
 }
 
-/// A primary-modifier chord as printed on a key hint: pink's `badge_combo`
+/// A primary-modifier chord as printed on a key hint: Pink's `badge_combo`
 /// (`⌘K`, `⇧⌘N`) on macOS, `Ctrl+K` / `Ctrl+Shift+N` elsewhere.
 fn combo(shift: bool, key: &str) -> SharedString {
     if cfg!(target_os = "macos") {
@@ -293,14 +293,14 @@ fn combo(shift: bool, key: &str) -> SharedString {
     }
 }
 
-/// pink: `matches_query`: every word of the (lowercased) query appears in
+/// Pink: `matches_query`: every word of the (lowercased) query appears in
 /// the text.
 fn matches_query(query: &str, text: &str) -> bool {
     let text = text.to_lowercase();
     query.split_whitespace().all(|word| text.contains(word))
 }
 
-/// pink: `popover::search_match_ranges`: every occurrence of each query word
+/// Pink: `popover::search_match_ranges`: every occurrence of each query word
 /// in `text`, case-insensitively, as merged byte ranges of the original text.
 fn match_ranges(text: &str, query: &str) -> Vec<Range<usize>> {
     // Fold char by char so each folded byte maps back to its source char.
@@ -342,7 +342,7 @@ struct Entry {
     quick: Option<usize>,
 }
 
-/// pink: `command_entries`: actions in their given order, quick actions
+/// Pink: `command_entries`: actions in their given order, quick actions
 /// first, keeping the ones whose text holds every typed word.
 fn visible(quick: &[Command], commands: &[Command], query: &str) -> Vec<Entry> {
     let query = query.trim().to_lowercase();
@@ -363,7 +363,7 @@ struct MenuState {
     input: Entity<TextInput>,
     _subscription: Subscription,
     query: SharedString,
-    /// The row the arrows bound (pink `PaletteSelection::Bound`); `None` is
+    /// The row the arrows bound (Pink `PaletteSelection::Bound`); `None` is
     /// the default, the first row.
     selected: Option<SharedString>,
     scroll: ScrollHandle,
@@ -393,7 +393,7 @@ impl MenuState {
 
     fn on_input(&mut self, event: &InputEvent, window: &mut Window, cx: &mut Context<Self>) {
         match event {
-            // pink: an edit resets the selection and scrolls back to the top.
+            // Pink: an edit resets the selection and scrolls back to the top.
             InputEvent::Change(text) => {
                 self.query = text.clone();
                 self.selected = None;
@@ -500,7 +500,7 @@ impl CommandMenu {
         self
     }
 
-    /// Esc, ⌘K or a click outside the card (pink closes the palette).
+    /// Esc, ⌘K or a click outside the card (Pink closes the palette).
     pub fn on_dismiss(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_dismiss = Some(Rc::new(handler));
         self
@@ -550,7 +550,7 @@ impl RenderOnce for CommandMenu {
             s.on_dismiss = self.on_dismiss.clone();
             s.input.clone()
         });
-        // pink: the palette field's placeholder is `text_faint`.
+        // Pink: the palette field's placeholder is `text_faint`.
         input.update(cx, |input, _| {
             input.set_colors(Some(t.text_faint), Some(t.caret), Some(t.selection))
         });
@@ -561,7 +561,7 @@ impl RenderOnce for CommandMenu {
         let active = s.active(&entries);
         let scroll = s.scroll.clone();
 
-        // ⌘ + digit runs a quick action, ⌘K closes (pink: the shortcut
+        // ⌘ + digit runs a quick action, ⌘K closes (Pink: the shortcut
         // toggles the palette).
         let on_key = {
             let state = state.clone();
@@ -595,7 +595,7 @@ impl RenderOnce for CommandMenu {
             }
         };
 
-        // pink: the search row.
+        // Pink: the search row.
         let search_row = div()
             .min_h(px(FIELD_MIN_H))
             .flex_none()
@@ -620,7 +620,7 @@ impl RenderOnce for CommandMenu {
         let mut rows = Vec::with_capacity(entries.len());
         let mut previous_group: Option<&SharedString> = None;
         for (ix, entry) in entries.iter().enumerate() {
-            // pink: end spacing belongs to the content, so it scrolls out of
+            // Pink: end spacing belongs to the content, so it scrolls out of
             // the fade instead of leaving a gutter beside the chrome.
             let mut row = div()
                 .id(("command-result", ix))
@@ -666,7 +666,7 @@ impl RenderOnce for CommandMenu {
             .child(body)
             .child(results_fade(scroll, t.surface_bg()));
 
-        // pink: the footer of key hints.
+        // Pink: the footer of key hints.
         let footer = div()
             .flex_none()
             .px(px(16.))
@@ -701,7 +701,7 @@ impl RenderOnce for CommandMenu {
             .child(footer);
 
         motion::keep_alive(window);
-        // pink: arrive as one object, a short fade and a 6pt rise.
+        // Pink: arrive as one object, a short fade and a 6pt rise.
         motion::rise_in(
             SharedString::from(format!("{key}-in")),
             motion::PALETTE_IN,
@@ -711,7 +711,7 @@ impl RenderOnce for CommandMenu {
     }
 }
 
-/// pink: `popover::palette_search_icon`, the search glyph in the same 16px
+/// Pink: `popover::palette_search_icon`, the search glyph in the same 16px
 /// slot as the row glyphs.
 fn palette_search_icon(t: &Pink) -> gpui::Div {
     div()
@@ -728,7 +728,7 @@ fn palette_search_icon(t: &Pink) -> gpui::Div {
         )
 }
 
-/// pink: `spaces::sidebar_separator` at `my 7`, the rule above a group.
+/// Pink: `spaces::sidebar_separator` at `my 7`, the rule above a group.
 fn group_rule(t: &Pink) -> gpui::Div {
     div()
         .h(px(1.))
@@ -737,7 +737,7 @@ fn group_rule(t: &Pink) -> gpui::Div {
         .bg(t.border.opacity(0.6))
 }
 
-/// pink: a result group's heading, 11 medium `text_faint`, sentence case.
+/// Pink: a result group's heading, 11 medium `text_faint`, sentence case.
 fn group_heading(label: SharedString, t: &Pink) -> gpui::Div {
     div()
         .px(px(10.))
@@ -748,7 +748,7 @@ fn group_heading(label: SharedString, t: &Pink) -> gpui::Div {
         .child(label)
 }
 
-/// One row. pink: the action row of `render_command_palette` (a 16px glyph,
+/// One row. Pink: the action row of `render_command_palette` (a 16px glyph,
 /// the highlighted label and a `kbd_hint`), `render_contributed_command_row`
 /// for the faint name at its end, and `render_command_history_row` for a
 /// command with a detail line.
@@ -824,7 +824,7 @@ fn command_row(
         .when_some(keys, |row, keys| row.child(pink::kbd_hint(keys, t)))
 }
 
-/// pink: the palette's "No results" line and its muted hint.
+/// Pink: the palette's "No results" line and its muted hint.
 fn no_results(t: &Pink) -> impl IntoElement {
     div()
         .w_full()
@@ -843,7 +843,7 @@ fn no_results(t: &Pink) -> impl IntoElement {
         )
 }
 
-/// pink: `command_key_hint`, a `kbd_hint` and its 11px verb.
+/// Pink: `command_key_hint`, a `kbd_hint` and its 11px verb.
 fn key_hint(keys: &'static str, label: &'static str, t: &Pink) -> gpui::Div {
     div()
         .flex()
@@ -858,7 +858,7 @@ fn key_hint(keys: &'static str, label: &'static str, t: &Pink) -> gpui::Div {
         )
 }
 
-/// pink: `popover::search_highlight`. Matched words are recolored
+/// Pink: `popover::search_highlight`. Matched words are recolored
 /// `code_text` over rounded (r3) `code_wash` plates painted beneath the
 /// shaped glyphs; the row keeps its font and spacing.
 fn search_highlight(text: SharedString, query: &str, t: &Pink) -> AnyElement {
@@ -908,7 +908,7 @@ fn search_highlight(text: SharedString, query: &str, t: &Pink) -> AnyElement {
         .into_any_element()
 }
 
-/// pink: `markdown::render::range_rects`: one rectangle per visual row of
+/// Pink: `markdown::render::range_rects`: one rectangle per visual row of
 /// `range`, widened by `pad_x` and inset by `inset_y` from the line box.
 fn range_rects(
     layout: &TextLayout,
@@ -966,7 +966,7 @@ fn range_rects(
     rects
 }
 
-/// pink: `edge_fade::edge_faded(RESULTS_FADE_BAND, true, true, ..)
+/// Pink: `edge_fade::edge_faded(RESULTS_FADE_BAND, true, true, ..)
 /// .fade_overflow_y(..)`. GPUI here has no per-pixel edge fade, so the
 /// opaque plate is painted over each edge that has more to scroll, from
 /// solid at the edge to clear, gated on the handle at paint time.
@@ -1010,14 +1010,14 @@ fn results_fade(scroll: ScrollHandle, plate: Hsla) -> impl IntoElement {
 }
 
 /// The story's host: the palette while it is open, and a quiet way back once
-/// a run or a dismissal closes it (pink closes the palette on both).
+/// a run or a dismissal closes it (Pink closes the palette on both).
 struct Stage {
     open: bool,
     ran: Option<SharedString>,
     focus: FocusHandle,
 }
 
-/// The stage keeps the card's top fixed, as pink anchors it, so the results
+/// The stage keeps the card's top fixed, as Pink anchors it, so the results
 /// grow and shrink below the field.
 const STAGE_W: f32 = 600.;
 const STAGE_H: f32 = 480.;

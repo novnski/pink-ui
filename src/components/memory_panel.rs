@@ -1,25 +1,25 @@
 //! Memory Panel – what the assistant remembers about you, and the controls
 //! to change it.
 //!
-//! Pink has no memory surface, so the panel is drawn from pink's own pieces.
-//! The card is a settings section card (pink: settings/widgets.rs
+//! Pink has no memory surface, so the panel is drawn from Pink's own pieces.
+//! The card is a settings section card (Pink: settings/widgets.rs
 //! `section_card` / `section_header`) whose trailing control is the pause
-//! switch (`switch_control`); category filters are pink chips with their
+//! switch (`switch_control`); category filters are Pink chips with their
 //! counts, and while memory is paused the amber `warning_strip` folds open
 //! under them and the list rests at the disabled opacity.
 //!
-//! A memory is a sidebar task row (pink: shell.rs `render_chat_row`): 52
+//! A memory is a sidebar task row (Pink: shell.rs `render_chat_row`): 52
 //! tall, `px 8 / py 6`, radius 8, the memory on a 13/18 line that fades out
 //! at its right edge instead of ending in an ellipsis, and a quiet 11/14 meta
 //! line with the category glyph. Under the pointer the row takes the
 //! sidebar's hover wash and its corner swaps in the 20 px actions – pin
 //! (accent while pinned), edit, forget. Pinned memories gather under their
-//! own heading, as the sidebar's sections do (pink: activity_center.rs
+//! own heading, as the sidebar's sections do (Pink: activity_center.rs
 //! `activity_section_heading`), and pinning moves a row there with the
-//! `DISCLOSURE` fold. Clicking a row edits it in place the way pink's goal
+//! `DISCLOSURE` fold. Clicking a row edits it in place the way Pink's goal
 //! editor does (composer/goals.rs `render_goal_editor`): a field, then the
 //! source and Cancel / Save; Enter saves, Esc cancels. A forgotten memory
-//! folds away and the footer offers pink's notice capsule Undo with a
+//! folds away and the footer offers Pink's notice capsule Undo with a
 //! working-trailer countdown; "Remember something" adds one of your own.
 //!
 //! ```ignore
@@ -46,39 +46,39 @@ use crate::{
 };
 
 pub const NAME: &str = "Memory Panel";
-pub const DESCRIPTION: &str = "What the assistant remembers about you on a pink settings card – filter by category, pin, edit in place or forget a memory with an Undo countdown, add your own, or pause memory with its switch";
+pub const DESCRIPTION: &str = "What the assistant remembers about you on a Pink settings card – filter by category, pin, edit in place or forget a memory with an Undo countdown, add your own, or pause memory with its switch";
 
-/// pink `icons::PIN`, `icons::PEN` and `icons::TRASH_BIN_MINIMALISTIC`: the
+/// Pink `icons::PIN`, `icons::PEN` and `icons::TRASH_BIN_MINIMALISTIC`: the
 /// row's actions.
 const ICON_PIN: &str = "icons/memory-panel/pin.svg";
 const ICON_EDIT: &str = "icons/memory-panel/pen.svg";
 const ICON_FORGET: &str = "icons/memory-panel/trash-bin-minimalistic.svg";
-/// pink `icons::PLUS` and `icons::PAUSE`.
+/// Pink `icons::PLUS` and `icons::PAUSE`.
 const ICON_PLUS: &str = "icons/memory-panel/plus.svg";
 const ICON_PAUSE: &str = "icons/memory-panel/pause.svg";
-/// Category glyphs for the demo (and for your own categories): pink
+/// Category glyphs for the demo (and for your own categories): Pink
 /// `icons::TOOLBOX` and `icons::PALETTE`, and a person drawn in their style.
 pub const ICON_PERSON: &str = "icons/memory-panel/person.svg";
 pub const ICON_WORK: &str = "icons/memory-panel/toolbox.svg";
 pub const ICON_STYLE: &str = "icons/memory-panel/palette.svg";
 
-/// pink shell.rs `chat_row_height`: a title line over one meta line.
+/// Pink shell.rs `chat_row_height`: a title line over one meta line.
 const ROW_H: f32 = 52.0;
-/// pink shell.rs `sidebar_faded_label`: only the last few glyphs recede.
+/// Pink shell.rs `sidebar_faded_label`: only the last few glyphs recede.
 const TITLE_FADE: f32 = 20.0;
-/// pink shell.rs chat row: the glyph beside the 11 px meta text.
+/// Pink shell.rs chat row: the glyph beside the 11 px meta text.
 const META_GLYPH: f32 = 11.0;
-/// pink spaces.rs `SIDEBAR_DISCLOSURE_HEADER_HEIGHT` and
+/// Pink spaces.rs `SIDEBAR_DISCLOSURE_HEADER_HEIGHT` and
 /// `SIDEBAR_SECTION_GAP`.
 const HEADING_H: f32 = 28.0;
 const SECTION_GAP: f32 = 12.0;
-/// pink settings/widgets.rs `warning_strip`: `py 10` around a 16 px line,
+/// Pink settings/widgets.rs `warning_strip`: `py 10` around a 16 px line,
 /// inside its 1 px edge.
 const STRIP_H: f32 = 38.0;
 /// The footer: a Sm control with 10 px above and below.
 const FOOTER_H: f32 = 44.0;
 /// The list's side inset: with a row's own `px 8` it puts every memory on
-/// the header's 16 px edge (pink settings/widgets.rs `ROW_PAD_X`).
+/// the header's 16 px edge (Pink settings/widgets.rs `ROW_PAD_X`).
 const LIST_INSET: f32 = 8.0;
 /// How long Undo stays in the footer after forgetting.
 const UNDO_FOR: Duration = Duration::from_secs(6);
@@ -516,7 +516,7 @@ impl RenderOnce for MemoryPanel {
             DISCLOSURE,
         );
 
-        // ---- header: pink's section header with the switch as its control --
+        // ---- header: Pink's section header with the switch as its control --
         let switch = {
             let state = state.clone();
             pink::switch_control(format!("{key}-switch"), "Memory", enabled, &t).on_click(
@@ -573,7 +573,7 @@ impl RenderOnce for MemoryPanel {
                     .map(|(ix, c)| chip(Some(ix), c.name.clone())),
             );
 
-        // ---- paused: pink's warning strip folds open under the filters -----
+        // ---- paused: Pink's warning strip folds open under the filters -----
         let paused = 1. - on;
         let strip = (paused > 0.005).then(|| {
             let (plate, edge, copy) = pink::strip_colors(t.warning, t.warning_muted, &t);
@@ -694,7 +694,7 @@ impl RenderOnce for MemoryPanel {
             .py(px(6.))
             .border_t_1()
             .border_color(t.border)
-            // Paused, the list rests at pink's disabled opacity.
+            // Paused, the list rests at Pink's disabled opacity.
             .opacity(motion::lerp(0.45, 1., on))
             .children(list)
             .children(empty);
@@ -828,7 +828,7 @@ impl RenderOnce for MemoryPanel {
     }
 }
 
-/// A section's heading (pink: activity_center.rs
+/// A section's heading (Pink: activity_center.rs
 /// `activity_section_heading`): 28 tall, `px 8`, the name in 11 semibold
 /// `readable_faint(0.9)` and its count in 11 `readable_faint(0.7)`; sections
 /// after the first keep the sidebar's 12 px gap above. `vis` folds it.
@@ -881,7 +881,7 @@ fn section_heading(
         .into_any_element()
 }
 
-/// A corner action on a row (pink: shell.rs chat row pin / settle /
+/// A corner action on a row (Pink: shell.rs chat row pin / settle /
 /// archive): 20 square, radius 4, the quiet hover wash, a 12 px glyph and a
 /// tooltip.
 fn row_action(
@@ -946,7 +946,7 @@ fn memory_row(row: RowParts, m: &Memory, t: &Pink) -> AnyElement {
     }
 }
 
-/// A memory at rest (pink: shell.rs `render_chat_row`): the memory over a
+/// A memory at rest (Pink: shell.rs `render_chat_row`): the memory over a
 /// meta line, the hover wash and title brighten on one 150 ms fade, and the
 /// corner's actions under the pointer. The row is the edit button.
 fn rest_row(row: &RowParts, m: &Memory, t: &Pink) -> Stateful<gpui::Div> {
@@ -1098,7 +1098,7 @@ fn rest_row(row: &RowParts, m: &Memory, t: &Pink) -> Stateful<gpui::Div> {
         .child(meta)
 }
 
-/// A memory being edited (pink: composer/goals.rs `render_goal_editor`):
+/// A memory being edited (Pink: composer/goals.rs `render_goal_editor`):
 /// the field, then the source with Cancel and Save.
 fn edit_row(row: &RowParts, m: &Memory, input: Entity<TextInput>, t: &Pink) -> gpui::Div {
     let key = &row.key;

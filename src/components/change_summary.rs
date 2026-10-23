@@ -1,16 +1,16 @@
 //! Change Summary – what moved since last time, one metric per row with its
-//! trend, on a pink settings section card.
+//! trend, on a Pink settings section card.
 //!
-//! One section card (pink: settings/widgets.rs `section_card`) under a
+//! One section card (Pink: settings/widgets.rs `section_card`) under a
 //! `section_header`, with the period as a quiet badge in the header's
-//! trailing slot (pink `widgets::badge`). Each metric is a `card_row`: a trend
-//! tile in the row tile's frame, washed like pink's status pills (good in
+//! trailing slot (Pink `widgets::badge`). Each metric is a `card_row`: a trend
+//! tile in the row tile's frame, washed like Pink's status pills (good in
 //! `success`, bad in `danger`, level in the muted tone, all at 0.12) around
 //! an up or down arrow or a level mark, then the metric's name over what
 //! happened in words. The color says good or bad, the glyph says which way;
 //! the copy itself stays muted ("one colored glyph, never a colored row").
-//! Rows rest without hover like pink's settings rows, and arrive one after
-//! another on pink's tool-row reveal.
+//! Rows rest without hover like Pink's settings rows, and arrive one after
+//! another on Pink's tool-row reveal.
 //!
 //! ```ignore
 //! ChangeSummary::new("weekly", vec![
@@ -31,15 +31,15 @@ use crate::{
 };
 
 pub const NAME: &str = "Change Summary";
-pub const DESCRIPTION: &str = "What moved since last time on a pink section card – one metric per row, its name over what happened, beside a tinted tile whose arrow says which way and whose color says good or bad";
+pub const DESCRIPTION: &str = "What moved since last time on a Pink section card – one metric per row, its name over what happened, beside a tinted tile whose arrow says which way and whose color says good or bad";
 
 /// The card's widest: a compact data card (pink-ui's stage size for it).
 const MAX_WIDTH: f32 = 480.;
-/// The trend tile: pink's settings row tile (widgets.rs `row_tile`, 28 pt).
+/// The trend tile: Pink's settings row tile (widgets.rs `row_tile`, 28 pt).
 const TILE: f32 = 28.;
-/// Status washes (pink: shell.rs sidebar status pill, `tone @ 0.12`).
+/// Status washes (Pink: shell.rs sidebar status pill, `tone @ 0.12`).
 const TONE_WASH: f32 = 0.12;
-/// Arriving rows rise this far (pink: transcript.rs row reveal).
+/// Arriving rows rise this far (Pink: transcript.rs row reveal).
 const ROW_RISE: f32 = 4.;
 
 const ICON_UP: &str = "icons/change-summary/arrow-up.svg";
@@ -149,7 +149,7 @@ impl RenderOnce for ChangeSummary {
         let t = Pink::get(cx);
         let key = self.id.to_string();
 
-        // pink: settings/widgets.rs `section_header`, the period as its
+        // Pink: settings/widgets.rs `section_header`, the period as its
         // trailing badge (`widgets::badge`) on the title's 20 pt line.
         let header = pink::section_header(self.title.clone(), None, &t).when_some(
             self.period.clone(),
@@ -162,7 +162,7 @@ impl RenderOnce for ChangeSummary {
         );
 
         let rows = self.changes.iter().enumerate().map(|(ix, change)| {
-            // pink: settings/widgets.rs `card_row` with its identity tile and
+            // Pink: settings/widgets.rs `card_row` with its identity tile and
             // `row_text`; the header above takes the first hairline.
             let row = pink::card_row(false, &t)
                 .child(trend_tile(change, &t))
@@ -171,7 +171,7 @@ impl RenderOnce for ChangeSummary {
                     Some(change.change.clone()),
                     &t,
                 ));
-            // pink: transcript.rs new rows, 360 ms expo-out after a 90 ms
+            // Pink: transcript.rs new rows, 360 ms expo-out after a 90 ms
             // beat, 65 ms apart, rising 4 pt.
             let delay = motion::tool_row_arrival_delay(ix, true).as_millis() as u64;
             motion::rise_in(
@@ -193,7 +193,7 @@ impl RenderOnce for ChangeSummary {
     }
 }
 
-/// The trend tile: pink's settings row tile frame (widgets.rs `row_tile`: 28
+/// The trend tile: Pink's settings row tile frame (widgets.rs `row_tile`: 28
 /// pt, radius 7, a 16 pt glyph) washed like its status pills (shell.rs
 /// sidebar status pill: `tone @ 0.12`, the glyph floored on that wash).
 fn trend_tile(change: &MetricChange, t: &Pink) -> Div {

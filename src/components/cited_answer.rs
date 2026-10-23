@@ -1,21 +1,21 @@
-//! Cited Answer – a pink component.
+//! Cited Answer – a Pink component.
 //!
 //! An answer beside the sources it rests on. The answer is bare markdown
-//! prose at pink's 14/22 (pink: `markdown/render.rs` `text_element`) on the
+//! prose at Pink's 14/22 (Pink: `markdown/render.rs` `text_element`) on the
 //! canvas, with no card around it. Every sentence ends in superscript
-//! citation numbers in pink's list-marker tone. Point at one and its sentence
+//! citation numbers in Pink's list-marker tone. Point at one and its sentence
 //! takes a soft accent wash while the rest of the answer steps back, its
 //! source card lights up in the column beside it, and the source's name shows
-//! in pink's link-destination tooltip (pink: `markdown/link_destination.rs`).
+//! in Pink's link-destination tooltip (Pink: `markdown/link_destination.rs`).
 //!
-//! The sources are pink's expandable chip cards (pink: `transcript.rs`
+//! The sources are Pink's expandable chip cards (Pink: `transcript.rs`
 //! `chip_header_row`): a quiet r10 plate holding the citation number, the
 //! title and the site, with a chevron that turns as the card folds open on
-//! pink's tool fold. Inside is the quoted passage in pink's blockquote, and
+//! Pink's tool fold. Inside is the quoted passage in Pink's blockquote, and
 //! when a citation opened it, the words that back the sentence are marked
-//! one after another in pink's match wash (pink: `popover.rs`
+//! one after another in Pink's match wash (Pink: `popover.rs`
 //! `search_highlight`). Below the quote, the message meta lane copies it or
-//! opens the original (pink: `transcript.rs` `meta_action`).
+//! opens the original (Pink: `transcript.rs` `meta_action`).
 //!
 //! ```ignore
 //! CitedAnswer::new("refunds", "Can customers on annual plans get a refund?")
@@ -59,38 +59,38 @@ const ICON_COPY: &str = "icons/cited-answer/copy.svg";
 const ICON_COPIED: &str = "icons/cited-answer/copy-check.svg";
 const ICON_OPEN: &str = "icons/cited-answer/arrow-right-up.svg";
 
-/// Markdown body type and block gap (pink: `MD_TEXT_SIZE`, `MD_LINE_HEIGHT`,
+/// Markdown body type and block gap (Pink: `MD_TEXT_SIZE`, `MD_LINE_HEIGHT`,
 /// `MD_BLOCK_GAP`): 14 on a 22 line, one line looser than the kit's Prose.
 const MD_TEXT_SIZE: f32 = text::PROSE;
 const MD_LINE_HEIGHT: f32 = 22.;
 const MD_BLOCK_GAP: f32 = space::S12;
 /// Between two superscript numbers of one sentence.
 const CITE_GAP: &str = "\u{2009}";
-/// Rounded match washes under shaped glyphs (pink: `search_highlight`):
+/// Rounded match washes under shaped glyphs (Pink: `search_highlight`):
 /// 1 px wider than the glyphs, 1.5 px in from the line box, nudged 0.5 px
 /// down to sit on the glyphs' optical center, radius 3.
 const WASH_PAD_X: f32 = 1.;
 const WASH_INSET_Y: f32 = 1.5;
 const WASH_NUDGE_Y: f32 = 0.5;
 const WASH_RADIUS: f32 = 3.;
-/// The source column: pink's large menu width.
+/// The source column: Pink's large menu width.
 const PANEL_WIDTH: f32 = layout::MENU_W_L;
-/// The column's heading row (pink: `SIDEBAR_DISCLOSURE_HEADER_HEIGHT`).
+/// The column's heading row (Pink: `SIDEBAR_DISCLOSURE_HEADER_HEIGHT`).
 const SECTION_HEADING_HEIGHT: f32 = 28.;
-/// A two-line source header (pink: command palette history row, `min_h 44`,
+/// A two-line source header (Pink: command palette history row, `min_h 44`,
 /// `py 5`).
 const SOURCE_HEADER_HEIGHT: f32 = 44.;
-/// The header's tiles: number at left, chevron at right (pink: chip header
+/// The header's tiles: number at left, chevron at right (Pink: chip header
 /// tiles, 18 px, chevron 12).
 const TILE: f32 = 18.;
 const CHEVRON: f32 = icon_size::XS;
-/// A meta-lane action (pink: `meta_action`, 24 px, icon 14).
+/// A meta-lane action (Pink: `meta_action`, 24 px, icon 14).
 const META_ACTION: f32 = 24.;
 const META_ICON: f32 = icon_size::SM;
-/// Stacked chip cards sit 8 px apart (pink: `CHIP_HEIGHT` 38 around a
+/// Stacked chip cards sit 8 px apart (Pink: `CHIP_HEIGHT` 38 around a
 /// `CHIP_CARD_HEIGHT` 30 card).
 const CARD_GAP: f32 = space::S8;
-/// How long "Copied" shows (pink: `copy_ui_for`).
+/// How long "Copied" shows (Pink: `copy_ui_for`).
 const COPIED_FOR: Duration = Duration::from_millis(1200);
 
 type SourceHandler = Rc<dyn Fn(usize, &mut Window, &mut App)>;
@@ -222,7 +222,7 @@ impl CitedAnswer {
     }
 
     /// The whole component's width; the answer takes what the source column
-    /// leaves. Defaults to pink's 768 px content column.
+    /// leaves. Defaults to Pink's 768 px content column.
     pub fn width(mut self, width: f32) -> Self {
         self.width = width;
         self
@@ -267,7 +267,7 @@ struct State {
     /// The source header under the pointer.
     hover_source: Option<usize>,
     open: Option<Open>,
-    /// When each source last folded open or shut (pink: the tool fold's
+    /// When each source last folded open or shut (Pink: the tool fold's
     /// `toggled_at`), so chevron, height and body fade share one clock.
     toggled: Vec<Option<Instant>>,
     /// When the open citation's marks began revealing.
@@ -296,7 +296,7 @@ impl State {
 }
 
 // ---------------------------------------------------------------------------
-// Answer text: sentences → shaped runs (pink: `flatten_runs`)
+// Answer text: sentences → shaped runs (Pink: `flatten_runs`)
 // ---------------------------------------------------------------------------
 
 /// A citation's superscript number inside a paragraph.
@@ -398,7 +398,7 @@ fn flatten_paragraph(
 }
 
 /// The rectangles a byte range covers on its shaped lines, one per visual
-/// row (pink: `markdown/render.rs` `range_rects`).
+/// row (Pink: `markdown/render.rs` `range_rects`).
 fn range_rects(
     layout: &TextLayout,
     range: &Range<usize>,
@@ -454,7 +454,7 @@ fn range_rects(
 }
 
 /// A canvas painting rounded washes under `layout`'s glyphs; place it before
-/// the text in a relative parent (pink: `search_highlight`'s underlay).
+/// the text in a relative parent (Pink: `search_highlight`'s underlay).
 fn wash_underlay(layout: TextLayout, washes: Vec<(Range<usize>, Hsla)>) -> impl IntoElement {
     canvas(
         |_, _, _| (),
@@ -510,7 +510,7 @@ fn measure(cell: Rc<Cell<f32>>) -> impl IntoElement {
 // Pieces
 // ---------------------------------------------------------------------------
 
-/// pink: `markdown/link_destination.rs` `destination_card` – where a citation
+/// Pink: `markdown/link_destination.rs` `destination_card` – where a citation
 /// leads, shown while it is pointed at: `px 6 py 4`, radius 4, a
 /// `border_strong` edge on the opaque tooltip surface, `shadow_sm`, 11/14.
 struct CiteDestination(SharedString);
@@ -534,7 +534,7 @@ impl Render for CiteDestination {
     }
 }
 
-/// pink: `transcript.rs` `meta_action` – a 24 px icon button with the shared
+/// Pink: `transcript.rs` `meta_action` – a 24 px icon button with the shared
 /// hover fade to `ink(0.08)`, a text tooltip, an accessible name and the
 /// inset focus ring. `live` is false while its card is folded shut, so a
 /// hidden action is neither a tab stop nor a tooltip.
@@ -727,7 +727,7 @@ impl RenderOnce for CitedAnswer {
             .flex()
             .flex_col()
             .child(
-                // pink: the question wizard's question, 15/20 medium.
+                // Pink: the question wizard's question, 15/20 medium.
                 div()
                     .type_style(TextStyle::Title3)
                     .font_weight(FontWeight::MEDIUM)
@@ -806,7 +806,7 @@ impl RenderOnce for CitedAnswer {
             .flex()
             .flex_col()
             .child(
-                // pink: `activity_center.rs` `activity_section_heading` – a
+                // Pink: `activity_center.rs` `activity_section_heading` – a
                 // 28 px heading row, `px 8 gap 8`, the 11 px semibold name
                 // and its count trailing.
                 div()
@@ -963,7 +963,7 @@ struct SourceCard<'a> {
 }
 
 impl SourceCard<'_> {
-    /// pink: `transcript.rs` – the expandable chip card (r10,
+    /// Pink: `transcript.rs` – the expandable chip card (r10,
     /// `hairline(0.07)`, `ink(0.03)`) with a two-line header and a body that
     /// folds open under a 1 px `hairline(0.06)` rule, fading in with a 6 px
     /// settle.
@@ -992,7 +992,7 @@ impl SourceCard<'_> {
         let group = SharedString::from(format!("{key}-src-{ix}"));
         let ring = t.focus_ring();
 
-        // pink: the chip header's 18 px tile (r6, `ink(0.08)`), here holding
+        // Pink: the chip header's 18 px tile (r6, `ink(0.08)`), here holding
         // the citation number; it takes the accent wash while the source is
         // in play.
         let tile = div()
@@ -1013,7 +1013,7 @@ impl SourceCard<'_> {
             ))
             .child((ix + 1).to_string());
 
-        // pink: the trailing disclosure tile – half strength at rest, full
+        // Pink: the trailing disclosure tile – half strength at rest, full
         // under the pointer; the 12 px chevron turns 90° with the fold.
         let chevron = div()
             .size(px(TILE))
@@ -1080,7 +1080,7 @@ impl SourceCard<'_> {
             })
             .child(tile)
             .child(
-                // pink: command palette history row – a 12 px title over an
+                // Pink: command palette history row – a 12 px title over an
                 // 11 px faint meta line, 2 px apart.
                 div()
                     .flex_1()
@@ -1136,10 +1136,10 @@ impl SourceCard<'_> {
             .into_any_element()
     }
 
-    /// The folded part: the passage in pink's blockquote (a 2 px accent@0.6
+    /// The folded part: the passage in Pink's blockquote (a 2 px accent@0.6
     /// rail on accent@0.05, right corners 6, `pl 12 pr 10 py 6`, muted text),
-    /// set at pink's 12/18 tool-detail size for the narrow column, with its
-    /// marks in pink's match wash, then the meta lane.
+    /// set at Pink's 12/18 tool-detail size for the narrow column, with its
+    /// marks in Pink's match wash, then the meta lane.
     fn body(&self, t: &Pink, state: &gpui::Entity<State>) -> Div {
         let ix = self.ix;
         let key = self.key;
@@ -1204,7 +1204,7 @@ impl SourceCard<'_> {
                     .child(styled),
             );
 
-        // pink: the meta lane – `pt 4`, 24 px actions 2 px apart.
+        // Pink: the meta lane – `pt 4`, 24 px actions 2 px apart.
         let live = self.is_open;
         let copy_state = state.clone();
         let quoted = SharedString::from(format!(

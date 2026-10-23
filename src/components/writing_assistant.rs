@@ -1,10 +1,10 @@
-//! Writing Assistant – a pink component.
+//! Writing Assistant – a Pink component.
 //!
-//! A rewrite panel for a piece of selected text, laid out like pink's
+//! A rewrite panel for a piece of selected text, laid out like Pink's
 //! question wizard (the composer pill that becomes a prompt): a tracked
 //! uppercase header with a version counter, the selection quoted the way
-//! pink's markdown quotes, the rewrite as plain prose that dissolves in
-//! chunk by chunk while pink's working line ticks under it, an action lane
+//! Pink's markdown quotes, the rewrite as plain prose that dissolves in
+//! chunk by chunk while Pink's working line ticks under it, an action lane
 //! (copy, try again, version paging) in the transcript's meta-lane anatomy,
 //! direction chips as composer ghost pills, an instruction field drawn as a
 //! nested composer pill with the microphone and the Send disc, and a footer
@@ -48,7 +48,7 @@ const ICON_RETRY: &str = "icons/writing-assistant/refresh.svg";
 const ICON_PREV: &str = "icons/writing-assistant/alt-arrow-left.svg";
 const ICON_NEXT: &str = "icons/writing-assistant/alt-arrow-right.svg";
 
-/// Prose, quoted or rewritten: pink's markdown body, 14/22
+/// Prose, quoted or rewritten: Pink's markdown body, 14/22
 /// (`markdown/render.rs` `MD_TEXT_SIZE` / `MD_LINE_HEIGHT`).
 const PROSE_SIZE: f32 = 14.;
 const PROSE_LINE: f32 = 22.;
@@ -63,13 +63,13 @@ const ROW_CONTROL: f32 = 28.;
 /// `META_LANE_HEIGHT`).
 const META_LANE: f32 = 28.;
 const META_ACTION: f32 = 24.;
-/// How long Copy shows its check (pink's code-block "Copied", ~1.2 s).
+/// How long Copy shows its check (Pink's code-block "Copied", ~1.2 s).
 const COPIED_MS: u64 = 1200;
 /// Heard words beyond this many characters scroll off the front of the
 /// one-line dictation field.
 const HEARD_CHARS: usize = 54;
 
-// pink: markdown/veil.rs – the streaming fade's constants (mugen FadePainter).
+// Pink: markdown/veil.rs – the streaming fade's constants (mugen FadePainter).
 const VEIL_EMA_SEED_MS: f32 = 160.;
 const VEIL_MIN_FADE_MS: f32 = 120.;
 const VEIL_MAX_FADE_MS: f32 = 400.;
@@ -161,7 +161,7 @@ struct Chunk {
     duration_ms: f32,
 }
 
-/// pink: markdown/veil.rs `ElemVeil` – streamed text commits to layout at
+/// Pink: markdown/veil.rs `ElemVeil` – streamed text commits to layout at
 /// once and a cosmetic veil dissolves over each newly arrived chunk: opacity
 /// only, `alpha = 1 − (1 − p)^1.6`, each chunk's duration `clamp(ema × 3,
 /// 120, 400)` from the cadence of appends, a backed-up stream sped up.
@@ -186,7 +186,7 @@ impl Veil {
 
     /// Follows `version`'s visible `text`. A version arriving `fresh` fades
     /// in from nothing; one paged to (or on screen at mount) is adopted as
-    /// already painted, like pink's seeded baseline.
+    /// already painted, like Pink's seeded baseline.
     fn advance(
         &mut self,
         version: usize,
@@ -404,7 +404,7 @@ impl WritingAssistant {
     }
 }
 
-/// pink: composer.rs `composer_surface` – the pill chrome the question
+/// Pink: composer.rs `composer_surface` – the pill chrome the question
 /// wizard shares with the composer: radius 26, a 1 px `border`, the opaque
 /// `input_glass_bg` plate. `floating` adds the opaque treatment's
 /// `shadow_lg`; the nested field stays flat.
@@ -417,10 +417,10 @@ fn composer_surface(floating: bool, t: &Pink) -> Div {
         .when(floating, |el| el.shadow(pink::shadow_lg()))
 }
 
-/// pink: transcript.rs `meta_action` – a 24 pt square, radius 6,
+/// Pink: transcript.rs `meta_action` – a 24 pt square, radius 6,
 /// transparent → `ink(0.08)`, a 14 pt glyph in `content_muted`, its name
 /// as the tooltip. Disabled (the ends of the version list) it rests at
-/// pink's disabled 45%.
+/// Pink's disabled 45%.
 fn meta_action(
     id: impl Into<SharedString>,
     icon: &'static str,
@@ -463,7 +463,7 @@ fn meta_action(
         )
 }
 
-/// pink: composer/goals.rs `render_goal_mode_chip` – a ghost pill that is
+/// Pink: composer/goals.rs `render_goal_mode_chip` – a ghost pill that is
 /// on: the same 28 pt capsule at 12 medium, washed in `accent @ 0.14`
 /// (0.2 under the pointer) with the label in `readable_tone(accent)`. The
 /// direction of the version on screen wears it.
@@ -494,7 +494,7 @@ fn chip_on(id: impl Into<SharedString>, t: &Pink) -> Stateful<Div> {
         )
 }
 
-/// An approval-context label (pink: composer.rs question wizard): 11 pt in
+/// An approval-context label (Pink: composer.rs question wizard): 11 pt in
 /// `readable_muted(0.65)`, one line.
 fn context_label(copy: impl Into<SharedString>, t: &Pink) -> Div {
     div()
@@ -578,7 +578,7 @@ impl RenderOnce for WritingAssistant {
         let shown = shown_ix.map(|ix| self.versions[ix].clone());
         let writing = shown.as_ref().is_some_and(|v| v.writing());
 
-        // ---- header: pink's wizard header -------------------------------
+        // ---- header: Pink's wizard header -------------------------------
         // Tracked uppercase 11 medium in `readable_muted(0.6)`, gap 10, and
         // the counter chip once there is more than one version (h 20, px 6,
         // radius 6, `ink(0.06)`).
@@ -611,10 +611,10 @@ impl RenderOnce for WritingAssistant {
                 )
             });
 
-        // ---- the selection: pink's markdown blockquote --------------------
+        // ---- the selection: Pink's markdown blockquote --------------------
         // A 2 px `accent @ 0.6` rail, `accent @ 0.05` behind, right corners
         // 6, `pl 12 pr 10 py 6`, prose in `content_muted`. Replacing it swaps
-        // the quote in place (pink TRANSCRIPT_IN, 160 ms + 4 pt).
+        // the quote in place (Pink TRANSCRIPT_IN, 160 ms + 4 pt).
         let quote_id = loaders::label_id("wa-quote", &self.selection);
         let original = div()
             .mt(px(8.))
@@ -670,7 +670,7 @@ impl RenderOnce for WritingAssistant {
                     .text_color(t.text)
                     .child(StyledText::new(prose_text).with_highlights(highlights));
 
-                // The lane under it: pink's working line while it writes,
+                // The lane under it: Pink's working line while it writes,
                 // then the meta lane's actions (both fit the reserved 28).
                 let lane_body: AnyElement = if writing {
                     div()
@@ -782,7 +782,7 @@ impl RenderOnce for WritingAssistant {
                         })
                         .into_any_element()
                 };
-                // The lane swaps like pink's status line (STATUS_SWAP:
+                // The lane swaps like Pink's status line (STATUS_SWAP:
                 // opacity + 2 pt settle, 180 ms quint).
                 let lane = div()
                     .h(px(META_LANE))
@@ -846,7 +846,7 @@ impl RenderOnce for WritingAssistant {
         };
 
         // ---- directions: composer ghost pills ------------------------------
-        // pink: pickers.rs `trigger_chip` (28 pt, `px 10`, 12 medium,
+        // Pink: pickers.rs `trigger_chip` (28 pt, `px 10`, 12 medium,
         // transparent → `element_hover`), chips 4 apart as in the composer's
         // row; the direction on screen is on (`chip_on`).
         let active_label = shown.as_ref().map(|v| v.label.clone());
@@ -884,11 +884,11 @@ impl RenderOnce for WritingAssistant {
         let on_listen = self.on_listen.clone();
         let on_request_mic = self.on_request.clone();
         let heard_mic = heard.clone();
-        // pink: composer.rs Attach – a 28 pt circle, transparent →
+        // Pink: composer.rs Attach – a 28 pt circle, transparent →
         // `ink(0.10)`, a 16 pt glyph in `text_muted`. While listening it holds
         // the wash with the glyph in `text`, the composer row's open state.
         // Pink bundles no microphone, so the glyph is Solar's own
-        // `microphone-linear`, from the set pink draws its icons from.
+        // `microphone-linear`, from the set Pink draws its icons from.
         let mic_key = format!("{key}-mic");
         let mic_label = if listening {
             "Stop dictation"
@@ -938,7 +938,7 @@ impl RenderOnce for WritingAssistant {
                 }
             });
 
-        // pink: composer.rs `render_send_button` – one stable disc: solid
+        // Pink: composer.rs `render_send_button` – one stable disc: solid
         // `text` (→ `text @ 0.88` under the pointer, 0.76 pressed) with the
         // arrow in `bg` when it can send; recessed `ink(0.08)` with the arrow
         // at `text @ 0.35` when empty, the arrow turning accent while the
@@ -1022,7 +1022,7 @@ impl RenderOnce for WritingAssistant {
 
         // While dictating, the field is a live line: the breathing orb, the
         // words as they are heard (the newest kept in view; a shimmering
-        // "Listening…" until the first one) and pink's elapsed timer.
+        // "Listening…" until the first one) and Pink's elapsed timer.
         let field: AnyElement = match (listening, listen_started) {
             (true, Some(started)) => div()
                 .flex_1()
@@ -1081,9 +1081,9 @@ impl RenderOnce for WritingAssistant {
                 .child(send),
         );
 
-        // ---- footer: pink's wizard footer -----------------------------------
+        // ---- footer: Pink's wizard footer -----------------------------------
         // `px 16 pb 16 pt 4`, gap 12, ghost buttons on the left and the one
-        // Primary on the right (`Lg`, `px 16`), resting at pink's disabled
+        // Primary on the right (`Lg`, `px 16`), resting at Pink's disabled
         // opacity until a finished version differs from the selection.
         let applied = shown.as_ref().is_some_and(|v| v.text == self.selection);
         let can_apply = shown.is_some() && !writing && !applied;

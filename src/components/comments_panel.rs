@@ -1,15 +1,15 @@
-//! Comments Panel – a pink component.
+//! Comments Panel – a Pink component.
 //!
 //! The review comments on one document, in a side pane. Every comment is
-//! pink's inline comment card (pink: comment_ui.rs `render_comment_card`): a
+//! Pink's inline comment card (Pink: comment_ui.rs `render_comment_card`): a
 //! flat band with a 3px bar, the line it is pinned to in the header and the
 //! note under it; here the note also names its author. A comment that starts
-//! with a slash command (`/rewrite`, `/translate`, …) carries pink's tool
+//! with a slash command (`/rewrite`, `/translate`, …) carries Pink's tool
 //! chip card to run it as an edit: a glyph spinner and a shimmering verb
 //! while it runs, then the change as diff rows with an Undo. Resolving folds
-//! a comment shut into the Resolved side of pink's segmented switch. New
-//! comments are written in pink's draft card at the bottom, where `/` opens
-//! pink's slash-command completion above it.
+//! a comment shut into the Resolved side of Pink's segmented switch. New
+//! comments are written in Pink's draft card at the bottom, where `/` opens
+//! Pink's slash-command completion above it.
 //!
 //! ```ignore
 //! CommentsPanel::new("comments", comments)
@@ -40,55 +40,55 @@ use crate::{
 pub const NAME: &str = "Comments Panel";
 pub const DESCRIPTION: &str = "A document's review comments in a side pane – flat note cards pinned to a line, slash-command notes that run as an edit and show the change as a diff with an Undo, resolving that folds a note away into Resolved, and a draft card where / opens command completion";
 
-/// pink `icons::CHAT_ROUND_LINE`, the comment card's glyph.
+/// Pink `icons::CHAT_ROUND_LINE`, the comment card's glyph.
 const ICON_COMMENT: &str = "icons/comments-panel/chat-round-line.svg";
-/// pink `icons::COMMAND`, the slash completion's row glyph.
+/// Pink `icons::COMMAND`, the slash completion's row glyph.
 const ICON_COMMAND: &str = "icons/comments-panel/command.svg";
-/// pink `icons::FILE_PEN`, the edit tool's glyph.
+/// Pink `icons::FILE_PEN`, the edit tool's glyph.
 const ICON_EDIT: &str = "icons/comments-panel/file-pen.svg";
-/// pink `icons::CHECK` and `icons::UNDO_LEFT`: resolve and reopen.
+/// Pink `icons::CHECK` and `icons::UNDO_LEFT`: resolve and reopen.
 const ICON_RESOLVE: &str = "icons/comments-panel/check.svg";
 const ICON_REOPEN: &str = "icons/comments-panel/undo-left.svg";
 
-/// pink changes.rs `ACCENT_BAR_WIDTH`: the card's bar, not a border.
+/// Pink changes.rs `ACCENT_BAR_WIDTH`: the card's bar, not a border.
 const ACCENT_BAR_WIDTH: f32 = 3.0;
-/// pink comments.rs card geometry: vertical padding (split top and bottom),
+/// Pink comments.rs card geometry: vertical padding (split top and bottom),
 /// the header row, a body line and the slack under the body.
 const CARD_PAD_V: f32 = 20.0;
 const CARD_HEADER_HEIGHT: f32 = 22.0;
 const CARD_LINE_HEIGHT: f32 = 18.0;
 const CARD_GAP: f32 = 6.0;
-/// pink comment_ui.rs: the remove button's 24pt hit box over a 16pt footprint.
+/// Pink comment_ui.rs: the remove button's 24pt hit box over a 16pt footprint.
 const CARD_ACTION_HIT: f32 = 24.0;
-/// pink comments.rs `DRAFT_CARD_HEIGHT` and `render_comment_draft`'s input
+/// Pink comments.rs `DRAFT_CARD_HEIGHT` and `render_comment_draft`'s input
 /// slot, action row and padding.
 const DRAFT_CARD_HEIGHT: f32 = 116.0;
 const DRAFT_INPUT_HEIGHT: f32 = 46.0;
 const DRAFT_ACTIONS_HEIGHT: f32 = 28.0;
 const DRAFT_PAD_V: f32 = 10.0;
-/// pink comment_ui.rs `comment_action`: 22px buttons, px 10.
+/// Pink comment_ui.rs `comment_action`: 22px buttons, px 10.
 const ACTION_HEIGHT: f32 = 22.0;
 const ACTION_PAD_X: f32 = 10.0;
-/// pink markdown/render.rs inline code plate.
+/// Pink markdown/render.rs inline code plate.
 const INLINE_CODE_RADIUS: f32 = 4.5;
 const INLINE_CODE_PAD_X: f32 = 2.0;
 const INLINE_CODE_INSET_Y: f32 = 2.0;
-/// pink transcript.rs chip card: 30 tall with its 28px header row and an
+/// Pink transcript.rs chip card: 30 tall with its 28px header row and an
 /// 18px glyph tile.
 const CHIP_CARD_HEIGHT: f32 = 30.0;
 const CHIP_HEADER_HEIGHT: f32 = CHIP_CARD_HEIGHT - 2.0;
 const CHIP_TILE: f32 = 18.0;
-/// pink changes.rs diff rows: 21px lines, a 16px marker column and 12px of
+/// Pink changes.rs diff rows: 21px lines, a 16px marker column and 12px of
 /// code padding after it.
 const DIFF_LINE_HEIGHT: f32 = 21.0;
 const MARKER_WIDTH: f32 = 16.0;
 const CODE_PAD_LEFT: f32 = 12.0;
-/// pink composer.rs `render_slash_popup_body`: the card's height budget and
+/// Pink composer.rs `render_slash_popup_body`: the card's height budget and
 /// its scrolling list; full_width_menu_above's 6px gap.
 const POPUP_MAX_HEIGHT: f32 = 320.0;
 const POPUP_LIST_MAX_HEIGHT: f32 = 312.0;
 const POPUP_GAP: f32 = 6.0;
-/// pink shell/board/filters.rs: a two-option segmented switch, 150 wide.
+/// Pink shell/board/filters.rs: a two-option segmented switch, 150 wide.
 const SWITCH_WIDTH: f32 = 150.0;
 /// The pane title starts where the cards' text does (past the bar and the
 /// card's 16px inset), measured from the toolbar's own inset.
@@ -300,7 +300,7 @@ impl State {
     }
 
     /// The commands matching a `/prefix` still being typed: `None` while no
-    /// slash token is open (pink shows the card, "No matching commands"
+    /// slash token is open (Pink shows the card, "No matching commands"
     /// included, for as long as the token is).
     fn matching(&self) -> Option<Vec<SlashCommand>> {
         let prefix = self.text.strip_prefix('/')?;
@@ -316,7 +316,7 @@ impl State {
         )
     }
 
-    /// Completes the token with the `ix`-th match (pink `accept_slash`).
+    /// Completes the token with the `ix`-th match (Pink `accept_slash`).
     fn accept(&mut self, ix: usize, cx: &mut Context<Self>) {
         let Some(name) = self
             .matching()
@@ -457,7 +457,7 @@ impl RenderOnce for CommentsPanel {
             .filter_map(|c| c.edit.as_ref().map(|e| (c.id.clone(), e.status)))
             .collect();
         let ids: Vec<SharedString> = self.comments.iter().map(|c| c.id.clone()).collect();
-        // pink `ComposerInput` outside the message composer: a `text_faint`
+        // Pink `ComposerInput` outside the message composer: a `text_faint`
         // placeholder, the accent caret
         let colors = (t.text_faint, t.caret, t.selection);
         state.update(cx, |s, cx| {
@@ -552,8 +552,8 @@ impl RenderOnce for CommentsPanel {
         let open_count = self.comments.iter().filter(|c| !c.resolved).count();
 
         // ---- toolbar: title, count and the Open / Resolved switch ---------
-        // (pink surface_chrome `toolbar`; the count is the activity section
-        // heading's trailing count; the switch is pink `button::segmented`)
+        // (Pink surface_chrome `toolbar`; the count is the activity section
+        // heading's trailing count; the switch is Pink `button::segmented`)
         let switch_state = state.clone();
         let toolbar = div()
             .h(px(layout::TITLEBAR_HEIGHT))
@@ -628,7 +628,7 @@ impl RenderOnce for CommentsPanel {
                 None => self.document.clone(),
             };
 
-            // Resolve / reopen, revealed on hover like pink's remove
+            // Resolve / reopen, revealed on hover like Pink's remove
             let on_resolve = self.on_resolve.clone();
             let resolve_state = state.clone();
             let cid = c.id.clone();
@@ -668,7 +668,7 @@ impl RenderOnce for CommentsPanel {
                         .text_color(t.text_muted),
                 );
 
-            // pink: comment card header – the glyph and where it's pinned
+            // Pink: comment card header – the glyph and where it's pinned
             let header = div()
                 .h(px(CARD_HEADER_HEIGHT))
                 .flex_none()
@@ -772,7 +772,7 @@ impl RenderOnce for CommentsPanel {
                         .children(edit),
                 );
 
-            // Resolving folds the card shut (pink `fold_progress`: the
+            // Resolving folds the card shut (Pink `fold_progress`: the
             // DISCLOSURE tween, the body gone by 60% of it)
             let fold = leaving.get(&c.id).map(|(at, _)| {
                 let elapsed = (!reduced).then(|| now.saturating_duration_since(*at));
@@ -796,7 +796,7 @@ impl RenderOnce for CommentsPanel {
                         .child(measure(cell)),
                 );
 
-            // Rows reveal like pink's new tool rows: the ones there when the
+            // Rows reveal like Pink's new tool rows: the ones there when the
             // tab came up cascade in, later ones arrive on their own
             let delay = batch
                 .iter()
@@ -828,7 +828,7 @@ impl RenderOnce for CommentsPanel {
             .flex_col()
             .children(items)
             .when(empty, |d| {
-                // pink surface_chrome `surface_state`
+                // Pink surface_chrome `surface_state`
                 let (title, copy) = match tab {
                     Tab::Open => (
                         "All caught up",
@@ -854,7 +854,7 @@ impl RenderOnce for CommentsPanel {
                 )
             });
 
-        // ---- pink: comment draft, with the slash completion above it ------
+        // ---- Pink: comment draft, with the slash completion above it ------
         let popup =
             popup.map(|popup| slash_popup(&key, popup, exit, &state, &t).into_any_element());
         let cancel_state = state.clone();
@@ -945,10 +945,10 @@ impl RenderOnce for CommentsPanel {
     }
 }
 
-/// pink composer.rs `render_slash_popup_body`: a full-width stack popup card
+/// Pink composer.rs `render_slash_popup_body`: a full-width stack popup card
 /// above the draft, one row per command (a 14px command glyph, the name at
 /// 12.5 medium, the hint at 12 `text_muted`), one highlight that the arrows
-/// and the pointer share. It rises in from below (pink `menu_motion_up`) and
+/// and the pointer share. It rises in from below (Pink `menu_motion_up`) and
 /// fades out over `MENU_OUT` on close.
 fn slash_popup(
     key: &str,
@@ -1066,13 +1066,13 @@ fn slash_popup(
     }
 }
 
-/// pink comment_ui.rs `comment_accent_bar`: 3px of `solid` at the card's
+/// Pink comment_ui.rs `comment_accent_bar`: 3px of `solid` at the card's
 /// strength, stretched to the band's height.
 fn accent_bar(color: Hsla) -> gpui::Div {
     div().w(px(ACCENT_BAR_WIDTH)).flex_none().bg(color)
 }
 
-/// pink comment_ui.rs draft header: the 12px comment glyph and the path in
+/// Pink comment_ui.rs draft header: the 12px comment glyph and the path in
 /// mono 11 `text_faint`.
 fn card_header(location: SharedString, t: &Pink) -> gpui::Div {
     div()
@@ -1101,9 +1101,9 @@ fn card_header(location: SharedString, t: &Pink) -> gpui::Div {
         )
 }
 
-/// pink comment_ui.rs `comment_action`: 22px, px 10, radius 6, 11 medium.
+/// Pink comment_ui.rs `comment_action`: 22px, px 10, radius 6, 11 medium.
 /// The primary is the `solid` plate; the other is a ghost whose label and
-/// `element_hover` wash ease in under the pointer. Disabled is pink's 0.45.
+/// `element_hover` wash ease in under the pointer. Disabled is Pink's 0.45.
 fn comment_action(
     id: String,
     label: &'static str,
@@ -1168,12 +1168,12 @@ struct EditCard<'a> {
     t: &'a Pink,
 }
 
-/// The edit a slash-command comment runs, as pink's tool chip card
+/// The edit a slash-command comment runs, as Pink's tool chip card
 /// (transcript.rs: r10, `hairline(0.07)` edge over `ink(0.03)`, a 28px header
 /// with an 18px glyph tile, the label in 12/18 medium `content_muted` and the
-/// detail truncating). Running swaps the glyph for pink's mini glyph spinner
+/// detail truncating). Running swaps the glyph for Pink's mini glyph spinner
 /// and shimmers the verb with a tabular timer; applied, the card folds open
-/// (DISCLOSURE) onto the change as pink's diff rows. Returns whether it is
+/// (DISCLOSURE) onto the change as Pink's diff rows. Returns whether it is
 /// still animating.
 fn edit_card(card: EditCard) -> (AnyElement, bool) {
     let EditCard {
@@ -1358,9 +1358,9 @@ fn edit_card(card: EditCard) -> (AnyElement, bool) {
     (card, active)
 }
 
-/// One pink diff row (changes.rs `diff_row_paint`): the add/delete tint at
+/// One Pink diff row (changes.rs `diff_row_paint`): the add/delete tint at
 /// 0.10 dark / 0.08 light and the marker, both floored on the tint; the text
-/// in pink's plain diff tone, mono 12 at 21.
+/// in Pink's plain diff tone, mono 12 at 21.
 fn diff_row(added: bool, line: SharedString, t: &Pink) -> gpui::Div {
     let tone = if added { t.diff_add } else { t.diff_del };
     let wash = tone.opacity(if t.dark { 0.10 } else { 0.08 });
@@ -1416,7 +1416,7 @@ fn title_case(name: &str) -> String {
     }
 }
 
-/// "rewrite" → "Rewriting": the verb pink's working line shimmers.
+/// "rewrite" → "Rewriting": the verb Pink's working line shimmers.
 fn participle(name: &str) -> String {
     let stem = match name.strip_suffix('e') {
         Some(stem) if !name.ends_with("ee") => stem,
@@ -1425,8 +1425,8 @@ fn participle(name: &str) -> String {
     title_case(&format!("{stem}ing"))
 }
 
-/// The note at pink's card body (12/18 `text_dim`). A leading command reads
-/// as pink's inline code (`code_text` on a rounded `code_wash`, mono), laid
+/// The note at Pink's card body (12/18 `text_dim`). A leading command reads
+/// as Pink's inline code (`code_text` on a rounded `code_wash`, mono), laid
 /// out word by word (a GPUI text run can't hold a rounded plate) with the
 /// space as the gap.
 fn body(text: &SharedString, t: &Pink, space: Pixels) -> AnyElement {

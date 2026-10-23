@@ -1,21 +1,21 @@
-//! AI Answer – a pink component.
+//! AI Answer – a Pink component.
 //!
-//! One assistant turn the way pink's transcript draws it (pink:
+//! One assistant turn the way Pink's transcript draws it (Pink:
 //! `transcript.rs` `render_row`, `render_tool_group`, `render_working_trailer`
 //! and `markdown/render.rs`). There is no card. The question sits in the
 //! right-aligned user bubble. The web search and the pages the answer read
 //! form a tool group: a quiet 24px plate summarising "Searched 1 time ·
 //! fetched 4 pages" that unfolds into rows on the activity rail, open while
 //! the search runs and folding shut once the reply starts. The reply is bare
-//! markdown at 14/22 whose newly streamed words dissolve in under pink's
+//! markdown at 14/22 whose newly streamed words dissolve in under Pink's
 //! opacity veil. While the turn runs, the working line under it names what it
 //! is doing ("Searching the web for …", "Fetching …", "Writing") beside a
 //! timer and a Stop that shows on hover. Once it settles, a reserved lane
 //! under each entry shows its timestamp, Retry and Copy while the pointer is
 //! over it.
 //!
-//! Citations are the one part pink has no twin for. They are superscript
-//! numbers in pink's list-marker tone that preview their source in pink's
+//! Citations are the one part Pink has no twin for. They are superscript
+//! numbers in Pink's list-marker tone that preview their source in Pink's
 //! quoted-passage hover card and open it on click.
 //!
 //! The component renders whatever it is given, so a caller streams by passing
@@ -68,7 +68,7 @@ use crate::{
 };
 
 pub const NAME: &str = "AI Answer";
-pub const DESCRIPTION: &str = "One assistant turn as pink's transcript draws it – the question in a bubble, the searches and pages behind the reply folded into a tool group, an answer that fades in as it streams with citations that preview their source, and Retry and Copy on hover once it settles";
+pub const DESCRIPTION: &str = "One assistant turn as Pink's transcript draws it – the question in a bubble, the searches and pages behind the reply folded into a tool group, an answer that fades in as it streams with citations that preview their source, and Retry and Copy on hover once it settles";
 
 const ICON_COPY: &str = "icons/ai-answer/copy.svg";
 const ICON_COPY_CHECK: &str = "icons/ai-answer/copy-check.svg";
@@ -77,27 +77,27 @@ const ICON_GLOBAL: &str = "icons/ai-answer/global.svg";
 const ICON_CHEVRON: &str = "icons/ai-answer/alt-arrow-right.svg";
 const ICON_OPEN: &str = "icons/ai-answer/arrow-right-up.svg";
 
-/// pink: `markdown/render.rs` `MD_TEXT_SIZE`, `MD_LINE_HEIGHT`, `MD_BLOCK_GAP`.
+/// Pink: `markdown/render.rs` `MD_TEXT_SIZE`, `MD_LINE_HEIGHT`, `MD_BLOCK_GAP`.
 const MD_TEXT_SIZE: f32 = 14.;
 const MD_LINE_HEIGHT: f32 = 22.;
 const MD_BLOCK_GAP: f32 = 12.;
-/// pink: `render_block` `Block::List` – an 18px marker column holding a 5px
+/// Pink: `render_block` `Block::List` – an 18px marker column holding a 5px
 /// accent disc, 8px to the text, 4px between items.
 const LIST_MARKER_MIN_W: f32 = 18.;
 const LIST_DISC: f32 = 5.;
 const LIST_MARKER_GAP: f32 = 8.;
 const LIST_ITEM_GAP: f32 = 4.;
-/// pink: `transcript.rs` `USER_LINE_HEIGHT`; the bubble caps at 80% of the
+/// Pink: `transcript.rs` `USER_LINE_HEIGHT`; the bubble caps at 80% of the
 /// column.
 const USER_LINE_HEIGHT: f32 = 22.;
 const USER_BUBBLE_SHARE: f32 = 0.8;
-/// pink: `META_LANE_HEIGHT` – the reserved lane holds 24px actions under a
+/// Pink: `META_LANE_HEIGHT` – the reserved lane holds 24px actions under a
 /// 4px lead.
 const META_LANE_HEIGHT: f32 = 28.;
 const META_ACTION_SIZE: f32 = 24.;
-/// pink: `copy_message` keeps the "Copied" check this long.
+/// Pink: `copy_message` keeps the "Copied" check this long.
 const COPIED_FOR: Duration = Duration::from_millis(1200);
-/// pink: the tool group header, its rows and the activity rail.
+/// Pink: the tool group header, its rows and the activity rail.
 const TOOL_GROUP_HEADER_HEIGHT: f32 = 26.;
 const TOOL_TREE_ROW_HEIGHT: f32 = 32.;
 const CHIP_CARD_HEIGHT: f32 = 30.;
@@ -110,13 +110,13 @@ const ACTIVITY_BRANCH_END_X: f32 = 28.;
 const ACTIVITY_ICON_LEFT: f32 = 32.;
 const ACTIVITY_ICON_SIZE: f32 = 14.;
 const DISCLOSURE_CHEVRON_SIZE: f32 = 12.;
-/// pink: `chip_header_row`'s trailing tile, and the hover group its row's
+/// Pink: `chip_header_row`'s trailing tile, and the hover group its row's
 /// text and tile brighten with.
 const TRAIL_TILE: f32 = 18.;
 const HEADER_GROUP: &str = "tool-header";
-/// pink: `badges.rs` `BadgeCard`.
+/// Pink: `badges.rs` `BadgeCard`.
 const CARD_WIDTH: f32 = 320.;
-/// pink: `markdown/veil.rs`.
+/// Pink: `markdown/veil.rs`.
 const VEIL_EMA_SEED_MS: f32 = 160.;
 const VEIL_MIN_FADE_MS: f32 = 120.;
 const VEIL_MAX_FADE_MS: f32 = 400.;
@@ -325,7 +325,7 @@ fn pieces(spans: &[Span]) -> Vec<(Piece, bool)> {
     out
 }
 
-/// pink: `transcript.rs` `url_host`.
+/// Pink: `transcript.rs` `url_host`.
 fn url_host(url: &str) -> String {
     let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
     rest.split(['/', '?', '#'])
@@ -342,7 +342,7 @@ fn plural(n: usize, one: &str, many: &str) -> String {
     }
 }
 
-/// pink: `pink_proto::view::tool_group_summary` for web tools – "Searched 1
+/// Pink: `pink_proto::view::tool_group_summary` for web tools – "Searched 1
 /// time · fetched 4 pages", first segment capitalized.
 fn tool_group_summary(searches: usize, fetches: usize) -> String {
     let mut segments: Vec<String> = Vec::new();
@@ -361,13 +361,13 @@ fn tool_group_summary(searches: usize, fetches: usize) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Streaming veil (pink: `markdown/veil.rs`)
+// Streaming veil (Pink: `markdown/veil.rs`)
 // ---------------------------------------------------------------------------
 
 /// A veiled byte range and its current opacity.
 type VeilSpan = (Range<usize>, f32);
 
-/// pink: `veil_opacity` – the veil dissolves as `(1 − p)^1.6`.
+/// Pink: `veil_opacity` – the veil dissolves as `(1 − p)^1.6`.
 fn veil_opacity(p: f32) -> f32 {
     1. - (1. - p.clamp(0., 1.)).powf(VEIL_CURVE_POW)
 }
@@ -378,7 +378,7 @@ struct Chunk {
     duration_ms: f32,
 }
 
-/// pink: `ElemVeil` – remembers the last rendered text of one element and
+/// Pink: `ElemVeil` – remembers the last rendered text of one element and
 /// fades every newly appended suffix exactly once, over `clamp(ema × 3, 120,
 /// 400)` ms of the stream's cadence, sped up when 3+ chunks overlap.
 struct ElemVeil {
@@ -450,7 +450,7 @@ impl ElemVeil {
     }
 }
 
-/// pink: `RowVeil` – the veils of one streaming reply, keyed per text
+/// Pink: `RowVeil` – the veils of one streaming reply, keyed per text
 /// element. While `seeding`, an element seen for the first time adopts its
 /// text without fading (a reply already on screen when the turn mounts).
 #[derive(Default)]
@@ -477,7 +477,7 @@ impl RowVeil {
     }
 }
 
-/// pink: `apply_veil` – multiplies the veil into the runs' colors, splitting
+/// Pink: `apply_veil` – multiplies the veil into the runs' colors, splitting
 /// runs at span edges. Paint only: text, fonts and lengths are untouched.
 fn apply_veil(runs: Vec<TextRun>, spans: &[VeilSpan]) -> Vec<TextRun> {
     if spans.is_empty() || spans.iter().all(|(_, a)| *a >= 1.) {
@@ -518,7 +518,7 @@ fn apply_veil(runs: Vec<TextRun>, spans: &[VeilSpan]) -> Vec<TextRun> {
 }
 
 // ---------------------------------------------------------------------------
-// Answer text: spans → shaped runs (pink: `flatten_runs`)
+// Answer text: spans → shaped runs (Pink: `flatten_runs`)
 // ---------------------------------------------------------------------------
 
 /// A citation inside a text element.
@@ -584,8 +584,8 @@ fn push_run(flat: &mut TextFlat, s: &str, font: Font, color: Hsla) {
 }
 
 /// Flattens the revealed part of one span list. Words are Geist regular, or
-/// semibold when strong (pink: strong runs never drop below semibold), in
-/// `text`; citations are superscript numbers in pink's list-marker tone,
+/// semibold when strong (Pink: strong runs never drop below semibold), in
+/// `text`; citations are superscript numbers in Pink's list-marker tone,
 /// brightening to `text` while pointed at.
 #[allow(clippy::too_many_arguments)]
 fn flatten(
@@ -707,7 +707,7 @@ enum CopyTarget {
     Answer,
 }
 
-/// pink: `ToolGroupReveal` + the group's `FoldState`.
+/// Pink: `ToolGroupReveal` + the group's `FoldState`.
 #[derive(Default)]
 struct GroupState {
     keys: Vec<SharedString>,
@@ -739,7 +739,7 @@ struct GroupFrame {
 }
 
 impl GroupState {
-    /// pink: the reveal bookkeeping in `Transcript::sync_rows` – a new group
+    /// Pink: the reveal bookkeeping in `Transcript::sync_rows` – a new group
     /// reveals its header now and its rows from 90ms, 65ms apart; rows
     /// already on screen keep their start; a group mounted settled is
     /// history and stays still.
@@ -773,7 +773,7 @@ impl GroupState {
         self.starts = starts;
     }
 
-    /// pink: `render_tool_group`'s fold – open while it is the turn's live
+    /// Pink: `render_tool_group`'s fold – open while it is the turn's live
     /// tail (or a row is still arriving) unless the user chose; a change of
     /// openness tweens the body from its rendered height on `DISCLOSURE`.
     fn frame(&mut self, live: bool, reduced: bool, now: Instant) -> GroupFrame {
@@ -843,7 +843,7 @@ impl GroupState {
         }
     }
 
-    /// pink: `toggle_fold`.
+    /// Pink: `toggle_fold`.
     fn toggle(&mut self, open_height: f32, auto_open: bool) {
         let currently_open = self.user_open.unwrap_or(auto_open);
         self.fold_from = if currently_open { open_height } else { 0. };
@@ -972,7 +972,7 @@ impl AiAnswer {
     }
 
     /// Called with the source index from a citation or a fetch row, which
-    /// then wear pink's open-arrow tile.
+    /// then wear Pink's open-arrow tile.
     pub fn on_open_source(
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
@@ -1003,7 +1003,7 @@ impl AiAnswer {
         rows
     }
 
-    /// pink: `live_status` – the newest tool in flight names the work
+    /// Pink: `live_status` – the newest tool in flight names the work
     /// ("Searching the web for …", "Fetching <host>"), then "Writing" once
     /// the reply streams.
     fn live_status(&self) -> (SharedString, Option<SharedString>) {
@@ -1023,7 +1023,7 @@ impl AiAnswer {
     }
 }
 
-/// One row of the tool group (pink `tool_chip_content`: "Web" + query,
+/// One row of the tool group (Pink `tool_chip_content`: "Web" + query,
 /// "Fetch" + url).
 struct ToolRow {
     label: &'static str,
@@ -1045,9 +1045,9 @@ struct Ctx<'a> {
 // Small pieces
 // ---------------------------------------------------------------------------
 
-/// pink: `meta_action` – one action in a message's hover lane: a 24px icon
+/// Pink: `meta_action` – one action in a message's hover lane: a 24px icon
 /// button, transparent → `ink(0.08)` on the shared hover fade, a 14px glyph
-/// in `content_muted`, a text tooltip on GPUI's default delay (pink sets
+/// in `content_muted`, a text tooltip on GPUI's default delay (Pink sets
 /// none) and the inset focus ring.
 fn meta_action(
     id: SharedString,
@@ -1078,7 +1078,7 @@ fn meta_action(
         )
 }
 
-/// pink: the hover metadata strip under an entry's last row – a reserved
+/// Pink: the hover metadata strip under an entry's last row – a reserved
 /// 28px lane, so revealing it never moves layout, whose timestamp (12
 /// `content_faint`) and actions fade in over 150ms while the entry is
 /// hovered. User entries align end, under the bubble.
@@ -1113,7 +1113,7 @@ fn meta_lane(
         .when(hovered, |el| el.child(motion::fade_quick(id, metadata)))
 }
 
-/// Copy in a hover lane, with pink's 1.2s "Copied" check.
+/// Copy in a hover lane, with Pink's 1.2s "Copied" check.
 fn copy_action(
     id: SharedString,
     target: CopyTarget,
@@ -1147,7 +1147,7 @@ fn copy_action(
     })
 }
 
-/// pink: the working trailer's "Stop" – a quiet way out that appears only
+/// Pink: the working trailer's "Stop" – a quiet way out that appears only
 /// under the pointer (or on focus): 11/16 `content_muted`, `ml 4 px 6 r 6`,
 /// the shared hover wash.
 fn stop_button(id: SharedString, group: SharedString, on_stop: Handler, t: &Pink) -> Stateful<Div> {
@@ -1175,7 +1175,7 @@ fn stop_button(id: SharedString, group: SharedString, on_stop: Handler, t: &Pink
         })
 }
 
-/// pink: `reveal_tool_row` – an arriving row grows to its height.
+/// Pink: `reveal_tool_row` – an arriving row grows to its height.
 fn reveal_tool_row(row: AnyElement, height: f32, progress: f32) -> AnyElement {
     if progress >= 1. {
         return row;
@@ -1189,7 +1189,7 @@ fn reveal_tool_row(row: AnyElement, height: f32, progress: f32) -> AnyElement {
         .into_any_element()
 }
 
-/// pink: `activity_branch_points` – the elbow from the trunk to the branch
+/// Pink: `activity_branch_points` – the elbow from the trunk to the branch
 /// tip, cut to `progress` of its length.
 fn branch_points(progress: f32) -> Vec<Point<f32>> {
     let mut path: Vec<Point<f32>> = (0..=24)
@@ -1228,7 +1228,7 @@ fn branch_points(progress: f32) -> Vec<Point<f32>> {
     visible
 }
 
-/// pink: `activity_ribbon` – a 1px ribbon contour; nonzero fill unions the
+/// Pink: `activity_ribbon` – a 1px ribbon contour; nonzero fill unions the
 /// trunk and the elbow so the fork paints one alpha.
 fn ribbon(path: &mut PathBuilder, points: &[Point<Pixels>]) {
     if points.len() < 2 {
@@ -1253,7 +1253,7 @@ fn ribbon(path: &mut PathBuilder, points: &[Point<Pixels>]) {
     path.close();
 }
 
-/// pink: `activity_rail` – the 48px gutter of one row: the trunk at x 12.5
+/// Pink: `activity_rail` – the 48px gutter of one row: the trunk at x 12.5
 /// drawing down from the row above, a 6px elbow to x 28 and the tool glyph
 /// (14, `content_muted`) at x 32, or the running row's mini spinner. The
 /// ribbons are `hairline(0.12)`.
@@ -1335,10 +1335,10 @@ fn activity_rail(
         })
 }
 
-/// pink: `chip_header_row` for an activity row – label and detail at 12/18
+/// Pink: `chip_header_row` for an activity row – label and detail at 12/18
 /// in `content_muted`, the detail truncating. A row that opens its page gets
-/// pink's open-arrow trail tile, half strength until the row is hovered,
-/// and its label and detail brighten to `text` with it (pink's
+/// Pink's open-arrow trail tile, half strength until the row is hovered,
+/// and its label and detail brighten to `text` with it (Pink's
 /// `group_hover`, keyed by stable child ids so text keeps its hover state).
 fn chip_header_row(row: &ToolRow, link: bool, t: &Pink) -> Div {
     let text = t.text;
@@ -1403,7 +1403,7 @@ fn chip_header_row(row: &ToolRow, link: bool, t: &Pink) -> Div {
         })
 }
 
-/// pink: `badges.rs` `BadgeCard` – the quoted-passage hover card, here
+/// Pink: `badges.rs` `BadgeCard` – the quoted-passage hover card, here
 /// previewing a citation: a 320px plate, one inset passage row (`p 8 r 6`,
 /// `ink(0.05)`, a 2px `solid @ 0.35` bar) holding the host in mono 11 with
 /// the citation's number as a tag, the page title, and the passage.
@@ -1497,7 +1497,7 @@ impl Render for CitationCard {
 // ---------------------------------------------------------------------------
 
 impl AiAnswer {
-    /// pink: `RowKind::User` – the question in the right-aligned bubble
+    /// Pink: `RowKind::User` – the question in the right-aligned bubble
     /// (`user_bubble_bg`, a 1px inset edge in light, r16, `px 16 py 10`,
     /// 14/22), then its hover lane.
     fn render_question(&self, cx: &Ctx, hovered: bool, copied: bool) -> AnyElement {
@@ -1564,7 +1564,7 @@ impl AiAnswer {
             .into_any_element()
     }
 
-    /// pink: `render_tool_group` – the summary plate (24px, r6, Quaternary →
+    /// Pink: `render_tool_group` – the summary plate (24px, r6, Quaternary →
     /// Tertiary with its text and glyph brightening, a chevron turning 90°
     /// as it opens) over the fold of rail rows.
     fn render_group(
@@ -1580,7 +1580,7 @@ impl AiAnswer {
         let searches = usize::from(self.query.is_some());
         let summary: SharedString = tool_group_summary(searches, self.sources.len()).into();
         let hover_key = format!("tl-{key}-hdr");
-        // pink: `tool_group_title` – while live, the sweep is laid over the
+        // Pink: `tool_group_title` – while live, the sweep is laid over the
         // summary, whose own color follows the plate's hover fade
         let title = match shimmer_phase {
             Some(phase) => div()
@@ -1769,7 +1769,7 @@ impl AiAnswer {
             .into_any_element()
     }
 
-    /// One paragraph or list item: shaped runs at 14/22 (pink:
+    /// One paragraph or list item: shaped runs at 14/22 (Pink:
     /// `text_element`), veiled while streaming. Citations are clickable
     /// ranges with a hover card.
     fn render_text(cx: &Ctx, flat: TextFlat, spans: &[VeilSpan]) -> AnyElement {
@@ -1838,7 +1838,7 @@ impl AiAnswer {
             .into_any_element()
     }
 
-    /// pink: `render_block` – a paragraph, or a list of 5px accent discs in
+    /// Pink: `render_block` – a paragraph, or a list of 5px accent discs in
     /// an 18px column, 8px from the text, items 4px apart.
     fn render_block(
         cx: &Ctx,
@@ -1898,7 +1898,7 @@ impl AiAnswer {
             .into_any_element()
     }
 
-    /// pink: `render_working_trailer` – `pt 16`, `gap 8`, top-aligned: the
+    /// Pink: `render_working_trailer` – `pt 16`, `gap 8`, top-aligned: the
     /// breathing orb, the shimmering status, "· 12s" and a hover-only Stop.
     fn render_trailer(&self, cx: &Ctx) -> AnyElement {
         let t = cx.t;
@@ -1951,7 +1951,7 @@ impl RenderOnce for AiAnswer {
         );
         let busy = self.status.busy();
         let searching = self.status == AnswerStatus::Searching;
-        // pink: only a live row wears the veil; reduced motion renders none.
+        // Pink: only a live row wears the veil; reduced motion renders none.
         let streaming = self.status == AnswerStatus::Writing && !reduced;
         let limit = self.reveal.unwrap_or(usize::MAX);
 
@@ -2033,7 +2033,7 @@ impl RenderOnce for AiAnswer {
         let group_el = group
             .as_ref()
             .map(|frame| self.render_group(&ctx, &rows, frame, shimmer_phase));
-        // pink: `top_gap_for` – 16 opens a turn, 12 follows a tool group and
+        // Pink: `top_gap_for` – 16 opens a turn, 12 follows a tool group and
         // separates markdown blocks.
         let first_gap = if has_group { space::MD } else { space::LG };
         let answer_blocks: Vec<AnyElement> = blocks

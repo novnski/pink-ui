@@ -1,9 +1,9 @@
 //! Pink's surfaces: in-flow cards and settings rows, the popover / menu kit,
-//! field frames, tooltips and dialogs (pink `popover.rs`,
+//! field frames, tooltips and dialogs (Pink `popover.rs`,
 //! `settings/widgets.rs`, `surface_chrome.rs`, `transcript.rs`, `shell.rs`).
 //!
 //! Floating surfaces (popover, tooltip, dialog, palette) are opaque plates
-//! with a box shadow, pink's Opaque treatment. In-flow cards are never
+//! with a box shadow, Pink's Opaque treatment. In-flow cards are never
 //! shadowed.
 
 use gpui::{
@@ -24,7 +24,7 @@ use crate::HoverFill;
 /// A card resting on the panel: the settings section card's surface (radius
 /// 12, 1 px `border`, `card_glass_bg()`, which is `surface` in the opaque
 /// treatment), without the section margin and clip, and with no shadow
-/// (pink never shadows in-flow content).
+/// (Pink never shadows in-flow content).
 pub fn card(t: &Pink) -> Div {
     div()
         .bg(t.card_glass_bg())
@@ -33,7 +33,7 @@ pub fn card(t: &Pink) -> Div {
         .rounded(px(radius::SECTION_CARD))
 }
 
-/// A settings section card (pink `widgets::section_card`): `mt 24`, radius
+/// A settings section card (Pink `widgets::section_card`): `mt 24`, radius
 /// 12, 1 px `border`, `card_glass_bg()`, clipped, a column. Put a
 /// [`section_header`] inside, then [`card_row`]s.
 pub fn section_card(t: &Pink) -> Div {
@@ -48,7 +48,7 @@ pub fn section_card(t: &Pink) -> Div {
         .flex_col()
 }
 
-/// A section's title block inside its card (pink `widgets::section_header`):
+/// A section's title block inside its card (Pink `widgets::section_header`):
 /// `px 16 / pt 14 / pb 12`, the title in Title3 (15/20 semibold) and an
 /// optional description, gap 3. Trailing actions go in a [`row_controls`]
 /// child. Follow it with `card_row(false, ..)` rows.
@@ -87,7 +87,7 @@ pub fn section_header(
         )
 }
 
-/// One settings card row (pink `widgets::card_row`): at least 48 tall,
+/// One settings card row (Pink `widgets::card_row`): at least 48 tall,
 /// `px 16 / py 12`, a `border` hairline on top unless `first`, wrapping with
 /// gaps 12 / 10. No hover: rows aren't controls.
 pub fn card_row(first: bool, t: &Pink) -> Div {
@@ -105,7 +105,7 @@ pub fn card_row(first: bool, t: &Pink) -> Div {
         .gap_y(px(10.0))
 }
 
-/// A row's text column (pink `widgets::row_text`): title and optional
+/// A row's text column (Pink `widgets::row_text`): title and optional
 /// description, gap 2, holding 220 px so the controls wrap below it before
 /// the text squeezes.
 pub fn row_text(
@@ -146,8 +146,8 @@ pub fn row_description(copy: impl Into<SharedString>, t: &Pink) -> Div {
         .child(copy.into())
 }
 
-/// A row's trailing controls (pink `widgets::row_controls`): one line pushed
-/// right with `ml_auto` (as in pink, so it also stays right-aligned when the
+/// A row's trailing controls (Pink `widgets::row_controls`): one line pushed
+/// right with `ml_auto` (as in Pink, so it also stays right-aligned when the
 /// row wraps it under the text), gap 8, never wrapping.
 pub fn row_controls() -> Div {
     div()
@@ -171,7 +171,7 @@ pub fn row_block() -> Div {
         .gap(px(8.0))
 }
 
-/// A row's identity tile (pink `widgets::row_tile`): 28 square, radius 7,
+/// A row's identity tile (Pink `widgets::row_tile`): 28 square, radius 7,
 /// 1 px `border`, `fill(Quaternary)`, a 16 px icon in `text_muted`.
 pub fn row_tile(icon_path: impl Into<SharedString>, t: &Pink) -> Div {
     div()
@@ -205,7 +205,7 @@ pub fn section_footer(copy: impl Into<SharedString>, t: &Pink) -> Div {
         .child(copy.into())
 }
 
-/// A form field label above a group (pink `widgets::field_label`): `mt 12 /
+/// A form field label above a group (Pink `widgets::field_label`): `mt 12 /
 /// mb −4`, 13 semibold `readable_muted(0.85)`.
 pub fn field_label(label: impl Into<SharedString>, t: &Pink) -> Div {
     div()
@@ -227,7 +227,7 @@ pub fn code_surface(t: &Pink) -> Div {
         .bg(t.ink(0.035))
 }
 
-/// An inline card standing on its own (pink's auth / empty-state card):
+/// An inline card standing on its own (Pink's auth / empty-state card):
 /// radius 12, `surface_card`, 1 px `border`, GPUI's `shadow_lg`.
 pub fn inline_card(t: &Pink) -> Div {
     div()
@@ -243,7 +243,7 @@ pub fn divider(t: &Pink) -> Div {
     div().h(px(1.)).w_full().bg(t.separator(false))
 }
 
-/// The empty / loading / error recipe for a surface (pink
+/// The empty / loading / error recipe for a surface (Pink
 /// `surface_chrome::surface_state`): a centered column, gap 6, `glyph`
 /// (28 px in `text_faint`, `mb 4`), a 13 medium title, and an optional
 /// 12/18 `text_muted` body capped at 280.
@@ -285,7 +285,7 @@ pub fn surface_state(
 // Popovers and menus
 // ---------------------------------------------------------------------------
 
-/// The popover / menu card (pink `popover::popover_card`): 1 px `border`,
+/// The popover / menu card (Pink `popover::popover_card`): 1 px `border`,
 /// radius 12, the popover plate (`surface_bg()`: #27272a / #ffffff),
 /// `menu_shadows()`, `p 4`, gap 2, clipped, 13 Geist in `text`. Chain
 /// `.flex().flex_col()` for a menu, and a width from `layout::MENU_W_*`.
@@ -323,7 +323,7 @@ pub fn stack_popup_card(t: &Pink) -> Div {
         .p(px(layout::STACK_POPUP_INSET))
 }
 
-/// One pointer menu row (pink `popover::menu_row`): gap 10, `px 8 / py 6`,
+/// One pointer menu row (Pink `popover::menu_row`): gap 10, `px 8 / py 6`,
 /// radius 8, 13. Active: `card_selected_bg()` and `text`. At rest the label
 /// is `text @ 0.9` and the wash `wash(0)`, easing to `text` and
 /// `menu_hover_bg()` (60% of the selected wash) under the pointer. A leading
@@ -354,7 +354,7 @@ pub fn menu_row(id: impl Into<SharedString>, active: bool, t: &Pink) -> Stateful
     }
 }
 
-/// A row of a keyboard-navigable menu (pink `popover::menu_row_nav`): one
+/// A row of a keyboard-navigable menu (Pink `popover::menu_row_nav`): one
 /// highlight that arrows and pointer share (`card_selected_bg()` on the
 /// cursor row only, no separate hover wash), and a trailing 14 px check in
 /// `text` on the current choice, in the 28 px check column. Move the cursor
@@ -406,7 +406,7 @@ pub fn menu_chevron(t: &Pink) -> gpui::Canvas<()> {
     line_glyph(glyphs::ALT_ARROW_RIGHT, 14.0, t.text_muted)
 }
 
-/// A small uppercase section heading inside a menu (pink
+/// A small uppercase section heading inside a menu (Pink
 /// `popover::menu_heading`): `px 8 / pt 6 / pb 4`, 11 semibold `text_muted`,
 /// tracked with hair spaces.
 pub fn menu_heading(label: &str, t: &Pink) -> Div {
@@ -434,7 +434,7 @@ pub fn tracked_upper(label: &str) -> String {
     out
 }
 
-/// The divider between menu sections (pink `popover::menu_separator`): 1 px
+/// The divider between menu sections (Pink `popover::menu_separator`): 1 px
 /// of `separator(false)`, full-bleed (`mx −4` cancels the card inset), `my 2`.
 pub fn menu_separator(t: &Pink) -> Div {
     div()
@@ -444,7 +444,7 @@ pub fn menu_separator(t: &Pink) -> Div {
         .bg(t.separator(false))
 }
 
-/// A bordered trailing menu block (pink `popover::menu_section`): `mt 4 /
+/// A bordered trailing menu block (Pink `popover::menu_section`): `mt 4 /
 /// pt 4`, a `separator(false)` rule on top, a column with gap 2.
 pub fn menu_section(t: &Pink) -> Div {
     div()
@@ -472,7 +472,7 @@ pub fn menu_empty(copy: impl Into<SharedString>, t: &Pink) -> Div {
 // Field frames
 // ---------------------------------------------------------------------------
 
-/// The search field at the top of a picker popover (pink
+/// The search field at the top of a picker popover (Pink
 /// `popover::search_input_frame`): `mb 4`, `px 10 / py 6`, radius 8,
 /// `fill(Quaternary)`, borderless, 13. Add the `TextInput` as its child.
 pub fn search_input_frame(t: &Pink) -> Div {
@@ -485,7 +485,7 @@ pub fn search_input_frame(t: &Pink) -> Div {
         .text_size(px(13.0))
 }
 
-/// A dialog or form text field (pink `popover::dialog_field`): full width,
+/// A dialog or form text field (Pink `popover::dialog_field`): full width,
 /// `px 12 / py 8`, radius 8, a `separator(false)` edge, `fill(Quaternary)`,
 /// 14. Pink frames don't change on focus: the caret (2 px, `t.caret`)
 /// signals it.
@@ -501,7 +501,7 @@ pub fn dialog_field(t: &Pink) -> Div {
         .text_size(px(14.0))
 }
 
-/// A compact editor field (pink automations `input_frame`): `px 10 / py 6`,
+/// A compact editor field (Pink automations `input_frame`): `px 10 / py 6`,
 /// radius 8, a `separator(true)` edge, `fill(Quaternary)`, 13.
 pub fn input_frame(t: &Pink) -> Div {
     div()
@@ -515,7 +515,7 @@ pub fn input_frame(t: &Pink) -> Div {
         .text_size(px(13.0))
 }
 
-/// A toolbar field (pink `surface_chrome::input`: file search, address
+/// A toolbar field (Pink `surface_chrome::input`: file search, address
 /// bar): 28 tall, `px 8`, radius 6, an `ink(0.035)` plate, gap 6, 12.
 pub fn toolbar_input(t: &Pink) -> Div {
     div()
@@ -535,7 +535,7 @@ pub fn toolbar_input(t: &Pink) -> Div {
 // Tooltips
 // ---------------------------------------------------------------------------
 
-/// Every tooltip and hover card's surface (pink `popover::tooltip_card`):
+/// Every tooltip and hover card's surface (Pink `popover::tooltip_card`):
 /// radius 8, a 1 px `border_strong` edge, the opaque `tooltip_surface()`,
 /// `tooltip_shadows()`, and Geist named on the card (a tooltip lays out as
 /// its own root). Content sets padding and width.
@@ -549,7 +549,7 @@ pub fn tooltip_card(t: &Pink) -> Div {
         .font_family(SANS)
 }
 
-/// The plain-text tooltip view (pink `popover::TextTooltip`): the
+/// The plain-text tooltip view (Pink `popover::TextTooltip`): the
 /// [`tooltip_card`] at `px 8 / py 5`, Caption (11/14) in `text`, one line up
 /// to 48 characters, else wrapped at 260.
 pub struct TextTooltip(pub SharedString);
@@ -581,7 +581,7 @@ pub fn text_tooltip(
 // Dialogs and palettes
 // ---------------------------------------------------------------------------
 
-/// A dialog card (pink `popover::dialog_card`): 360 wide, `p 20`, radius 16,
+/// A dialog card (Pink `popover::dialog_card`): 360 wide, `p 20`, radius 16,
 /// the popover plate, a `separator(false)` edge, `shadow_lg`, a column in
 /// `text`. Lay it on `t.scrim(MODAL_SCRIM)`.
 pub fn dialog_card(t: &Pink) -> Div {
@@ -618,8 +618,8 @@ pub fn dialog_body(copy: impl Into<SharedString>, t: &Pink) -> Div {
         .child(copy.into())
 }
 
-/// A command-palette card (pink `popover::palette_card`): `width`, radius
-/// `corner_radius` (pink uses 16), a `separator(false)` edge, the popover
+/// A command-palette card (Pink `popover::palette_card`): `width`, radius
+/// `corner_radius` (Pink uses 16), a `separator(false)` edge, the popover
 /// plate, `shadow_lg`, clipped, a column. Rows inside are radius 8
 /// ([`radius::PALETTE_ITEM`]); header and footer rules are `hairline(0.06)`.
 pub fn palette_card(width: f32, corner_radius: f32, t: &Pink) -> Div {
@@ -649,7 +649,7 @@ pub fn modal_scrim(t: &Pink) -> Div {
 }
 
 /// The tone a notice or strip paints in, for callers building one: the
-/// plate, the edge and the copy of pink's settings error / warning strips
+/// plate, the edge and the copy of Pink's settings error / warning strips
 /// (`tone @ 0.06`, `tone @ 0.2`, `readable_tone(muted, 0.9)`).
 pub fn strip_colors(tone: Hsla, muted: Hsla, t: &Pink) -> (Hsla, Hsla, Hsla) {
     (

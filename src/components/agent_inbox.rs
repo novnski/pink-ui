@@ -1,9 +1,9 @@
-//! Agent Inbox – pink's sidebar Activity view: every agent task that needs
+//! Agent Inbox – Pink's sidebar Activity view: every agent task that needs
 //! you, has a fresh result, or is still running, in one triage list.
 //!
 //! Rows sort into three sections – Needs you, Ready, Running – newest first
 //! within each, and glide to their new place when a task changes state. A
-//! row is pink's two-line task row: the title over a quiet project · branch
+//! row is Pink's two-line task row: the title over a quiet project · branch
 //! line, the time-ago in the corner (pin and archive under the pointer) and
 //! the status at the right edge – a spinner while it works, a dot when it is
 //! done, and a pill naming the next step when it waits on you. Opening a row
@@ -54,21 +54,21 @@ const ICON_FOLDER: &str = "icons/agent-inbox/folder.svg";
 const ICON_CHECK: &str = "icons/agent-inbox/check.svg";
 const ICON_CHEVRON: &str = "icons/agent-inbox/alt-arrow-right.svg";
 
-/// pink: shell.rs `chat_row_height` – a title line and one meta line.
+/// Pink: shell.rs `chat_row_height` – a title line and one meta line.
 const ROW_H: f32 = 52.0;
-/// pink: spaces.rs `SIDEBAR_DISCLOSURE_HEADER_HEIGHT`.
+/// Pink: spaces.rs `SIDEBAR_DISCLOSURE_HEADER_HEIGHT`.
 const HEADING_H: f32 = 28.0;
-/// pink: spaces.rs `SIDEBAR_SECTION_GAP`, above every section after the first.
+/// Pink: spaces.rs `SIDEBAR_SECTION_GAP`, above every section after the first.
 const SECTION_GAP: f32 = 12.0;
-/// pink: spaces.rs `SIDEBAR_DISCLOSURE_BODY_INSET`.
+/// Pink: spaces.rs `SIDEBAR_DISCLOSURE_BODY_INSET`.
 const BODY_INSET: f32 = 4.0;
-/// pink: the Pinned group's rule – `pt 8`, `pb 8` and one pixel.
+/// Pink: the Pinned group's rule – `pt 8`, `pb 8` and one pixel.
 const DIVIDER_H: f32 = 17.0;
-/// pink: shell.rs `SIDEBAR_GUTTER` (`SPACE_SM`).
+/// Pink: shell.rs `SIDEBAR_GUTTER` (`SPACE_SM`).
 const GUTTER: f32 = space::SM;
-/// pink: shell.rs `sidebar_faded_label` – the fade that stands in for an ellipsis.
+/// Pink: shell.rs `sidebar_faded_label` – the fade that stands in for an ellipsis.
 const LABEL_FADE: f32 = 20.0;
-/// pink: activity_center.rs `UNREAD_DOT`.
+/// Pink: activity_center.rs `UNREAD_DOT`.
 const UNREAD_DOT: f32 = 6.0;
 /// How long the demo plays before it starts over.
 const DEMO_LOOP: f32 = 28.0;
@@ -76,15 +76,15 @@ const DEMO_LOOP: f32 = 28.0;
 /// Where a task stands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TaskStatus {
-    /// Paused until you approve something (pink: awaiting approval).
+    /// Paused until you approve something (Pink: awaiting approval).
     NeedsYou,
-    /// Asked you a question (pink: awaiting input).
+    /// Asked you a question (Pink: awaiting input).
     NeedsReply,
     Running,
     Failed,
     /// Finished; a fresh result until someone reads it.
     Done,
-    /// Stopped; nothing is going on (pink: idle).
+    /// Stopped; nothing is going on (Pink: idle).
     Cancelled,
 }
 
@@ -157,7 +157,7 @@ impl InboxTask {
         self
     }
 
-    /// What the row shows (pink `ChatIndicator`): a result reads as done only
+    /// What the row shows (Pink `ChatIndicator`): a result reads as done only
     /// until it is read.
     fn indicator(&self) -> Indicator {
         match self.status {
@@ -170,7 +170,7 @@ impl InboxTask {
         }
     }
 
-    /// Where the row lists by its own state (pink: spaces.rs
+    /// Where the row lists by its own state (Pink: spaces.rs
     /// `activity_section`); a read failure no longer needs you.
     fn live_section(&self) -> Option<Section> {
         match self.indicator() {
@@ -182,7 +182,7 @@ impl InboxTask {
         }
     }
 
-    /// Lights the bell's dot (pink: activity_center.rs `has_attention`).
+    /// Lights the bell's dot (Pink: activity_center.rs `has_attention`).
     fn wants_you(&self) -> bool {
         match self.indicator() {
             Indicator::Approval | Indicator::Input | Indicator::Completed => true,
@@ -268,7 +268,7 @@ impl AgentInbox {
         self
     }
 
-    /// The column's width (pink's sidebar: 224 to 400, 256 by default).
+    /// The column's width (Pink's sidebar: 224 to 400, 256 by default).
     pub fn width(mut self, width: f32) -> Self {
         self.width = width;
         self
@@ -293,7 +293,7 @@ impl AgentInbox {
 // Model
 // ---------------------------------------------------------------------------
 
-/// pink: proto `ChatIndicator`.
+/// Pink: proto `ChatIndicator`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Indicator {
     Working,
@@ -304,7 +304,7 @@ enum Indicator {
     Idle,
 }
 
-/// Activity's sections, most urgent first (pink: spaces.rs `ActivitySection`).
+/// Activity's sections, most urgent first (Pink: spaces.rs `ActivitySection`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Section {
     NeedsYou,
@@ -350,7 +350,7 @@ struct InboxState {
     activity: bool,
     /// The task being read.
     selected: Option<SharedString>,
-    /// pink `ActivityHold`: the most urgent section the task being read has
+    /// Pink `ActivityHold`: the most urgent section the task being read has
     /// listed under since it was opened. It never lists below it.
     hold: Option<Section>,
     /// The row under the pointer: its corner trades the time for actions.
@@ -360,7 +360,7 @@ struct InboxState {
     loop_start: f32,
     autoplay: bool,
     clips: Clips,
-    // The resort glide (pink: shell.rs `render_chat_sidebar`).
+    // The resort glide (Pink: shell.rs `render_chat_sidebar`).
     prev_order: Vec<(String, f32)>,
     resort: HashMap<String, f32>,
     new_keys: HashSet<String>,
@@ -473,7 +473,7 @@ impl InboxState {
         }
     }
 
-    /// Opens a row (pink: activity_center.rs `hold_activity_section`, then
+    /// Opens a row (Pink: activity_center.rs `hold_activity_section`, then
     /// the open that reads it).
     fn open(&mut self, id: &SharedString) {
         let Some(row) = self.rows.iter().find(|r| &r.task.id == id) else {
@@ -509,7 +509,7 @@ impl InboxState {
         }
     }
 
-    /// Where a row lists in Activity (pink: spaces.rs
+    /// Where a row lists in Activity (Pink: spaces.rs
     /// `activity_sidebar_chats`): the task being read never lists below its
     /// held section, and stays listed while it is read.
     fn section_of(&self, task: &InboxTask) -> Option<Section> {
@@ -550,7 +550,7 @@ impl InboxState {
     }
 
     /// Records the rendered order; a reorder glides the rows that moved and
-    /// fades in the new ones (pink: shell.rs `resort_offsets`).
+    /// fades in the new ones (Pink: shell.rs `resort_offsets`).
     fn note_order(&mut self, order: Vec<(String, f32)>) {
         if self.prev_order == order {
             return;
@@ -596,19 +596,19 @@ impl InboxState {
 
 /// One keyed entry of the rendered list.
 enum Item {
-    /// pink: activity_center.rs `activity_section_heading`.
+    /// Pink: activity_center.rs `activity_section_heading`.
     Heading {
         section: Section,
         count: usize,
         first: bool,
     },
     Task(Row),
-    /// pink: the full list's Pinned disclosure group.
+    /// Pink: the full list's Pinned disclosure group.
     Pinned {
         rows: Vec<Row>,
         collapsed: bool,
     },
-    /// pink: the rule under the Pinned group.
+    /// Pink: the rule under the Pinned group.
     Divider,
 }
 
@@ -644,7 +644,7 @@ impl Item {
 // Rendering
 // ---------------------------------------------------------------------------
 
-/// Compact relative time, no "ago" (pink: proto `format_time_ago`).
+/// Compact relative time, no "ago" (Pink: proto `format_time_ago`).
 fn time_ago(seconds: f32) -> String {
     let s = seconds.max(0.0) as u64;
     if s < 60 {
@@ -673,7 +673,7 @@ fn time_ago(seconds: f32) -> String {
     format!("{}y", d / 365)
 }
 
-/// pink: spaces.rs `status_dot_color` – every state but Done sits well below
+/// Pink: spaces.rs `status_dot_color` – every state but Done sits well below
 /// full strength.
 fn status_dot_color(indicator: Indicator, t: &Pink) -> Hsla {
     match indicator {
@@ -686,7 +686,7 @@ fn status_dot_color(indicator: Indicator, t: &Pink) -> Hsla {
     }
 }
 
-/// pink: shell.rs `sidebar_faded_label` – no ellipsis: a clipped label's last
+/// Pink: shell.rs `sidebar_faded_label` – no ellipsis: a clipped label's last
 /// glyphs fade out over 20 px into `fade_to`, the row's painted color.
 fn faded_label(
     id: String,
@@ -739,7 +739,7 @@ fn faded_label(
         })
 }
 
-/// A 20 px corner action (pink: shell.rs `render_chat_row` pin / archive):
+/// A 20 px corner action (Pink: shell.rs `render_chat_row` pin / archive):
 /// radius 4, a quiet wash under the pointer, a 12 px glyph.
 fn corner_action(
     id: String,
@@ -771,7 +771,7 @@ fn corner_action(
         )
 }
 
-/// The row's details card after the hover delay (pink: shell.rs
+/// The row's details card after the hover delay (Pink: shell.rs
 /// `SidebarThreadTooltip`).
 #[derive(Clone)]
 struct TaskDetails {
@@ -843,7 +843,7 @@ struct RowCx<'a> {
     hovered: Option<&'a SharedString>,
 }
 
-/// One task row (pink: shell.rs `Shell::render_chat_row`, two-line sidebar
+/// One task row (Pink: shell.rs `Shell::render_chat_row`, two-line sidebar
 /// row): 52 tall, `px 8 py 6`, radius 8; the title over the meta line, the
 /// time (or the hover actions) in the corner, the status at the right edge.
 fn task_row(c: &RowCx, row: &Row) -> AnyElement {
@@ -1123,7 +1123,7 @@ fn task_row(c: &RowCx, row: &Row) -> AnyElement {
         .into_any_element()
 }
 
-/// One Activity section's heading (pink: activity_center.rs
+/// One Activity section's heading (Pink: activity_center.rs
 /// `activity_section_heading`): a heading, not a disclosure – what needs you
 /// never folds away. 11 semibold label, the count beside it.
 fn section_heading(key: &str, section: Section, count: usize, first: bool, t: &Pink) -> AnyElement {
@@ -1168,7 +1168,7 @@ fn section_heading(key: &str, section: Section, count: usize, first: bool, t: &P
         .into_any_element()
 }
 
-/// The full list's Pinned group (pink: spaces.rs `sidebar_disclosure_header`
+/// The full list's Pinned group (Pink: spaces.rs `sidebar_disclosure_header`
 /// and `render_sidebar_disclosure_body`): a 28 px header with a quiet wash and
 /// the chevron only under the pointer; the body folds over `COLLAPSE`.
 fn pinned_group(c: &RowCx, rows: &[Row], collapsed: bool) -> AnyElement {
@@ -1262,7 +1262,7 @@ fn pinned_group(c: &RowCx, rows: &[Row], collapsed: bool) -> AnyElement {
         .into_any_element()
 }
 
-/// The header's Activity toggle (pink: activity_center.rs
+/// The header's Activity toggle (Pink: activity_center.rs
 /// `render_activity_action`): a 28 px bell, accent while the view is on, with
 /// a 6 px accent dot on its shoulder while something needs you.
 fn bell(c: &RowCx, active: bool, has_attention: bool) -> Stateful<Div> {
@@ -1337,7 +1337,7 @@ fn bell(c: &RowCx, active: bool, has_attention: bool) -> Stateful<Div> {
         })
 }
 
-/// A centred empty list with the next step (pink: shell.rs
+/// A centred empty list with the next step (Pink: shell.rs
 /// `render_chat_sidebar`, audit SH-24).
 fn empty_state(activity: bool, t: &Pink) -> AnyElement {
     let (title, hint) = if activity {
@@ -1429,7 +1429,7 @@ impl RenderOnce for AgentInbox {
         let clips = s.clips.clone();
 
         // A held row drawn in a more urgent section keeps it while it is
-        // read; then the resort glide (pink: shell.rs `RESORT`).
+        // read; then the resort glide (Pink: shell.rs `RESORT`).
         let order: Vec<(String, f32)> = items.iter().map(|i| (i.key(), i.height())).collect();
         let (epoch, resort, new_keys) = state.update(cx, |s, _| {
             if let (Some(drawn), Some(hold)) = (drawn_selected, s.hold) {
@@ -1495,7 +1495,7 @@ impl RenderOnce for AgentInbox {
             })
             .collect();
 
-        // pink: spaces.rs `render_threads_header` – the label turns into
+        // Pink: spaces.rs `render_threads_header` – the label turns into
         // "Activity" while the bell is on.
         let header = div()
             .flex_none()
@@ -1539,7 +1539,7 @@ impl RenderOnce for AgentInbox {
             .children(list_items);
 
         motion::keep_alive(window);
-        // The sidebar column on the shell surface, with pink's left gutter
+        // The sidebar column on the shell surface, with Pink's left gutter
         // (and the canvas inset standing in on the right).
         div()
             .w(px(self.width))

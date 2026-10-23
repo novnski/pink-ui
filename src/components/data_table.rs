@@ -1,7 +1,7 @@
-//! Data Table – a small spreadsheet drawn as one of pink's card tables:
+//! Data Table – a small spreadsheet drawn as one of Pink's card tables:
 //! select ranges, edit in place, copy, paste, undo, sort and resize columns.
 //!
-//! The chrome is pink's. The card is the Usage page's Breakdown card (a
+//! The chrome is Pink's. The card is the Usage page's Breakdown card (a
 //! section card whose header carries the controls, the table inset below a
 //! hairline); the rows are `usage_table_row` (an 11/14 caption header, 36 tall
 //! body rows under `border` hairlines, figures right-aligned in the UI sans);
@@ -10,7 +10,7 @@
 //! footer is the command palette's key legend.
 //!
 //! Click a cell to select it, drag or Shift-click to select a range, click
-//! a row number for the whole row. The active cell wears pink's focus ring
+//! a row number for the whole row. The active cell wears Pink's focus ring
 //! and the ring glides between cells as the selection moves. Typing replaces
 //! the cell, Enter or a double-click edits it, and Enter, Tab or ↑/↓ commit
 //! and move on, the way spreadsheets do. Typed values are checked against
@@ -51,34 +51,34 @@ use crate::{
 };
 
 pub const NAME: &str = "Data Table";
-pub const DESCRIPTION: &str = "A spreadsheet in one of pink's card tables – caption headers over hairline rows, ranges under a gliding focus ring, typed in-place edits, tab-separated copy and paste, undo, and columns you sort and resize";
+pub const DESCRIPTION: &str = "A spreadsheet in one of Pink's card tables – caption headers over hairline rows, ranges under a gliding focus ring, typed in-place edits, tab-separated copy and paste, undo, and columns you sort and resize";
 
 const ICON_UNDO: &str = "icons/data-table/undo.svg";
 const ICON_REDO: &str = "icons/data-table/redo.svg";
 const ICON_PLUS: &str = "icons/data-table/plus.svg";
 
-/// The caption header row (pink `usage_table_row`, header `min_h 30`).
+/// The caption header row (Pink `usage_table_row`, header `min_h 30`).
 const HEAD_H: f32 = 30.;
-/// A body row (pink `usage_table_row` body `min_h 36`; History's
+/// A body row (Pink `usage_table_row` body `min_h 36`; History's
 /// `HISTORY_ROW_HEIGHT`).
 const ROW_H: f32 = 36.;
-/// The row-number gutter: a diff's line-number column (pink `changes.rs`
+/// The row-number gutter: a diff's line-number column (Pink `changes.rs`
 /// `diff_line_row`: mono 11, right-aligned, `pr 8`), fitted to two digits.
 const GUTTER_W: f32 = 28.;
 const GUTTER_PAD: f32 = 8.;
 /// Side padding inside a cell, so the selection plate has room around the
 /// text. Text starts `CELL_PAD` into its column.
 const CELL_PAD: f32 = 8.;
-/// The selection plate sits 4 px inside its row: 28 tall, like pink's
+/// The selection plate sits 4 px inside its row: 28 tall, like Pink's
 /// in-row controls (`ControlSize::Md`, `surface_chrome` toolbar input).
 const PLATE_INSET: f32 = 4.;
 const PLATE_H: f32 = ROW_H - 2. * PLATE_INSET;
-/// The narrowest a resize leaves a column (pink History's `DATE_MIN` 68 /
+/// The narrowest a resize leaves a column (Pink History's `DATE_MIN` 68 /
 /// `SHA_MIN` 58).
 const MIN_COLUMN: f32 = 64.;
 /// History's column resize handle: 6 px, centered on the column edge.
 const HANDLE_W: f32 = 6.;
-/// A row tag (pink History `render_ref`): capped at 112.
+/// A row tag (Pink History `render_ref`): capped at 112.
 const TAG_MAX_W: f32 = 112.;
 
 type ChangeHandler = Rc<dyn Fn(&[Vec<SharedString>], &mut Window, &mut App)>;
@@ -582,7 +582,7 @@ fn display(kind: ColumnKind, raw: &str) -> String {
     }
 }
 
-/// Thousands separators, as pink's Usage page writes large counts.
+/// Thousands separators, as Pink's Usage page writes large counts.
 fn grouped(n: i64) -> String {
     let digits = n.abs().to_string();
     let mut out = String::new();
@@ -595,7 +595,7 @@ fn grouped(n: i64) -> String {
     if n < 0 { format!("-{out}") } else { out }
 }
 
-/// The order a sort reads in, for the card's description (pink's Breakdown
+/// The order a sort reads in, for the card's description (Pink's Breakdown
 /// card says "largest first" / "newest first").
 fn order_words(kind: ColumnKind, desc: bool) -> &'static str {
     match (kind, desc) {
@@ -617,14 +617,14 @@ fn plural(n: usize, word: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Column resizing (pink History: the pair of columns either side of a
+// Column resizing (Pink History: the pair of columns either side of a
 // divider keeps its total width, so no drag makes the table overflow).
 // ---------------------------------------------------------------------------
 
 /// The drag payload of a column resize handle.
 struct ColumnResize;
 
-/// The drag's ghost: nothing follows the pointer (pink `HistoryResizeGhost`).
+/// The drag's ghost: nothing follows the pointer (Pink `HistoryResizeGhost`).
 struct ResizeGhost;
 
 impl Render for ResizeGhost {
@@ -642,7 +642,7 @@ struct ResizeAnchor {
     right_width: f32,
 }
 
-/// The pair's widths after moving their divider by `delta` (pink
+/// The pair's widths after moving their divider by `delta` (Pink
 /// `resized_history_column_widths`).
 fn resized(anchor: ResizeAnchor, delta: f32) -> (f32, f32) {
     let total = anchor.left_width + anchor.right_width;
@@ -812,7 +812,7 @@ impl State {
 // Pieces
 // ---------------------------------------------------------------------------
 
-/// A tag inside a row (pink `history.rs` `render_ref`): 16 tall, `px 5`,
+/// A tag inside a row (Pink `history.rs` `render_ref`): 16 tall, `px 5`,
 /// radius 4, the tone at 0.07 behind 11 px copy in `readable_tone(tone,
 /// 0.9)`, capped at 112 and truncating.
 fn row_tag(label: impl Into<SharedString>, tone: Hsla, t: &Pink) -> gpui::Div {
@@ -831,7 +831,7 @@ fn row_tag(label: impl Into<SharedString>, tone: Hsla, t: &Pink) -> gpui::Div {
         .child(div().min_w_0().truncate().child(label.into()))
 }
 
-/// One entry of the footer legend (pink `command_palette.rs`
+/// One entry of the footer legend (Pink `command_palette.rs`
 /// `command_key_hint`): a `kbd_hint` and its 11 px verb in `text_muted`,
 /// gap 5.
 fn key_legend(keys: impl Into<SharedString>, label: &'static str, t: &Pink) -> gpui::Div {
@@ -921,7 +921,7 @@ impl RenderOnce for DataTable {
         let muted = t.readable_muted(0.85);
 
         // --- Section header -------------------------------------------------
-        // pink `widgets::section_header`: the title, a description that
+        // Pink `widgets::section_header`: the title, a description that
         // follows the sort (the Breakdown card's "largest first"), and the
         // controls on the title's line.
         let description = match sheet.sort {
@@ -1009,7 +1009,7 @@ impl RenderOnce for DataTable {
             );
 
         // --- Header row -------------------------------------------------------
-        // pink `usage_table_row(header)`: 30 tall, 11/14 in
+        // Pink `usage_table_row(header)`: 30 tall, 11/14 in
         // `readable_muted(0.85)`, no fill and no rule of its own. A header
         // brightens under the pointer (it sorts), and stays bright while its
         // column is sorted or selected.
@@ -1069,7 +1069,7 @@ impl RenderOnce for DataTable {
                     ))
                 })
         });
-        // pink History `column_resize_handle`: 6 px centered on the divider,
+        // Pink History `column_resize_handle`: 6 px centered on the divider,
         // washing to `border_strong @ 0.7` under the pointer. Painted after
         // the headers so its narrow hitbox wins over the header's click.
         let handles = (1..columns.len()).map(|c| {
@@ -1125,7 +1125,7 @@ impl RenderOnce for DataTable {
             .children(handles);
 
         // --- Rows ---------------------------------------------------------------
-        // pink `usage_table_row`: 36 tall under a `border` hairline, 13/18,
+        // Pink `usage_table_row`: 36 tall under a `border` hairline, 13/18,
         // primary columns in `text`, supporting ones muted. History's hover:
         // the row blends to `fill(Quaternary)`. Rows are opaque on the card so
         // they cover each other as they slide into a new sort order.
@@ -1251,7 +1251,7 @@ impl RenderOnce for DataTable {
                     }
                     ColumnKind::Date => {
                         // A renewal inside two weeks: the date stays quiet and
-                        // one warning word says when (pink shows status as one
+                        // one warning word says when (Pink shows status as one
                         // tinted word, never a tinted row).
                         let soon = today.zip(parse_date(&raw)).and_then(|(now, d)| {
                             let days = day_number(d) - now;
@@ -1303,7 +1303,7 @@ impl RenderOnce for DataTable {
         });
 
         // The selection, shown while the grid has focus: a wash over the
-        // range and pink's 2 px inset focus ring on the active cell, both on
+        // range and Pink's 2 px inset focus ring on the active cell, both on
         // a plate 4 px inside the rows, gliding between cells (`QUICK`, the
         // segmented thumb's slide).
         let glide =
@@ -1362,7 +1362,7 @@ impl RenderOnce for DataTable {
                 })
         };
 
-        // pink `render_usage_page` `table`: inset to the rows' edge (16),
+        // Pink `render_usage_page` `table`: inset to the rows' edge (16),
         // below a `border` hairline, `pt 4 / pb 8`.
         let table = div()
             .w_full()
@@ -1377,7 +1377,7 @@ impl RenderOnce for DataTable {
             .child(body);
 
         // --- Footer -------------------------------------------------------------
-        // pink's command palette footer (`px 16 / py 7`, a `hairline(0.06)`
+        // Pink's command palette footer (`px 16 / py 7`, a `hairline(0.06)`
         // rule, legends gap 12), led by a readout of the selection, or of the
         // numeric columns' totals while the grid isn't focused.
         let numeric_total = |c: usize| -> String {
@@ -1427,7 +1427,7 @@ impl RenderOnce for DataTable {
             text.into()
         };
         let readout = match &flash {
-            // A message arrives like pink's working-line status: a fade and
+            // A message arrives like Pink's working-line status: a fade and
             // a 2 px settle (`STATUS_SWAP`).
             Some((message, error)) => motion::status_swap(
                 pink::loaders::label_id(&format!("{key}-flash"), &format!("{flash_seq}")),
@@ -1608,7 +1608,7 @@ impl RenderOnce for DataTable {
         };
 
         motion::keep_alive(window);
-        // pink `widgets::section_card`'s surface (without the page's section
+        // Pink `widgets::section_card`'s surface (without the page's section
         // margin): radius 12, a `border` edge, `card_glass_bg()`, clipped.
         pink::card(&t)
             .id(self.id.clone())

@@ -1,8 +1,8 @@
 //! Autonomy Dial – how much an agent may do without asking.
 //!
-//! An agent's card in pink's settings language: the agent's name and scope
+//! An agent's card in Pink's settings language: the agent's name and scope
 //! over its actions, sorted into "Unattended" and "Needs approval". The
-//! level is pink's access setting (pink: pickers.rs `access_chip_content`
+//! level is Pink's access setting (Pink: pickers.rs `access_chip_content`
 //! and `render_permission_popover`): a ghost chip with the level's glyph
 //! (closed lock, shield check, open lock in the warning tone) opens the
 //! "Permission mode" menu, and picking a level makes the actions glide to
@@ -47,18 +47,18 @@ const STOPS: usize = 3;
 
 /// The card's width.
 const CARD_W: f32 = 480.;
-/// The permission menu's width (pink: pickers.rs `popover_frame(340.0, ..)`).
+/// The permission menu's width (Pink: pickers.rs `popover_frame(340.0, ..)`).
 const MENU_W: f32 = 340.;
-/// The chip's glyph (pink: pickers.rs `CHIP_ICON`).
+/// The chip's glyph (Pink: pickers.rs `CHIP_ICON`).
 const CHIP_ICON: f32 = 16.;
-/// Control tooltips wrap past this many characters (pink: pickers.rs
+/// Control tooltips wrap past this many characters (Pink: pickers.rs
 /// `TOOLTIP_WRAP_CHARS`).
 const TOOLTIP_WRAP_CHARS: usize = 40;
-/// A group heading and the gap above the second one (pink: spaces.rs
+/// A group heading and the gap above the second one (Pink: spaces.rs
 /// `SIDEBAR_DISCLOSURE_HEADER_HEIGHT`, `SIDEBAR_SECTION_GAP`).
 const HEAD_H: f32 = 28.;
 const SECTION_GAP: f32 = 12.;
-/// One action row (pink: shell.rs `compact_chat_row_height`) and its leading
+/// One action row (Pink: shell.rs `compact_chat_row_height`) and its leading
 /// grid, a 16 glyph slot then an 8 gap (`SIDEBAR_MARK_SLOT`,
 /// `SIDEBAR_MARK_GAP`).
 const ROW_H: f32 = 32.;
@@ -137,8 +137,8 @@ impl AgentAction {
     }
 }
 
-/// The three levels, cautious to unattended, with pink's names
-/// (pink: execution_view.rs `permission_title`).
+/// The three levels, cautious to unattended, with Pink's names
+/// (Pink: execution_view.rs `permission_title`).
 pub const LEVELS: [(&str, &str); STOPS] = [
     (
         "Limited access",
@@ -154,7 +154,7 @@ pub const LEVELS: [(&str, &str); STOPS] = [
     ),
 ];
 
-/// The level's chip glyph and tint (pink: pickers.rs `access_chip_content`):
+/// The level's chip glyph and tint (Pink: pickers.rs `access_chip_content`):
 /// Limited is a closed lock, Approve for me a shield check, Full access an
 /// open lock in the warning tone.
 fn level_mark(level: usize, t: &Pink) -> (&'static str, Option<Hsla>) {
@@ -170,7 +170,7 @@ fn unattended(action: &AgentAction, level: usize, locked: &HashSet<SharedString>
     !locked.contains(&action.id) && action.risk.runs_from() <= level
 }
 
-/// The menu cursor one step up or down, wrapping (pink: popover.rs
+/// The menu cursor one step up or down, wrapping (Pink: popover.rs
 /// `menu_step`).
 fn step(active: usize, down: bool) -> usize {
     if down {
@@ -209,7 +209,7 @@ impl DialState {
         Some(level)
     }
 
-    /// pink: `toggle` opening the access picker, the cursor on the current
+    /// Pink: `toggle` opening the access picker, the cursor on the current
     /// level.
     fn open_menu(&mut self) {
         self.open = true;
@@ -236,7 +236,7 @@ impl DialState {
         }));
     }
 
-    /// pink: `pick_permission`: the level applies and the menu closes.
+    /// Pink: `pick_permission`: the level applies and the menu closes.
     fn pick(&mut self, level: usize, cx: &mut Context<Self>) -> Option<usize> {
         self.close_menu(cx);
         self.set_level(level)
@@ -293,7 +293,7 @@ impl AutonomyDial {
         self
     }
 
-    /// Hue (degrees) of the agent's monogram tile, on pink's project-tint
+    /// Hue (degrees) of the agent's monogram tile, on Pink's project-tint
     /// ramp.
     pub fn hue(mut self, degrees: f32) -> Self {
         self.hue = degrees;
@@ -461,7 +461,7 @@ impl RenderOnce for AutonomyDial {
     }
 }
 
-/// The access chip and its menu layer (pink: pickers.rs `trigger_chip` for
+/// The access chip and its menu layer (Pink: pickers.rs `trigger_chip` for
 /// `PickerKind::Permission`, opened with `anchored_menu_below_end` since the
 /// chip ends the header). Pink's composer shows the chip icon-only for room;
 /// here it carries the level's title as the model chip does.
@@ -522,7 +522,7 @@ fn access_chip(
             .pt(px(layout::POPOVER_GAP))
             .child(permission_menu(key, s, t, state, on_change));
         let inner: AnyElement = match exit {
-            // A dying menu takes no clicks (pink: `menu_motion`).
+            // A dying menu takes no clicks (Pink: `menu_motion`).
             Some(progress) => motion::menu_out(
                 ElementId::NamedInteger(format!("{key}-menu-out").into(), s.opened),
                 progress,
@@ -550,7 +550,7 @@ fn access_chip(
     div().relative().flex_none().child(chip).children(layer)
 }
 
-/// The level menu (pink: pickers.rs `render_permission_popover` in
+/// The level menu (Pink: pickers.rs `render_permission_popover` in
 /// `popover_frame`): a "Permission mode" heading over one `menu_row_nav`
 /// per level, each with its explanation; Full access reads in the warning
 /// tone.
@@ -642,7 +642,7 @@ fn permission_menu(
         )
 }
 
-/// A group heading (pink: activity_center.rs `activity_section_heading`):
+/// A group heading (Pink: activity_center.rs `activity_section_heading`):
 /// 28 tall, `px 8`, the name 11 semibold in `readable_faint(0.9)` and the
 /// count 11 in `readable_faint(0.7)`.
 fn group_heading(
@@ -687,7 +687,7 @@ fn group_heading(
 }
 
 /// The two groups. Every action sits in one of them, and a level change or
-/// a lock makes rows glide to their new place (pink: `RESORT`, the sidebar's
+/// a lock makes rows glide to their new place (Pink: `RESORT`, the sidebar's
 /// list reorder). The block keeps one height while the level turns; only an
 /// emptied group, which holds a quiet line instead, can change it.
 #[allow(clippy::too_many_arguments)]
@@ -787,7 +787,7 @@ fn lanes(
         .children(rows)
 }
 
-/// One action on pink's sidebar leading grid: the glyph in `text_muted` in
+/// One action on Pink's sidebar leading grid: the glyph in `text_muted` in
 /// its 16 slot (kept empty without one, so labels line up), the 13 label, an
 /// 11 meta word, and the lock in the corner.
 fn action_row(
@@ -851,7 +851,7 @@ fn action_row(
         ))
 }
 
-/// The row's lock (pink: shell.rs the sidebar row's pin): 20 square, radius
+/// The row's lock (Pink: shell.rs the sidebar row's pin): 20 square, radius
 /// 4, the quiet hover wash, a 12 px glyph. Locked, it stays in the accent;
 /// otherwise it shows in `text_muted` while the row is hovered or the button
 /// focused.
@@ -917,7 +917,7 @@ fn lock_button(
         )
 }
 
-/// The chip's tooltip: the level over its explanation (pink: pickers.rs
+/// The chip's tooltip: the level over its explanation (Pink: pickers.rs
 /// `ControlTooltip`).
 struct ControlTooltip {
     title: SharedString,

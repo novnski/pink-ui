@@ -1,9 +1,9 @@
-//! Setup Guide – an onboarding checklist on a pink card: a summary row with a
+//! Setup Guide – an onboarding checklist on a Pink card: a summary row with a
 //! progress ring that folds the guide away, task groups that open one at a
 //! time, and tasks that strike through as they're checked off.
 //!
-//! The summary row is pink's composer checklist row (count and next step,
-//! a chevron, a dismiss cross), grown to carry the guide's title and pink's
+//! The summary row is Pink's composer checklist row (count and next step,
+//! a chevron, a dismiss cross), grown to carry the guide's title and Pink's
 //! upload ring. Only one group is open at a time. The selected task in the
 //! open group shows its hint and call to action; finishing the last task of
 //! a group folds it away and opens the next unfinished one. Dismissing the
@@ -50,21 +50,21 @@ const ICON_CLOSE: &str = "icons/setup-guide/close.svg";
 const ICON_CHECK: &str = "icons/setup-guide/check.svg";
 const ICON_CHECKLIST: &str = "icons/setup-guide/checklist.svg";
 
-/// pink: composer/checklist.rs – the summary row's type size.
+/// Pink: composer/checklist.rs – the summary row's type size.
 const SUMMARY_TEXT: f32 = 11.5;
-/// pink: composer/checklist.rs – the summary's chevron and cross.
+/// Pink: composer/checklist.rs – the summary's chevron and cross.
 const SUMMARY_GLYPH: f32 = 12.0;
-/// pink: composer/checklist.rs – the dismiss button.
+/// Pink: composer/checklist.rs – the dismiss button.
 const SUMMARY_DISMISS: f32 = 24.0;
-/// pink: transcript.rs `DISCLOSURE_CHEVRON_SIZE`.
+/// Pink: transcript.rs `DISCLOSURE_CHEVRON_SIZE`.
 const DISCLOSURE_CHEVRON: f32 = 12.0;
-/// pink: loaders.rs – the upload ring's diameter in the transcript.
+/// Pink: loaders.rs – the upload ring's diameter in the transcript.
 const RING: f32 = 34.0;
-/// pink: loaders.rs `RING_STROKE`.
+/// Pink: loaders.rs `RING_STROKE`.
 const RING_STROKE: f32 = 2.5;
-/// pink: loaders.rs `RING_SEGMENTS`.
+/// Pink: loaders.rs `RING_SEGMENTS`.
 const RING_SEGMENTS: f32 = 64.0;
-/// pink: loaders.rs `RING_LABEL_RATIO` (9 pt in the 34 pt ring).
+/// Pink: loaders.rs `RING_LABEL_RATIO` (9 pt in the 34 pt ring).
 const RING_LABEL_RATIO: f32 = 9.0 / 34.0;
 /// Task rows start under their group's title: the 28 px identity tile plus
 /// the head's 10 px gap.
@@ -391,7 +391,7 @@ impl SetupGuide {
                 .filter(|t| !s.done.contains(&t.id))
                 .map(|t| t.minutes)
                 .sum();
-            // pink's checklist names the step in hand, else the next pending one.
+            // Pink's checklist names the step in hand, else the next pending one.
             let next = s
                 .active
                 .as_ref()
@@ -407,7 +407,7 @@ impl SetupGuide {
                 .into_any_element();
         }
 
-        // pink: composer/checklist.rs – "{done}/{total} · {detail}".
+        // Pink: composer/checklist.rs – "{done}/{total} · {detail}".
         let detail: SharedString = match next {
             Some(title) => format!("Next: {title}").into(),
             None if complete => "Checklist complete".into(),
@@ -475,11 +475,11 @@ impl SetupGuide {
     }
 }
 
-/// The guide's header (pink: composer/checklist.rs `render_checklist`'s
-/// summary row): one button that folds the guide – here holding pink's
+/// The guide's header (Pink: composer/checklist.rs `render_checklist`'s
+/// summary row): one button that folds the guide – here holding Pink's
 /// upload ring, the title and the checklist's "done/total · Next: …" line,
 /// with the chevron – and the 24 px dismiss cross, gap 4. Both wash in
-/// `element_hover` on hover, as pink's do.
+/// `element_hover` on hover, as Pink's do.
 #[allow(clippy::too_many_arguments)]
 fn summary_row(
     key: &str,
@@ -549,7 +549,7 @@ fn summary_row(
                         .child(title.clone()),
                 )
                 .when_some(minutes_left, |row, minutes| {
-                    // pink: transcript.rs working timer – 11 px tabular, faint.
+                    // Pink: transcript.rs working timer – 11 px tabular, faint.
                     row.child(
                         div()
                             .flex_none()
@@ -665,7 +665,7 @@ fn summary_row(
 }
 
 /// A task group: a disclosure head and its tasks, which fold open and shut
-/// like pink's tool groups.
+/// like Pink's tool groups.
 #[allow(clippy::too_many_arguments)]
 fn group_view(
     key: &str,
@@ -721,7 +721,7 @@ fn group_view(
         cx,
     );
 
-    // pink: popover.rs `menu_row` anatomy (gap 10, px 8 / py 6, r8 inside the
+    // Pink: popover.rs `menu_row` anatomy (gap 10, px 8 / py 6, r8 inside the
     // card's 4 px inset) with a quiet `hover_wash`, a settings `row_tile`, and
     // transcript.rs's tool-group chevron turning 0 → 90° with the fold.
     let ring = t.focus_ring();
@@ -771,12 +771,12 @@ fn group_view(
                     .child(group.title.clone()),
             )
             .child(if complete {
-                // pink: settings `badge_active`, as the permission rows' "Ready".
+                // Pink: settings `badge_active`, as the permission rows' "Ready".
                 pink::badge("Done", Tone::Success, t)
                     .line_height(px(14.))
                     .into_any_element()
             } else {
-                // pink: activity_center.rs – a section's trailing count.
+                // Pink: activity_center.rs – a section's trailing count.
                 div()
                     .flex_none()
                     .text_size(px(pink::text::CAPTION))
@@ -803,12 +803,12 @@ fn group_view(
         .into_any_element()
 }
 
-/// One task: pink's markdown task-list item (a 16 px checkbox centered on the
-/// first line, gap 8) in a row with pink's quiet `fill(Tertiary)` hover. The
-/// selected task opens into an inset cell (pink: shell/usage.rs metric cell,
+/// One task: Pink's markdown task-list item (a 16 px checkbox centered on the
+/// first line, gap 8) in a row with Pink's quiet `fill(Tertiary)` hover. The
+/// selected task opens into an inset cell (Pink: shell/usage.rs metric cell,
 /// `fill(Quaternary)` inside a `separator(false)` edge, r8) holding its hint
 /// and call to action; a checked one strikes through in `content_muted`,
-/// pink's markdown strikethrough, drawn like a rail.
+/// Pink's markdown strikethrough, drawn like a rail.
 #[allow(clippy::too_many_arguments)]
 fn task_row(
     key: &str,
@@ -833,7 +833,7 @@ fn task_row(
         let outline = outline.clone();
         let id = task.id.clone();
         let focus = t.text;
-        // pink: markdown/render.rs task marker – the box in an 18 px wide slot
+        // Pink: markdown/render.rs task marker – the box in an 18 px wide slot
         // one line tall, its edge turning `text` on keyboard focus.
         div()
             .flex_none()
@@ -969,7 +969,7 @@ fn task_row(
 }
 
 /// What a dismissed guide leaves behind: a Secondary button that brings it
-/// back, with pink's checklist glyph and the count.
+/// back, with Pink's checklist glyph and the count.
 fn resume_button(
     key: &str,
     title: &SharedString,
@@ -1011,7 +1011,7 @@ fn resume_button(
 // Drawing helpers
 // ---------------------------------------------------------------------------
 
-/// Folds `content` open or shut on pink's tool-group fold
+/// Folds `content` open or shut on Pink's tool-group fold
 /// (`motion::fold_progress`: the height on `DISCLOSURE`, the body fading in
 /// over `TOOL_BODY_FADE` with a 6 px settle, clear by 60% of a closing
 /// fold). The natural height is measured after layout; a settled, measured
@@ -1076,7 +1076,7 @@ fn measure(cell: Rc<Cell<f32>>) -> impl IntoElement {
     .size_full()
 }
 
-/// Pink's upload progress ring (pink: loaders.rs `upload_progress_ring`) at
+/// Pink's upload progress ring (Pink: loaders.rs `upload_progress_ring`) at
 /// its 34 px size: a full track and an arc growing clockwise from 12
 /// o'clock, both 2.5 px polylines of 64 segments per turn, around a centered
 /// label. Pink paints it white-on-wash over a thumbnail; on a card the same
