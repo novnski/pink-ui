@@ -4,7 +4,7 @@
 //! categories and descriptions come from the same registry as the gallery and
 //! can't drift apart.
 
-use pink_ui::components::{CATEGORIES, COMPONENTS, Kind};
+use pink_ui::components::{CATEGORIES, COMPONENTS};
 
 /// A JSON string literal.
 fn string(s: &str) -> String {
@@ -28,17 +28,12 @@ pub fn json() -> String {
     let components: Vec<String> = COMPONENTS
         .iter()
         .map(|c| {
-            let kind = match c.kind {
-                Kind::Core => "core",
-                Kind::Pink => "pink",
-            };
             format!(
-                "{{\"slug\":{},\"name\":{},\"category\":{},\"description\":{},\"kind\":{},\"source\":{}}}",
+                "{{\"slug\":{},\"name\":{},\"category\":{},\"description\":{},\"source\":{}}}",
                 string(c.slug),
                 string(c.name),
                 string(c.category),
                 string(c.description),
-                string(kind),
                 string(&format!("src/components/{}.rs", c.slug.replace('-', "_"))),
             )
         })

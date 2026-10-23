@@ -1,11 +1,8 @@
-//! Light/dark mode and the Clean/Classic look.
+//! Light/dark mode.
 //!
-//! Every core component carries its own color tokens, with a light set and a
-//! dark override. Each one also comes in two looks: **Clean**, one flat card
-//! whose edges are hairline shadows (the default), and **Classic**, white
-//! cards on a gray tray. The active mode and look live in a GPUI global;
-//! components read them with [`ActiveTheme`] and can override the look per
-//! instance.
+//! Every component is drawn in Pink's design language and follows the
+//! active mode: [`crate::pink::Pink::get`] picks the dark or light token set.
+//! The mode lives in a GPUI global; components read it with [`ActiveTheme`].
 
 use gpui::{App, Global};
 
@@ -29,20 +26,9 @@ impl ThemeMode {
     }
 }
 
-/// The two looks of the core components.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Look {
-    /// One flat card; strokes are shadows, like a popover.
-    #[default]
-    Clean,
-    /// Cards on a gray tray.
-    Classic,
-}
-
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Theme {
     pub mode: ThemeMode,
-    pub look: Look,
 }
 
 impl Global for Theme {}
@@ -55,14 +41,7 @@ impl Theme {
     }
 
     pub fn set_mode(mode: ThemeMode, cx: &mut App) {
-        let look = cx.theme().look;
-        cx.set_global(Theme { mode, look });
-        cx.refresh_windows();
-    }
-
-    pub fn set_look(look: Look, cx: &mut App) {
-        let mode = cx.theme().mode;
-        cx.set_global(Theme { mode, look });
+        cx.set_global(Theme { mode });
         cx.refresh_windows();
     }
 
@@ -77,12 +56,6 @@ pub trait ActiveTheme {
 
     fn is_dark(&self) -> bool {
         self.theme().mode.is_dark()
-    }
-
-    /// The global look; components take `look.unwrap_or(cx.look())` so a
-    /// per-instance `.look(..)` wins.
-    fn look(&self) -> Look {
-        self.theme().look
     }
 }
 

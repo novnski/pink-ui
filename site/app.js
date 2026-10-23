@@ -51,7 +51,7 @@
     return `thumbs/${slug}-${theme()}.jpg?v=${BUILD}`;
   }
 
-  // Theme and look ------------------------------------------------------
+  // Theme ---------------------------------------------------------------
 
   function theme() {
     return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
@@ -65,21 +65,9 @@
     syncControls();
   }
 
-  let look = store.get('pinkui-look') === 'classic' ? 'classic' : 'clean';
-
-  function setLook(next) {
-    look = next;
-    store.set('pinkui-look', next);
-    player.post({ pinkui: 'look', classic: next === 'classic' });
-    syncControls();
-  }
-
   function syncControls() {
     for (const b of document.querySelectorAll('#mode button')) {
       b.setAttribute('aria-pressed', String(b.dataset.mode === theme()));
-    }
-    for (const b of document.querySelectorAll('#look button')) {
-      b.setAttribute('aria-pressed', String(b.dataset.look === look));
     }
     const current = bySlug.get(currentSlug);
     if (current) $('#open').href = playerUrl(current.slug);
@@ -87,23 +75,16 @@
 
   $('#theme-toggle').addEventListener('click', () => setTheme(theme() === 'dark' ? 'light' : 'dark'));
   $('#mode').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setTheme(b.dataset.mode); });
-  $('#look').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setLook(b.dataset.look); });
 
   // Catalog -------------------------------------------------------------
 
-  const counts = {
-    all: components.length,
-    core: components.filter((c) => c.kind === 'core').length,
-    pink: components.filter((c) => c.kind === 'pink').length,
-  };
+  const counts = { all: components.length };
   for (const img of document.querySelectorAll('.hero-art img')) {
     img.src = thumb(img.dataset.thumb);
     // Without thumbnails (a local build), leave the hero plain.
     img.onerror = () => { img.closest('.hero-art').hidden = true; };
   }
   for (const el of document.querySelectorAll('[data-count]')) el.textContent = counts.all;
-  for (const el of document.querySelectorAll('[data-count-core]')) el.textContent = counts.core;
-  for (const el of document.querySelectorAll('[data-count-pink]')) el.textContent = counts.pink;
 
   let category = 'All';
   let query = '';
@@ -116,12 +97,6 @@
     $('#chips').innerHTML = chips.join('');
   }
 
-  function kindBadge(c) {
-    return c.kind === 'core'
-      ? '<span class="badge pink">Clean · Classic</span>'
-      : '<span class="badge">pink</span>';
-  }
-
   function card(c) {
     return `<a class="card" href="#${c.slug}">
       <div class="card-media">
@@ -129,7 +104,7 @@
         <img data-thumb="${c.slug}" src="${thumb(c.slug)}" alt="${escapeHtml(c.name)} preview" loading="lazy" decoding="async" onerror="this.remove()">
       </div>
       <div class="card-body">
-        <div class="card-head"><h3>${escapeHtml(c.name)}</h3>${kindBadge(c)}</div>
+        <div class="card-head"><h3>${escapeHtml(c.name)}</h3></div>
         <p>${escapeHtml(c.description)}</p>
       </div>
     </a>`;
@@ -138,7 +113,7 @@
   function matches(c) {
     if (category !== 'All' && c.category !== category) return false;
     if (!query) return true;
-    const hay = `${c.name} ${c.category} ${c.description} ${c.kind}`.toLowerCase();
+    const hay = `${c.name} ${c.category} ${c.description}`.toLowerCase();
     return query.split(/\s+/).every((word) => hay.includes(word));
   }
 
@@ -185,7 +160,7 @@
   // Player --------------------------------------------------------------
 
   function playerUrl(slug) {
-    return `play.html?c=${slug}&theme=${theme()}&look=${look}`;
+    return `play.html?c=${slug}&theme=${theme()}`;
   }
 
   const stage = $('#stage');
@@ -263,7 +238,6 @@
         // Anything sent before the player was listening is lost: resync.
         if (player.slug !== player.initialSlug) player.post({ pinkui: 'show', slug: player.slug });
         player.post({ pinkui: 'theme', dark: theme() === 'dark' });
-        player.post({ pinkui: 'look', classic: look === 'classic' });
         break;
       case 'resize': {
         const wanted = Math.max(STAGE_MIN_HEIGHT, Math.ceil(data.height) + STAGE_PADDING);
@@ -499,8 +473,7 @@ pink_ui::init(cx);`;
     $('#crumb').textContent = c.category;
     $('#name').textContent = c.name;
     $('#description').textContent = c.description;
-    $('#badges').innerHTML = `<span class="badge">${escapeHtml(c.category)}</span>${kindBadge(c)}`;
-    $('#look').hidden = c.kind !== 'core';
+    $('#badges').innerHTML = `<span class="badge">${escapeHtml(c.category)}</span>`;
     for (const a of document.querySelectorAll('#side a')) {
       if (a.dataset.slug === c.slug) {
         a.setAttribute('aria-current', 'page');

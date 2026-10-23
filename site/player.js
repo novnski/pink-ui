@@ -4,18 +4,17 @@
 // and reports progress, readiness and the demo's size back.
 //
 // Messages are objects with a `pinkui` field naming the kind:
-//   in:  show {slug}, theme {dark}, look {classic}, replay
+//   in:  show {slug}, theme {dark}, replay
 //   out: progress {loaded, total}, ready, resize {width, height},
 //        wheel {dx, dy}, error {message}
 
-import init, { start, show, set_theme, set_look, replay } from './pkg/pink_ui_web.js?v=__BUILD__';
+import init, { start, show, set_theme, replay } from './pkg/pink_ui_web.js?v=__BUILD__';
 
 const params = new URLSearchParams(location.search);
 const embedded = window.parent !== window;
 const state = {
   slug: params.get('c') || 'button',
   dark: params.get('theme') === 'dark',
-  classic: params.get('look') === 'classic',
 };
 let ready = false;
 // The demo's laid-out size, once it reports one (demos that fill the stage
@@ -37,10 +36,6 @@ function apply(message) {
       state.dark = !!message.dark;
       document.documentElement.classList.toggle('dark', state.dark);
       if (ready) set_theme(state.dark);
-      break;
-    case 'look':
-      state.classic = !!message.classic;
-      if (ready) set_look(state.classic);
       break;
     case 'replay':
       if (ready) replay();
@@ -107,7 +102,7 @@ try {
     tell('error', { message: 'This browser has neither WebGPU nor WebGL2.' });
   }, 15000);
   const initial = { ...state };
-  start(initial.slug, initial.dark, initial.classic, () => {
+  start(initial.slug, initial.dark, () => {
     // Called from inside GPUI's update: call back into it on the next task.
     setTimeout(() => {
       clearTimeout(timeout);
@@ -115,7 +110,6 @@ try {
       // Catch up on anything that arrived while graphics were starting.
       if (state.slug !== initial.slug) show(state.slug);
       if (state.dark !== initial.dark) set_theme(state.dark);
-      if (state.classic !== initial.classic) set_look(state.classic);
       window.__pinkuiReady = true;
       tell('ready');
     }, 0);
@@ -132,7 +126,6 @@ try {
 window.pinkui = {
   show: (slug) => apply({ pinkui: 'show', slug }),
   theme: (dark) => apply({ pinkui: 'theme', dark }),
-  look: (classic) => apply({ pinkui: 'look', classic }),
   replay: () => apply({ pinkui: 'replay' }),
   size: () => size,
 };

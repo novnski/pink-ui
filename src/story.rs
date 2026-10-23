@@ -11,7 +11,7 @@ use gpui::{
     AnyElement, AnyView, App, Context, IntoElement, Pixels, Render, Size, Window, div, prelude::*,
 };
 
-use crate::{motion, primitives::SANS};
+use crate::{motion, pink};
 
 type Builder = Box<dyn Fn(&mut Window, &mut App) -> AnyElement>;
 
@@ -37,7 +37,7 @@ impl Render for Story {
             .flex()
             .items_center()
             .justify_center()
-            .font_family(SANS)
+            .font_family(pink::SANS)
             .on_children_prepainted(move |bounds, _, _| {
                 if let Some(demo) = bounds.first() {
                     content.set(demo.size);

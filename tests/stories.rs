@@ -1,8 +1,8 @@
-//! Renders every component's story in each theme and look on GPUI's test
+//! Renders every component's story in both themes on GPUI's test
 //! platform, so a panic in any layout, state or paint path fails the build.
 
 use gpui::{AnyView, Context, IntoElement, Render, TestAppContext, Window, div, prelude::*};
-use pink_ui::{Look, Theme, ThemeMode, components::COMPONENTS};
+use pink_ui::{Theme, ThemeMode, components::COMPONENTS};
 
 /// The window root: shows whichever story the test swaps in. Drawing through
 /// a real window (rather than a one-off `draw`) also paints deferred overlays.
@@ -21,24 +21,19 @@ fn every_story_renders(cx: &mut TestAppContext) {
     cx.update(pink_ui::init);
     let (host, cx) = cx.add_window_view(|_, _| Host { story: None });
     for mode in [ThemeMode::Light, ThemeMode::Dark] {
-        for look in [Look::Clean, Look::Classic] {
-            cx.update(|_, cx| {
-                Theme::set_mode(mode, cx);
-                Theme::set_look(look, cx);
-            });
-            for entry in COMPONENTS {
-                cx.update(|window, cx| {
-                    let story = (entry.story)(window, cx);
-                    host.update(cx, |host, cx| {
-                        host.story = Some(story);
-                        cx.notify();
-                    });
+        cx.update(|_, cx| Theme::set_mode(mode, cx));
+        for entry in COMPONENTS {
+            cx.update(|window, cx| {
+                let story = (entry.story)(window, cx);
+                host.update(cx, |host, cx| {
+                    host.story = Some(story);
+                    cx.notify();
                 });
-                // Twice: the first frame mounts state, the second renders with it.
-                for _ in 0..2 {
-                    cx.update(|window, _| window.refresh());
-                    cx.run_until_parked();
-                }
+            });
+            // Twice: the first frame mounts state, the second renders with it.
+            for _ in 0..2 {
+                cx.update(|window, _| window.refresh());
+                cx.run_until_parked();
             }
         }
     }

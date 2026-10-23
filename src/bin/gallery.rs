@@ -3,7 +3,6 @@
 //! ```text
 //! cargo run                                   # browse everything
 //! cargo run -- profile-menu --theme dark      # open one component
-//! cargo run -- profile-menu --look classic    # the Classic style
 //! cargo run -- profile-menu --stage-only --size 894x520
 //! ```
 //!
@@ -16,8 +15,8 @@ use gpui::{
     size,
 };
 use pink_ui::{
-    ActiveTheme, Assets, HoverFill, Look, Theme, ThemeMode,
-    components::{CATEGORIES, COMPONENTS, Kind},
+    ActiveTheme, Assets, HoverFill, Theme, ThemeMode,
+    components::{CATEGORIES, COMPONENTS},
     primitives::{SANS, hex, hexa},
 };
 
@@ -26,7 +25,6 @@ actions!(gallery, [Next, Previous, ToggleTheme, Replay, Quit]);
 struct Args {
     slug: Option<String>,
     mode: ThemeMode,
-    look: Look,
     stage_only: bool,
     size: Option<(f32, f32)>,
 }
@@ -35,7 +33,6 @@ fn parse_args() -> Args {
     let mut args = Args {
         slug: None,
         mode: ThemeMode::Light,
-        look: Look::Clean,
         stage_only: false,
         size: None,
     };
@@ -48,12 +45,6 @@ fn parse_args() -> Args {
                 }
             }
             "--dark" => args.mode = ThemeMode::Dark,
-            "--look" => {
-                if it.next().as_deref() == Some("classic") {
-                    args.look = Look::Classic;
-                }
-            }
-            "--classic" => args.look = Look::Classic,
             "--stage-only" => args.stage_only = true,
             "--component" => args.slug = it.next(),
             "--size" => {
@@ -285,7 +276,6 @@ impl Gallery {
     fn header(&self, chrome: &Chrome, cx: &mut Context<Self>) -> impl IntoElement {
         let entry = &COMPONENTS[self.selected];
         let is_dark = cx.is_dark();
-        let look = cx.look();
         let pill = |id: &'static str, label: &'static str, active: bool| {
             div()
                 .id(id)
@@ -334,21 +324,7 @@ impl Gallery {
                                     .text_size(px(12.))
                                     .text_color(chrome.muted)
                                     .child(entry.category),
-                            )
-                            .when(entry.kind == Kind::Pink, |row| {
-                                row.child(
-                                    div()
-                                        .px(px(8.))
-                                        .h(px(22.))
-                                        .flex()
-                                        .items_center()
-                                        .rounded(px(999.))
-                                        .bg(chrome.hover)
-                                        .text_size(px(12.))
-                                        .text_color(chrome.muted)
-                                        .child("Pink style"),
-                                )
-                            }),
+                            ),
                     )
                     .child(
                         div()
@@ -367,19 +343,6 @@ impl Gallery {
                     .rounded(px(10.))
                     .border_1()
                     .border_color(chrome.border)
-                    // Only core components come in the two looks
-                    .when(entry.kind == Kind::Core, |row| {
-                        row.child(
-                            pill("clean", "Clean", look == Look::Clean).on_click(
-                                cx.listener(|_, _, _, cx| Theme::set_look(Look::Clean, cx)),
-                            ),
-                        )
-                        .child(
-                            pill("classic", "Classic", look == Look::Classic).on_click(
-                                cx.listener(|_, _, _, cx| Theme::set_look(Look::Classic, cx)),
-                            ),
-                        )
-                    })
                     .child(pill("replay", "Replay", false).on_click(
                         cx.listener(|this, _, window, cx| this.replay(&Replay, window, cx)),
                     ))
@@ -450,7 +413,6 @@ fn main() {
         .run(move |cx: &mut App| {
             pink_ui::init(cx);
             Theme::set_mode(args.mode, cx);
-            Theme::set_look(args.look, cx);
             cx.bind_keys([
                 KeyBinding::new("ctrl-down", Next, Some("Gallery")),
                 KeyBinding::new("ctrl-up", Previous, Some("Gallery")),

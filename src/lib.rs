@@ -1,10 +1,10 @@
 //! pink-ui: animated components for [GPUI](https://gpui.rs).
 //!
 //! Fifty-six components, one file each, drawn by GPUI natively and in the
-//! browser through its web platform. Core components come in two looks, Clean
-//! and Classic; Pink components are drawn in Pink's design language. Both
-//! follow light and dark mode. Call [`init`] once at startup, then render any
-//! component; [`components::COMPONENTS`] lists them all with a demo story.
+//! browser through its web platform. Every component is drawn in Pink's design
+//! language ([`pink`]: the app's tokens, ladders, controls, motion and loaders)
+//! and follows light and dark mode. Call [`init`] once at startup, then render
+//! any component; [`components::COMPONENTS`] lists them all with a demo story.
 //!
 //! Components are builders you drop into any element tree, the same way
 //! Pink's controls work:
@@ -45,7 +45,7 @@ pub mod theme;
 
 pub use assets::Assets;
 pub use interaction::HoverFill;
-pub use theme::{ActiveTheme, Look, Theme, ThemeMode};
+pub use theme::{ActiveTheme, Theme, ThemeMode};
 
 /// Sets up the theme global, the bundled fonts and the text input key bindings.
 pub fn init(cx: &mut gpui::App) {

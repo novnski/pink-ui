@@ -3,7 +3,7 @@
 //! The showcase site loads this module in an iframe (`play.html`). GPUI's web
 //! platform draws into a single canvas that fills the page, with WebGPU or a
 //! WebGL2 fallback. The page's script calls [`start`] once, then [`show`],
-//! [`set_theme`], [`set_look`] and [`replay`] as the visitor clicks around, so
+//! [`set_theme`] and [`replay`] as the visitor clicks around, so
 //! switching components never reloads the module. [`catalog`] needs no
 //! browser: the site's build script calls it from Node.
 
@@ -117,14 +117,6 @@ fn mode(dark: bool) -> ThemeMode {
     }
 }
 
-fn look(classic: bool) -> pink_ui::Look {
-    if classic {
-        pink_ui::Look::Classic
-    } else {
-        pink_ui::Look::Clean
-    }
-}
-
 /// Runs `f` on the app and the player window, if both are up.
 fn with_player(f: impl FnOnce(&mut Player, &mut Window, &mut Context<Player>)) {
     let Some(window) = PLAYER.with(|p| *p.borrow()) else {
@@ -150,13 +142,7 @@ fn with_app(f: impl FnOnce(&mut App)) {
 /// shows its own notice instead. `on_resize(width, height)` reports the
 /// demo's laid-out size in CSS pixels whenever it changes.
 #[wasm_bindgen]
-pub fn start(
-    slug: &str,
-    dark: bool,
-    classic: bool,
-    on_ready: js_sys::Function,
-    on_resize: js_sys::Function,
-) {
+pub fn start(slug: &str, dark: bool, on_ready: js_sys::Function, on_resize: js_sys::Function) {
     gpui_platform::web_init();
     let selected = index_of(slug).unwrap_or(0);
     let handle = gpui_platform::single_threaded_web()
@@ -164,7 +150,6 @@ pub fn start(
         .run_embedded(move |cx: &mut App| {
             pink_ui::init(cx);
             Theme::set_mode(mode(dark), cx);
-            Theme::set_look(look(classic), cx);
             let window = cx
                 .open_window(WindowOptions::default(), |window, cx| {
                     let story = (COMPONENTS[selected].story)(window, cx);
@@ -211,12 +196,7 @@ pub fn set_theme(dark: bool) {
     with_app(|cx| Theme::set_mode(mode(dark), cx));
 }
 
-#[wasm_bindgen]
-pub fn set_look(classic: bool) {
-    with_app(|cx| Theme::set_look(look(classic), cx));
-}
-
-/// Every component's slug, name, category, description, kind and source
+/// Every component's slug, name, category, description and source
 /// file, as JSON.
 #[wasm_bindgen]
 pub fn catalog() -> String {
