@@ -550,7 +550,7 @@ fn ago_label(seconds: f32) -> String {
     }
 }
 
-/// A stable hue per agent name, from pink's palette family.
+/// A stable hue per agent name, from Pink's palette family.
 fn agent_hue(name: &str, t: &Pink) -> Hsla {
     const HUES: [f32; 5] = [277.0, 200.0, 155.0, 60.0, 330.0];
     let ix = name

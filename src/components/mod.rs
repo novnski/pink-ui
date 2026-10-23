@@ -2,8 +2,8 @@
 //!
 //! - **Core** components come in two looks, Clean and Classic: Inter type,
 //!   their own color tokens and hairline-shadow edges.
-//! - **Pink** components are drawn in pink's design language: Geist type,
-//!   pink's neutral surfaces and accent, its radius and spacing ladders.
+//! - **Pink** components are drawn in Pink's design language: Geist type,
+//!   Pink's neutral surfaces and accent, its radius and spacing ladders.
 //!
 //! Each module exports `NAME`, `DESCRIPTION` and `story`, which builds its demo.
 
@@ -82,7 +82,7 @@ pub const CATEGORIES: &[&str] = &[
 pub enum Kind {
     /// Comes in both looks, Clean and Classic.
     Core,
-    /// Drawn in pink's design language, in one look.
+    /// Drawn in Pink's design language, in one look.
     Pink,
 }
 

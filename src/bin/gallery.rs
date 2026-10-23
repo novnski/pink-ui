@@ -346,7 +346,7 @@ impl Gallery {
                                         .bg(chrome.hover)
                                         .text_size(px(12.))
                                         .text_color(chrome.muted)
-                                        .child("pink style"),
+                                        .child("Pink style"),
                                 )
                             }),
                     )

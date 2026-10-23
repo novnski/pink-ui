@@ -33,7 +33,7 @@
 ![The gallery](docs/images/gallery-light.png)
 
 - **17 core components** in two looks, **Clean** and **Classic**, light and dark.
-- **39 pink components** in pink's design language (Geist, neutral surfaces,
+- **39 Pink components** in Pink's design language (Geist, neutral surfaces,
   indigo accent, its radius and spacing ladders), light and dark.
 
 Each component is one Rust file in [`src/components/`](src/components), and its
@@ -79,7 +79,7 @@ In both looks (Clean and Classic) and both themes.
 
 ### Pink components
 
-In pink's design language; they follow light/dark, and the Clean/Classic look
+In Pink's design language; they follow light/dark, and the Clean/Classic look
 doesn't apply.
 
 | Category | Component | What it is |
@@ -180,11 +180,11 @@ fn main() {
   `.hover_fill_fg(..)`), like CSS transitions.
 - **Text input** ([`src/primitives/text_input.rs`](src/primitives/text_input.rs)):
   single- and multi-line fields with IME, selection, clipboard and word movement.
-- **pink kit** ([`src/pink.rs`](src/pink.rs)): pink's tokens (`Pink::get(cx)`),
+- **Pink kit** ([`src/pink.rs`](src/pink.rs)): Pink's tokens (`Pink::get(cx)`),
   radius/spacing/type ladders, Geist, and controls (`button`, `icon_button`,
-  `chip`, `badge`, `kbd`, `card`, `overlay`) – what the pink components are
+  `chip`, `badge`, `kbd`, `card`, `overlay`) – what the Pink components are
   built from.
-- **Fonts**: Inter (core), Geist and Geist Mono (pink) and JetBrains Mono are
+- **Fonts**: Inter (core), Geist and Geist Mono (Pink) and JetBrains Mono are
   bundled and registered by `init`.
 
 ## In the browser

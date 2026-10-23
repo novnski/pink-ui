@@ -610,7 +610,7 @@ impl RenderOnce for ProjectCard {
                         .count();
                     let (s_click, s_hover) = (state.clone(), state.clone());
                     let id = format!("{key}-who-{ix}");
-                    // pink's chip eases its own hover wash, so the linked hover
+                    // Pink's chip eases its own hover wash, so the linked hover
                     // lives on a wrapper.
                     div()
                         .id(SharedString::from(format!("{id}-hover")))

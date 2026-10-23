@@ -10,7 +10,7 @@ There are two kinds (`components::Kind`):
 
 - **Core** components come in two looks, Clean and Classic.
   `src/components/profile_menu.rs` is the reference: read it first.
-- **Pink** components are drawn in pink's design language. See
+- **Pink** components are drawn in Pink's design language. See
   [Pink components](#pink-components).
 
 The looks section applies to core components; the API, state, motion and GPUI
@@ -28,7 +28,7 @@ Each core component comes in two **looks**, and each look in light and dark:
 Build both. Share the structure and logic, and switch tokens and sizes on the
 look. The module's `story` is its demo, with realistic sample data.
 
-## API shape (pink style)
+## API shape (Pink style)
 
 Components are builders you drop into any element tree:
 
@@ -200,7 +200,7 @@ with `node scripts/site/thumbnails.mjs site/dist` and commit `site/thumbs/`.
   ladders, `pink::SANS` (Geist) / `pink::MONO`, and the control kit
   (`button`, `icon_button`, `chip`, `badge`, `kbd`, `card`, `overlay`).
   Pink components follow light/dark; the Clean/Classic look doesn't apply.
-- Use pink's motion presets (`motion::MENU_IN`, `GLIDE`, `HOVER_FADE`, …)
+- Use Pink's motion presets (`motion::MENU_IN`, `GLIDE`, `HOVER_FADE`, …)
   and `HoverFill` for hovers.
 - Write your own demo content and `DESCRIPTION`; draw icons as simple 24×24
   strokes, `stroke-width="1.5"`.

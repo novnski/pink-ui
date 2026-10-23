@@ -176,7 +176,7 @@ fn palette(t: &Pink) -> [Hsla; 5] {
     } else {
         pink::oklch(0.70, 0.165, 62.)
     };
-    // A rose a little softer than pink's danger, so no part reads as an error.
+    // A rose a little softer than Pink's danger, so no part reads as an error.
     let rose = if t.dark {
         pink::oklch(0.70, 0.17, 5.)
     } else {

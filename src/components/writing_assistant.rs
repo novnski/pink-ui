@@ -289,7 +289,7 @@ fn tool(id: impl Into<SharedString>, icon: &'static str, t: &Pink) -> gpui::Stat
         )
 }
 
-/// The glow's second hue: a soft magenta beside pink's indigo.
+/// The glow's second hue: a soft magenta beside Pink's indigo.
 fn glow_hue(t: &Pink) -> Hsla {
     if t.dark {
         oklch(0.66, 0.17, 330.)

@@ -1,6 +1,6 @@
-//! pink's design language, for the pink components.
+//! Pink's design language, for the Pink components.
 //!
-//! The core components keep their own tokens. The pink components use pink's
+//! The core components keep their own tokens. The Pink components use Pink's
 //! look instead: Geist type, Tailwind-neutral surfaces, the indigo
 //! pink accent, a 4pt spacing grid, the 4/6/8/10/16 radius ladder and the
 //! 24/28/32 control sizes. Values come from the Pink app's `theme` and `button`
@@ -19,9 +19,9 @@ use gpui::{
 
 use crate::{ActiveTheme, HoverFill, motion};
 
-/// pink's interface font (bundled under `assets/fonts`).
+/// Pink's interface font (bundled under `assets/fonts`).
 pub const SANS: &str = "Geist";
-/// pink's code font (bundled under `assets/fonts`).
+/// Pink's code font (bundled under `assets/fonts`).
 pub const MONO: &str = "Geist Mono";
 
 /// Corner radius ladder: pick by role, and give a nested surface
@@ -132,7 +132,7 @@ fn shadow(x: f32, y: f32, sigma: f32, spread: f32, color: Hsla) -> BoxShadow {
     }
 }
 
-/// pink's tokens for the active light/dark mode.
+/// Pink's tokens for the active light/dark mode.
 #[derive(Clone, Debug)]
 pub struct Pink {
     pub dark: bool,

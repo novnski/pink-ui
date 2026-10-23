@@ -2,12 +2,12 @@
 //!
 //! Fifty-six components, one file each, drawn by GPUI natively and in the
 //! browser through its web platform. Core components come in two looks, Clean
-//! and Classic; pink components are drawn in pink's design language. Both
+//! and Classic; Pink components are drawn in Pink's design language. Both
 //! follow light and dark mode. Call [`init`] once at startup, then render any
 //! component; [`components::COMPONENTS`] lists them all with a demo story.
 //!
 //! Components are builders you drop into any element tree, the same way
-//! pink's controls work:
+//! Pink's controls work:
 //!
 //! ```no_run
 //! use pink_ui::components::profile_menu::{ProfileMenu, ProfileSetup};

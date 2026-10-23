@@ -172,9 +172,9 @@ struct State {
     focus: FocusHandle,
 }
 
-/// The series palette, derived from pink's accent and status colors.
+/// The series palette, derived from Pink's accent and status colors.
 fn palette(t: &Pink) -> [Hsla; 5] {
-    // pink's light-mode warning is a deep orange for text; lines read better a step lighter.
+    // Pink's light-mode warning is a deep orange for text; lines read better a step lighter.
     let amber = if t.dark {
         t.warning
     } else {
