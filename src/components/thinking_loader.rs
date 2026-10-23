@@ -558,7 +558,7 @@ fn user_bubble(text: &'static str, width: f32, t: &Pink) -> impl IntoElement {
             .px(px(space::S16))
             .py(px(space::S10))
             .text_size(px(14.))
-            .line_height(px(22.))
+            .line_height(px(TRANSCRIPT_LINE_HEIGHT))
             .text_color(t.text)
             .child(text),
     )
@@ -569,7 +569,7 @@ fn reply(text: String) -> gpui::Div {
     div()
         .pt(px(space::LG))
         .text_size(px(14.))
-        .line_height(px(22.))
+        .line_height(px(TRANSCRIPT_LINE_HEIGHT))
         .child(text)
 }
 
