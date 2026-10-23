@@ -36,7 +36,7 @@ use gpui::{
     DragMoveEvent, ElementId, EmptyView, Entity, FillOptions, FillRule, FontWeight, IntoElement,
     KeyDownEvent, MouseButton, PathBuilder, PathStyle, Pixels, Point, Role, ScrollHandle,
     SharedString, Stateful, Subscription, Task, Transformation, Window, canvas, div,
-    linear_color_stop, linear_gradient, point, prelude::*, px, radians, svg,
+    linear_color_stop, linear_gradient, phi, point, prelude::*, px, radians, svg,
 };
 
 use crate::{
@@ -1893,7 +1893,8 @@ fn checklist(c: &Ctx) -> Div {
         .flex_col()
         .min_w_0()
         .text_size(px(CHECKLIST_TEXT))
-        .line_height(px(16.))
+        // Pink sets no line height here: the lines take the inherited one.
+        .line_height(phi())
         .text_color(t.text_muted)
         .child(div().flex().items_center().gap(px(4.)).min_w_0().child(row))
         .children(list)
