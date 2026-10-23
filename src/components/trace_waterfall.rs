@@ -1,12 +1,18 @@
-//! Trace Waterfall – where an agent run spends its time and money.
+//! Trace Waterfall – a pink component.
 //!
-//! Every step of the run (sub-agents, model calls and tool calls) is a row
-//! with a bar on a shared timeline. While the run is live the bars grow, a
-//! now-line sweeps right and the time axis rescales as the run gets longer.
-//! Each bar is labelled with its duration and cost; the slowest finished
-//! step is flagged and failures turn red. Sub-agents fold their children
-//! away. Hover or select a step to read its timing, tokens and cost in the
-//! strip at the bottom; arrows move the selection, ← / → fold and unfold.
+//! An agent run laid out against time. The step column is pink's tool
+//! activity group (pink: `transcript.rs` `render_tool_group`): the run is the
+//! group's header plate, its model and tool calls hang off the activity rail
+//! (a 1 px hairline ribbon with a 6 px elbow), and sub-agents are rows with
+//! pink's agent tile that fold their own steps away behind the disclosure
+//! chevron. Beside every step its duration sits on a shared time axis as a
+//! 6 px capsule (pink's usage meter), labelled with its time and cost in
+//! pink's timer type. While the run is live, steps arrive on pink's reveal
+//! (the rail draws in, the row rises), the axis rescales, a now-line sweeps
+//! right and the header carries pink's working line: breathing orb,
+//! shimmering verb and "· 14s". Run totals sit in pink's usage metric cells;
+//! the strip at the bottom reads out the step under the pointer (or the
+//! selection). ↑ / ↓ move the selection, ← / → fold and unfold, R replays.
 //!
 //! ```ignore
 //! TraceWaterfall::new("run", "Nightly eval")
@@ -15,41 +21,95 @@
 //!     .playback(1.0)
 //! ```
 
-use std::{collections::HashSet, rc::Rc, sync::Arc};
-use web_time::Instant;
+use std::{
+    collections::{HashMap, HashSet},
+    f32::consts::FRAC_PI_2,
+    rc::Rc,
+    sync::Arc,
+};
+use web_time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, AnyView, App, ElementId, Entity, FocusHandle, FontWeight, Hsla, IntoElement,
-    KeyDownEvent, MouseButton, SharedString, Transformation, Window, div, font, prelude::*, px,
-    radians, svg,
+    AnyElement, AnyView, App, ClickEvent, Div, ElementId, Entity, FocusHandle, FontWeight,
+    IntoElement, KeyDownEvent, MouseButton, PathBuilder, Pixels, Point, SharedString, Stateful,
+    TextRun, Transformation, Window, canvas, div, font, point, prelude::*, px, radians, svg,
 };
 
 use crate::{
     HoverFill,
-    motion::{self, AnimationExt, GLIDE, HOVER_FADE, MENU_IN, ROW_IN},
-    pink::{self, ControlSize, FillTier, Pink, Tone, radius, space, text},
-    primitives::ring,
+    motion::{
+        self, DISCLOSURE, EMPHASIZED, HOVER_FADE, TOOL_BODY_FADE, TOOL_BODY_FADE_OUT_FRACTION,
+        TOOL_BODY_RISE, TOOL_CONNECTOR_REVEAL, TOOL_FOLD, TOOL_ROW_REVEAL,
+    },
+    pink::{
+        self, ControlSize, FillTier, Pink, TextStyle, TypeStyleExt, layout,
+        loaders::{self, TOOL_LABEL_LINE_HEIGHT, TOOL_LABEL_SIZE},
+        radius,
+    },
     story,
 };
 
 pub const NAME: &str = "Trace Waterfall";
-pub const DESCRIPTION: &str = "An agent run laid out on a live timeline – every sub-agent, model call and tool call as a bar with its duration and cost, the slowest step flagged, branches that fold and a readout for the step under the pointer";
+pub const DESCRIPTION: &str = "An agent run against time – its sub-agents, model calls and tool calls on an activity rail that folds, each with a duration bar and its time and cost on a shared axis, a live working line while it runs and a readout of the step under the pointer";
 
-const ICON_LLM: &str = "icons/trace-waterfall/llm.svg";
-const ICON_TOOL: &str = "icons/trace-waterfall/tool.svg";
-const ICON_AGENT: &str = "icons/trace-waterfall/agent.svg";
-const ICON_CHEVRON: &str = "icons/trace-waterfall/chevron.svg";
-const ICON_REPLAY: &str = "icons/trace-waterfall/replay.svg";
-const ICON_TRACE: &str = "icons/trace-waterfall/trace.svg";
+const ICON_BOT: &str = "icons/trace-waterfall/bot.svg";
+const ICON_BRAIN: &str = "icons/trace-waterfall/brain.svg";
+const ICON_TOOLBOX: &str = "icons/trace-waterfall/toolbox.svg";
+const ICON_DANGER: &str = "icons/trace-waterfall/danger-circle.svg";
+const ICON_CHEVRON: &str = "icons/trace-waterfall/alt-arrow-right.svg";
+const ICON_RESTART: &str = "icons/trace-waterfall/restart.svg";
 
-const ROW_H: f32 = 26.0;
-const TREE_W: f32 = 268.0;
-const AXIS_H: f32 = 28.0;
-/// Inset of the time axis inside the timeline column.
+// Step column (pink: `transcript.rs` tool-group and activity-rail constants).
+/// The group header row; its plate is 2 px shorter
+/// (pink `TOOL_GROUP_HEADER_HEIGHT`).
+const HEADER_H: f32 = 26.0;
+/// A step on the rail (pink `TOOL_TREE_ROW_HEIGHT`).
+const ROW_H: f32 = 32.0;
+/// Between the header and its first step (pink `CHIPS_TOP_PAD`).
+const BODY_TOP_PAD: f32 = 2.0;
+/// The rail's gutter: trunk, elbow, branch and glyph
+/// (pink `ACTIVITY_GUTTER_WIDTH`, `ACTIVITY_TEXT_GAP`).
+const GUTTER_W: f32 = 48.0;
+const TEXT_GAP: f32 = 8.0;
+const TRUNK_X: f32 = 12.5;
+const BEND_RADIUS: f32 = 6.0;
+const BRANCH_END_X: f32 = 28.0;
+const ICON_LEFT: f32 = 32.0;
+const ICON_SIZE: f32 = 14.0;
+const RAIL_ALPHA: f32 = 0.12;
+/// The sub-agent tile (pink `chip_header_row`: 18, radius 6, `ink(0.08)`,
+/// a 12 icon).
+const TILE: f32 = 18.0;
+const TILE_ICON: f32 = 12.0;
+/// Disclosure chevron (pink `DISCLOSURE_CHEVRON_SIZE`).
+const CHEVRON: f32 = 12.0;
+/// A sub-agent's steps hang from its tile: their trunk runs under the tile's
+/// centre, on a half pixel so the 1 px ribbon stays crisp.
+const INDENT: f32 = 27.0;
+const TILE_CX: f32 = TRUNK_X + INDENT;
+/// The header plate's left edge in the step column.
+const TREE_X0: f32 = 10.0;
+const TREE_W: f32 = 340.0;
+const CELL_PAD_R: f32 = 10.0;
+/// Deepest nesting drawn.
+const MAX_DEPTH: usize = 8;
+/// Steps starting this close together arrive as one staggered batch.
+const SAME_ARRIVAL: f32 = 0.05;
+
+// Time axis (pink-ui; pink's usage meter, table header and timer type).
+/// Header row of the table (pink `usage_table_row` header, `min_h 30`).
+const AXIS_H: f32 = 30.0;
+/// A step's bar: pink's 6 pt usage-meter capsule.
+const BAR_H: f32 = 6.0;
 const PAD_L: f32 = 12.0;
-/// Room after the axis for the last bar's label.
-const PAD_R: f32 = 96.0;
-const LABEL_SIZE: f32 = 11.0;
+/// Room after the axis for the longest bar's label.
+const PAD_R: f32 = 88.0;
+const LABEL_GAP: f32 = 6.0;
+/// Pink's meta / timer size and line.
+const META_SIZE: f32 = 11.0;
+const META_LINE: f32 = 14.0;
+const READOUT_H: f32 = 60.0;
+const SHARE_W: f32 = 120.0;
 
 /// What a step is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,11 +123,13 @@ pub enum SpanKind {
 }
 
 impl SpanKind {
+    /// Pink's glyph for the kind (pink `tool_icon_path`: bot for agents,
+    /// brain for model thinking, toolbox for tools).
     fn icon(self) -> &'static str {
         match self {
-            SpanKind::Agent => ICON_AGENT,
-            SpanKind::Llm => ICON_LLM,
-            SpanKind::Tool => ICON_TOOL,
+            SpanKind::Agent => ICON_BOT,
+            SpanKind::Llm => ICON_BRAIN,
+            SpanKind::Tool => ICON_TOOLBOX,
         }
     }
 
@@ -85,7 +147,7 @@ impl SpanKind {
 pub struct TraceSpan {
     pub kind: SpanKind,
     pub name: SharedString,
-    /// The model or tool, shown beside the name.
+    /// The model or tool, shown in the row's trailing slot.
     pub detail: Option<SharedString>,
     pub parent: Option<usize>,
     pub start: f32,
@@ -163,9 +225,27 @@ impl TraceSpan {
         }
         ((now - self.start) / self.duration()).clamp(0., 1.)
     }
+
+    fn status(&self, now: f32) -> Status {
+        if now < self.end {
+            Status::Running
+        } else if self.failed {
+            Status::Failed
+        } else {
+            Status::Done
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Status {
+    Running,
+    Done,
+    Failed,
 }
 
 type SelectHandler = Rc<dyn Fn(usize, &mut Window, &mut App)>;
+type Act = Rc<dyn Fn(Command, &mut Window, &mut App)>;
 
 #[derive(IntoElement)]
 pub struct TraceWaterfall {
@@ -186,7 +266,7 @@ impl TraceWaterfall {
             subtitle: None,
             spans: Vec::new(),
             playback: None,
-            width: 800.,
+            width: 880.,
             on_select: None,
         }
     }
@@ -214,7 +294,7 @@ impl TraceWaterfall {
         self
     }
 
-    /// Card width in px (default 800).
+    /// Card width in px (default 880).
     pub fn width(mut self, width: f32) -> Self {
         self.width = width;
         self
@@ -233,29 +313,44 @@ struct TraceState {
     selected: Option<usize>,
     hovered: Option<usize>,
     collapsed: HashSet<usize>,
+    /// When each fold last turned, and how open it was then.
+    toggled: HashMap<usize, (Instant, f32)>,
+}
+
+/// Every span's children (the roots at `spans.len()`), siblings by start.
+fn children(spans: &[TraceSpan]) -> Vec<Vec<usize>> {
+    let n = spans.len();
+    let mut kids = vec![Vec::new(); n + 1];
+    for (ix, span) in spans.iter().enumerate() {
+        kids[slot_of(span, ix, n)].push(ix);
+    }
+    for list in &mut kids {
+        list.sort_by(|a, b| spans[*a].start.total_cmp(&spans[*b].start));
+    }
+    kids
+}
+
+/// The child list a span belongs to: its parent's, or the roots'.
+fn slot_of(span: &TraceSpan, ix: usize, n: usize) -> usize {
+    match span.parent {
+        Some(parent) if parent < n && parent != ix => parent,
+        _ => n,
+    }
 }
 
 /// Spans in display order (depth first, siblings by start) with their depth.
 fn display_order(spans: &[TraceSpan]) -> Vec<(usize, usize)> {
-    fn visit(
-        spans: &[TraceSpan],
-        parent: Option<usize>,
-        depth: usize,
-        out: &mut Vec<(usize, usize)>,
-    ) {
-        let mut kids: Vec<usize> = (0..spans.len())
-            .filter(|ix| spans[*ix].parent == parent && Some(*ix) != parent)
-            .collect();
-        kids.sort_by(|a, b| spans[*a].start.total_cmp(&spans[*b].start));
-        for ix in kids {
+    fn visit(kids: &[Vec<usize>], slot: usize, depth: usize, out: &mut Vec<(usize, usize)>) {
+        for &ix in &kids[slot] {
             out.push((ix, depth));
-            if depth < 16 {
-                visit(spans, Some(ix), depth + 1, out);
+            if depth < MAX_DEPTH {
+                visit(kids, ix, depth + 1, out);
             }
         }
     }
+    let kids = children(spans);
     let mut out = Vec::new();
-    visit(spans, None, 0, &mut out);
+    visit(&kids, spans.len(), 0, &mut out);
     out
 }
 
@@ -264,7 +359,7 @@ fn descendants(spans: &[TraceSpan], ix: usize) -> Vec<usize> {
     let mut stack = vec![ix];
     while let Some(p) = stack.pop() {
         for (c, s) in spans.iter().enumerate() {
-            if s.parent == Some(p) && c != p && !out.contains(&c) {
+            if s.parent == Some(p) && c != p && c != ix && !out.contains(&c) {
                 out.push(c);
                 stack.push(c);
             }
@@ -281,30 +376,62 @@ fn tick_step(scale: f32) -> f32 {
         .unwrap_or(600.)
 }
 
+/// A step's duration: tenths under 10 s, whole seconds to a minute, then
+/// pink's `1m 05s` (pink `native_agents::duration_label`).
 fn fmt_secs(s: f32) -> String {
+    let s = s.max(0.);
     if s < 10. {
         format!("{s:.1}s")
     } else if s < 60. {
         format!("{s:.0}s")
     } else {
-        format!("{}m{:02}s", (s / 60.) as u32, (s % 60.) as u32)
+        let whole = s as u32;
+        format!("{}m {:02}s", whole / 60, whole % 60)
     }
 }
 
+fn fmt_tick(s: f32) -> String {
+    let whole = s.round() as u32;
+    match (whole / 60, whole % 60) {
+        (0, secs) => format!("{secs}s"),
+        (mins, 0) => format!("{mins}m"),
+        (mins, secs) => format!("{mins}m {secs}s"),
+    }
+}
+
+/// Live spend (pink `usage_live::live_money`): mills under a dollar.
 fn fmt_cost(c: f32) -> String {
-    if c >= 1. {
-        format!("${c:.2}")
+    if c < 1. {
+        format!("${:.3}", c.max(0.))
     } else {
-        format!("${c:.3}")
+        let cents = (c * 100.).round() as u64;
+        format!("${}.{:02}", cents / 100, cents % 100)
     }
 }
 
+/// Token counts (pink `usage::compact_tokens`): `640`, `2.14K`, `32.1K`.
 fn fmt_tokens(n: f32) -> String {
-    if n >= 1000. {
-        format!("{:.1}k", n / 1000.)
-    } else {
-        format!("{n:.0}")
+    let value = n.max(0.).round() as u64;
+    for (threshold, suffix) in [(1_000_000_000_u64, "B"), (1_000_000, "M"), (1_000, "K")] {
+        if value >= threshold {
+            let scaled = value as f64 / threshold as f64;
+            let digits = if scaled >= 100. {
+                0
+            } else if scaled >= 10. {
+                1
+            } else {
+                2
+            };
+            let formatted = format!("{scaled:.digits$}");
+            let trimmed = if formatted.contains('.') {
+                formatted.trim_end_matches('0').trim_end_matches('.')
+            } else {
+                &formatted
+            };
+            return format!("{trimmed}{suffix}");
+        }
     }
+    value.to_string()
 }
 
 #[derive(Clone, Copy)]
@@ -337,10 +464,74 @@ fn totals(spans: &[TraceSpan], ix: usize, now: f32) -> (f32, f32, f32) {
     acc
 }
 
+/// A fold on one clock (pink: `transcript.rs` tool fold): the body height,
+/// chevron turn and body fade all read it, so they agree mid-fold.
+#[derive(Clone, Copy)]
+struct Fold {
+    /// 0 closed, 1 open.
+    progress: f32,
+    /// The opening body fades in over [`TOOL_BODY_FADE`]; a closing one is
+    /// clear by [`TOOL_BODY_FADE_OUT_FRACTION`] of the fold.
+    alpha: f32,
+    moving: bool,
+}
+
+/// Where a fold is at `clock`, turning on [`TOOL_FOLD`] from how open it
+/// was when last toggled (pink lerps from the rendered height the same way).
+fn fold_at(open: bool, toggled: Option<(Instant, f32)>, clock: Instant, reduced: bool) -> Fold {
+    let target = if open { 1. } else { 0. };
+    let settled = Fold {
+        progress: target,
+        alpha: 1.,
+        moving: false,
+    };
+    let Some((at, from)) = toggled.filter(|_| !reduced) else {
+        return settled;
+    };
+    let elapsed_ms =
+        clock.saturating_duration_since(at).as_secs_f32() * 1000. / motion::speed_scale();
+    let raw = elapsed_ms / TOOL_FOLD.duration_ms as f32;
+    if raw >= 1. {
+        return settled;
+    }
+    let alpha = if open {
+        TOOL_BODY_FADE
+            .curve
+            .eval((elapsed_ms / TOOL_BODY_FADE.duration_ms as f32).clamp(0., 1.))
+    } else {
+        1. - (raw / TOOL_BODY_FADE_OUT_FRACTION).clamp(0., 1.)
+    };
+    Fold {
+        progress: motion::lerp(from, target, TOOL_FOLD.curve.eval(raw)),
+        alpha,
+        moving: true,
+    }
+}
+
+/// The time axis: seconds to x inside the timeline column.
+#[derive(Clone, Copy)]
+struct Axis {
+    scale: f32,
+    width: f32,
+}
+
+impl Axis {
+    fn x(&self, s: f32) -> f32 {
+        PAD_L + (s / self.scale).clamp(0., 1.2) * self.width
+    }
+}
+
+/// A bar's label and its shaped width.
+struct BarLabel {
+    text: String,
+    width: f32,
+}
+
 impl RenderOnce for TraceWaterfall {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Pink::get(cx);
         let key = self.id.to_string();
+        let reduced = motion::reduced_motion(cx);
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
@@ -350,47 +541,97 @@ impl RenderOnce for TraceWaterfall {
                 selected: None,
                 hovered: None,
                 collapsed: HashSet::new(),
+                toggled: HashMap::new(),
             },
         );
-        let (started, selected, hovered, collapsed, focus) = {
+        let (started, selected, hovered, collapsed, toggled, focus) = {
             let s = state.read(cx);
             (
                 s.started,
                 s.selected,
                 s.hovered,
                 s.collapsed.clone(),
+                s.toggled.clone(),
                 s.focus.clone(),
             )
         };
+        let clock = Instant::now();
         let spans = Rc::new(self.spans);
+        let n = spans.len();
         let total = spans.iter().map(|s| s.end).fold(0., f32::max);
         let now = match self.playback {
-            Some(speed) if !motion::reduced_motion(cx) => {
-                (started.elapsed().as_secs_f32() * speed * motion::speed_scale().recip()).min(total)
-            }
+            Some(speed) if !reduced => (clock.saturating_duration_since(started).as_secs_f32()
+                * speed
+                / motion::speed_scale())
+            .min(total),
             _ => total,
         };
         let live = now < total;
-        if live {
+
+        let all_kids = children(&spans);
+        let order = Rc::new(display_order(&spans));
+        let kids: Vec<Vec<usize>> = all_kids
+            .iter()
+            .map(|list| {
+                list.iter()
+                    .copied()
+                    .filter(|c| spans[*c].start <= now)
+                    .collect()
+            })
+            .collect();
+
+        // Arrivals (pink: `transcript.rs` row reveal starts): a step reveals
+        // when the playback clock reaches it; a group's first step waits
+        // 90 ms and steps arriving together stagger by 65 ms.
+        let scale_motion = motion::speed_scale();
+        let arrival: Vec<Option<Instant>> = (0..n)
+            .map(|ix| {
+                let speed = self.playback?;
+                let span = &spans[ix];
+                let slot = slot_of(span, ix, n);
+                let delay = if slot == n {
+                    Duration::ZERO
+                } else {
+                    let siblings = &all_kids[slot];
+                    let pos = siblings.iter().position(|c| *c == ix).unwrap_or(0);
+                    let rank = siblings[..pos]
+                        .iter()
+                        .rev()
+                        .take_while(|c| (spans[**c].start - span.start).abs() < SAME_ARRIVAL)
+                        .count();
+                    motion::tool_row_arrival_delay(rank, pos == rank)
+                };
+                Some(
+                    started
+                        + Duration::from_secs_f32(span.start.max(0.) / speed * scale_motion)
+                        + delay.mul_f32(scale_motion),
+                )
+            })
+            .collect();
+        let reveal: Vec<f32> = arrival
+            .iter()
+            .map(|at| motion::reveal_progress(TOOL_ROW_REVEAL, *at, clock, reduced))
+            .collect();
+        let connector: Vec<f32> = arrival
+            .iter()
+            .map(|at| motion::reveal_progress(TOOL_CONNECTOR_REVEAL, *at, clock, reduced))
+            .collect();
+        let folds: Vec<Fold> = (0..n)
+            .map(|ix| {
+                fold_at(
+                    !collapsed.contains(&ix),
+                    toggled.get(&ix).copied(),
+                    clock,
+                    reduced,
+                )
+            })
+            .collect();
+        let moving = live
+            || folds.iter().any(|f| f.moving)
+            || (0..n).any(|ix| spans[ix].start <= now && (reveal[ix] < 1. || connector[ix] < 1.));
+        if moving {
             window.request_animation_frame();
         }
-
-        let order = Rc::new(display_order(&spans));
-        let hidden = |ix: usize| {
-            let mut p = spans[ix].parent;
-            while let Some(parent) = p {
-                if collapsed.contains(&parent) {
-                    return true;
-                }
-                p = spans[parent].parent;
-            }
-            false
-        };
-        let visible_rows: Vec<usize> = order
-            .iter()
-            .map(|(ix, _)| *ix)
-            .filter(|ix| spans[*ix].start <= now && !hidden(*ix))
-            .collect();
 
         // The slowest finished leaf step.
         let slowest = spans
@@ -406,147 +647,206 @@ impl RenderOnce for TraceWaterfall {
         } else {
             total.max(1.) * 1.02
         };
-        let scale = motion::follow(&format!("{key}-scale"), target_scale, GLIDE);
-        let col_w = self.width - TREE_W - 2.;
-        let axis_w = col_w - PAD_L - PAD_R;
-        let x_of = move |s: f32| PAD_L + (s / scale).clamp(0., 1.2) * axis_w;
+        let scale = motion::follow(&format!("{key}-scale"), target_scale, EMPHASIZED);
+        let col_w = self.width - 2. - TREE_W;
+        let axis = Axis {
+            scale,
+            width: col_w - PAD_L - PAD_R,
+        };
 
-        let font_id = window.text_system().resolve_font(&font(pink::MONO));
-        let advance = window
-            .text_system()
-            .em_advance(font_id, px(LABEL_SIZE))
-            .map(f32::from)
-            .unwrap_or(LABEL_SIZE * 0.6);
+        // Bar labels, shaped so they can flip to the bar's left near the edge.
+        let mut label_font = font(pink::SANS);
+        label_font.features = pink::tabular_figures();
+        let measure = |text: &str, weight: FontWeight, window: &mut Window| -> f32 {
+            let mut font = label_font.clone();
+            font.weight = weight;
+            let run = TextRun {
+                len: text.len(),
+                font,
+                color: t.text,
+                background_color: None,
+                underline: None,
+                strikethrough: None,
+            };
+            f32::from(
+                window
+                    .text_system()
+                    .shape_line(
+                        SharedString::from(text.to_string()),
+                        px(META_SIZE),
+                        &[run],
+                        None,
+                    )
+                    .width(),
+            )
+        };
+        let slowest_w = measure("Slowest", FontWeight::MEDIUM, window) + LABEL_GAP;
+        let labels: Vec<Option<BarLabel>> = (0..n)
+            .map(|ix| {
+                let span = &spans[ix];
+                if span.start > now {
+                    return None;
+                }
+                let mut text = fmt_secs(span.end.min(now) - span.start);
+                let (_, _, cost) = totals(&spans, ix, now);
+                if cost > 0. {
+                    text.push_str(" · ");
+                    text.push_str(&fmt_cost(cost));
+                }
+                let mut width = measure(&text, FontWeight::NORMAL, window);
+                if slowest == Some(ix) {
+                    width += slowest_w;
+                }
+                Some(BarLabel { text, width })
+            })
+            .collect();
 
         let on_select = self.on_select.clone();
-        let act: Rc<dyn Fn(Command, &mut Window, &mut App)> = {
+        let act: Act = {
             let state = state.clone();
             let spans = spans.clone();
             let order = order.clone();
             Rc::new(move |command, window, cx| {
-                run(&state, &spans, &order, command, &on_select, window, cx)
+                run(&state, &spans, &order, now, command, &on_select, window, cx)
             })
         };
 
-        // ---- header ---------------------------------------------------------
-        let (run_tokens, run_cost) =
-            order
-                .iter()
-                .filter(|(_, depth)| *depth == 0)
-                .fold((0., 0.), |acc, (ix, _)| {
-                    let (tin, tout, cost) = totals(&spans, *ix, now);
-                    (acc.0 + tin + tout, acc.1 + cost)
-                });
-        let calls = spans
-            .iter()
-            .filter(|s| s.kind != SpanKind::Agent && s.start <= now)
-            .count();
-        let metric = |value: String, label: &'static str| {
-            div()
-                .flex()
-                .flex_col()
-                .items_end()
-                .child(
-                    div()
-                        .font_family(pink::MONO)
-                        .text_size(px(text::BODY))
-                        .line_height(px(18.))
-                        .text_color(t.text)
-                        .child(value),
-                )
-                .child(
-                    div()
-                        .text_size(px(text::CAPTION))
-                        .line_height(px(14.))
-                        .text_color(t.text_faint)
-                        .child(label),
-                )
+        let frame = Frame {
+            key: &key,
+            t: &t,
+            spans: &spans,
+            kids: &kids,
+            now,
+            arrival: &arrival,
+            reveal: &reveal,
+            connector: &connector,
+            folds: &folds,
+            labels: &labels,
+            collapsed: &collapsed,
+            selected,
+            slowest,
+            axis,
+            col_w,
+            state: &state,
+            act: &act,
         };
-        let status = if live {
-            let dot = div()
-                .size(px(6.))
-                .rounded_full()
-                .bg(t.accent)
-                .with_animation(
-                    SharedString::from(format!("{key}-pulse")),
-                    gpui::Animation::new(std::time::Duration::from_millis(1400)).repeat(),
-                    |el, p| el.opacity(0.35 + 0.65 * (1. - (p * 2. - 1.).abs())),
-                );
+
+        // ---- header ---------------------------------------------------------
+        let run_status = if live {
+            // Pink's working line (pink: `transcript.rs` `render_working_trailer`).
             div()
                 .flex()
                 .items_center()
-                .gap(px(space::S6))
-                .h(px(22.))
-                .px(px(space::S8))
-                .rounded(px(radius::SM))
-                .bg(t.accent.opacity(if t.dark { 0.16 } else { 0.10 }))
-                .text_size(px(text::CAPTION))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(t.accent)
-                .child(dot)
-                .child("Live")
+                .gap(px(8.))
+                .child(loaders::orb_slot(t.accent))
+                .child(loaders::working_status("Running", t.content_muted, t.text))
+                .child(loaders::working_timer(now as i64, t.content_faint))
                 .into_any_element()
         } else {
-            pink::badge("Finished", Tone::Success, &t).into_any_element()
+            // Pink's status read (pink: `transcript/agent_cards.rs` meta line):
+            // a dot and a quiet word, then the settled duration.
+            div()
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .text_size(px(TOOL_LABEL_SIZE))
+                .line_height(px(16.))
+                .text_color(t.content_muted)
+                .child(
+                    div()
+                        .flex_none()
+                        .size(px(6.))
+                        .rounded_full()
+                        .bg(t.readable_tone(t.success, 1.)),
+                )
+                .child("Done")
+                .child(div().text_color(t.content_faint).child("·"))
+                .child(
+                    div()
+                        .font_features(pink::tabular_figures())
+                        .child(loaders::format_elapsed(total.round() as i64)),
+                )
+                .into_any_element()
         };
-        let header = div()
-            .flex()
-            .items_center()
-            .gap(px(space::S12))
-            .px(px(space::S16))
-            .py(px(space::S12))
+        // Pink's section header (pink: `settings/widgets.rs` `section_header`)
+        // with the run's status and replay in its trailing controls, centred
+        // on the title's line.
+        let header = pink::section_header(self.title.clone(), self.subtitle.clone(), &t)
+            .flex_none()
             .child(
-                div()
-                    .size(px(32.))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(radius::MD))
-                    .bg(t.fill(FillTier::Tertiary))
-                    .child(
-                        svg()
-                            .path(ICON_TRACE)
-                            .size(px(16.))
-                            .text_color(t.text_muted),
-                    ),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .truncate()
-                            .text_size(px(text::BODY))
-                            .line_height(px(18.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .child(self.title.clone()),
-                    )
-                    .when_some(self.subtitle.clone(), |d, s| {
-                        d.child(
-                            div()
-                                .truncate()
-                                .text_size(px(text::FOOTNOTE))
-                                .line_height(px(16.))
-                                .text_color(t.text_faint)
-                                .child(s),
+                pink::row_controls()
+                    .h(px(ControlSize::Sm.height()))
+                    .mt(px((TextStyle::Title3.line_height()
+                        - ControlSize::Sm.height())
+                        / 2.))
+                    .gap(px(10.))
+                    .child(run_status)
+                    .when(self.playback.is_some(), |row| {
+                        let act = act.clone();
+                        row.child(
+                            pink::icon_button(
+                                format!("{key}-replay"),
+                                ICON_RESTART,
+                                ControlSize::Sm,
+                                &t,
+                            )
+                            .tooltip(pink::text_tooltip("Replay"))
+                            .tooltip_show_delay(layout::TOOLTIP_DELAY)
+                            .on_click(move |_, window, cx| act(Command::Replay, window, cx)),
                         )
                     }),
-            )
-            .child(metric(fmt_secs(now), "elapsed"))
-            .child(metric(fmt_cost(run_cost), "cost"))
-            .child(metric(fmt_tokens(run_tokens), "tokens"))
-            .child(metric(calls.to_string(), "calls"))
-            .child(div().w(px(1.)).h(px(28.)).bg(t.border))
-            .child(status)
-            .child({
-                let act = act.clone();
-                pink::icon_button(format!("{key}-replay"), ICON_REPLAY, ControlSize::Md, &t)
-                    .on_click(move |_, window, cx| act(Command::Replay, window, cx))
-            });
+            );
+
+        // ---- totals (pink: `shell/usage.rs` Totals grid of metric cells) ----
+        let roots = &kids[n];
+        let (run_tokens, run_cost) = roots.iter().fold((0., 0.), |acc, ix| {
+            let (tin, tout, cost) = totals(&spans, *ix, now);
+            (acc.0 + tin + tout, acc.1 + cost)
+        });
+        let count = |kind: SpanKind| {
+            spans
+                .iter()
+                .filter(|s| s.kind == kind && s.start <= now)
+                .count()
+        };
+        let metrics = div()
+            .w_full()
+            .flex_none()
+            .px(px(layout::ROW_PAD_X))
+            .py(px(layout::ROW_PAD_Y))
+            .border_t_1()
+            .border_color(t.border)
+            .flex()
+            .items_stretch()
+            .gap(px(12.))
+            .child(metric_cell(
+                "Cost",
+                if run_cost > 0. {
+                    fmt_cost(run_cost)
+                } else {
+                    "—".into()
+                },
+                &t,
+            ))
+            .child(metric_cell(
+                "Tokens",
+                if run_tokens > 0. {
+                    fmt_tokens(run_tokens)
+                } else {
+                    "—".into()
+                },
+                &t,
+            ))
+            .child(metric_cell(
+                "Model calls",
+                count(SpanKind::Llm).to_string(),
+                &t,
+            ))
+            .child(metric_cell(
+                "Tool calls",
+                count(SpanKind::Tool).to_string(),
+                &t,
+            ));
 
         // ---- axis -------------------------------------------------------------
         let step = tick_step(scale);
@@ -556,23 +856,22 @@ impl RenderOnce for TraceWaterfall {
             ticks.push(s);
             s += step;
         }
-        let axis = div()
-            .flex()
+        let axis_row = div()
+            .w_full()
             .h(px(AXIS_H))
+            .flex_none()
+            .flex()
+            .items_center()
             .border_t_1()
-            .border_b_1()
             .border_color(t.border)
-            .text_size(px(text::CAPTION))
-            .text_color(t.text_faint)
+            .text_size(px(META_SIZE))
+            .line_height(px(META_LINE))
+            .text_color(t.readable_muted(0.85))
             .child(
                 div()
                     .w(px(TREE_W))
                     .flex_none()
-                    .flex()
-                    .items_center()
-                    .px(px(space::S16))
-                    .border_r_1()
-                    .border_color(t.border)
+                    .pl(px(layout::ROW_PAD_X))
                     .child("Step"),
             )
             .child(
@@ -580,113 +879,63 @@ impl RenderOnce for TraceWaterfall {
                     .relative()
                     .flex_1()
                     .h_full()
-                    .font_family(pink::MONO)
+                    .font_features(pink::tabular_figures())
                     .children(ticks.iter().map(|s| {
                         div()
                             .absolute()
-                            .top(px(7.))
-                            .left(px(x_of(*s) + 4.))
-                            .child(format!("{}s", *s as u32))
-                    }))
-                    .when(live, |d| {
-                        d.child(
-                            div()
-                                .absolute()
-                                .top(px(4.))
-                                .left(px(x_of(now) - 22.))
-                                .w(px(44.))
-                                .h(px(18.))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .rounded(px(radius::XS))
-                                .bg(t.accent)
-                                .text_color(t.on_accent)
-                                .child(fmt_secs(now)),
-                        )
-                    }),
+                            .top(px((AXIS_H - META_LINE) / 2.))
+                            .left(px(axis.x(*s).round() + 4.))
+                            .whitespace_nowrap()
+                            .child(fmt_tick(*s))
+                    })),
             );
 
-        // ---- rows -------------------------------------------------------------
-        let mut rows: Vec<AnyElement> = Vec::new();
-        for (ix, depth) in order.iter().copied() {
-            let span = &spans[ix];
-            if span.start > now {
-                continue;
-            }
-            let vis = motion::follow(
-                &format!("{key}-row{ix}-vis"),
-                if hidden(ix) { 0. } else { 1. },
-                GLIDE,
-            );
-            let born = motion::follow_from(&format!("{key}-row{ix}-born"), 0., 1., ROW_IN);
-            let h = ROW_H * vis * born;
-            if h < 0.1 {
-                continue;
-            }
-            rows.push(row(
-                &key,
-                ix,
-                depth,
-                &spans,
-                now,
-                RowFlags {
-                    selected: selected == Some(ix),
-                    slowest: slowest == Some(ix),
-                    collapsed: collapsed.contains(&ix),
-                    has_children: spans.iter().any(|s| s.parent == Some(ix)),
-                },
-                (h, vis.min(born), born),
-                &x_of,
-                col_w,
-                advance,
-                state.clone(),
-                act.clone(),
-                &t,
-            ));
-        }
-
+        // ---- steps ------------------------------------------------------------
         let grid = div()
             .absolute()
             .top_0()
             .bottom_0()
-            .left(px(TREE_W + 1.))
+            .left(px(TREE_W))
             .right_0()
             .children(ticks.iter().skip(1).map(|s| {
                 div()
                     .absolute()
                     .top_0()
                     .bottom_0()
-                    .left(px(x_of(*s)))
+                    .left(px(axis.x(*s).round()))
                     .w(px(1.))
-                    .bg(t.border.opacity(0.7))
-            }))
-            .when(live, |d| {
-                d.child(
+                    .bg(t.hairline(0.06))
+            }));
+        let body = div()
+            .relative()
+            .w_full()
+            .flex_none()
+            .flex()
+            .flex_col()
+            .pt(px(4.))
+            .pb(px(8.))
+            .border_t_1()
+            .border_color(t.border)
+            .child(grid)
+            .children(
+                roots
+                    .iter()
+                    .enumerate()
+                    .map(|(k, ix)| frame.block(*ix, 0, k > 0, roots.get(k + 1).copied())),
+            )
+            .when(live, |body| {
+                // The now-line: where the run has got to, in pink's Working
+                // status tone (pink: `shell/spaces.rs` `busy@0.55`).
+                body.child(
                     div()
                         .absolute()
                         .top_0()
                         .bottom_0()
-                        .left(px(x_of(now)))
+                        .left(px((TREE_W + axis.x(now)).round()))
                         .w(px(1.))
-                        .bg(t.accent.opacity(0.7)),
+                        .bg(t.busy.opacity(0.55)),
                 )
             });
-        let body = div()
-            .relative()
-            .py(px(space::S4))
-            .min_h(px(ROW_H * visible_rows.len().max(1) as f32 + 8.))
-            .child(
-                div()
-                    .absolute()
-                    .top_0()
-                    .bottom_0()
-                    .left(px(TREE_W))
-                    .w(px(1.))
-                    .bg(t.border),
-            )
-            .child(grid)
-            .children(rows);
 
         // ---- readout ----------------------------------------------------------
         // The step under the pointer, else the selection, else the whole run.
@@ -716,9 +965,11 @@ impl RenderOnce for TraceWaterfall {
         };
 
         motion::keep_alive(window);
+        let ring = t.focus_ring();
         pink::card(&t)
             .id(self.id.clone())
             .track_focus(&focus)
+            .focus_visible(move |style| pink::focus_ring(style, ring))
             .on_key_down(on_key)
             .on_mouse_down(MouseButton::Left, {
                 let focus = focus.clone();
@@ -726,33 +977,728 @@ impl RenderOnce for TraceWaterfall {
             })
             .w(px(self.width))
             .overflow_hidden()
-            .font_family(pink::SANS)
+            .flex()
+            .flex_col()
             .text_color(t.text)
             .child(header)
-            .child(axis)
+            .child(metrics)
+            .child(axis_row)
             .child(body)
             .child(readout)
     }
 }
 
+/// One figure of the run's totals (pink: `shell/usage.rs` `metric_cell`):
+/// a caption over a Title3 value on the resting plate.
+fn metric_cell(label: &'static str, value: String, t: &Pink) -> Div {
+    div()
+        .min_w(px(96.))
+        .flex_1()
+        .rounded(px(radius::MD))
+        .border_1()
+        .border_color(t.separator(false))
+        .bg(t.fill(FillTier::Quaternary))
+        .px(px(12.))
+        .py(px(10.))
+        .flex()
+        .flex_col()
+        .gap(px(4.))
+        .child(
+            div()
+                .text_size(px(META_SIZE))
+                .line_height(px(META_LINE))
+                .text_color(t.readable_muted(0.85))
+                .child(label),
+        )
+        .child(
+            div()
+                .type_style(TextStyle::Title3)
+                .font_features(pink::tabular_figures())
+                .text_color(t.text)
+                .child(value),
+        )
+}
+
+/// Everything one frame of the step list reads.
+struct Frame<'a> {
+    key: &'a str,
+    t: &'a Pink,
+    spans: &'a [TraceSpan],
+    /// Started children of every span; the roots at `spans.len()`.
+    kids: &'a [Vec<usize>],
+    now: f32,
+    arrival: &'a [Option<Instant>],
+    reveal: &'a [f32],
+    connector: &'a [f32],
+    folds: &'a [Fold],
+    labels: &'a [Option<BarLabel>],
+    collapsed: &'a HashSet<usize>,
+    selected: Option<usize>,
+    slowest: Option<usize>,
+    axis: Axis,
+    col_w: f32,
+    state: &'a Entity<TraceState>,
+    act: &'a Act,
+}
+
+/// Left edge of the rail gutter at `depth` (1 = the header's steps).
+fn gutter_x(depth: usize) -> f32 {
+    TREE_X0 + depth.saturating_sub(1) as f32 * INDENT
+}
+
+fn line_h(depth: usize) -> f32 {
+    if depth == 0 { HEADER_H } else { ROW_H }
+}
+
+impl Frame<'_> {
+    /// The height of `ix`'s steps when open.
+    fn body_h(&self, ix: usize, depth: usize) -> f32 {
+        let kids = &self.kids[ix];
+        if kids.is_empty() || depth >= MAX_DEPTH {
+            return 0.;
+        }
+        let pad = if depth == 0 { BODY_TOP_PAD } else { 0. };
+        pad + kids
+            .iter()
+            .map(|c| self.block_h(*c, depth + 1) * self.reveal[*c])
+            .sum::<f32>()
+    }
+
+    /// A step's line and its body as far as it is open.
+    fn block_h(&self, ix: usize, depth: usize) -> f32 {
+        line_h(depth) + self.body_h(ix, depth) * self.folds[ix].progress
+    }
+
+    /// One step with its folding body (pink: `transcript.rs`
+    /// `render_tool_group` and `reveal_tool_row`): the line, the steps under
+    /// it clipped to the fold, and for steps on a rail their connector. An
+    /// arriving step is clipped to its reveal.
+    fn block(&self, ix: usize, depth: usize, has_pred: bool, next: Option<usize>) -> AnyElement {
+        let fold = self.folds[ix];
+        let body_h = self.body_h(ix, depth);
+        let natural = line_h(depth) + body_h * fold.progress;
+        let mut inner = div()
+            .relative()
+            .w_full()
+            .h(px(natural))
+            .flex_none()
+            .flex()
+            .flex_col()
+            .child(self.line(ix, depth, has_pred));
+        if body_h > 0. && fold.progress > 0. {
+            let kids = &self.kids[ix];
+            let mut content = div()
+                .w_full()
+                .flex_none()
+                .flex()
+                .flex_col()
+                .when(depth == 0, |content| content.pt(px(BODY_TOP_PAD)))
+                .children(
+                    kids.iter()
+                        .enumerate()
+                        .map(|(k, c)| self.block(*c, depth + 1, k > 0, kids.get(k + 1).copied())),
+                );
+            // A sub-agent's steps fade and settle like pink's row bodies; the
+            // group under the header only clips.
+            if depth > 0 && fold.alpha < 1. {
+                content = content
+                    .relative()
+                    .top(px(TOOL_BODY_RISE * (1. - fold.alpha)))
+                    .opacity(fold.alpha);
+            }
+            inner = inner.child(
+                div()
+                    .w_full()
+                    .h(px(body_h * fold.progress))
+                    .flex_none()
+                    .overflow_hidden()
+                    .child(content),
+            );
+        }
+        if depth > 0 {
+            inner = inner.child(self.rail(ix, depth, has_pred, next));
+        }
+        let reveal = self.reveal[ix];
+        if reveal >= 1. {
+            inner.into_any_element()
+        } else {
+            div()
+                .w_full()
+                .h(px(natural * reveal))
+                .flex_none()
+                .overflow_hidden()
+                .child(inner)
+                .into_any_element()
+        }
+    }
+
+    /// The row a step reads on: the step cell and its bar. Hover is a
+    /// Tertiary wash, the selection the Primary fill (pink's chrome rows).
+    fn line(&self, ix: usize, depth: usize, has_pred: bool) -> Stateful<Div> {
+        let t = self.t;
+        let row_key = format!("{}-row-{ix}", self.key);
+        let hover = motion::hover_t(&row_key);
+        let sel = motion::follow(
+            &format!("{row_key}-sel"),
+            if self.selected == Some(ix) { 1. } else { 0. },
+            HOVER_FADE,
+        );
+        let wash = t.fill(FillTier::Tertiary);
+        let band = motion::mix(
+            motion::mix(wash.opacity(0.), wash, hover),
+            t.glass_selected_bg(),
+            sel,
+        );
+        let height = line_h(depth);
+        // Text rises in with the branch (pink: `tool_connector_parts(..).1`).
+        let content = if depth == 0 {
+            1.
+        } else {
+            motion::tool_connector_parts(self.connector[ix], has_pred).1
+        };
+        let cell = if depth == 0 {
+            self.plate_cell(ix)
+        } else {
+            self.step_cell(ix, depth, &row_key, hover.max(sel), content)
+        };
+        let state = self.state.clone();
+        let act = self.act.clone();
+        let hover_key = row_key.clone();
+        div()
+            .id(SharedString::from(row_key))
+            .w_full()
+            .h(px(height))
+            .flex_none()
+            .flex()
+            .bg(band)
+            .cursor_pointer()
+            .on_hover(move |hovered: &bool, window, cx| {
+                motion::set_hover(&hover_key, *hovered, motion::reduced_motion(cx));
+                state.update(cx, |s, cx| {
+                    if *hovered {
+                        s.hovered = Some(ix);
+                    } else if s.hovered == Some(ix) {
+                        s.hovered = None;
+                    }
+                    cx.notify();
+                });
+                window.refresh();
+            })
+            .on_click(move |_, window, cx| act(Command::Select(ix), window, cx))
+            .child(cell)
+            .child(self.bar_cell(ix, height, content))
+    }
+
+    fn toggle(&self, ix: usize) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
+        let act = self.act.clone();
+        move |_, window, cx| {
+            cx.stop_propagation();
+            act(Command::Toggle(ix), window, cx);
+        }
+    }
+
+    /// A root step as the group's header plate (pink: `transcript.rs`
+    /// `render_tool_group` header): kind glyph on the rail's trunk, the
+    /// summary (shimmering while live) and a chevron that turns as the group
+    /// opens, on a resting fill that brightens under the pointer.
+    fn plate_cell(&self, ix: usize) -> Div {
+        let t = self.t;
+        let span = &self.spans[ix];
+        let status = span.status(self.now);
+        let has_kids = !self.kids[ix].is_empty();
+        let plate_key = format!("{}-plate-{ix}", self.key);
+        let fg = motion::hover_blend(&plate_key, t.content_muted, t.text);
+        let steps: Vec<usize> = descendants(self.spans, ix)
+            .into_iter()
+            .filter(|d| self.spans[*d].start <= self.now)
+            .collect();
+        let failed = steps
+            .iter()
+            .filter(|d| self.spans[**d].status(self.now) == Status::Failed)
+            .count();
+        // Pink's summary line: "Thought · Read 3 files · 1 failed".
+        let mut summary = span.name.to_string();
+        if !steps.is_empty() {
+            let plural = if steps.len() == 1 { "" } else { "s" };
+            summary.push_str(&format!(" · {} step{plural}", steps.len()));
+        }
+        if failed > 0 {
+            summary.push_str(&format!(" · {failed} failed"));
+        }
+        let title =
+            loaders::shimmer_text(summary, TOOL_LABEL_SIZE, TOOL_LABEL_LINE_HEIGHT, fg, t.text)
+                .live(status == Status::Running)
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden();
+        let title = match self.arrival[ix] {
+            Some(at) => title.started_at(at),
+            None => title,
+        };
+        let plate = div()
+            .id(SharedString::from(plate_key.clone()))
+            .min_w_0()
+            .h(px(HEADER_H - 2.))
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .pl(px(TRUNK_X - ICON_SIZE / 2.))
+            .pr(px(8.))
+            .rounded(px(radius::CONTROL))
+            .cursor_pointer()
+            .hover_fill_fg(
+                plate_key,
+                t.fill(FillTier::Quaternary),
+                t.fill(FillTier::Tertiary),
+                t.content_muted,
+                t.text,
+            )
+            .when(has_kids, |plate| plate.on_click(self.toggle(ix)))
+            .child(
+                svg()
+                    .path(span.kind.icon())
+                    .flex_none()
+                    .size(px(ICON_SIZE))
+                    .text_color(fg),
+            )
+            .child(
+                div()
+                    .min_w_0()
+                    .h(px(TOOL_LABEL_LINE_HEIGHT))
+                    .flex()
+                    .items_center()
+                    .truncate()
+                    .child(title),
+            )
+            .when(has_kids, |plate| {
+                plate.child(
+                    svg()
+                        .path(ICON_CHEVRON)
+                        .flex_none()
+                        .size(px(CHEVRON))
+                        .with_transformation(Transformation::rotate(radians(
+                            FRAC_PI_2 * self.folds[ix].progress,
+                        )))
+                        .text_color(t.content_faint),
+                )
+            });
+        div()
+            .w(px(TREE_W))
+            .flex_none()
+            .h_full()
+            .flex()
+            .items_center()
+            .gap(px(TEXT_GAP))
+            .pl(px(TREE_X0))
+            .pr(px(CELL_PAD_R))
+            .text_size(px(TOOL_LABEL_SIZE))
+            .line_height(px(TOOL_LABEL_LINE_HEIGHT))
+            .child(plate)
+            .child(div().flex_1().min_w(px(4.)))
+            .when(status == Status::Failed, |cell| cell.child(failed_word(t)))
+            .when_some(span.detail.clone(), |cell, detail| {
+                cell.child(trailing_meta(detail, t))
+            })
+            // Lines the trailing column up with the steps' disclosure slot.
+            .child(div().size(px(TILE)).flex_none())
+    }
+
+    /// A step on the rail (pink: `transcript.rs` `chip_header_row`): the
+    /// label in `content_muted` brightening under the pointer (medium for a
+    /// sub-agent), then the trailing slot – "Failed" as one red word, the
+    /// model or tool in faint 11 and the disclosure tile, half strength until
+    /// the row is hovered.
+    fn step_cell(&self, ix: usize, depth: usize, row_key: &str, lit: f32, reveal: f32) -> Div {
+        let t = self.t;
+        let span = &self.spans[ix];
+        let status = span.status(self.now);
+        let agent = span.kind == SpanKind::Agent;
+        let has_kids = !self.kids[ix].is_empty();
+        let hover = motion::hover_t(row_key);
+        let folded = if self.collapsed.contains(&ix) {
+            descendants(self.spans, ix)
+                .iter()
+                .filter(|d| self.spans[**d].start <= self.now)
+                .count()
+        } else {
+            0
+        };
+        // A folded sub-agent says what it holds, like pink's group summary.
+        let detail: Option<SharedString> = match (folded, span.detail.clone()) {
+            (0, detail) => detail,
+            (n, Some(detail)) => Some(format!("{n} steps · {detail}").into()),
+            (n, None) => Some(format!("{n} steps").into()),
+        };
+        let cell = div()
+            .w(px(TREE_W))
+            .flex_none()
+            .h_full()
+            .flex()
+            .items_center()
+            .gap(px(TEXT_GAP))
+            .pl(px(gutter_x(depth) + GUTTER_W + TEXT_GAP))
+            .pr(px(CELL_PAD_R))
+            .text_size(px(TOOL_LABEL_SIZE))
+            .line_height(px(TOOL_LABEL_LINE_HEIGHT))
+            .child(
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .when(agent, |label| label.font_weight(FontWeight::MEDIUM))
+                    .text_color(motion::mix(t.content_muted, t.text, lit))
+                    .child(span.name.clone()),
+            )
+            .child(div().flex_1().min_w(px(4.)))
+            .when(status == Status::Failed, |cell| cell.child(failed_word(t)))
+            .when_some(detail, |cell, detail| cell.child(trailing_meta(detail, t)))
+            // A running sub-agent shows pink's working-row spinner in the
+            // trailing slot (pink: `chip_header_row` for a running child).
+            .when(agent && status == Status::Running, |cell| {
+                cell.child(div().flex_none().child(loaders::mini_glyph_spinner(
+                    format!("{}-spin-{ix}", self.key),
+                    2.,
+                    t.glyph,
+                )))
+            })
+            // The disclosure tile's slot is kept on every row so the
+            // trailing column lines up down the list.
+            .child(if has_kids {
+                div()
+                    .id(SharedString::from(format!("{row_key}-fold")))
+                    .size(px(TILE))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .opacity(motion::lerp(0.5, 1., hover))
+                    .cursor_pointer()
+                    .on_click(self.toggle(ix))
+                    .child(
+                        svg()
+                            .path(ICON_CHEVRON)
+                            .size(px(CHEVRON))
+                            .with_transformation(Transformation::rotate(radians(
+                                FRAC_PI_2 * self.folds[ix].progress,
+                            )))
+                            .text_color(motion::mix(t.content_faint, t.text, hover)),
+                    )
+                    .into_any_element()
+            } else {
+                div().size(px(TILE)).flex_none().into_any_element()
+            });
+        if reveal < 1. {
+            cell.relative().top(px(4. * (1. - reveal))).opacity(reveal)
+        } else {
+            cell
+        }
+    }
+
+    /// The step's connector and glyph (pink: `transcript.rs` `activity_rail`):
+    /// the trunk comes down from the row above, bends on a 6 px radius into
+    /// the branch and reveals the glyph at its tip; a later sibling's arrival
+    /// first carries the trunk on past this row. One nonzero path, so the
+    /// joints never double their alpha. A sub-agent's glyph is pink's agent
+    /// tile; a running step shows pink's item spinner in its glyph slot, a
+    /// failure the danger circle.
+    fn rail(&self, ix: usize, depth: usize, has_pred: bool, next: Option<usize>) -> Div {
+        let t = self.t;
+        let span = &self.spans[ix];
+        let status = span.status(self.now);
+        let color = t.hairline(RAIL_ALPHA);
+        let (incoming, branch) = motion::tool_connector_parts(self.connector[ix], has_pred);
+        let continues = next.is_some();
+        let continuation = motion::tool_connector_continuation(next.map(|n| self.connector[n]));
+        let glyph_top = ROW_H / 2. - ICON_SIZE / 2.;
+        let glyph = if span.kind == SpanKind::Agent {
+            div()
+                .absolute()
+                .left(px(TILE_CX - TILE / 2.))
+                .top(px(ROW_H / 2. - TILE / 2.))
+                .size(px(TILE))
+                .rounded(px(radius::SM))
+                .bg(t.ink(0.08))
+                .flex()
+                .items_center()
+                .justify_center()
+                .opacity(branch)
+                .child(
+                    svg()
+                        .path(ICON_BOT)
+                        .size(px(TILE_ICON))
+                        .text_color(t.content_muted),
+                )
+                .into_any_element()
+        } else if status == Status::Running {
+            div()
+                .absolute()
+                .left(px(ICON_LEFT))
+                .top(px(glyph_top))
+                .size(px(ICON_SIZE))
+                .flex()
+                .items_center()
+                .justify_center()
+                .opacity(branch)
+                .child(loaders::mini_glyph_spinner(
+                    format!("{}-spin-{ix}", self.key),
+                    2.,
+                    t.glyph,
+                ))
+                .into_any_element()
+        } else {
+            let (path, tint) = if status == Status::Failed {
+                (ICON_DANGER, t.danger)
+            } else {
+                (span.kind.icon(), t.content_muted)
+            };
+            svg()
+                .path(path)
+                .absolute()
+                .left(px(ICON_LEFT))
+                .top(px(glyph_top))
+                .size(px(ICON_SIZE))
+                .opacity(branch)
+                .text_color(tint)
+                .into_any_element()
+        };
+        div()
+            .absolute()
+            .top_0()
+            .bottom_0()
+            .left(px(gutter_x(depth)))
+            .w(px(GUTTER_W))
+            .child(
+                canvas(
+                    |_, _, _| (),
+                    move |bounds, _, window, _| {
+                        let x = bounds.origin.x + px(TRUNK_X);
+                        let bend_y = bounds.origin.y + px(ROW_H / 2. - BEND_RADIUS);
+                        let mut tree = PathBuilder::fill().with_style(gpui::PathStyle::Fill(
+                            gpui::FillOptions::default().with_fill_rule(gpui::FillRule::NonZero),
+                        ));
+                        if incoming > 0. {
+                            let mut bottom = point(
+                                x,
+                                bounds.origin.y + px((ROW_H / 2. - BEND_RADIUS) * incoming),
+                            );
+                            if incoming >= 1. && continues && continuation > 0. {
+                                let rest = (f32::from(bounds.size.height)
+                                    - (ROW_H / 2. - BEND_RADIUS))
+                                    .max(0.);
+                                bottom = point(x, bend_y + px(rest * continuation));
+                            }
+                            ribbon(&mut tree, &[point(x, bounds.origin.y), bottom]);
+                        }
+                        if branch > 0. {
+                            let points: Vec<_> = branch_points(branch)
+                                .into_iter()
+                                .map(|p| point(x + px(p.x), bend_y + px(p.y)))
+                                .collect();
+                            ribbon(&mut tree, &points);
+                        }
+                        if let Ok(path) = tree.build() {
+                            window.paint_path(path, color);
+                        }
+                    },
+                )
+                .absolute()
+                .inset_0(),
+            )
+            .child(glyph)
+    }
+
+    /// The step's bar on the time axis: pink's 6 pt usage-meter capsule,
+    /// neutral when settled (pink's meter fill), `busy` at 55% while it runs
+    /// (pink's Working status tone), danger when it failed and warning for the
+    /// slowest step; a sub-agent's bar is the meter's track it brackets.
+    /// The label is pink's timer type: 11 tabular `content_faint`.
+    fn bar_cell(&self, ix: usize, height: f32, reveal: f32) -> Div {
+        let t = self.t;
+        let span = &self.spans[ix];
+        let status = span.status(self.now);
+        let slowest = self.slowest == Some(ix);
+        let x0 = self.axis.x(span.start);
+        let x1 = self.axis.x(span.end.min(self.now)).max(x0 + BAR_H);
+        let color = match (span.kind, status) {
+            (_, Status::Failed) => t.readable_tone(t.danger, 1.),
+            (SpanKind::Agent, _) => t.fill(FillTier::Secondary),
+            // pink's Working status tone (`shell/spaces.rs`: `busy@0.55`).
+            (_, Status::Running) => t.busy.opacity(0.55),
+            _ if slowest => t.readable_tone(t.warning, 1.),
+            _ => t.text_muted,
+        };
+        let bar = div()
+            .absolute()
+            .left(px(x0))
+            .top(px((height - BAR_H) / 2.))
+            .w(px(x1 - x0))
+            .h(px(BAR_H))
+            .rounded_full()
+            .bg(color);
+        let label = self.labels[ix].as_ref().map(|label| {
+            let right = x1 + LABEL_GAP + label.width <= self.col_w - CELL_PAD_R;
+            let x = if right {
+                x1 + LABEL_GAP
+            } else {
+                (x0 - LABEL_GAP - label.width).max(4.)
+            };
+            div()
+                .absolute()
+                .left(px(x))
+                .top_0()
+                .h_full()
+                .flex()
+                .items_center()
+                .gap(px(LABEL_GAP))
+                .whitespace_nowrap()
+                .text_size(px(META_SIZE))
+                .line_height(px(META_LINE))
+                .font_features(pink::tabular_figures())
+                .text_color(t.content_faint)
+                .child(label.text.clone())
+                .when(slowest, |label| {
+                    label.child(
+                        div()
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(t.readable_tone(t.warning, 1.))
+                            .child("Slowest"),
+                    )
+                })
+        });
+        div()
+            .relative()
+            .flex_1()
+            .h_full()
+            .when(reveal < 1., |cell| cell.opacity(reveal))
+            .child(bar)
+            .children(label)
+    }
+}
+
+/// Pink's failure word (pink: `chip_header_row`): 11 medium, danger.
+fn failed_word(t: &Pink) -> Div {
+    div()
+        .flex_none()
+        .text_size(px(META_SIZE))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(t.readable_tone(t.danger, 1.))
+        .child("Failed")
+}
+
+/// The trailing model / tool slot (pink: `chip_header_row` model): bare
+/// faint 11 text, not a pill.
+fn trailing_meta(text: SharedString, t: &Pink) -> Div {
+    div()
+        .flex_none()
+        .h(px(TOOL_LABEL_LINE_HEIGHT))
+        .flex()
+        .items_center()
+        .text_size(px(META_SIZE))
+        .text_color(t.content_faint)
+        .child(text)
+}
+
+/// The elbow and branch, revealed by distance so the bend and the straight
+/// leg draw at one speed (pink: `transcript.rs` `activity_branch_points`).
+fn branch_points(progress: f32) -> Vec<Point<f32>> {
+    let mut path: Vec<_> = (0..=24)
+        .map(|step| {
+            let t = step as f32 / 24.0;
+            point(BEND_RADIUS * t * t, BEND_RADIUS * (2.0 * t - t * t))
+        })
+        .collect();
+    path.push(point(BRANCH_END_X - TRUNK_X, BEND_RADIUS));
+    if progress >= 1.0 {
+        return path;
+    }
+    let lengths: Vec<_> = path
+        .windows(2)
+        .map(|pair| (pair[1].x - pair[0].x).hypot(pair[1].y - pair[0].y))
+        .collect();
+    let mut remaining = lengths.iter().sum::<f32>() * progress.clamp(0.0, 1.0);
+    let mut visible = vec![path[0]];
+    for (pair, length) in path.windows(2).zip(lengths) {
+        if remaining <= 0.0 {
+            break;
+        }
+        let t = (remaining / length).min(1.0);
+        visible.push(point(
+            motion::lerp(pair[0].x, pair[1].x, t),
+            motion::lerp(pair[0].y, pair[1].y, t),
+        ));
+        remaining -= length;
+    }
+    visible
+}
+
+/// A 1 px ribbon along `points` as a clockwise contour; a nonzero fill
+/// unions the contours (pink: `transcript.rs` `activity_ribbon`).
+fn ribbon(path: &mut PathBuilder, points: &[Point<Pixels>]) {
+    if points.len() < 2 {
+        return;
+    }
+    let mut left = Vec::with_capacity(points.len());
+    let mut right = Vec::with_capacity(points.len());
+    for (ix, p) in points.iter().enumerate() {
+        let a = points[ix.saturating_sub(1)];
+        let b = points[(ix + 1).min(points.len() - 1)];
+        let dx = f32::from(b.x - a.x);
+        let dy = f32::from(b.y - a.y);
+        let length = dx.hypot(dy).max(0.0001);
+        let normal = point(px(-dy / length * 0.5), px(dx / length * 0.5));
+        left.push(*p + normal);
+        right.push(*p - normal);
+    }
+    path.move_to(left[0]);
+    for p in left.iter().skip(1).chain(right.iter().rev()) {
+        path.line_to(*p);
+    }
+    path.close();
+}
+
+/// Opens or closes `ix`, turning from wherever its fold is now.
+fn set_open(s: &mut TraceState, ix: usize, open: bool) {
+    let was_open = !s.collapsed.contains(&ix);
+    if was_open == open {
+        return;
+    }
+    let clock = Instant::now();
+    let from = fold_at(was_open, s.toggled.get(&ix).copied(), clock, false).progress;
+    if open {
+        s.collapsed.remove(&ix);
+    } else {
+        s.collapsed.insert(ix);
+    }
+    s.toggled.insert(ix, (clock, from));
+}
+
+#[allow(clippy::too_many_arguments)]
 fn run(
     state: &Entity<TraceState>,
     spans: &[TraceSpan],
     order: &[(usize, usize)],
+    now: f32,
     command: Command,
     on_select: &Option<SelectHandler>,
     window: &mut Window,
     cx: &mut App,
 ) {
     let mut picked = None;
+    let has_kids = |ix: usize| {
+        spans
+            .iter()
+            .enumerate()
+            .any(|(c, s)| s.parent == Some(ix) && c != ix)
+    };
     state.update(cx, |s, cx| {
         let hidden = |s: &TraceState, ix: usize| {
             let mut p = spans[ix].parent;
-            while let Some(parent) = p {
-                if s.collapsed.contains(&parent) {
+            let mut guard = 0;
+            while let Some(parent) = p.filter(|p| *p < spans.len()) {
+                if s.collapsed.contains(&parent) || guard > MAX_DEPTH {
                     return true;
                 }
                 p = spans[parent].parent;
+                guard += 1;
             }
             false
         };
@@ -762,15 +1708,14 @@ fn run(
                 picked = Some(ix);
             }
             Command::Toggle(ix) => {
-                if !s.collapsed.remove(&ix) {
-                    s.collapsed.insert(ix);
-                }
+                let open = s.collapsed.contains(&ix);
+                set_open(s, ix, open);
             }
             Command::Step(delta) => {
                 let rows: Vec<usize> = order
                     .iter()
                     .map(|(ix, _)| *ix)
-                    .filter(|ix| !hidden(s, *ix))
+                    .filter(|ix| spans[*ix].start <= now && !hidden(s, *ix))
                     .collect();
                 if !rows.is_empty() {
                     let pos = s
@@ -784,20 +1729,24 @@ fn run(
             }
             Command::Fold(fold) => {
                 if let Some(sel) = s.selected {
-                    let has_children = spans.iter().any(|sp| sp.parent == Some(sel));
-                    if fold && has_children {
-                        s.collapsed.insert(sel);
+                    let open = !s.collapsed.contains(&sel);
+                    if fold && has_kids(sel) && open {
+                        set_open(s, sel, false);
                     } else if fold {
-                        s.selected = spans[sel].parent.or(Some(sel));
-                        picked = s.selected;
+                        // Already folded, or a leaf: up to the parent.
+                        if let Some(parent) = spans[sel].parent.filter(|p| *p < spans.len()) {
+                            s.selected = Some(parent);
+                            picked = s.selected;
+                        }
                     } else {
-                        s.collapsed.remove(&sel);
+                        set_open(s, sel, true);
                     }
                 }
             }
             Command::Replay => {
                 s.started = Instant::now();
                 s.collapsed.clear();
+                s.toggled.clear();
                 s.hovered = None;
             }
         }
@@ -808,324 +1757,10 @@ fn run(
     }
 }
 
-struct RowFlags {
-    selected: bool,
-    slowest: bool,
-    collapsed: bool,
-    has_children: bool,
-}
-
-#[allow(clippy::too_many_arguments)]
-fn row(
-    key: &str,
-    ix: usize,
-    depth: usize,
-    spans: &[TraceSpan],
-    now: f32,
-    flags: RowFlags,
-    (height, opacity, born): (f32, f32, f32),
-    x_of: &dyn Fn(f32) -> f32,
-    col_w: f32,
-    advance: f32,
-    state: Entity<TraceState>,
-    act: Rc<dyn Fn(Command, &mut Window, &mut App)>,
-    t: &Pink,
-) -> AnyElement {
-    let span = &spans[ix];
-    let running = now < span.end;
-    let row_key = format!("{key}-row-{ix}");
-    let hover = motion::hover_t(&row_key);
-    let sel = motion::follow(
-        &format!("{row_key}-sel"),
-        if flags.selected { 1. } else { 0. },
-        HOVER_FADE,
-    );
-    let bg = motion::mix(
-        t.fill(FillTier::Quaternary).opacity(0.),
-        t.fill(FillTier::Quaternary),
-        hover,
-    );
-    let bg = motion::mix(bg, t.accent.opacity(if t.dark { 0.12 } else { 0.07 }), sel);
-
-    // Tree cell.
-    let caret_turn = motion::follow(
-        &format!("{row_key}-caret"),
-        if flags.collapsed { 0. } else { 1. },
-        GLIDE,
-    );
-    let caret = if flags.has_children {
-        let act = act.clone();
-        div()
-            .id(SharedString::from(format!("{row_key}-caret")))
-            .size(px(16.))
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(px(radius::XS))
-            .cursor_pointer()
-            .hover_fill(
-                format!("{row_key}-caret-h"),
-                t.fill(FillTier::Secondary).opacity(0.),
-                t.fill(FillTier::Secondary),
-            )
-            .on_click(move |_, window, cx| {
-                act(Command::Toggle(ix), window, cx);
-                cx.stop_propagation();
-            })
-            .child(
-                svg()
-                    .path(ICON_CHEVRON)
-                    .size(px(12.))
-                    .text_color(t.text_faint)
-                    .with_transformation(Transformation::rotate(radians(
-                        caret_turn * std::f32::consts::FRAC_PI_2,
-                    ))),
-            )
-            .into_any_element()
-    } else {
-        div().w(px(16.)).flex_none().into_any_element()
-    };
-    let hidden_count = if flags.collapsed {
-        descendants(spans, ix)
-            .iter()
-            .filter(|d| spans[**d].start <= now)
-            .count()
-    } else {
-        0
-    };
-    let (tile_bg, tile_fg) = match span.kind {
-        SpanKind::Llm => (t.accent.opacity(if t.dark { 0.18 } else { 0.10 }), t.accent),
-        SpanKind::Tool => (t.fill(FillTier::Tertiary), t.text_muted),
-        SpanKind::Agent => (t.fill(FillTier::Secondary), t.text),
-    };
-    let tree = div()
-        .w(px(TREE_W))
-        .flex_none()
-        .h_full()
-        .flex()
-        .items_center()
-        .gap(px(space::S6))
-        .pl(px(space::S8 + depth as f32 * 16.))
-        .pr(px(space::S12))
-        .child(caret)
-        .child(
-            div()
-                .size(px(18.))
-                .flex_none()
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(radius::XS + 1.))
-                .bg(if span.failed {
-                    t.danger.opacity(0.14)
-                } else {
-                    tile_bg
-                })
-                .child(
-                    svg()
-                        .path(span.kind.icon())
-                        .size(px(12.))
-                        .text_color(if span.failed { t.danger } else { tile_fg }),
-                ),
-        )
-        .child(
-            div()
-                .flex_none()
-                .max_w(px(150.))
-                .truncate()
-                .text_size(px(text::BODY))
-                .when(span.kind == SpanKind::Agent, |d| {
-                    d.font_weight(FontWeight::MEDIUM)
-                })
-                .text_color(if span.failed { t.danger } else { t.text })
-                .child(span.name.clone()),
-        )
-        .when(hidden_count > 0, |d| {
-            d.child(
-                div()
-                    .flex_none()
-                    .h(px(16.))
-                    .px(px(5.))
-                    .flex()
-                    .items_center()
-                    .rounded(px(radius::XS))
-                    .bg(t.fill(FillTier::Tertiary))
-                    .text_size(px(text::CAPTION))
-                    .text_color(t.text_muted)
-                    .child(format!("+{hidden_count}")),
-            )
-        })
-        .when_some(span.detail.clone(), |d, detail| {
-            d.child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_size(px(text::FOOTNOTE))
-                    .text_color(t.text_faint)
-                    .child(detail),
-            )
-        });
-
-    // Bar cell.
-    let end = span.end.min(now);
-    let x0 = x_of(span.start);
-    let x1 = x_of(end).max(x0 + 3.);
-    let bar_w = (x1 - x0) * born.max(0.001);
-    let agent = span.kind == SpanKind::Agent;
-    let color = if span.failed {
-        t.danger
-    } else {
-        match span.kind {
-            SpanKind::Llm => t.accent,
-            SpanKind::Tool => {
-                if t.dark {
-                    t.text_faint.opacity(0.85)
-                } else {
-                    t.text_faint.opacity(0.6)
-                }
-            }
-            SpanKind::Agent => t.text_muted,
-        }
-    };
-    let (bar_h, fill) = if agent {
-        (6., color.opacity(if t.dark { 0.45 } else { 0.35 }))
-    } else {
-        (12., color.opacity(if running { 0.55 } else { 0.9 }))
-    };
-    let mut label = fmt_secs(end - span.start);
-    let (_, _, cost) = totals(spans, ix, now);
-    if cost > 0. {
-        label.push_str(" · ");
-        label.push_str(&fmt_cost(cost));
-    }
-    let tag: Option<(&'static str, Hsla)> = if span.failed && !running {
-        Some(("failed", t.danger))
-    } else if flags.slowest {
-        Some(("slowest", t.warning))
-    } else {
-        None
-    };
-    let label_w = label.chars().count() as f32 * advance
-        + tag.map_or(0., |(s, _)| s.len() as f32 * advance + 16.);
-    let label_left = x1 + 6. + label_w < col_w - 4.;
-    let label_x = if label_left {
-        x1 + 6.
-    } else {
-        (x0 - 6. - label_w).max(4.)
-    };
-    let ring_color = motion::mix(
-        if flags.slowest {
-            t.warning.opacity(0.8)
-        } else {
-            t.accent.opacity(0.)
-        },
-        t.accent,
-        sel.max(hover * 0.6),
-    );
-    let bar = div()
-        .absolute()
-        .left(px(x0))
-        .top(px((ROW_H - bar_h) / 2.))
-        .w(px(bar_w))
-        .h(px(bar_h))
-        .rounded(px(if agent { 3. } else { radius::XS }))
-        .bg(fill)
-        .when(ring_color.a > 0.02 && !agent, |d| {
-            d.shadow(vec![ring(1., ring_color)])
-        })
-        .when(running && !agent, |d| {
-            // The growing edge of a running call.
-            d.child(
-                div()
-                    .absolute()
-                    .right_0()
-                    .top_0()
-                    .bottom_0()
-                    .w(px(2.))
-                    .rounded(px(1.))
-                    .bg(color)
-                    .with_animation(
-                        SharedString::from(format!("{row_key}-edge")),
-                        gpui::Animation::new(std::time::Duration::from_millis(900)).repeat(),
-                        |el, p| el.opacity(0.4 + 0.6 * (1. - (p * 2. - 1.).abs())),
-                    ),
-            )
-        });
-    let label_el = div()
-        .absolute()
-        .left(px(label_x))
-        .top_0()
-        .h_full()
-        .flex()
-        .items_center()
-        .gap(px(space::S6))
-        .font_family(pink::MONO)
-        .text_size(px(LABEL_SIZE))
-        .text_color(if running { t.text_muted } else { t.text_faint })
-        .child(label)
-        .when_some(tag, |d, (tag, c)| {
-            d.child(
-                div()
-                    .h(px(16.))
-                    .px(px(5.))
-                    .flex()
-                    .items_center()
-                    .rounded(px(radius::XS))
-                    .bg(c.opacity(if t.dark { 0.16 } else { 0.12 }))
-                    .font_family(pink::SANS)
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(c)
-                    .child(tag),
-            )
-        });
-    let timeline = div()
-        .relative()
-        .flex_1()
-        .h_full()
-        .child(bar)
-        .child(label_el);
-
-    let hover_key = row_key.clone();
-    div()
-        .id(SharedString::from(row_key))
-        .relative()
-        .flex()
-        .h(px(height))
-        .overflow_hidden()
-        .opacity(opacity)
-        .bg(bg)
-        .cursor_pointer()
-        .on_hover(move |hovered: &bool, window, cx| {
-            motion::set_hover(&hover_key, *hovered, motion::reduced_motion(cx));
-            state.update(cx, |s, cx| {
-                if *hovered {
-                    s.hovered = Some(ix);
-                } else if s.hovered == Some(ix) {
-                    s.hovered = None;
-                }
-                cx.notify();
-            });
-            window.refresh();
-        })
-        .on_click(move |_, window, cx| act(Command::Select(ix), window, cx))
-        .child(
-            div()
-                .absolute()
-                .left_0()
-                .top_0()
-                .bottom_0()
-                .w(px(2.))
-                .bg(t.accent.opacity(sel)),
-        )
-        .child(tree)
-        .child(div().w(px(1.)).flex_none())
-        .child(timeline)
-        .into_any_element()
-}
-
-/// The strip under the waterfall: the hovered or selected step in numbers.
+/// The strip under the steps: the hovered or selected step in numbers, laid
+/// out like pink's settings row (title over a muted line) and usage figures
+/// (11 caption over a 13 value), with the step's share of the run on pink's
+/// usage meter.
 fn readout(
     key: &str,
     focus: Option<usize>,
@@ -1133,155 +1768,192 @@ fn readout(
     now: f32,
     total: f32,
     t: &Pink,
-) -> impl IntoElement {
+) -> AnyElement {
     let base = div()
-        .h(px(64.))
+        .w_full()
+        .h(px(READOUT_H))
+        .flex_none()
         .flex()
         .items_center()
-        .gap(px(space::S16))
-        .px(px(space::S16))
+        .px(px(layout::ROW_PAD_X))
         .border_t_1()
-        .border_color(t.border)
-        .bg(t.fill(FillTier::Quaternary));
+        .border_color(t.border);
     let Some(ix) = focus.filter(|ix| spans[*ix].start <= now) else {
         return base
-            .text_size(px(text::FOOTNOTE))
-            .text_color(t.text_faint)
-            .child("Hover or select a step to see its timing, tokens and cost.")
+            .text_size(px(12.))
+            .line_height(px(16.))
+            .text_color(t.readable_muted(0.85))
+            .child("Hover or select a step to read its timing, tokens and cost.")
             .into_any_element();
     };
     let span = &spans[ix];
-    let running = now < span.end;
+    let status = span.status(now);
     let (tin, tout, cost) = totals(spans, ix, now);
-    let steps = descendants(spans, ix).len();
+    let steps = descendants(spans, ix)
+        .iter()
+        .filter(|d| spans[**d].start <= now)
+        .count();
+    let end = span.end.min(now);
+    let separator = || div().flex_none().text_color(t.content_faint).child("·");
     let field = |label: &'static str, value: String| {
         div()
-            .flex()
-            .flex_col()
-            .gap(px(2.))
-            .child(
-                div()
-                    .text_size(px(text::CAPTION))
-                    .text_color(t.text_faint)
-                    .child(label),
-            )
-            .child(
-                div()
-                    .font_family(pink::MONO)
-                    .text_size(px(text::FOOTNOTE))
-                    .text_color(t.text)
-                    .child(value),
-            )
-    };
-    let end = span.end.min(now);
-    let share_track = 120.;
-    let run_len = total.max(0.001);
-    let seg_x = span.start / run_len * share_track;
-    let seg_w = ((end - span.start) / run_len * share_track).max(2.);
-    let kind = if span.failed {
-        format!("{} · failed", span.kind.label())
-    } else if running {
-        format!("{} · running", span.kind.label())
-    } else if span.kind == SpanKind::Agent {
-        format!("{} · {steps} steps", span.kind.label())
-    } else {
-        span.kind.label().to_string()
-    };
-    base.child(
-        div()
-            .w(px(220.))
             .flex_none()
             .flex()
             .flex_col()
             .gap(px(2.))
             .child(
                 div()
-                    .truncate()
-                    .text_size(px(text::BODY))
+                    .text_size(px(META_SIZE))
+                    .line_height(px(META_LINE))
+                    .text_color(t.readable_muted(0.85))
+                    .child(label),
+            )
+            .child(
+                div()
+                    .text_size(px(13.))
+                    .line_height(px(18.))
+                    .font_features(pink::tabular_figures())
+                    .text_color(t.text)
+                    .child(value),
+            )
+    };
+    let state_word = match status {
+        Status::Running => Some(("Running", t.content_muted)),
+        Status::Failed => Some(("Failed", t.readable_tone(t.danger, 1.))),
+        Status::Done => None,
+    };
+    let meta = div()
+        .min_w_0()
+        .flex()
+        .items_center()
+        .gap(px(4.))
+        .text_size(px(12.))
+        .line_height(px(16.))
+        .text_color(t.readable_muted(0.85))
+        .child(div().flex_none().child(span.kind.label()))
+        .when_some(span.detail.clone(), |meta, detail| {
+            meta.child(separator())
+                .child(div().min_w_0().truncate().child(detail))
+        })
+        .when(span.kind == SpanKind::Agent, |meta| {
+            let plural = if steps == 1 { "" } else { "s" };
+            meta.child(separator())
+                .child(div().flex_none().child(format!("{steps} step{plural}")))
+        })
+        .when_some(state_word, |meta, (word, color)| {
+            meta.child(separator()).child(
+                div()
+                    .flex_none()
                     .font_weight(FontWeight::MEDIUM)
-                    .text_color(if span.failed { t.danger } else { t.text })
-                    .child(span.name.clone()),
+                    .text_color(color)
+                    .child(word),
             )
-            .child(
-                div()
-                    .truncate()
-                    .text_size(px(text::FOOTNOTE))
-                    .text_color(t.text_faint)
-                    .child(match &span.detail {
-                        Some(d) => format!("{kind} · {d}"),
-                        None => kind,
-                    }),
-            ),
-    )
-    .child(field("Start", fmt_secs(span.start)))
-    .child(field(
-        "Duration",
-        format!(
-            "{}{}",
-            fmt_secs(end - span.start),
-            if running { "…" } else { "" }
-        ),
-    ))
-    .child(field(
-        "Tokens in → out",
-        if tin + tout > 0. {
-            format!("{} → {}", fmt_tokens(tin), fmt_tokens(tout))
-        } else {
-            "–".into()
-        },
-    ))
-    .child(field(
-        "Cost",
-        if cost > 0. {
-            fmt_cost(cost)
-        } else {
-            "–".into()
-        },
-    ))
-    .child(div().flex_1())
-    .child(
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(6.))
-            .child(
-                div()
-                    .flex()
-                    .justify_between()
-                    .text_size(px(text::CAPTION))
-                    .text_color(t.text_faint)
-                    .child("Share of run")
-                    .child(
-                        div()
-                            .font_family(pink::MONO)
-                            .text_color(t.text_muted)
-                            .child(format!("{:.0}%", (end - span.start) / run_len * 100.)),
-                    ),
-            )
-            .child(
-                div()
-                    .relative()
-                    .w(px(share_track))
-                    .h(px(6.))
-                    .rounded(px(3.))
-                    .bg(t.fill(FillTier::Secondary))
-                    .child(
-                        div()
-                            .absolute()
-                            .top_0()
-                            .left(px(motion::follow(&format!("{key}-share-x"), seg_x, GLIDE)))
-                            .w(px(motion::follow(&format!("{key}-share-w"), seg_w, GLIDE)))
-                            .h_full()
-                            .rounded(px(3.))
-                            .bg(if span.failed { t.danger } else { t.accent }),
-                    ),
-            ),
-    )
-    .with_animation(
+        });
+    let run_len = total.max(0.001);
+    let share = (end - span.start) / run_len;
+    let seg_x = span.start / run_len * SHARE_W;
+    let seg_w = (share * SHARE_W).max(BAR_H);
+    let content = div()
+        .flex_1()
+        .min_w_0()
+        .h_full()
+        .flex()
+        .items_center()
+        .gap(px(layout::ROW_PAD_X))
+        .child(
+            div()
+                .w(px(220.))
+                .flex_none()
+                .flex()
+                .flex_col()
+                .gap(px(2.))
+                .child(
+                    div()
+                        .truncate()
+                        .text_size(px(13.))
+                        .line_height(px(18.))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(t.text)
+                        .child(span.name.clone()),
+                )
+                .child(meta),
+        )
+        .child(field("Start", fmt_secs(span.start)))
+        .child(field("Duration", fmt_secs(end - span.start)))
+        .child(field(
+            "Tokens in → out",
+            if tin + tout > 0. {
+                format!("{} → {}", fmt_tokens(tin), fmt_tokens(tout))
+            } else {
+                "—".into()
+            },
+        ))
+        .child(field(
+            "Cost",
+            if cost > 0. {
+                fmt_cost(cost)
+            } else {
+                "—".into()
+            },
+        ))
+        .child(div().flex_1())
+        .child(
+            div()
+                .w(px(SHARE_W))
+                .flex_none()
+                .flex()
+                .flex_col()
+                .gap(px(6.))
+                .child(
+                    div()
+                        .flex()
+                        .justify_between()
+                        .text_size(px(META_SIZE))
+                        .line_height(px(META_LINE))
+                        .text_color(t.readable_muted(0.85))
+                        .child("Share of run")
+                        .child(
+                            div()
+                                .font_features(pink::tabular_figures())
+                                .text_color(t.text)
+                                .child(format!("{:.0}%", share * 100.)),
+                        ),
+                )
+                .child(
+                    div()
+                        .relative()
+                        .w_full()
+                        .h(px(BAR_H))
+                        .rounded_full()
+                        .bg(t.fill(FillTier::Secondary))
+                        .child(
+                            div()
+                                .absolute()
+                                .top_0()
+                                .left(px(motion::follow(
+                                    &format!("{key}-share-x"),
+                                    seg_x,
+                                    DISCLOSURE,
+                                )))
+                                .w(px(motion::follow(
+                                    &format!("{key}-share-w"),
+                                    seg_w,
+                                    DISCLOSURE,
+                                )))
+                                .h_full()
+                                .rounded_full()
+                                .bg(if status == Status::Failed {
+                                    t.readable_tone(t.danger, 1.)
+                                } else {
+                                    t.text_muted
+                                }),
+                        ),
+                ),
+        );
+    base.child(motion::status_swap(
         SharedString::from(format!("{key}-readout-{ix}")),
-        MENU_IN.animation(),
-        |el, p| el.opacity(0.4 + 0.6 * p),
-    )
+        content,
+    ))
     .into_any_element()
 }
 
@@ -1383,5 +2055,23 @@ mod tests {
         assert_eq!(tick_step(8.), 2.);
         assert_eq!(tick_step(25.), 5.);
         assert_eq!(tick_step(45.), 10.);
+    }
+
+    #[test]
+    fn figures_read_like_pink() {
+        assert_eq!(fmt_tokens(640.), "640");
+        assert_eq!(fmt_tokens(2_520.), "2.52K");
+        assert_eq!(fmt_tokens(32_130.), "32.1K");
+        assert_eq!(fmt_cost(0.0421), "$0.042");
+        assert_eq!(fmt_secs(83.), "1m 23s");
+    }
+
+    #[test]
+    fn a_fold_turns_from_where_it_was() {
+        let at = Instant::now();
+        let settled = fold_at(true, None, at, false);
+        assert_eq!(settled.progress, 1.);
+        let mid = fold_at(false, Some((at, 0.6)), at, false);
+        assert!(mid.moving && (mid.progress - 0.6).abs() < 1e-3);
     }
 }
