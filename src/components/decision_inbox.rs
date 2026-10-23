@@ -622,14 +622,15 @@ fn decision_card(
 }
 
 /// The pill chrome the composer and the question panel share (pink:
-/// composer.rs `composer_surface`, opaque treatment).
+/// composer.rs `composer_surface`). Here the panel sits in the list's flow
+/// rather than floating over a transcript, so it goes without the opaque
+/// treatment's `shadow_lg`, as pink's frosted pill does.
 fn composer_surface(t: &Pink) -> Div {
     div()
         .rounded(px(radius::COMPOSER))
         .border_1()
         .border_color(t.border)
         .bg(t.input_glass_bg())
-        .shadow(pink::shadow_lg())
 }
 
 /// One numbered option (pink: composer.rs `render_wizard` option rows).
