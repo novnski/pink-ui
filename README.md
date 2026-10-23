@@ -1,11 +1,34 @@
-# pink-ui
+<p align="center">
+  <a href="https://novnski.github.io/pink-ui/"><img src="docs/images/banner.png" alt="pink-ui" width="760"></a>
+</p>
 
-Animated components for [GPUI](https://gpui.rs), Zed's GPU-accelerated Rust UI
-framework – 56 of them, each one file, running natively on the desktop and
-live in the browser.
+<p align="center">
+  <a href="https://novnski.github.io/pink-ui/"><img alt="showcase: live" src="https://img.shields.io/badge/showcase-live-db2777"></a>
+  <a href="https://github.com/novnski/pink-ui/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/novnski/pink-ui/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://crates.io/crates/gpui-pre"><img alt="GPUI: gpui-pre 0.3.9" src="https://img.shields.io/badge/GPUI-gpui--pre%200.3.9-7c3aed"></a>
+  <img alt="Rust: stable" src="https://img.shields.io/badge/rust-stable-b7410e">
+  <br>
+  <a href="#components"><img alt="components: 56" src="https://img.shields.io/badge/components-56-ec4899"></a>
+  <img alt="platforms: macOS, Windows, Linux, Web" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux%20%7C%20Web-0f766e">
+  <a href="LICENSE"><img alt="license: MIT" src="https://img.shields.io/badge/license-MIT-2563eb"></a>
+</p>
 
-**[Open the showcase →](https://novnski.github.io/pink-ui/)** every component, running for real in your
-browser (WebGPU, or WebGL2 where that's missing).
+<p align="center">
+  <b>Animated components for GPUI, written in Rust.</b><br>
+  56 components for Zed's GPU-accelerated UI framework, one file each. Build one,
+  drop it into <code>.child(…)</code>, and it animates – on the desktop, and live
+  in your browser through WebAssembly.
+</p>
+
+<p align="center">
+  <a href="https://novnski.github.io/pink-ui/"><b>Live showcase</b></a> ·
+  <a href="#using-it-in-an-app">Quick start</a> ·
+  <a href="#components">Components</a> ·
+  <a href="#in-the-browser">How it works</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a>
+</p>
+
+---
 
 ![The gallery](docs/images/gallery-light.png)
 
@@ -218,5 +241,6 @@ renders a component headlessly (Xvfb, openbox, xdotool, ImageMagick). See
 
 ## License
 
-MIT. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for GPUI, luna-ui,
-the bundled fonts and the MIT-licensed work the core components derive from.
+[MIT](LICENSE). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for GPUI,
+luna-ui, the bundled fonts and the MIT-licensed work the core components derive
+from.
