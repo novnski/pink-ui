@@ -1,59 +1,102 @@
-//! Experiment Card – an A/B test that reads in two lines and unfolds on hover.
+//! Experiment Card – an A/B test as a settings card whose header folds open
+//! onto the evidence.
 //!
-//! Folded, the card is a headline: the test's name, its status and the
-//! variant in the lead. Hover it (or click to pin it open) and it unfolds
-//! into the evidence: a metric switch, a small chart of each variant's lift
-//! over the days, and one row per variant with its value and a confidence
-//! interval on a shared lift axis. Hovering a row picks out its line; the
-//! numbers roll and the intervals glide when the metric changes. Clicking a
-//! row nominates it as the winner, and the footer asks to ship it.
+//! Folded, the card is one settings row (pink `settings/widgets.rs`
+//! `card_row` around a `row_tile`): the test's name over its status line, the
+//! leading variant's lift as a settings badge, and a disclosure chevron.
+//! Clicking the header (Enter / Space when focused) folds the body open on
+//! pink's tool fold (`transcript.rs`, `motion::fold_progress`): the height
+//! glides over `DISCLOSURE` while the body fades in and settles.
 //!
-//! Keys, with the card focused: ←/→ switch the metric, ↑/↓ nominate a
-//! variant, Enter ships it (or pins the card), Escape steps back.
+//! The body is three rows of the same card:
+//! - the cumulative lift chart (pink `shell/usage.rs` `usage_chart`: a
+//!   three-line grid, monotone cubic lines over 12% areas, a value gutter),
+//!   with a segmented metric switch; pointing at a day draws the guide and
+//!   reads the day out in the row's description;
+//! - one menu row per variant (pink `popover::menu_row`): its monogram, its
+//!   value, a confidence interval on a shared lift axis and the lift. Pointing
+//!   at a row picks its line out of the chart; clicking a challenger picks it;
+//! - a footer in pink's question-wizard footer shape: a quiet note on the
+//!   left, Ghost actions and one Primary on the right.
+//!
+//! Keys, inside the card: ←/→ switch the metric, ↑/↓ pick a challenger,
+//! Escape drops the pick, then folds the card.
 //!
 //! ```ignore
 //! ExperimentCard::new("annual", "Annual billing as the default")
 //!     .variant(Variant::new("A", "Monthly default"))
 //!     .variant(Variant::new("B", "Annual default"))
 //!     .metric(ExperimentMetric::new("Upgrade rate", MetricFormat::Percent).result(..))
-//!     .on_ship(|ix, _, _| println!("ship variant {ix}"))
+//!     .on_ship(|ix, _, _| println!("ship variant {ix:?}"))
 //! ```
 
-use std::{rc::Rc, sync::Arc, time::Duration};
+use std::{f32::consts::FRAC_PI_2, rc::Rc, sync::Arc};
 
 use gpui::{
-    Animation, AnyView, App, Bounds, ElementId, FocusHandle, FontWeight, Hsla, KeyDownEvent,
-    MouseButton, PathBuilder, Pixels, SharedString, Transformation, Window, canvas, div, fill,
-    point, prelude::*, px, radians, size, svg,
+    AnyElement, AnyView, App, Bounds, ElementId, FontWeight, Hsla, KeyDownEvent, PathBuilder, Role,
+    SharedString, Toggled, Transformation, Window, canvas, div, fill, point, prelude::*, px,
+    radians, size, svg,
 };
+use web_time::Instant;
 
 use crate::{
-    motion::{self, AnimationExt, MotionSpec},
-    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, radius, space, text},
+    HoverFill,
+    motion::{self, EMPHASIZED},
+    pink::{
+        self, ButtonKind, ControlSize, Pink, Segment, Tone, glyphs, layout, loaders, radius, space,
+    },
     story,
 };
 
 pub const NAME: &str = "Experiment Card";
-pub const DESCRIPTION: &str = "An A/B test folded into two lines that unfolds on hover into lift trends and confidence intervals per variant, with a metric switch and a two-step ship";
+pub const DESCRIPTION: &str = "An A/B test whose header folds open onto each variant's cumulative lift, value and confidence interval – switch the metric, point at a day for a readout, pick a winner and ship it";
 
-const ICON_FLASK: &str = "icons/experiment-card/flask.svg";
-const ICON_UP: &str = "icons/experiment-card/trend-up.svg";
-const ICON_FLAT: &str = "icons/experiment-card/trend-flat.svg";
-const ICON_CHECK: &str = "icons/experiment-card/check.svg";
-const ICON_CHEVRON: &str = "icons/experiment-card/chevron.svg";
-const ICON_ROCKET: &str = "icons/experiment-card/rocket.svg";
+/// Solar `test-tube-minimalistic` (pink's icon family; pink has no test glyph).
+const ICON_TEST: &str = "icons/experiment-card/test-tube.svg";
+const ICON_PAUSE: &str = "icons/experiment-card/pause.svg";
+const ICON_CHEVRON: &str = "icons/experiment-card/alt-arrow-right.svg";
 
-const CHART_H: f32 = 64.;
-const ROW_H: f32 = 36.;
-const TABS_H: f32 = 24.;
-const FOOT_H: f32 = 48.;
-const CI_W: f32 = 150.;
-/// Unfolding and folding.
-const UNFOLD: MotionSpec = MotionSpec::new(460, motion::EASE_OUT_QUINT);
-/// Intervals and lines settling on a new metric.
-const SETTLE: MotionSpec = MotionSpec::new(520, motion::EASE_OUT_QUINT);
-const DRAW_IN: MotionSpec = MotionSpec::new(800, motion::EASE_OUT_QUINT).with_delay(80);
-const DIM: MotionSpec = MotionSpec::new(180, motion::EASE);
+const CARD_W: f32 = 600.;
+/// A settings row's title stack: 13/18 title, 2 gap, 12/16 description.
+const TEXT_STACK_H: f32 = 36.;
+/// The header row: the text stack inside `py 12`.
+const HEADER_H: f32 = TEXT_STACK_H + 2. * layout::ROW_PAD_Y;
+/// The plot (pink `usage.rs` keeps 200 for a full page; a card keeps its
+/// value gutter and gap at a card's height).
+const CHART_H: f32 = 120.;
+/// Value-axis gutter and gap (pink `usage.rs` `CHART_AXIS_WIDTH` / `_GAP`).
+const CHART_AXIS_W: f32 = 56.;
+const CHART_AXIS_GAP: f32 = 8.;
+/// Axis captions: 11/14, `gap 6` under the plot.
+const AXIS_LABEL_H: f32 = 14.;
+const AXIS_LABEL_GAP: f32 = 6.;
+/// The card row's `gap_y` between its text and its block.
+const ROW_BLOCK_GAP: f32 = 10.;
+/// The chart row: hairline, text stack, then the chart with its day labels.
+const TREND_H: f32 = 1.
+    + layout::ROW_PAD_Y
+    + TEXT_STACK_H
+    + ROW_BLOCK_GAP
+    + CHART_H
+    + AXIS_LABEL_GAP
+    + AXIS_LABEL_H
+    + layout::ROW_PAD_Y;
+/// A menu row: `py 6` around an 18 line.
+const VARIANT_ROW_H: f32 = 30.;
+/// The variant list's own padding, so row text sits 12 from the hairlines
+/// like a card row's.
+const LIST_PAD_Y: f32 = 6.;
+/// The footer row: hairline, `py 12` around a Md control.
+const FOOTER_H: f32 = 1. + 2. * layout::ROW_PAD_Y + ControlSize::Md.height();
+/// One metric segment.
+const SEGMENT_W: f32 = 96.;
+/// Variant row columns.
+const VALUE_W: f32 = 64.;
+const CI_W: f32 = 140.;
+const LIFT_W: f32 = 52.;
+const MONOGRAM: f32 = 20.;
+/// Other lines while a row is pointed at.
+const DIMMED: f32 = 0.3;
 
 type ShipHandler = Rc<dyn Fn(Option<usize>, &mut Window, &mut App)>;
 
@@ -157,6 +200,22 @@ impl ExperimentMetric {
             MetricFormat::Currency => format!("${v:.2}"),
         }
     }
+
+    fn result_of(&self, ix: usize) -> VariantResult {
+        self.results
+            .get(ix)
+            .copied()
+            .unwrap_or(VariantResult::control(0.))
+    }
+
+    fn lift_at(&self, ix: usize, day: usize) -> Option<f32> {
+        self.trend.get(ix).and_then(|s| s.get(day)).copied()
+    }
+
+    /// Days in the longest challenger series.
+    fn days(&self) -> usize {
+        self.trend.iter().skip(1).map(Vec::len).max().unwrap_or(0)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -221,7 +280,7 @@ impl ExperimentCard {
         self
     }
 
-    /// Starts unfolded and pinned open.
+    /// Starts unfolded.
     pub fn expanded(mut self, expanded: bool) -> Self {
         self.expanded = expanded;
         self
@@ -238,31 +297,54 @@ impl ExperimentCard {
 }
 
 struct State {
-    hovered: bool,
-    pinned: bool,
+    open: bool,
+    /// When the fold last flipped, for pink's fold tween.
+    toggled_at: Option<Instant>,
     metric: usize,
-    /// Row under the pointer: its line is picked out in the chart.
-    hot: Option<usize>,
-    /// Nominated winner awaiting confirmation.
+    /// The day under the pointer in the chart.
+    day: Option<usize>,
+    /// The picked challenger, waiting for Ship.
     candidate: Option<usize>,
     shipped: Option<usize>,
-    focus: FocusHandle,
 }
 
-/// Variant colors: the control stays neutral, challengers take the accent family.
-fn variant_color(ix: usize, t: &Pink) -> Hsla {
-    let amber = if t.dark {
-        t.warning
-    } else {
-        pink::oklch(0.70, 0.165, 62.)
-    };
-    match ix {
-        0 => pink::neutral(0.62),
-        1 => t.accent,
-        2 => t.success,
-        3 => amber,
-        _ => t.danger,
+impl State {
+    fn toggle(&mut self) {
+        self.open = !self.open;
+        self.toggled_at = Some(Instant::now());
     }
+}
+
+/// Variant colors: the control stays neutral; challengers take pink's data
+/// tones (`usage.rs` `provider_tone`: #5b9bbd, #d97757), then the project
+/// tints.
+fn variant_tone(ix: usize, t: &Pink) -> Hsla {
+    match ix {
+        0 => t.text_muted,
+        1 => gpui::rgb(0x5b9bbd).into(),
+        2 => gpui::rgb(0xd97757).into(),
+        _ => pink::project_tint(ix - 3),
+    }
+}
+
+/// The lift's copy color: the result's tone only when the interval clears
+/// zero (pink's diff counts: `readable_tone(diff_add / diff_del)`).
+fn lift_tone(r: &VariantResult, t: &Pink) -> Hsla {
+    if !r.significant() {
+        t.readable_muted(0.85)
+    } else if r.lift >= 0. {
+        t.readable_tone(t.success, 1.0)
+    } else {
+        t.readable_tone(t.danger, 1.0)
+    }
+}
+
+fn toggled(on: bool) -> Toggled {
+    if on { Toggled::True } else { Toggled::False }
+}
+
+fn variants_height(n: usize) -> f32 {
+    1. + 2. * LIST_PAD_Y + n as f32 * VARIANT_ROW_H + n.saturating_sub(1) as f32 * layout::MENU_GAP
 }
 
 impl RenderOnce for ExperimentCard {
@@ -273,541 +355,809 @@ impl RenderOnce for ExperimentCard {
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
-            |_, cx| State {
-                hovered: false,
-                pinned: expanded,
+            |_, _| State {
+                open: expanded,
+                toggled_at: None,
                 metric: 0,
-                hot: None,
+                day: None,
                 candidate: None,
                 shipped,
-                focus: cx.focus_handle(),
             },
         );
-        if self.metrics.is_empty() || self.variants.len() < 2 {
-            return pink::card(&t).id(self.id.clone());
+        let card = pink::section_card(&t)
+            .mt_0()
+            .id(self.id.clone())
+            .w(px(CARD_W))
+            .flex_none()
+            .font_family(pink::SANS);
+        let n = self.variants.len();
+        if self.metrics.is_empty() || n < 2 {
+            return card;
         }
-        let (hovered, pinned, metric_ix, hot, candidate, shipped, focus) = {
+        let (open, toggled_at, metric_ix, day, candidate, shipped) = {
             let s = state.read(cx);
             (
-                s.hovered,
-                s.pinned,
+                s.open,
+                s.toggled_at,
                 s.metric.min(self.metrics.len() - 1),
-                s.hot,
-                s.candidate,
-                s.shipped,
-                s.focus.clone(),
+                s.day,
+                s.candidate.filter(|c| *c < n),
+                s.shipped.filter(|c| *c < n),
             )
         };
-        let open = hovered || pinned;
-        let open_t = motion::follow(&format!("{key}-open"), if open { 1. } else { 0. }, UNFOLD);
-        let n = self.variants.len();
-        let metric = &self.metrics[metric_ix];
+        let reduced = motion::reduced_motion(cx);
+        let elapsed = toggled_at
+            .map(|at| Instant::now().saturating_duration_since(at))
+            .filter(|e| !reduced && *e < motion::FOLD_TWEEN_WINDOW.mul_f32(motion::speed_scale()));
+        let (progress, body_alpha) = motion::fold_progress(open, elapsed);
+        if elapsed.is_some() {
+            window.request_animation_frame();
+        }
         let primary = &self.metrics[0];
-        let result = |m: &ExperimentMetric, i: usize| {
-            m.results
-                .get(i)
-                .copied()
-                .unwrap_or(VariantResult::control(0.))
-        };
-
         // The challenger most likely to beat the control on the primary metric.
         let leader = (1..n).max_by(|a, b| {
-            result(primary, *a)
+            primary
+                .result_of(*a)
                 .win_chance
-                .total_cmp(&result(primary, *b).win_chance)
+                .total_cmp(&primary.result_of(*b).win_chance)
         });
+        let inner_radius = radius::inner(radius::SECTION_CARD, 1.);
+        let ring = t.focus_ring();
 
-        // --- Folded headline ----------------------------------------------
-        let running = matches!(self.status, ExperimentStatus::Running { .. });
-        let status_dot = {
-            let color = match (shipped, self.status) {
-                (Some(_), _) => t.success,
-                (None, ExperimentStatus::Running { .. }) => t.accent,
-                (None, ExperimentStatus::Paused) => t.warning,
-                (None, ExperimentStatus::Concluded) => t.text_faint,
-            };
-            let dot = div().size(px(6.)).rounded(px(3.)).bg(color);
-            if running && shipped.is_none() {
-                dot.with_animation(
-                    SharedString::from(format!("{key}-live")),
-                    Animation::new(Duration::from_millis(1600)).repeat(),
-                    |d, t| d.opacity(0.45 + 0.55 * (t * std::f32::consts::TAU).cos().abs()),
-                )
-                .into_any_element()
-            } else {
-                dot.into_any_element()
-            }
-        };
-        let meta: SharedString = match (shipped, self.status) {
-            (Some(i), _) => format!(
-                "Shipped {} · {}",
-                self.variants[i].key, self.variants[i].name
-            )
-            .into(),
+        // ---- Header: the folded headline (pink settings row + row_tile) ----
+        let muted = t.readable_muted(0.85);
+        let (glyph, meta): (Option<AnyElement>, String) = match (shipped, self.status) {
+            (Some(i), _) => (
+                None,
+                format!(
+                    "{} · {} serves all traffic",
+                    self.variants[i].key, self.variants[i].name
+                ),
+            ),
             (None, ExperimentStatus::Running { day, of }) => {
                 let mut s = format!("Running · day {day} of {of}");
                 if let Some(v) = self.visitors {
                     s.push_str(&format!(" · {} visitors", grouped(v)));
                 }
-                s.into()
+                // A live test breathes (pink's working orb).
+                (Some(loaders::orb_slot(t.accent).into_any_element()), s)
             }
-            (None, ExperimentStatus::Paused) => "Paused".into(),
-            (None, ExperimentStatus::Concluded) => "Concluded · no winner shipped".into(),
-        };
-        let lead_badge = match shipped {
-            Some(i) => badge_with_icon(
-                ICON_CHECK,
-                format!("{} shipped", self.variants[i].key),
-                Tone::Success,
-                &t,
-            ),
-            None => match leader {
-                Some(i) => {
-                    let r = result(primary, i);
-                    let tone = if !r.significant() {
-                        Tone::Neutral
-                    } else if r.lift >= 0. {
-                        Tone::Success
-                    } else {
-                        Tone::Danger
-                    };
-                    badge_with_icon(
-                        if r.significant() { ICON_UP } else { ICON_FLAT },
-                        format!("{} {}", self.variants[i].key, signed_pct(r.lift)),
-                        tone,
-                        &t,
-                    )
+            (None, ExperimentStatus::Paused) => {
+                let mut s = String::from("Paused");
+                if let Some(v) = self.visitors {
+                    s.push_str(&format!(" · {} visitors", grouped(v)));
                 }
-                None => pink::badge("–", Tone::Neutral, &t).into_any_element(),
-            },
+                // A waiting state wears its glyph (pink: shape before color).
+                let pause = svg()
+                    .path(ICON_PAUSE)
+                    .flex_none()
+                    .size(px(pink::icon_size::XS))
+                    .text_color(t.readable_icon(t.text_muted));
+                (Some(pause.into_any_element()), s)
+            }
+            (None, ExperimentStatus::Concluded) => (None, "Concluded · no variant shipped".into()),
         };
-        let head = {
+        let lead_badge = match (shipped, leader) {
+            (Some(_), _) => Some(pink::badge("Shipped", Tone::Success, &t)),
+            (None, Some(i)) => {
+                let r = primary.result_of(i);
+                let tone = match (r.significant(), r.lift >= 0.) {
+                    (false, _) => Tone::Neutral,
+                    (true, true) => Tone::Success,
+                    (true, false) => Tone::Danger,
+                };
+                Some(pink::badge(
+                    format!("{} {}", self.variants[i].key, signed_pct(r.lift)),
+                    tone,
+                    &t,
+                ))
+            }
+            (None, None) => None,
+        };
+        let header = {
             let toggle_state = state.clone();
-            let chevron_turn = open_t * std::f32::consts::PI;
             div()
                 .id(SharedString::from(format!("{key}-head")))
+                .role(Role::Button)
+                .aria_label(self.name.clone())
+                .aria_expanded(open)
+                .tab_index(0)
+                .flex_none()
+                .h(px(HEADER_H))
+                .px(px(layout::ROW_PAD_X))
                 .flex()
+                .flex_row()
                 .items_center()
                 .gap(px(space::S12))
-                .px(px(space::S16))
-                .py(px(space::S12))
+                .rounded_t(px(inner_radius))
+                .when(progress <= 0., |el| el.rounded_b(px(inner_radius)))
                 .cursor_pointer()
+                .focus_visible(move |s| pink::focus_ring(s, ring))
+                .on_key_down(pink::swallow_activation_key)
+                // pink `changes.rs` file header: the fold's header brightens a
+                // touch under the pointer.
+                .hover_fill(format!("{key}-head"), t.ink(0.), t.ink(0.05))
                 .on_click(move |_, _, cx| {
                     toggle_state.update(cx, |s, cx| {
-                        s.pinned = !s.pinned;
+                        s.toggle();
                         cx.notify();
                     })
                 })
-                .child(
-                    div()
-                        .flex_none()
-                        .size(px(32.))
-                        .rounded(px(radius::MD))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .bg(if shipped.is_some() {
-                            t.success.opacity(if t.dark { 0.16 } else { 0.10 })
-                        } else {
-                            t.accent_wash
-                        })
-                        .child(
-                            svg()
-                                .path(if shipped.is_some() {
-                                    ICON_ROCKET
-                                } else {
-                                    ICON_FLASK
-                                })
-                                .size(px(16.))
-                                .text_color(if shipped.is_some() {
-                                    t.success
-                                } else if t.dark {
-                                    t.text
-                                } else {
-                                    t.accent
-                                }),
-                        ),
-                )
+                .child(pink::row_tile(ICON_TEST, &t))
                 .child(
                     div()
                         .flex_1()
                         .min_w_0()
                         .flex()
                         .flex_col()
-                        .child(
-                            div()
-                                .truncate()
-                                .text_size(px(text::BODY))
-                                .line_height(px(18.))
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(t.text)
-                                .child(self.name.clone()),
-                        )
+                        .gap(px(2.))
+                        .child(single_line(pink::row_title(self.name.clone(), &t)))
                         .child(
                             div()
                                 .flex()
+                                .flex_row()
                                 .items_center()
                                 .gap(px(space::S6))
-                                .text_size(px(text::FOOTNOTE))
+                                .text_size(px(12.))
                                 .line_height(px(16.))
-                                .text_color(t.text_faint)
-                                .child(status_dot)
-                                .child(div().truncate().child(meta)),
+                                .text_color(muted)
+                                .children(glyph)
+                                .child(div().flex_1().min_w_0().truncate().child(meta)),
                         ),
                 )
-                .child(lead_badge)
-                .child(
-                    svg()
-                        .path(ICON_CHEVRON)
-                        .size(px(14.))
-                        .flex_none()
-                        .text_color(if pinned { t.text } else { t.text_faint })
-                        .with_transformation(Transformation::rotate(radians(chevron_turn))),
-                )
+                .children(lead_badge.map(|b| {
+                    b.line_height(px(14.))
+                        .font_features(pink::tabular_figures())
+                }))
+                .child(disclosure_chevron(progress, &t))
         };
 
-        // --- Unfolded evidence --------------------------------------------
-        let body_h = TABS_H + 12. + CHART_H + 8. + ROW_H * n as f32 + 12. + 1. + FOOT_H;
-        let body = (open_t > 0.001).then(|| {
-            // Shared, symmetric lift axis for the chart and the intervals.
-            let extent = (1..n)
-                .flat_map(|i| {
-                    let r = result(metric, i);
-                    [r.low.abs(), r.high.abs()]
-                })
-                .fold(0.02f32, f32::max)
-                * 1.15;
-            let extent = motion::follow(&format!("{key}-extent"), extent, SETTLE);
-            // The trend chart fits its own range, always including zero.
-            let (lo, hi) = metric
-                .trend
-                .iter()
-                .skip(1)
-                .flatten()
-                .fold((0f32, 0f32), |(lo, hi), v| (lo.min(*v), hi.max(*v)));
-            let pad = ((hi - lo) * 0.18).max(0.005);
-            let lo = motion::follow(&format!("{key}-lo"), lo - pad, SETTLE);
-            let hi = motion::follow(&format!("{key}-hi"), hi + pad, SETTLE);
-            let reveal = motion::follow_from(&format!("{key}-reveal-{metric_ix}"), 0., 1., DRAW_IN);
-
-            let tabs = self.metrics.iter().enumerate().map(|(ix, m)| {
-                let state = state.clone();
-                pink::chip(
-                    SharedString::from(format!("{key}-metric-{ix}")),
-                    ix == metric_ix,
-                    ControlSize::Sm,
-                    &t,
-                )
-                .child(m.name.clone())
-                .on_click(move |_, _, cx| {
-                    state.update(cx, |s, cx| {
-                        s.metric = ix;
-                        cx.notify();
-                    })
-                })
-            });
-            let tabs = div()
-                .h(px(TABS_H))
-                .mb(px(12.))
+        // ---- Body: chart, variants, footer (folds on pink's tool fold) ----
+        let body = (progress > 0.).then(|| {
+            let metric = &self.metrics[metric_ix];
+            let trend = trend_row(&key, &self, metric_ix, day, &state, &t);
+            let rows =
+                (0..n).map(|i| variant_row(&key, &self, metric, i, candidate, shipped, &state, &t));
+            let list = div()
+                .flex_none()
+                .h(px(variants_height(n)))
+                .border_t_1()
+                .border_color(t.border)
+                .px(px(layout::ROW_PAD_X - 8.))
+                .py(px(LIST_PAD_Y))
                 .flex()
-                .items_center()
-                .justify_between()
-                .child(div().flex().gap(px(space::S4)).children(tabs))
+                .flex_col()
+                .gap(px(layout::MENU_GAP))
+                .children(rows);
+            let footer = footer_row(&key, &self, leader, candidate, shipped, &state, &t);
+            let body_h = TREND_H + variants_height(n) + FOOTER_H;
+            div()
+                .flex_none()
+                .h(px(body_h * progress))
+                .overflow_hidden()
                 .child(
                     div()
-                        .text_size(px(text::CAPTION))
-                        .text_color(t.text_faint)
-                        .child(format!("Lift vs {}", self.variants[0].key)),
-                );
+                        .relative()
+                        .top(px(motion::TOOL_BODY_RISE * (1. - body_alpha)))
+                        .opacity(body_alpha)
+                        .h(px(body_h))
+                        .flex()
+                        .flex_col()
+                        .child(trend)
+                        .child(list)
+                        .child(footer),
+                )
+        });
 
-            // Lift over time, one line per challenger.
-            let lines: Vec<(Vec<f32>, Hsla, f32)> = (1..n)
-                .map(|i| {
-                    let series = metric.trend.get(i).cloned().unwrap_or_default();
-                    let emphasis = match hot {
-                        Some(h) if h != i => 0.25,
-                        _ => 1.,
-                    };
-                    (
-                        series,
-                        variant_color(i, &t),
-                        motion::follow(&format!("{key}-line-op-{i}"), emphasis, DIM),
-                    )
+        let key_state = state.clone();
+        let metric_count = self.metrics.len();
+        motion::keep_alive(window);
+        card.on_key_down(move |ev: &KeyDownEvent, _, cx| {
+            let k = ev.keystroke.key.as_str();
+            let handled = key_state.update(cx, |s, cx| {
+                match k {
+                    "left" if s.open && s.metric > 0 => {
+                        s.metric -= 1;
+                        s.day = None;
+                    }
+                    "right" if s.open && s.metric + 1 < metric_count => {
+                        s.metric += 1;
+                        s.day = None;
+                    }
+                    "up" | "down" if s.shipped.is_none() => {
+                        let cur = s.candidate.unwrap_or(if k == "down" { 0 } else { n });
+                        s.candidate = Some(if k == "down" {
+                            (cur + 1).min(n - 1)
+                        } else {
+                            cur.saturating_sub(1).max(1)
+                        });
+                        if !s.open {
+                            s.toggle();
+                        }
+                    }
+                    "escape" if s.candidate.is_some() => s.candidate = None,
+                    "escape" if s.open => s.toggle(),
+                    _ => return false,
+                }
+                cx.notify();
+                true
+            });
+            if handled {
+                cx.stop_propagation();
+            }
+        })
+        .child(header)
+        .children(body)
+    }
+}
+
+/// The header's disclosure (pink `changes.rs` file header): alt-arrow-right
+/// at 12 in a 14 slot, `readable_muted(0.7)`, turning a quarter with the fold.
+fn disclosure_chevron(progress: f32, t: &Pink) -> gpui::Div {
+    div()
+        .flex_none()
+        .size(px(pink::icon_size::SM))
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(
+            svg()
+                .path(ICON_CHEVRON)
+                .size(px(pink::icon_size::XS))
+                .text_color(t.readable_muted(0.7))
+                .with_transformation(Transformation::rotate(radians(FRAC_PI_2 * progress))),
+        )
+}
+
+/// One line of a settings row's text that truncates instead of wrapping.
+fn single_line(text: gpui::Div) -> gpui::Div {
+    div()
+        .flex()
+        .flex_row()
+        .child(text.flex_1().min_w_0().truncate())
+}
+
+/// The chart row (pink `usage.rs`: the trend row of the summary card): its
+/// title and a description that reads out the pointed day, the metric switch
+/// as the row's control, then the chart.
+fn trend_row(
+    key: &str,
+    card: &ExperimentCard,
+    metric_ix: usize,
+    day: Option<usize>,
+    state: &gpui::Entity<State>,
+    t: &Pink,
+) -> gpui::Div {
+    let metric = &card.metrics[metric_ix];
+    let n = card.variants.len();
+    let days = metric.days();
+    let day = day.filter(|d| *d < days);
+    let control = &card.variants[0];
+    let description: SharedString = match day {
+        Some(d) => {
+            let mut s = format!("Day {}", d + 1);
+            for i in 1..n {
+                if let Some(v) = metric.lift_at(i, d) {
+                    s.push_str(&format!(" · {} {}", card.variants[i].key, signed_pct(v)));
+                }
+            }
+            s.into()
+        }
+        None => format!("Against {} · {}, by day", control.key, control.name).into(),
+    };
+    let switch = (card.metrics.len() > 1).then(|| {
+        let segments = card
+            .metrics
+            .iter()
+            .enumerate()
+            .map(|(ix, m)| Segment::new(ix.to_string(), m.name.clone()))
+            .collect();
+        let state = state.clone();
+        pink::segmented(
+            format!("{key}-metric"),
+            segments,
+            metric_ix,
+            SEGMENT_W * card.metrics.len() as f32,
+            ControlSize::Md,
+            t,
+            move |ix: &usize, _, cx| {
+                let ix = *ix;
+                state.update(cx, |s, cx| {
+                    if s.metric != ix {
+                        s.metric = ix;
+                        s.day = None;
+                        cx.notify();
+                    }
+                })
+            },
+        )
+    });
+    div()
+        .flex_none()
+        .h(px(TREND_H))
+        .border_t_1()
+        .border_color(t.border)
+        .px(px(layout::ROW_PAD_X))
+        .py(px(layout::ROW_PAD_Y))
+        .flex()
+        .flex_col()
+        .gap(px(ROW_BLOCK_GAP))
+        .child(
+            div()
+                .h(px(TEXT_STACK_H))
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(space::S12))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .gap(px(2.))
+                        .child(single_line(pink::row_title(
+                            format!("{} lift", metric.name),
+                            t,
+                        )))
+                        .child(single_line(
+                            pink::row_description(description, t)
+                                .font_features(pink::tabular_figures()),
+                        )),
+                )
+                .children(switch),
+        )
+        .child(trend_chart(key, card, metric, day, state, t))
+}
+
+/// The lift chart (pink `usage.rs` `usage_chart`): three gridlines in
+/// `border`, here at +scale, 0 and −scale on a nice-number scale; per
+/// challenger a 12% area to the zero line and a 2 px monotone cubic line
+/// (largest painted first); a 1 px `text_muted` guide on the pointed day; one
+/// hover cell per day; 11/14 axis captions in `readable_muted(0.85)`. Values
+/// glide to a new metric over `EMPHASIZED`; pointing at a variant row dims
+/// the other lines with the row's hover fade.
+fn trend_chart(
+    key: &str,
+    card: &ExperimentCard,
+    metric: &ExperimentMetric,
+    day: Option<usize>,
+    state: &gpui::Entity<State>,
+    t: &Pink,
+) -> gpui::Div {
+    let n = card.variants.len();
+    let days = metric.days();
+    let peak = (1..n)
+        .flat_map(|i| metric.trend.get(i).into_iter().flatten())
+        .fold(0f32, |m, v| m.max(v.abs()));
+    let scale_target = nice_scale(peak);
+    let scale = motion::follow(&format!("{key}-scale"), scale_target, EMPHASIZED);
+    let hot: Vec<f32> = (0..n)
+        .map(|i| {
+            if i == 0 {
+                0.
+            } else {
+                motion::hover_t(&hot_key(key, i))
+            }
+        })
+        .collect();
+    // Largest first, so smaller series and their lines stay visible.
+    let mut order: Vec<usize> = (1..n).filter(|i| metric.trend.get(*i).is_some()).collect();
+    let weight = |i: usize| -> f32 { metric.trend[i].iter().map(|v| v.abs()).sum() };
+    order.sort_by(|a, b| weight(*b).total_cmp(&weight(*a)));
+    let lines: Vec<(Hsla, Vec<f32>)> = order
+        .into_iter()
+        .map(|i| {
+            let others = (1..n)
+                .filter(|j| *j != i)
+                .map(|j| hot[j])
+                .fold(0f32, f32::max);
+            let emphasis = 1. - (1. - DIMMED) * others;
+            let values = (0..days)
+                .map(|d| {
+                    let v = metric.lift_at(i, d).unwrap_or(0.);
+                    motion::follow(&format!("{key}-pt-{i}-{d}"), v, EMPHASIZED)
                 })
                 .collect();
-            let zero = t.border_strong;
-            let card_bg = t.surface_card;
-            let chart = canvas(
-                |_, _, _| {},
-                move |bounds, _, window, _| {
-                    let w = f32::from(bounds.size.width);
-                    let h = f32::from(bounds.size.height);
-                    let at = |x: f32, y: f32| bounds.origin + point(px(x), px(y));
-                    let y_of = |v: f32| h - 2. - ((v - lo) / (hi - lo).max(1e-4)) * (h - 4.);
-                    dashed(window, at(0., y_of(0.)), at(w, y_of(0.)), zero);
-                    let mask = gpui::ContentMask {
-                        bounds: Bounds::new(bounds.origin, size(px(w * reveal + 6.), px(h))),
-                    };
-                    window.with_content_mask(Some(mask), |window| {
-                        for (series, color, op) in lines.iter() {
-                            if series.len() < 2 {
-                                continue;
-                            }
-                            let step = (w - 6.) / (series.len() - 1) as f32;
-                            let mut path = PathBuilder::stroke(px(1.75));
-                            for (d, v) in series.iter().enumerate() {
-                                let p = at(d as f32 * step, y_of(*v));
-                                if d == 0 {
-                                    path.move_to(p);
-                                } else {
-                                    path.line_to(p);
-                                }
-                            }
-                            if let Ok(path) = path.build() {
-                                window.paint_path(path, color.opacity(*op));
-                            }
-                            let last = at(
-                                (series.len() - 1) as f32 * step,
-                                y_of(*series.last().unwrap_or(&0.)),
-                            );
-                            let r = 3.5;
-                            window.paint_quad(
-                                fill(
-                                    Bounds::new(
-                                        last - point(px(r + 1.5), px(r + 1.5)),
-                                        size(px(r * 2. + 3.), px(r * 2. + 3.)),
-                                    ),
-                                    card_bg,
-                                )
-                                .corner_radii(px(r + 1.5)),
-                            );
-                            window.paint_quad(
-                                fill(
-                                    Bounds::new(
-                                        last - point(px(r), px(r)),
-                                        size(px(r * 2.), px(r * 2.)),
-                                    ),
-                                    color.opacity(*op),
-                                )
-                                .corner_radii(px(r)),
-                            );
-                        }
-                    });
-                },
-            )
-            .size_full();
-
-            // Rows: value, interval on the lift axis, lift.
-            let rows = (0..n).map(|i| {
-                let v = &self.variants[i];
-                let r = result(metric, i);
-                let color = variant_color(i, &t);
-                let low = motion::follow(&format!("{key}-ci-lo-{i}"), r.low, SETTLE);
-                let mid = motion::follow(&format!("{key}-ci-mid-{i}"), r.lift, SETTLE);
-                let high = motion::follow(&format!("{key}-ci-hi-{i}"), r.high, SETTLE);
-                let chosen = candidate == Some(i) || shipped == Some(i);
-                let row_key = format!("{key}-row-{i}");
-                let wash = motion::hover_blend(
-                    &row_key,
-                    t.fill(FillTier::Tertiary).opacity(0.),
-                    t.fill(FillTier::Tertiary),
-                );
-                let listener = motion::hover_listener(row_key.clone());
-                let hover_state = state.clone();
-                let click_state = state.clone();
-                let lift_color = if i == 0 {
-                    t.text_faint
-                } else if !r.significant() {
-                    t.text_muted
-                } else if r.lift >= 0. {
-                    t.success
+            (variant_tone(i, t).opacity(emphasis), values)
+        })
+        .collect();
+    let grid = t.border;
+    let guide = t.text_muted;
+    let plot = canvas(
+        |_, _, _| (),
+        move |bounds, _, window, _| {
+            let width = f32::from(bounds.size.width);
+            let height = f32::from(bounds.size.height);
+            if width < 2. || height < 2. {
+                return;
+            }
+            let (x0, y0) = (bounds.origin.x, bounds.origin.y);
+            for ratio in [0.0_f32, 0.5, 1.0] {
+                let mut path = PathBuilder::stroke(px(1.));
+                let y = y0 + px(ratio * height);
+                path.move_to(point(x0, y));
+                path.line_to(point(x0 + px(width), y));
+                if let Ok(path) = path.build() {
+                    window.paint_path(path, grid);
+                }
+            }
+            if days == 0 {
+                return;
+            }
+            let mid = height / 2.;
+            let x_of = |d: usize| {
+                if days == 1 {
+                    width / 2.
                 } else {
-                    t.danger
-                };
-                let whisker_track = t.border;
-                let ci = canvas(
-                    |_, _, _| {},
-                    move |bounds, _, window, _| {
-                        let w = f32::from(bounds.size.width);
-                        let h = f32::from(bounds.size.height);
-                        let at = |x: f32, y: f32| bounds.origin + point(px(x), px(y));
-                        let x_of = |v: f32| w / 2. + (v / extent).clamp(-1., 1.) * (w / 2. - 5.);
-                        let cy = h / 2.;
-                        dashed(window, at(w / 2., 0.), at(w / 2., h), whisker_track);
-                        if i == 0 {
-                            let r = 3.5;
-                            window.paint_quad(gpui::quad(
-                                Bounds::new(at(w / 2. - r, cy - r), size(px(r * 2.), px(r * 2.))),
-                                px(r),
-                                card_bg,
-                                px(1.5),
-                                color,
-                                Default::default(),
-                            ));
-                            return;
-                        }
-                        let (x0, x1) = (x_of(low), x_of(high));
-                        window.paint_quad(
-                            fill(
-                                Bounds::new(at(x0, cy - 3.), size(px((x1 - x0).max(2.)), px(6.))),
-                                color.opacity(0.3),
-                            )
-                            .corner_radii(px(3.)),
-                        );
-                        let x = x_of(mid);
-                        let r = 4.;
-                        window.paint_quad(
-                            fill(
-                                Bounds::new(
-                                    at(x - r - 1.5, cy - r - 1.5),
-                                    size(px(r * 2. + 3.), px(r * 2. + 3.)),
-                                ),
-                                card_bg,
-                            )
-                            .corner_radii(px(r + 1.5)),
-                        );
-                        window.paint_quad(
-                            fill(
-                                Bounds::new(at(x - r, cy - r), size(px(r * 2.), px(r * 2.))),
-                                color,
-                            )
-                            .corner_radii(px(r)),
-                        );
-                    },
-                )
-                .size_full();
-                div()
-                    .id(SharedString::from(row_key))
-                    .h(px(ROW_H))
-                    .flex()
-                    .items_center()
-                    .gap(px(space::S10))
-                    .px(px(space::S8))
-                    .mx(px(-space::S8))
-                    .rounded(px(radius::MD))
-                    .bg(if chosen {
-                        t.accent.opacity(if t.dark { 0.14 } else { 0.07 })
+                    width * d as f32 / (days - 1) as f32
+                }
+            };
+            let y_of = |v: f32| mid - (v / scale.max(1e-4)).clamp(-1., 1.) * (mid - 4.);
+            for fill in [true, false] {
+                for (color, values) in &lines {
+                    let coords: Vec<(f32, f32)> = values
+                        .iter()
+                        .enumerate()
+                        .map(|(d, v)| (x_of(d), y_of(*v)))
+                        .collect();
+                    if coords.is_empty() {
+                        continue;
+                    }
+                    let mut path = if fill {
+                        PathBuilder::fill()
                     } else {
-                        wash
-                    })
-                    .when(shipped.is_none() && i > 0, |d| d.cursor_pointer())
-                    .on_hover(move |h, window, cx| {
-                        listener(h, window, cx);
-                        hover_state.update(cx, |s, cx| {
-                            let next = if *h {
-                                Some(i)
-                            } else if s.hot == Some(i) {
-                                None
+                        PathBuilder::stroke(px(2.))
+                    };
+                    path.move_to(point(x0 + px(coords[0].0), y0 + px(coords[0].1)));
+                    // A monotone cubic never draws a false peak between two
+                    // measured days.
+                    let tangents = monotone_tangents(&coords);
+                    for (i, pair) in coords.windows(2).enumerate() {
+                        let ((xa, ya), (xb, yb)) = (pair[0], pair[1]);
+                        let dx = (xb - xa) / 3.;
+                        path.cubic_bezier_to(
+                            point(x0 + px(xb), y0 + px(yb)),
+                            point(x0 + px(xa + dx), y0 + px(ya + tangents[i] * dx)),
+                            point(x0 + px(xb - dx), y0 + px(yb - tangents[i + 1] * dx)),
+                        );
+                    }
+                    if fill {
+                        let last = coords[coords.len() - 1].0;
+                        path.line_to(point(x0 + px(last), y0 + px(mid)));
+                        path.line_to(point(x0 + px(coords[0].0), y0 + px(mid)));
+                        path.close();
+                    }
+                    if let Ok(path) = path.build() {
+                        let alpha = color.a;
+                        window.paint_path(
+                            path,
+                            if fill {
+                                color.opacity(0.12 * alpha)
                             } else {
-                                s.hot
-                            };
-                            if next != s.hot {
-                                s.hot = next;
-                                cx.notify();
-                            }
-                        })
-                    })
-                    .on_click(move |_, _, cx| {
-                        click_state.update(cx, |s, cx| {
-                            if s.shipped.is_none() && i > 0 {
-                                s.candidate = if s.candidate == Some(i) {
-                                    None
-                                } else {
-                                    Some(i)
-                                };
-                                cx.notify();
-                            }
-                        })
-                    })
-                    .child(
-                        div()
-                            .flex_none()
-                            .size(px(20.))
-                            .rounded(px(radius::SM))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .bg(color.opacity(if t.dark { 0.18 } else { 0.12 }))
-                            .text_size(px(text::CAPTION))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(if i == 0 { t.text_muted } else { color })
-                            .child(v.key.clone()),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .text_size(px(text::BODY))
-                            .text_color(t.text)
-                            .child(v.name.clone()),
-                    )
-                    .child(
-                        div()
-                            .flex_none()
-                            .w(px(64.))
-                            .flex()
-                            .justify_end()
-                            .overflow_hidden()
-                            .font_family(pink::MONO)
-                            .text_size(px(text::FOOTNOTE))
-                            .text_color(t.text)
-                            .child(motion::rise_in(
-                                SharedString::from(format!("{key}-val-{metric_ix}-{i}")),
-                                MotionSpec::new(360, motion::EASE_OUT_QUINT)
-                                    .with_delay(i as u64 * 40),
-                                8.,
-                                div().child(metric.format(r.value)),
-                            )),
-                    )
-                    .child(div().flex_none().w(px(CI_W)).h(px(ROW_H)).child(ci))
-                    .child(
-                        div()
-                            .flex_none()
-                            .w(px(52.))
-                            .flex()
-                            .justify_end()
-                            .font_family(pink::MONO)
-                            .text_size(px(text::FOOTNOTE))
-                            .text_color(lift_color)
-                            .child(if i == 0 {
-                                "base".to_string()
-                            } else {
-                                signed_pct(mid)
-                            }),
-                    )
-                    .child(if i == 0 {
-                        div().flex_none().size(px(16.))
-                    } else {
-                        radio(chosen, shipped.is_none(), &t)
-                    })
-            });
+                                *color
+                            },
+                        );
+                    }
+                }
+            }
+            if let Some(d) = day {
+                let x = x_of(d);
+                let mut line = PathBuilder::stroke(px(1.));
+                line.move_to(point(x0 + px(x), y0));
+                line.line_to(point(x0 + px(x), y0 + px(height)));
+                if let Ok(line) = line.build() {
+                    window.paint_path(line, guide);
+                }
+            }
+        },
+    )
+    .w_full()
+    .h(px(CHART_H));
 
-            // Footer: a hint, the confirmation, or the shipped state.
-            let footer: gpui::AnyElement = match (shipped, candidate) {
-                (Some(i), _) => {
-                    let undo_state = state.clone();
-                    let handler = self.on_ship.clone();
-                    footer_row(&t)
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(space::S8))
-                                .text_color(t.text_muted)
-                                .child(svg().path(ICON_CHECK).size(px(14.)).text_color(t.success))
-                                .child(format!(
-                                    "{} · {} serves all traffic",
-                                    self.variants[i].key, self.variants[i].name
-                                )),
+    let cells = (0..days).map(|d| {
+        let state = state.clone();
+        div()
+            .id(SharedString::from(format!("{key}-day-{d}")))
+            .flex_1()
+            .h_full()
+            .on_hover(move |hovered, _, cx| {
+                state.update(cx, |s, cx| {
+                    if *hovered {
+                        s.day = Some(d);
+                    } else if s.day == Some(d) {
+                        s.day = None;
+                    }
+                    cx.notify();
+                })
+            })
+    });
+    let y_labels = [
+        signed_axis(scale_target),
+        "0%".to_string(),
+        signed_axis(-scale_target),
+    ];
+    let x_labels: [String; 3] = if days == 0 {
+        Default::default()
+    } else {
+        [0, days / 2, days - 1].map(|d| format!("Day {}", d + 1).to_uppercase())
+    };
+    let label_tone = t.readable_muted(0.85);
+    div()
+        .w_full()
+        .flex()
+        .flex_col()
+        .gap(px(AXIS_LABEL_GAP))
+        .text_size(px(11.))
+        .line_height(px(AXIS_LABEL_H))
+        .text_color(label_tone)
+        .font_features(pink::tabular_figures())
+        .child(
+            div()
+                .w_full()
+                .flex()
+                .gap(px(CHART_AXIS_GAP))
+                .child(
+                    div()
+                        .w(px(CHART_AXIS_W))
+                        .h(px(CHART_H))
+                        .flex_none()
+                        .flex()
+                        .flex_col()
+                        .justify_between()
+                        .text_align(gpui::TextAlign::Right)
+                        .children(y_labels),
+                )
+                .child(
+                    div()
+                        .relative()
+                        .flex_1()
+                        .min_w_0()
+                        .h(px(CHART_H))
+                        .child(plot)
+                        .child(div().absolute().inset_0().flex().children(cells)),
+                ),
+        )
+        .child(
+            div()
+                .w_full()
+                .pl(px(CHART_AXIS_W + CHART_AXIS_GAP))
+                .flex()
+                .justify_between()
+                .children(x_labels),
+        )
+}
+
+fn hot_key(key: &str, ix: usize) -> String {
+    format!("{key}-hot-{ix}")
+}
+
+/// One variant (pink `popover::menu_row`: gap 10, `px 8 / py 6`, radius 8,
+/// 13, `text @ 0.9` → `text`, the hover wash `menu_hover_bg()`, the pick
+/// `card_selected_bg()`): its monogram tile (pink `project_tile`) in the
+/// variant's tone, its name, its value, the interval and the lift, and a
+/// trailing 14 px check on the pick or the shipped variant (pink
+/// `menu_row_nav`). The control and a shipped test's rows are records, not
+/// controls: same anatomy, no hover, no tab stop.
+#[allow(clippy::too_many_arguments)]
+fn variant_row(
+    key: &str,
+    card: &ExperimentCard,
+    metric: &ExperimentMetric,
+    i: usize,
+    candidate: Option<usize>,
+    shipped: Option<usize>,
+    state: &gpui::Entity<State>,
+    t: &Pink,
+) -> AnyElement {
+    let v = &card.variants[i];
+    let r = metric.result_of(i);
+    let tone = variant_tone(i, t);
+    let picked = candidate == Some(i) && shipped.is_none();
+    let checked = picked || shipped == Some(i);
+    let interactive = i > 0 && shipped.is_none();
+
+    // The interval, on an axis shared by every row.
+    let extent_target = (1..card.variants.len())
+        .map(|j| metric.result_of(j))
+        .fold(0.02f32, |m, r| m.max(r.low.abs()).max(r.high.abs()))
+        * 1.15;
+    let extent = motion::follow(&format!("{key}-extent"), extent_target, EMPHASIZED);
+    let low = motion::follow(&format!("{key}-ci-lo-{i}"), r.low, EMPHASIZED);
+    let mid = motion::follow(&format!("{key}-ci-mid-{i}"), r.lift, EMPHASIZED);
+    let high = motion::follow(&format!("{key}-ci-hi-{i}"), r.high, EMPHASIZED);
+    let zero = t.border;
+    let interval = canvas(
+        |_, _, _| (),
+        move |bounds, _, window, _| {
+            let w = f32::from(bounds.size.width);
+            let h = f32::from(bounds.size.height);
+            let at = |x: f32, y: f32| bounds.origin + point(px(x), px(y));
+            let x_of = |v: f32| w / 2. + (v / extent.max(1e-4)).clamp(-1., 1.) * (w / 2. - 4.);
+            let cy = h / 2.;
+            window.paint_quad(fill(
+                Bounds::new(at(w / 2. - 0.5, 0.), size(px(1.), px(h))),
+                zero,
+            ));
+            if i == 0 {
+                // The control sits on zero: a hollow mark.
+                window.paint_quad(gpui::quad(
+                    Bounds::new(at(w / 2. - 4., cy - 4.), size(px(8.), px(8.))),
+                    px(4.),
+                    gpui::transparent_black(),
+                    px(1.5),
+                    tone,
+                    Default::default(),
+                ));
+                return;
+            }
+            let (x0, x1) = (x_of(low), x_of(high));
+            window.paint_quad(
+                fill(
+                    Bounds::new(at(x0, cy - 3.), size(px((x1 - x0).max(6.)), px(6.))),
+                    tone.opacity(0.35),
+                )
+                .corner_radii(px(3.)),
+            );
+            let x = x_of(mid);
+            window.paint_quad(
+                fill(Bounds::new(at(x - 4., cy - 4.), size(px(8.), px(8.))), tone)
+                    .corner_radii(px(4.)),
+            );
+        },
+    )
+    .size_full();
+
+    let value = metric.format(r.value);
+    let lift_copy = if i == 0 {
+        "Control".to_string()
+    } else {
+        signed_pct(r.lift)
+    };
+    let cells: Vec<AnyElement> = vec![
+        pink::monogram_tile(tone, &v.key, MONOGRAM, t).into_any_element(),
+        div()
+            .flex_1()
+            .min_w_0()
+            .truncate()
+            .child(v.name.clone())
+            .into_any_element(),
+        div()
+            .flex_none()
+            .w(px(VALUE_W))
+            .flex()
+            .justify_end()
+            .text_size(px(12.))
+            .text_color(t.readable_muted(0.85))
+            .child(motion::status_swap(
+                loaders::label_id(&format!("{key}-value-{i}"), &value),
+                div().child(value),
+            ))
+            .into_any_element(),
+        div()
+            .flex_none()
+            .w(px(CI_W))
+            .h(px(18.))
+            .child(interval)
+            .into_any_element(),
+        div()
+            .flex_none()
+            .w(px(LIFT_W))
+            .flex()
+            .justify_end()
+            .text_size(px(12.))
+            .font_weight(if i == 0 {
+                FontWeight::NORMAL
+            } else {
+                FontWeight::MEDIUM
+            })
+            .text_color(if i == 0 {
+                t.readable_faint(0.9)
+            } else {
+                lift_tone(&r, t)
+            })
+            .child(motion::status_swap(
+                loaders::label_id(&format!("{key}-lift-{i}"), &lift_copy),
+                div().child(lift_copy),
+            ))
+            .into_any_element(),
+        div()
+            .flex_none()
+            .size(px(pink::icon_size::SM))
+            .when(checked, |d| {
+                d.child(pink::line_glyph(glyphs::CHECK, pink::icon_size::SM, t.text).size_full())
+            })
+            .into_any_element(),
+    ];
+
+    let row = if interactive {
+        let ring = t.focus_ring();
+        let pick_state = state.clone();
+        pink::menu_row(format!("{key}-variant-{i}"), picked, t)
+            .role(Role::RadioButton)
+            .aria_label(format!("{} · {}", v.key, v.name))
+            .aria_toggled(toggled(picked))
+            .tab_index(0)
+            .focus_visible(move |s| pink::focus_ring(s, ring))
+            .on_key_down(pink::swallow_activation_key)
+            .on_click(move |_, _, cx| {
+                pick_state.update(cx, |s, cx| {
+                    if s.shipped.is_none() {
+                        s.candidate = if s.candidate == Some(i) {
+                            None
+                        } else {
+                            Some(i)
+                        };
+                        cx.notify();
+                    }
+                })
+            })
+            .h(px(VARIANT_ROW_H))
+            .line_height(px(18.))
+            .children(cells)
+            .into_any_element()
+    } else {
+        div()
+            .h(px(VARIANT_ROW_H))
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(10.))
+            .px(px(8.))
+            .py(px(6.))
+            .rounded(px(radius::MENU_ITEM))
+            .text_size(px(13.))
+            .line_height(px(18.))
+            .text_color(t.text.opacity(0.9))
+            .children(cells)
+            .into_any_element()
+    };
+    // The row's own hover fade, read by the chart to pick its line out.
+    let hot = hot_key(key, i);
+    div()
+        .id(SharedString::from(hot.clone()))
+        .font_features(pink::tabular_figures())
+        .when(i > 0, |d| d.on_hover(motion::hover_listener(hot)))
+        .child(row)
+        .into_any_element()
+}
+
+/// The footer (pink composer question-wizard footer: a 12 note in
+/// `readable_muted(0.7)` on the left; Ghost actions and one Primary, held at
+/// 45% until there's something to ship, on the right). A new note arrives on
+/// `STATUS_SWAP`.
+#[allow(clippy::too_many_arguments)]
+fn footer_row(
+    key: &str,
+    card: &ExperimentCard,
+    leader: Option<usize>,
+    candidate: Option<usize>,
+    shipped: Option<usize>,
+    state: &gpui::Entity<State>,
+    t: &Pink,
+) -> gpui::Div {
+    let primary = &card.metrics[0];
+    let control = &card.variants[0].key;
+    let note_tone = t.readable_muted(0.7);
+    let (note, lead_glyph, actions): (String, Option<AnyElement>, Vec<AnyElement>) =
+        match (shipped, candidate) {
+            (Some(i), _) => {
+                let undo_state = state.clone();
+                let handler = card.on_ship.clone();
+                (
+                    format!("{} serves all traffic", card.variants[i].name),
+                    Some(
+                        pink::line_glyph(
+                            glyphs::CHECK,
+                            pink::icon_size::SM,
+                            t.readable_tone(t.success, 1.0),
                         )
-                        .child(
-                            pink::button(
-                                SharedString::from(format!("{key}-undo")),
-                                ButtonKind::Ghost,
-                                ControlSize::Sm,
-                                &t,
-                            )
+                        .flex_none()
+                        .size(px(pink::icon_size::SM))
+                        .into_any_element(),
+                    ),
+                    vec![
+                        pink::button(format!("{key}-undo"), ButtonKind::Ghost, ControlSize::Md, t)
                             .child("Undo")
                             .on_click(move |_, window, cx| {
                                 undo_state.update(cx, |s, cx| {
@@ -818,272 +1168,197 @@ impl RenderOnce for ExperimentCard {
                                 if let Some(f) = &handler {
                                     f(None, window, cx);
                                 }
-                            }),
+                            })
+                            .into_any_element(),
+                    ],
+                )
+            }
+            (None, Some(i)) => {
+                let cancel_state = state.clone();
+                let ship_state = state.clone();
+                let handler = card.on_ship.clone();
+                let r = primary.result_of(i);
+                (
+                    format!(
+                        "Ships {} to all traffic · {:.0}% chance to beat {control}",
+                        card.variants[i].name,
+                        r.win_chance * 100.
+                    ),
+                    None,
+                    vec![
+                        pink::button(
+                            format!("{key}-cancel"),
+                            ButtonKind::Ghost,
+                            ControlSize::Md,
+                            t,
                         )
-                        .into_any_element()
-                }
-                (None, Some(i)) => {
-                    let cancel_state = state.clone();
-                    let ship_state = state.clone();
-                    let handler = self.on_ship.clone();
-                    let r = result(metric, i);
-                    footer_row(&t)
-                        .child(
-                            div()
-                                .flex()
-                                .gap(px(space::S4))
-                                .text_color(t.text_muted)
-                                .child("Ship")
-                                .child(
-                                    div()
-                                        .text_color(t.text)
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .child(self.variants[i].name.clone()),
-                                )
-                                .child(format!("· {:.0}% to win", r.win_chance * 100.)),
+                        .child("Cancel")
+                        .on_click(move |_, _, cx| {
+                            cancel_state.update(cx, |s, cx| {
+                                s.candidate = None;
+                                cx.notify();
+                            })
+                        })
+                        .into_any_element(),
+                        pink::button(
+                            format!("{key}-ship"),
+                            ButtonKind::Primary,
+                            ControlSize::Md,
+                            t,
                         )
-                        .child(
-                            div()
-                                .flex()
-                                .gap(px(space::S6))
-                                .child(
-                                    pink::button(
-                                        SharedString::from(format!("{key}-cancel")),
-                                        ButtonKind::Ghost,
-                                        ControlSize::Sm,
-                                        &t,
-                                    )
-                                    .child("Cancel")
-                                    .on_click(
-                                        move |_, _, cx| {
-                                            cancel_state.update(cx, |s, cx| {
-                                                s.candidate = None;
-                                                cx.notify();
-                                            })
-                                        },
-                                    ),
-                                )
-                                .child(
-                                    pink::button(
-                                        SharedString::from(format!("{key}-ship")),
-                                        ButtonKind::Accent,
-                                        ControlSize::Sm,
-                                        &t,
-                                    )
-                                    .child(
-                                        pink::glyph(ICON_ROCKET, ControlSize::Sm)
-                                            .text_color(t.on_accent),
-                                    )
-                                    .child(format!("Ship {}", self.variants[i].key))
-                                    .on_click(
-                                        move |_, window, cx| {
-                                            ship(&ship_state, i, cx);
-                                            if let Some(f) = &handler {
-                                                f(Some(i), window, cx);
-                                            }
-                                        },
-                                    ),
-                                ),
-                        )
-                        .into_any_element()
-                }
-                (None, None) => {
-                    let summary = leader.map(|i| {
-                        let r = result(metric, i);
-                        let color = if r.win_chance >= 0.95 {
-                            t.success
-                        } else {
-                            t.text_muted
-                        };
-                        div()
-                            .flex()
-                            .gap(px(space::S4))
-                            .child(
-                                div()
-                                    .font_family(pink::MONO)
-                                    .text_color(color)
-                                    .child(format!("{:.0}%", r.win_chance * 100.)),
-                            )
-                            .child(format!(
-                                "chance {} beats {}",
-                                self.variants[i].key, self.variants[0].key
-                            ))
-                    });
-                    footer_row(&t)
-                        .child(
-                            div()
-                                .text_color(t.text_faint)
-                                .child("Pick a winner to ship it"),
-                        )
-                        .children(summary.map(|s| s.text_color(t.text_muted)))
-                        .into_any_element()
-                }
-            };
-
-            div().h(px(body_h * open_t)).overflow_hidden().child(
-                div()
-                    .h(px(body_h))
-                    .flex()
-                    .flex_col()
-                    .opacity(((open_t - 0.15) / 0.85).clamp(0., 1.))
-                    .child(
-                        div()
-                            .px(px(space::S16))
-                            .pb(px(12.))
-                            .child(tabs)
-                            .child(div().h(px(CHART_H)).mb(px(8.)).child(chart))
-                            .children(rows),
-                    )
-                    .child(pink::divider(&t))
-                    .child(motion::rise_in(
-                        SharedString::from(format!(
-                            "{key}-foot-{}-{}",
-                            shipped.map_or(9, |s| s),
-                            candidate.map_or(9, |c| c)
-                        )),
-                        motion::VIEW_IN,
-                        3.,
-                        div().h(px(FOOT_H)).child(footer),
-                    )),
-            )
-        });
-
-        let hover_state = state.clone();
-        let key_state = state.clone();
-        let focus_click = focus.clone();
-        let handler = self.on_ship.clone();
-        let metric_count = self.metrics.len();
-        motion::keep_alive(window);
-        pink::card(&t)
-            .id(self.id.clone())
-            .w(px(560.))
-            .flex_none()
-            .overflow_hidden()
-            .font_family(pink::SANS)
-            .track_focus(&focus)
-            .when(open, |d| d.border_color(t.border_strong))
-            .on_hover(move |h, _, cx| {
-                hover_state.update(cx, |s, cx| {
-                    s.hovered = *h;
-                    if !*h {
-                        s.hot = None;
-                    }
-                    cx.notify();
-                })
-            })
-            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                window.focus(&focus_click, cx)
-            })
-            .on_key_down(move |ev: &KeyDownEvent, window, cx| {
-                let k = ev.keystroke.key.as_str();
-                let mut shipped_now = None;
-                let handled = key_state.update(cx, |s, cx| {
-                    match k {
-                        "left" => s.metric = s.metric.saturating_sub(1),
-                        "right" => s.metric = (s.metric + 1).min(metric_count - 1),
-                        "up" | "down" if s.shipped.is_none() => {
-                            let cur = s.candidate.unwrap_or(0);
-                            s.candidate = Some(if k == "down" {
-                                (cur + 1).min(n - 1)
-                            } else {
-                                cur.saturating_sub(1).max(1)
+                        .child(format!("Ship {}", card.variants[i].key))
+                        .on_click(move |_, window, cx| {
+                            ship_state.update(cx, |s, cx| {
+                                s.shipped = Some(i);
+                                s.candidate = None;
+                                cx.notify();
                             });
-                            s.pinned = true;
-                        }
-                        "enter" => match s.candidate {
-                            Some(c) if s.shipped.is_none() => {
-                                s.shipped = Some(c);
-                                s.candidate = None;
-                                shipped_now = Some(c);
+                            if let Some(f) = &handler {
+                                f(Some(i), window, cx);
                             }
-                            _ => s.pinned = !s.pinned,
-                        },
-                        "escape" => {
-                            if s.candidate.is_some() {
-                                s.candidate = None;
-                            } else {
-                                s.pinned = false;
-                            }
-                        }
-                        _ => return false,
-                    }
-                    cx.notify();
-                    true
-                });
-                if let (Some(c), Some(f)) = (shipped_now, &handler) {
-                    f(Some(c), window, cx);
-                }
-                if handled {
-                    cx.stop_propagation();
-                }
-            })
-            .child(head)
-            .children(body)
-    }
-}
-
-fn ship(state: &gpui::Entity<State>, ix: usize, cx: &mut App) {
-    state.update(cx, |s, cx| {
-        s.shipped = Some(ix);
-        s.candidate = None;
-        cx.notify();
-    })
-}
-
-fn footer_row(t: &Pink) -> gpui::Div {
-    div()
-        .h(px(FOOT_H))
-        .flex()
-        .items_center()
-        .justify_between()
-        .gap(px(space::S12))
-        .px(px(space::S16))
-        .text_size(px(text::FOOTNOTE))
-        .bg(t.fill(FillTier::Quaternary))
-}
-
-/// A radio dot: hollow at rest, accent-filled when chosen.
-fn radio(chosen: bool, enabled: bool, t: &Pink) -> gpui::Div {
+                        })
+                        .into_any_element(),
+                    ],
+                )
+            }
+            (None, None) => (
+                match leader {
+                    Some(i) => format!(
+                        "Pick a variant to ship · {} has a {:.0}% chance to beat {control}",
+                        card.variants[i].key,
+                        primary.result_of(i).win_chance * 100.
+                    ),
+                    None => "Pick a variant to ship".into(),
+                },
+                None,
+                vec![
+                    pink::button_enabled(
+                        format!("{key}-ship"),
+                        ButtonKind::Primary,
+                        ControlSize::Md,
+                        false,
+                        t,
+                    )
+                    .child("Ship")
+                    .into_any_element(),
+                ],
+            ),
+        };
     div()
         .flex_none()
-        .size(px(16.))
-        .rounded(px(8.))
-        .border_1()
-        .border_color(if chosen {
-            t.accent
-        } else if enabled {
-            t.border_strong
-        } else {
-            t.border
-        })
+        .h(px(FOOTER_H))
+        .border_t_1()
+        .border_color(t.border)
+        .px(px(layout::ROW_PAD_X))
         .flex()
+        .flex_row()
         .items_center()
-        .justify_center()
-        .when(chosen, |d| {
-            d.child(div().size(px(8.)).rounded(px(4.)).bg(t.accent))
+        .gap(px(space::S12))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(space::S6))
+                .text_size(px(12.))
+                .line_height(px(16.))
+                .text_color(note_tone)
+                .font_features(pink::tabular_figures())
+                .children(lead_glyph)
+                .child(div().flex_1().min_w_0().flex().child(motion::status_swap(
+                    loaders::label_id(&format!("{key}-note"), &note),
+                    div().flex_1().min_w_0().truncate().child(note.clone()),
+                ))),
+        )
+        .child(
+            div()
+                .flex_none()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(space::S8))
+                .children(actions),
+        )
+}
+
+/// Pink's monotone cubic tangents (`usage.rs` `monotone_usage_tangents`).
+fn monotone_tangents(points: &[(f32, f32)]) -> Vec<f32> {
+    if points.len() < 2 {
+        return vec![0.0; points.len()];
+    }
+    let slopes: Vec<f32> = points
+        .windows(2)
+        .map(|pair| {
+            let dx = pair[1].0 - pair[0].0;
+            if dx == 0.0 {
+                0.0
+            } else {
+                (pair[1].1 - pair[0].1) / dx
+            }
         })
+        .collect();
+    let mut tangents = vec![0.0; points.len()];
+    tangents[0] = slopes[0];
+    tangents[points.len() - 1] = slopes[slopes.len() - 1];
+    for ix in 1..points.len() - 1 {
+        let (previous, next) = (slopes[ix - 1], slopes[ix]);
+        tangents[ix] = if previous * next <= 0.0 {
+            0.0
+        } else {
+            (previous + next) / 2.0
+        };
+    }
+    for (ix, slope) in slopes.iter().copied().enumerate() {
+        if slope == 0.0 {
+            tangents[ix] = 0.0;
+            tangents[ix + 1] = 0.0;
+            continue;
+        }
+        let a = tangents[ix] / slope;
+        let b = tangents[ix + 1] / slope;
+        let magnitude = a * a + b * b;
+        if magnitude > 9.0 {
+            let scale = 3.0 / magnitude.sqrt();
+            tangents[ix] = scale * a * slope;
+            tangents[ix + 1] = scale * b * slope;
+        }
+    }
+    tangents
 }
 
-fn badge_with_icon(
-    icon: &'static str,
-    label: impl Into<SharedString>,
-    tone: Tone,
-    t: &Pink,
-) -> gpui::AnyElement {
-    pink::badge(label, tone, t)
-        .gap(px(space::S4))
-        .font_family(pink::MONO)
-        .child(svg().path(icon).size(px(12.)).text_color(tone.color(t)))
-        .flex_row_reverse()
-        .into_any_element()
+/// Pink's nice-number chart scale (`usage.rs` `usage_chart`): the peak
+/// rounded up to a whole number of 1/2/5 steps near half of it. A flat chart
+/// keeps a 1% scale.
+fn nice_scale(peak: f32) -> f32 {
+    if peak <= 0. {
+        return 0.01;
+    }
+    let rough = peak / 2.;
+    let magnitude = 10f32.powf(rough.log10().floor());
+    let unit = [1., 2., 5., 10.]
+        .into_iter()
+        .find(|step| step * magnitude >= rough)
+        .unwrap_or(10.)
+        * magnitude;
+    (peak / unit).ceil() * unit
 }
 
-fn dashed(window: &mut Window, from: gpui::Point<Pixels>, to: gpui::Point<Pixels>, color: Hsla) {
-    let mut path = PathBuilder::stroke(px(1.)).dash_array(&[px(2.), px(3.)]);
-    path.move_to(from);
-    path.line_to(to);
-    if let Ok(path) = path.build() {
-        window.paint_path(path, color);
+/// An axis caption: 0.2 → "+20%", 0.015 → "+1.5%".
+fn signed_axis(v: f32) -> String {
+    let pct = (v * 1000.).round() / 10.;
+    let sign = if pct > 0. {
+        "+"
+    } else if pct < 0. {
+        "−"
+    } else {
+        ""
+    };
+    if pct.fract() == 0. {
+        format!("{sign}{:.0}%", pct.abs())
+    } else {
+        format!("{sign}{:.1}%", pct.abs())
     }
 }
 
@@ -1099,6 +1374,7 @@ fn signed_pct(v: f32) -> String {
     format!("{sign}{:.1}%", v.abs() * 100.)
 }
 
+/// 48210 → "48,210" (pink `usage.rs` `count`).
 fn grouped(v: u32) -> String {
     let digits = v.to_string();
     let mut out = String::new();
@@ -1179,7 +1455,7 @@ fn demo() -> impl IntoElement {
             ],
         ))
         .metric(metric(
-            "Checkout starts",
+            "Checkouts",
             MetricFormat::Percent,
             12,
             17,
@@ -1190,7 +1466,7 @@ fn demo() -> impl IntoElement {
             ],
         ))
         .metric(metric(
-            "Revenue / visitor",
+            "Revenue",
             MetricFormat::Currency,
             12,
             29,
@@ -1202,7 +1478,7 @@ fn demo() -> impl IntoElement {
         ))
         .expanded(true);
     let checklist = ExperimentCard::new("experiment-checklist", "Guided onboarding checklist")
-        .status(ExperimentStatus::Running { day: 5, of: 14 })
+        .status(ExperimentStatus::Paused)
         .visitors(9_840)
         .variant(Variant::new("A", "Current checklist"))
         .variant(Variant::new("B", "Guided checklist"))
@@ -1217,7 +1493,7 @@ fn demo() -> impl IntoElement {
             ],
         ))
         .metric(metric(
-            "Day-7 retention",
+            "Retention",
             MetricFormat::Percent,
             5,
             53,
@@ -1247,7 +1523,7 @@ fn demo() -> impl IntoElement {
         .flex()
         .flex_col()
         .items_center()
-        .gap(px(space::S10))
+        .gap(px(space::S12))
         .child(annual)
         .child(checklist)
         .child(trial)
@@ -1266,6 +1542,8 @@ mod tests {
         assert_eq!(signed_pct(0.063), "+6.3%");
         assert_eq!(signed_pct(-0.059), "−5.9%");
         assert_eq!(signed_pct(0.), "0.0%");
+        assert_eq!(signed_axis(0.2), "+20%");
+        assert_eq!(signed_axis(-0.015), "−1.5%");
     }
 
     #[test]
@@ -1273,5 +1551,18 @@ mod tests {
         assert!(VariantResult::new(1., 0.06, 0.01, 0.11, 0.97).significant());
         assert!(!VariantResult::new(1., 0.03, -0.01, 0.08, 0.8).significant());
         assert!(VariantResult::new(1., -0.06, -0.1, -0.02, 0.03).significant());
+    }
+
+    #[test]
+    fn scale_rounds_up_to_a_nice_step() {
+        assert!((nice_scale(0.12) - 0.2).abs() < 1e-6);
+        assert!((nice_scale(0.08) - 0.1).abs() < 1e-6);
+        assert!((nice_scale(0.) - 0.01).abs() < 1e-6);
+    }
+
+    #[test]
+    fn visitors_group_by_thousands() {
+        assert_eq!(grouped(48_210), "48,210");
+        assert_eq!(grouped(980), "980");
     }
 }
