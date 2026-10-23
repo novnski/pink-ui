@@ -1,9 +1,16 @@
-//! Change Summary – What moved since last time – one metric per row with a colored trend
+//! Change Summary – what moved since last time, one metric per row with its
+//! trend, on a pink settings section card.
 //!
-//! Clean: one white card with hairline shadows; the heading is its first row
-//! and every metric sits under a 0.5px line with a small tinted trend mark.
-//! Classic: the heading sits in a gray tray and the metrics in a white card
-//! on top of it. Rows rise in one after another and tint on hover.
+//! One section card (pink: settings/widgets.rs `section_card`) under a
+//! `section_header`, with the period as a quiet badge in the header's
+//! trailing slot (pink `widgets::badge`). Each metric is a `card_row`: a trend
+//! tile in the row tile's frame, washed like pink's status pills (good in
+//! `success`, bad in `danger`, level in the muted tone, all at 0.12) around
+//! an up or down arrow or a level mark, then the metric's name over what
+//! happened in words. The color says good or bad, the glyph says which way;
+//! the copy itself stays muted ("one colored glyph, never a colored row").
+//! Rows rest without hover like pink's settings rows, and arrive one after
+//! another on pink's tool-row reveal.
 //!
 //! ```ignore
 //! ChangeSummary::new("weekly", vec![
@@ -14,22 +21,33 @@
 //! ```
 
 use gpui::{
-    AnyView, App, BoxShadow, ElementId, FontWeight, Hsla, IntoElement, Pixels, SharedString,
-    Window, div, prelude::*, px, relative, svg,
+    AnyView, App, Div, ElementId, IntoElement, SharedString, Window, div, prelude::*, px, svg,
 };
 
 use crate::{
-    ActiveTheme, HoverFill, Look,
-    motion::{self, EASE_OUT_QUINT, MotionSpec},
-    primitives::{SANS, black_a, hex, hexa, shadow, white_a},
+    motion,
+    pink::{self, NON_TEXT_CONTRAST_TARGET, Pink, icon_size, layout, radius},
     story,
 };
 
 pub const NAME: &str = "Change Summary";
-pub const DESCRIPTION: &str =
-    "What moved since last time – one metric per row with a colored trend";
+pub const DESCRIPTION: &str = "What moved since last time on a pink section card – one metric per row, its name over what happened, beside a tinted tile whose arrow says which way and whose color says good or bad";
 
-/// How a change reads: good is a green arrow, bad a red one, neutral a gray dash.
+/// The card's widest: a compact data card (pink-ui's stage size for it).
+const MAX_WIDTH: f32 = 480.;
+/// The trend tile: pink's settings row tile (widgets.rs `row_tile`, 28 pt).
+const TILE: f32 = 28.;
+/// Status washes (pink: shell.rs sidebar status pill, `tone @ 0.12`).
+const TONE_WASH: f32 = 0.12;
+/// Arriving rows rise this far (pink: transcript.rs row reveal).
+const ROW_RISE: f32 = 4.;
+
+const ICON_UP: &str = "icons/change-summary/arrow-up.svg";
+const ICON_DOWN: &str = "icons/change-summary/arrow-down.svg";
+const ICON_LEVEL: &str = "icons/change-summary/minus.svg";
+
+/// How a change reads: good is a green arrow, bad a red one, neutral a muted
+/// level mark.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Tone {
     Good,
@@ -83,175 +101,23 @@ impl MetricChange {
             Direction::Up
         })
     }
-}
 
-/// The `--ui-cs-*` / `--ui-csc-*` tokens.
-struct Palette {
-    /// Classic only: the gray tray around the heading and card.
-    tray: Option<Hsla>,
-    card: Hsla,
-    card_shadow: Vec<BoxShadow>,
-    /// Classic draws a 1px border around the card.
-    card_border: Option<Hsla>,
-    line: Hsla,
-    title: Hsla,
-    title_icon: Hsla,
-    period: Hsla,
-    label: Hsla,
-    change: Hsla,
-    row_hover: Hsla,
-    good: (Hsla, Hsla),
-    bad: (Hsla, Hsla),
-    neutral: (Hsla, Hsla),
-}
-
-impl Palette {
-    fn get(look: Look, cx: &App) -> Self {
-        match (look, cx.is_dark()) {
-            (Look::Clean, false) => Palette {
-                tray: None,
-                card: hex(0xffffff),
-                card_shadow: vec![
-                    shadow(0., 0., 0., 0.5, black_a(0.06)),
-                    shadow(0., 1., 1., -1., black_a(0.1)),
-                    shadow(0., 1., 2., 0., black_a(0.05)),
-                ],
-                card_border: None,
-                line: black_a(0.06),
-                title: hex(0x000000),
-                title_icon: black_a(0.447),
-                period: black_a(0.45),
-                label: black_a(0.88),
-                change: black_a(0.61),
-                row_hover: black_a(0.015),
-                good: (hexa(0x1a9a52, 0.08), hex(0x1a9a52)),
-                bad: (hexa(0xe5484d, 0.08), hex(0xe5484d)),
-                neutral: (black_a(0.04), black_a(0.447)),
-            },
-            (Look::Clean, true) => Palette {
-                tray: None,
-                card: hex(0x1c1c1e),
-                card_shadow: vec![
-                    shadow(0., 0., 0., 0.5, white_a(0.1)),
-                    shadow(0., 1., 2., 0., black_a(0.4)),
-                ],
-                card_border: None,
-                line: white_a(0.08),
-                title: hex(0xffffff),
-                title_icon: white_a(0.5),
-                period: white_a(0.46),
-                label: white_a(0.9),
-                change: white_a(0.62),
-                row_hover: white_a(0.025),
-                good: (hexa(0x3ec27a, 0.14), hex(0x3ec27a)),
-                bad: (hexa(0xe5484d, 0.14), hex(0xf2777b)),
-                neutral: (white_a(0.08), white_a(0.5)),
-            },
-            (Look::Classic, false) => Palette {
-                tray: Some(hex(0xf0f0f0)),
-                card: hex(0xffffff),
-                card_shadow: vec![shadow(0., 1., 2., 0., black_a(0.06))],
-                card_border: Some(hex(0xe5e5e5)),
-                line: hex(0xf0f0f0),
-                title: hex(0x2f6bff),
-                title_icon: hex(0x2f6bff),
-                period: hex(0x737373),
-                label: hex(0x171717),
-                change: hex(0x737373),
-                row_hover: hex(0xfafafa),
-                good: (hex(0xedfaf3), hex(0x1f8a4c)),
-                bad: (hex(0xfff0f0), hex(0xe5484d)),
-                neutral: (hex(0xf5f5f5), hex(0x8f8f8f)),
-            },
-            (Look::Classic, true) => Palette {
-                tray: Some(hex(0x161618)),
-                card: hex(0x232326),
-                card_shadow: vec![shadow(0., 1., 2., 0., black_a(0.4))],
-                card_border: Some(white_a(0.08)),
-                line: white_a(0.08),
-                title: hex(0x6b95ff),
-                title_icon: hex(0x6b95ff),
-                period: hex(0x8f8f8f),
-                label: hex(0xededed),
-                change: hex(0x8f8f8f),
-                row_hover: hex(0x2a2a2d),
-                good: (hexa(0x1f8a4c, 0.18), hex(0x3fbf74)),
-                bad: (hexa(0xe5484d, 0.16), hex(0xf2777b)),
-                neutral: (hex(0x2a2a2d), hex(0x8f8f8f)),
-            },
-        }
-    }
-
-    fn tone(&self, tone: Tone) -> (Hsla, Hsla) {
-        match tone {
-            Tone::Good => self.good,
-            Tone::Bad => self.bad,
-            Tone::Neutral => self.neutral,
+    /// The tile's glyph: a level mark for neutral changes, else the arrow.
+    fn glyph(&self) -> &'static str {
+        match (self.tone, self.arrow()) {
+            (Tone::Neutral, _) => ICON_LEVEL,
+            (_, Direction::Up) => ICON_UP,
+            (_, Direction::Down) => ICON_DOWN,
         }
     }
 }
-
-/// Sizes that differ between the two stylesheets.
-struct Metrics {
-    text_size: Pixels,
-    row_height: Pixels,
-    row_pad: Pixels,
-    /// Row separators: a 0.5px hairline (Clean, drawn as one device pixel)
-    /// or a 1px line (Classic).
-    rule: Pixels,
-    trend_radius: Pixels,
-    /// Corner radius the last row's hover tint follows inside the card.
-    inner_radius: Pixels,
-}
-
-impl Metrics {
-    fn get(look: Look) -> Self {
-        match look {
-            Look::Clean => Metrics {
-                text_size: px(13.),
-                row_height: px(48.),
-                row_pad: px(16.),
-                rule: px(0.5),
-                trend_radius: px(5.),
-                inner_radius: px(10.),
-            },
-            Look::Classic => Metrics {
-                text_size: px(14.),
-                row_height: px(52.),
-                row_pad: px(20.),
-                rule: px(1.),
-                trend_radius: px(6.),
-                inner_radius: px(15.),
-            },
-        }
-    }
-}
-
-/// A CSS `box-shadow` list for GPUI, which paints the layers the other way
-/// round (CSS puts the first on top). Each layer is already converted by
-/// `primitives::shadow`.
-fn css_shadows(layers: Vec<BoxShadow>, _scale: f32) -> Vec<BoxShadow> {
-    crate::primitives::shadows(layers)
-}
-
-fn icon_path(look: Look, name: &str) -> SharedString {
-    match look {
-        Look::Clean => format!("icons/change-summary/clean/{name}.svg").into(),
-        Look::Classic => format!("icons/change-summary/{name}.svg").into(),
-    }
-}
-
-/// `ui-cs-in`: rows fade in from 4px below, 520ms, staggered by 70ms.
-const ROW_IN: MotionSpec = MotionSpec::new(520, EASE_OUT_QUINT);
 
 #[derive(IntoElement)]
 pub struct ChangeSummary {
     id: ElementId,
     title: SharedString,
     period: Option<SharedString>,
-    icon: Option<SharedString>,
     changes: Vec<MetricChange>,
-    look: Option<Look>,
 }
 
 impl ChangeSummary {
@@ -260,9 +126,7 @@ impl ChangeSummary {
             id: id.into(),
             title: "What's changed".into(),
             period: None,
-            icon: None,
             changes,
-            look: None,
         }
     }
 
@@ -272,196 +136,92 @@ impl ChangeSummary {
         self
     }
 
-    /// Small text on the right of the heading, e.g. "This week".
+    /// The span the changes cover, e.g. "This week", shown as a badge at the
+    /// end of the heading.
     pub fn period(mut self, period: impl Into<SharedString>) -> Self {
         self.period = Some(period.into());
-        self
-    }
-
-    /// An SVG under `assets/` to replace the heading icon, tinted like it.
-    pub fn icon(mut self, path: impl Into<SharedString>) -> Self {
-        self.icon = Some(path.into());
-        self
-    }
-
-    /// Overrides the global Clean/Classic look.
-    pub fn look(mut self, look: Look) -> Self {
-        self.look = Some(look);
         self
     }
 }
 
 impl RenderOnce for ChangeSummary {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let look = self.look.unwrap_or(cx.look());
-        let mut p = Palette::get(look, cx);
-        p.card_shadow = css_shadows(p.card_shadow, window.scale_factor());
-        let m = Metrics::get(look);
-        // Chrome paints the Clean 0.5px rules as one device pixel; GPUI
-        // clips a literal 0.5px side away, so draw exactly one device pixel.
-        let rule = match look {
-            Look::Clean => px(1. / window.scale_factor()),
-            Look::Classic => m.rule,
-        };
-        let clean = look == Look::Clean;
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let t = Pink::get(cx);
         let key = self.id.to_string();
-        let count = self.changes.len();
 
-        let title = div()
-            .flex()
-            .items_center()
-            .gap(px(8.))
-            .min_w_0()
-            .whitespace_nowrap()
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(p.title)
-            .child(
-                svg()
-                    .path(
-                        self.icon
-                            .clone()
-                            .unwrap_or_else(|| icon_path(look, "changes")),
-                    )
-                    .size(px(16.))
-                    .flex_none()
-                    .text_color(p.title_icon),
-            )
-            .child(self.title.clone());
-        let head = div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap(px(12.))
-            .child(title)
-            .when_some(self.period.clone(), |d, period| {
-                d.child(
-                    div()
-                        .flex_none()
-                        .text_color(p.period)
-                        .when(clean, |d| d.text_size(px(12.)).line_height(px(16.)))
-                        .when(!clean, |d| d.text_size(px(13.)))
-                        .child(period),
+        // pink: settings/widgets.rs `section_header`, the period as its
+        // trailing badge (`widgets::badge`) on the title's 20 pt line.
+        let header = pink::section_header(self.title.clone(), None, &t).when_some(
+            self.period.clone(),
+            |header, period| {
+                header.child(
+                    pink::row_controls()
+                        .child(pink::badge(period, pink::Tone::Neutral, &t).line_height(px(14.))),
                 )
-            });
-        let head = if clean {
-            head.h(px(44.)).px(px(16.))
-        } else {
-            head.pt(px(11.))
-                .px(px(18.))
-                .pb(px(10.))
-                .text_size(px(14.))
-                .line_height(px(20.))
-        };
+            },
+        );
 
         let rows = self.changes.iter().enumerate().map(|(ix, change)| {
-            let (wash, ink) = p.tone(change.tone);
-            let mark = match (change.tone, change.arrow()) {
-                (Tone::Neutral, _) => "dash",
-                (_, Direction::Up) => "arrow-up",
-                (_, Direction::Down) => "arrow-down",
-            };
-            let last = ix + 1 == count;
-            // Clean puts a hairline over every row (the heading is the first
-            // row of the card); Classic only between rows.
-            let ruled = clean || ix > 0;
-            let mut label = div()
-                .min_w_0()
-                .flex_basis(relative(0.))
-                .truncate()
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(p.label)
-                .child(change.label.clone());
-            label.style().flex_grow = Some(0.8);
-            let mut trend = div()
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .min_w_0()
-                .flex_basis(relative(0.))
-                .text_color(p.change)
-                .child(
-                    div()
-                        .flex()
-                        .flex_none()
-                        .items_center()
-                        .justify_center()
-                        .size(px(20.))
-                        .rounded(m.trend_radius)
-                        .bg(wash)
-                        .child(
-                            svg()
-                                .path(icon_path(look, mark))
-                                .size(px(12.))
-                                .text_color(ink),
-                        ),
-                )
-                .child(div().min_w_0().truncate().child(change.change.clone()));
-            trend.style().flex_grow = Some(1.2);
-
-            let hover_key = format!("{key}-row-{ix}");
-            let row = div()
-                .id(ElementId::NamedInteger("row".into(), ix as u64))
-                .flex()
-                .items_center()
-                .gap(px(16.))
-                .min_h(m.row_height)
-                .px(m.row_pad)
-                .when(ruled, |d| d.border_t(rule).border_color(p.line))
-                // The card clips its corners; GPUI clips rectangles, so the
-                // tint follows the corner itself.
-                .when(last, |d| d.rounded_b(m.inner_radius))
-                .when(!clean && ix == 0, |d| d.rounded_t(m.inner_radius))
-                .hover_fill(hover_key, p.row_hover.opacity(0.), p.row_hover)
-                .child(label)
-                .child(trend);
+            // pink: settings/widgets.rs `card_row` with its identity tile and
+            // `row_text`; the header above takes the first hairline.
+            let row = pink::card_row(false, &t)
+                .child(trend_tile(change, &t))
+                .child(pink::row_text(
+                    change.label.clone(),
+                    Some(change.change.clone()),
+                    &t,
+                ));
+            // pink: transcript.rs new rows, 360 ms expo-out after a 90 ms
+            // beat, 65 ms apart, rising 4 pt.
+            let delay = motion::tool_row_arrival_delay(ix, true).as_millis() as u64;
             motion::rise_in(
-                ElementId::NamedInteger(format!("{key}-in").into(), ix as u64),
-                ROW_IN.with_delay(120 + ix as u64 * 70),
-                4.,
+                ElementId::NamedInteger(format!("{key}-row-in").into(), ix as u64),
+                motion::TOOL_ROW_REVEAL.with_delay(delay),
+                ROW_RISE,
                 row,
             )
         });
 
-        let list = div()
-            .flex()
-            .flex_col()
-            .overflow_hidden()
-            .text_size(m.text_size)
-            .line_height(px(20.))
-            .children(rows);
-
-        let root = div()
+        pink::section_card(&t)
             .id(self.id.clone())
+            .mt_0()
             .w_full()
-            .max_w(px(480.))
-            .font_family(SANS)
-            .text_size(px(13.))
-            .line_height(px(20.))
-            .text_color(p.label);
-        match look {
-            Look::Clean => root
-                .overflow_hidden()
-                .rounded(px(10.))
-                .bg(p.card)
-                .shadow(p.card_shadow)
-                .child(head)
-                .child(list),
-            Look::Classic => root
-                .p(px(6.))
-                .rounded(px(22.))
-                .when_some(p.tray, |d, tray| d.bg(tray))
-                .child(head)
-                .child(
-                    list.rounded(px(16.))
-                        .bg(p.card)
-                        .shadow(p.card_shadow)
-                        .when_some(p.card_border, |d, border| d.border_1().border_color(border)),
-                ),
-        }
+            .max_w(px(MAX_WIDTH))
+            .font_family(pink::SANS)
+            .child(header)
+            .children(rows)
     }
 }
 
-/// The demo's four metrics.
+/// The trend tile: pink's settings row tile frame (widgets.rs `row_tile`: 28
+/// pt, radius 7, a 16 pt glyph) washed like its status pills (shell.rs
+/// sidebar status pill: `tone @ 0.12`, the glyph floored on that wash).
+fn trend_tile(change: &MetricChange, t: &Pink) -> Div {
+    let tone = match change.tone {
+        Tone::Good => t.success,
+        Tone::Bad => t.danger,
+        Tone::Neutral => t.text_muted,
+    };
+    let wash = tone.opacity(TONE_WASH);
+    div()
+        .flex_none()
+        .size(px(TILE))
+        .rounded(px(radius::TILE))
+        .bg(wash)
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(
+            svg()
+                .path(change.glyph())
+                .flex_none()
+                .size(px(icon_size::MD))
+                .text_color(t.readable_on(tone, wash, NON_TEXT_CONTRAST_TARGET)),
+        )
+}
+
+/// The demo's weekly metrics: two good rises, a good fall, a bad rise and a
+/// level one.
 pub fn demo_changes() -> Vec<MetricChange> {
     vec![
         MetricChange::new("Active users", "Up 6.1% to 18.2K").tone(Tone::Good),
@@ -472,13 +232,35 @@ pub fn demo_changes() -> Vec<MetricChange> {
         MetricChange::new("Support tickets", "Up 14% to 312")
             .tone(Tone::Bad)
             .direction(Direction::Up),
+        MetricChange::new("Median session", "Level at 6m 40s"),
+    ]
+}
+
+/// A deploy's read-out: a good fall, a bad rise, a bad fall and a level one.
+fn deploy_changes() -> Vec<MetricChange> {
+    vec![
+        MetricChange::new("p95 latency", "Down to 212 ms from 248 ms")
+            .tone(Tone::Good)
+            .direction(Direction::Down),
+        MetricChange::new("Error rate", "Up to 0.42% from 0.31%")
+            .tone(Tone::Bad)
+            .direction(Direction::Up),
+        MetricChange::new("Checkout conversion", "Down 0.4 pts to 3.1%").tone(Tone::Bad),
+        MetricChange::new("Bundle size", "Unchanged at 412 KB"),
     ]
 }
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |_, _| {
         div()
-            .w(px(480.))
+            .w(px(MAX_WIDTH))
+            .flex()
+            .flex_col()
+            .gap(px(layout::SECTION_GAP))
             .child(ChangeSummary::new("change-summary", demo_changes()).period("This week"))
+            .child(
+                ChangeSummary::new("change-summary-deploy", deploy_changes())
+                    .title("Since the last deploy"),
+            )
     })
 }
