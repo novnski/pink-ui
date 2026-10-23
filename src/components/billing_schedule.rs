@@ -1,11 +1,20 @@
-//! Billing Schedule – compose a billing plan and see every invoice it makes.
+//! Billing Schedule – compose a billing plan and see every invoice it makes,
+//! in pink's settings section cards: the plan and its line items in one
+//! column, the schedule they produce beside them.
 //!
-//! The left side builds the plan: a start month, a term, line items with
-//! their own cadence (monthly, quarterly, yearly or once) and quantity, and
-//! two optional adjustments – a percentage discount and a monthly minimum
-//! that tops small invoices up. The right side is the schedule it produces:
-//! one bar per invoice (hover for the amount), the first invoice, the
-//! average month and the term total, all gliding to their new values.
+//! - **Plan**: the customer's header over two editor groups, as in pink's
+//!   automation editor (pink: automations.rs `render_editor`). "Schedule"
+//!   holds the start month, the term chips and a one-line summary beside a
+//!   clock. "Adjustments" holds a percentage discount and a monthly minimum
+//!   that tops small invoices up, each behind a switch.
+//! - **Line items**: one card row per item, laid out like the rows of pink's
+//!   model price editor (pink: usage.rs `render_usage_price_editor`). Each
+//!   row has its cadence pop-up, quantity and amount. "Add item" opens the
+//!   catalog menu.
+//! - **Invoice schedule**: pink's Usage "Estimated cost" card (pink: usage.rs
+//!   `render_usage_page`). It shows the Display total, the Totals grid of
+//!   metric cells and the per-invoice area chart with its hover guide,
+//!   readout and tooltip.
 //!
 //! ```ignore
 //! BillingSchedule::new("pilot", "Northwind Ops")
@@ -17,43 +26,61 @@
 
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Duration;
 
 use gpui::{
-    AnyElement, AnyView, App, ElementId, Entity, FontWeight, Hsla, IntoElement, SharedString,
-    Window, deferred, div, prelude::*, px, svg,
+    Anchor, AnyElement, AnyView, App, Context, Div, ElementId, Entity, FontWeight, IntoElement,
+    PathBuilder, Render, Role, SharedString, Toggled, Window, anchored, canvas, deferred, div,
+    point, prelude::*, px, svg,
 };
+use web_time::Instant;
 
 use crate::{
-    HoverFill,
-    motion::{self, MotionSpec},
-    pink::{self, ButtonKind, ControlSize, FillTier, Pink, Tone, radius, space, text},
-    primitives::shadow,
+    motion,
+    pink::{
+        self, ButtonKind, ControlSize, FillTier, Pink, TextStyle, Tone, TypeStyleExt as _, layout,
+    },
     story,
 };
 
 pub const NAME: &str = "Billing Schedule";
-pub const DESCRIPTION: &str = "Compose a billing plan from line items with their own cadence, a discount and a monthly minimum, and watch the invoice schedule and totals update live";
+pub const DESCRIPTION: &str = "Build a billing plan from a start month, a term, line items on their own cadence, a discount and a monthly minimum, and read its invoices as a total, a grid of figures and a per-invoice cost chart";
 
-const ICON_PREV: &str = "icons/billing-schedule/chevron-left.svg";
-const ICON_NEXT: &str = "icons/billing-schedule/chevron-right.svg";
+const ICON_PREV: &str = "icons/billing-schedule/alt-arrow-left.svg";
+const ICON_NEXT: &str = "icons/billing-schedule/alt-arrow-right.svg";
 const ICON_PLUS: &str = "icons/billing-schedule/plus.svg";
 const ICON_MINUS: &str = "icons/billing-schedule/minus.svg";
-const ICON_REMOVE: &str = "icons/billing-schedule/x.svg";
-const ICON_REPEAT: &str = "icons/billing-schedule/repeat.svg";
-const ICON_CALENDAR: &str = "icons/billing-schedule/calendar.svg";
-const ICON_TAG: &str = "icons/billing-schedule/tag.svg";
-const ICON_FLOOR: &str = "icons/billing-schedule/floor.svg";
+const ICON_REMOVE: &str = "icons/billing-schedule/close.svg";
+const ICON_SCHEDULE: &str = "icons/billing-schedule/clock-circle.svg";
 
 const TERMS: [usize; 4] = [3, 6, 12, 24];
 const DISCOUNTS: [u32; 4] = [5, 10, 15, 20];
 const MINIMUM_STEP: i64 = 50_000;
-const CHART_H: f32 = 104.;
-const SUMMARY_W: f32 = 268.;
 const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
-/// Totals count toward their new value.
-const COUNT: MotionSpec = MotionSpec::new(520, motion::EASE_OUT_QUINT);
+
+/// The whole component, the editor column (plan and line items) and the
+/// least the schedule column takes beside it. The editor fits a line row's
+/// text column (pink's 220) beside its controls without wrapping them.
+const WIDTH: f32 = 900.0;
+const EDITOR_W: f32 = 564.0;
+const SUMMARY_MIN_W: f32 = 300.0;
+/// The chart's plot height, value-axis gutter and gutter gap (pink: usage.rs
+/// `CHART_HEIGHT`, `CHART_AXIS_WIDTH`, `CHART_AXIS_GAP`).
+const CHART_HEIGHT: f32 = 200.0;
+const CHART_AXIS_WIDTH: f32 = 56.0;
+const CHART_AXIS_GAP: f32 = 8.0;
+/// A setting's label column inside an editor group (pink: automations.rs
+/// `render_editor` `setting`).
+const SETTING_LABEL_W: f32 = 112.0;
+/// A line's cadence pop-up and amount column, fixed so the rows' controls
+/// line up.
+const CADENCE_W: f32 = 88.0;
+const AMOUNT_W: f32 = 76.0;
+/// A menu that just closed ignores its trigger's click for this long, so the
+/// press that dismissed it doesn't reopen it.
+const REOPEN_GUARD: Duration = Duration::from_millis(250);
 
 /// How often a line item is charged.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -65,6 +92,13 @@ pub enum Cadence {
 }
 
 impl Cadence {
+    pub const ALL: [Cadence; 4] = [
+        Cadence::Monthly,
+        Cadence::Quarterly,
+        Cadence::Yearly,
+        Cadence::Once,
+    ];
+
     fn label(self) -> &'static str {
         match self {
             Cadence::Monthly => "Monthly",
@@ -74,6 +108,7 @@ impl Cadence {
         }
     }
 
+    /// The price suffix in the catalog menu.
     fn suffix(self) -> &'static str {
         match self {
             Cadence::Monthly => "/ mo",
@@ -83,12 +118,13 @@ impl Cadence {
         }
     }
 
-    fn next(self) -> Self {
+    /// The cadence menu's trailing note.
+    fn every(self) -> &'static str {
         match self {
-            Cadence::Monthly => Cadence::Quarterly,
-            Cadence::Quarterly => Cadence::Yearly,
-            Cadence::Yearly => Cadence::Once,
-            Cadence::Once => Cadence::Monthly,
+            Cadence::Monthly => "Every invoice",
+            Cadence::Quarterly => "Every 3 months",
+            Cadence::Yearly => "Every 12 months",
+            Cadence::Once => "First invoice",
         }
     }
 
@@ -147,22 +183,9 @@ impl Product {
         self
     }
 
-    fn monogram(&self) -> String {
-        let words: Vec<&str> = self
-            .name
-            .split_whitespace()
-            .filter(|w| w.starts_with(char::is_alphanumeric))
-            .collect();
-        let letters: String = if words.len() >= 2 {
-            words
-                .iter()
-                .take(2)
-                .filter_map(|w| w.chars().next())
-                .collect()
-        } else {
-            self.name.chars().take(2).collect()
-        };
-        letters.to_uppercase()
+    /// One charge: the unit price times the quantity, in cents.
+    fn charge(&self) -> i64 {
+        self.price * self.qty as i64
     }
 }
 
@@ -180,38 +203,36 @@ pub struct BillingPlan {
 }
 
 impl BillingPlan {
-    /// One amount (cents) per invoice, before any minimum.
+    /// One amount (cents) per invoice, before the discount and any minimum.
     fn raw(&self) -> Vec<i64> {
         (0..self.term.max(1))
             .map(|m| {
                 self.lines
                     .iter()
                     .filter(|l| l.cadence.due(m))
-                    .map(|l| l.price * l.qty as i64)
+                    .map(Product::charge)
                     .sum()
             })
             .collect()
+    }
+
+    fn discounted(&self, raw: i64) -> i64 {
+        raw * (100 - self.discount.unwrap_or(0) as i64) / 100
     }
 
     /// One amount per invoice after the discount and the minimum.
     pub fn invoices(&self) -> Vec<i64> {
         self.raw()
             .into_iter()
-            .map(|raw| {
-                let discounted = raw * (100 - self.discount.unwrap_or(0) as i64) / 100;
-                discounted.max(self.minimum.unwrap_or(0))
-            })
+            .map(|raw| self.discounted(raw).max(self.minimum.unwrap_or(0)))
             .collect()
     }
 
-    /// Months the minimum lifted.
+    /// Invoices the minimum lifted.
     fn topped_up(&self) -> Vec<bool> {
         self.raw()
             .into_iter()
-            .map(|raw| {
-                let discounted = raw * (100 - self.discount.unwrap_or(0) as i64) / 100;
-                self.minimum.is_some_and(|min| discounted < min)
-            })
+            .map(|raw| self.minimum.is_some_and(|min| self.discounted(raw) < min))
             .collect()
     }
 
@@ -222,20 +243,43 @@ impl BillingPlan {
     /// What the discount takes off over the term.
     pub fn savings(&self) -> i64 {
         let raw: i64 = self.raw().iter().sum();
-        raw - raw * (100 - self.discount.unwrap_or(0) as i64) / 100
+        raw - self.discounted(raw)
     }
 
+    /// What one line bills over the whole term, before adjustments.
+    fn line_term(&self, line: &Product) -> i64 {
+        let charges = (0..self.term.max(1))
+            .filter(|m| line.cadence.due(*m))
+            .count();
+        line.charge() * charges as i64
+    }
+
+    fn month_index(&self, offset: usize) -> i32 {
+        self.start_year * 12 + self.start_month as i32 - 1 + offset as i32
+    }
+
+    /// "Jan 2027".
     fn month_label(&self, offset: usize) -> String {
-        let index = self.start_year * 12 + self.start_month as i32 - 1 + offset as i32;
+        let index = self.month_index(offset);
         format!(
             "{} {}",
             MONTHS[index.rem_euclid(12) as usize],
             index.div_euclid(12)
         )
     }
+
+    /// "Jan 1, 2027": invoices go out on the first of the month.
+    fn date_label(&self, offset: usize) -> String {
+        let index = self.month_index(offset);
+        format!(
+            "{} 1, {}",
+            MONTHS[index.rem_euclid(12) as usize],
+            index.div_euclid(12)
+        )
+    }
 }
 
-/// `$12,345.67`.
+/// `$12,345.67` (pink: usage.rs `money`, plus a sign for credits).
 pub fn money(cents: i64) -> String {
     let sign = if cents < 0 { "−" } else { "" };
     let cents = cents.abs();
@@ -250,16 +294,51 @@ pub fn money(cents: i64) -> String {
     format!("{sign}${grouped}.{:02}", cents % 100)
 }
 
+/// Whole-dollar amounts drop their cents (`$2,500`): the chart's axis
+/// labels and the minimum stepper.
+fn money_short(cents: i64) -> String {
+    let full = money(cents);
+    match full.strip_suffix(".00") {
+        Some(short) => short.to_string(),
+        None => full,
+    }
+}
+
+/// A share as `12.3%` (pink: usage.rs `usage_percent`).
+fn percent(value: f64) -> String {
+    let percent = value * 100.0;
+    if percent > 0.0 && percent < 0.1 {
+        "<0.1%".into()
+    } else {
+        format!("{percent:.1}%")
+    }
+}
+
+fn toggled(on: bool) -> Toggled {
+    if on { Toggled::True } else { Toggled::False }
+}
+
 type ChangeHandler = Rc<dyn Fn(&BillingPlan, &mut Window, &mut App)>;
+
+/// The open pop-up: the catalog, or one line's cadence (by line key).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Menu {
+    Catalog,
+    Cadence(u64),
+}
 
 struct PlanState {
     seeded: bool,
     plan: BillingPlan,
     keys: Vec<u64>,
     next_key: u64,
+    /// Lines up to this key came with the builder; later ones rise in.
+    seeded_through: u64,
     last_discount: u32,
     last_minimum: i64,
-    menu_open: bool,
+    menu: Option<Menu>,
+    /// The menu that last closed and when: its exit fade and reopen guard.
+    closed: Option<(Menu, Instant)>,
     hovered: Option<usize>,
     on_change: Option<ChangeHandler>,
 }
@@ -278,9 +357,11 @@ impl PlanState {
             },
             keys: Vec::new(),
             next_key: 1,
+            seeded_through: 0,
             last_discount: 10,
             last_minimum: 250_000,
-            menu_open: false,
+            menu: None,
+            closed: None,
             hovered: None,
             on_change: None,
         }
@@ -290,6 +371,38 @@ impl PlanState {
         self.plan.lines.push(product);
         self.keys.push(self.next_key);
         self.next_key += 1;
+    }
+
+    fn close_menu(&mut self) {
+        if let Some(menu) = self.menu.take() {
+            self.closed = Some((menu, Instant::now()));
+        }
+    }
+
+    fn toggle_menu(&mut self, menu: Menu) {
+        if self.menu == Some(menu) {
+            self.close_menu();
+            return;
+        }
+        let just_closed = self
+            .closed
+            .is_some_and(|(m, at)| m == menu && at.elapsed() < REOPEN_GUARD);
+        if !just_closed {
+            self.close_menu();
+            self.menu = Some(menu);
+        }
+    }
+
+    /// Whether `menu` paints, and its exit progress while it fades out.
+    fn menu_phase(&self, menu: Menu) -> Option<Option<f32>> {
+        if self.menu == Some(menu) {
+            return Some(None);
+        }
+        self.closed
+            .filter(|(m, _)| *m == menu)
+            .map(|(_, at)| motion::menu_exit_progress(at))
+            .filter(|t| *t < 1.0)
+            .map(Some)
     }
 }
 
@@ -426,728 +539,1081 @@ impl BillingSchedule {
                 for line in plan.lines {
                     s.push_line(line);
                 }
+                s.seeded_through = s.next_key - 1;
             }
         });
 
-        let composer = composer(
-            &key,
-            &state,
-            &self.customer,
-            &self.caption,
-            &self.catalog,
-            &t,
-            cx,
-        );
-        let summary = summary(&key, &state, &t, cx);
+        let s = state.read(cx);
+        // A closing menu keeps painting until its fade ends; nothing else
+        // re-renders this component meanwhile, so ask for the frames.
+        let menus = [Menu::Catalog]
+            .into_iter()
+            .chain(s.keys.iter().map(|k| Menu::Cadence(*k)));
+        if menus
+            .into_iter()
+            .any(|m| matches!(s.menu_phase(m), Some(Some(_))))
+        {
+            window.request_animation_frame();
+        }
 
-        pink::card(&t)
-            .id(self.id.clone())
-            .w(px(800.))
+        // Each column's first card sits at its top edge; the cards below keep
+        // pink's section gap.
+        let editor = div()
+            .flex_none()
+            .w(px(EDITOR_W))
             .flex()
+            .flex_col()
+            .child(plan_card(&key, &state, s, &self.customer, &self.caption, &t).mt(px(0.0)))
+            .child(lines_card(&key, &state, s, &self.catalog, &t));
+        let summary = div()
+            .flex_1()
+            .min_w(px(SUMMARY_MIN_W))
+            .flex()
+            .flex_col()
+            .child(schedule_card(&key, &state, s, &t).mt(px(0.0)));
+
+        div()
+            .id(self.id.clone())
+            .w_full()
+            .max_w(px(WIDTH))
+            .flex()
+            .flex_row()
+            .items_start()
+            .gap(px(pink::space::S16))
             .font_family(pink::SANS)
             .text_color(t.text)
-            .text_size(px(text::BODY))
-            .child(composer)
+            .text_size(px(13.0))
+            .child(editor)
             .child(summary)
             .into_any_element()
     }
 }
 
-fn label(text_: &'static str, t: &Pink) -> gpui::Div {
-    div()
-        .text_size(px(text::FOOTNOTE))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(t.text_muted)
-        .child(text_)
+// ---------------------------------------------------------------------------
+// Plan card
+// ---------------------------------------------------------------------------
+
+/// An editor group: its name over its controls, one hairline above (pink:
+/// automations.rs `render_editor` `group`).
+fn group(id: String, title: &'static str, t: &Pink) -> gpui::Stateful<Div> {
+    pink::card_row(false, t)
+        .id(SharedString::from(id))
+        .flex_col()
+        .items_start()
+        .gap(px(10.0))
+        .child(
+            div()
+                .text_size(px(12.0))
+                .line_height(px(16.0))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(t.readable_muted(0.9))
+                .child(title),
+        )
 }
 
-fn composer(
+/// A setting inside a group: its label on a fixed column, the control beside
+/// it, both wrapping in a narrow column (pink: automations.rs
+/// `render_editor` `setting`).
+fn setting(label: &'static str, control: impl IntoElement, t: &Pink) -> Div {
+    div()
+        .w_full()
+        .flex()
+        .flex_row()
+        .flex_wrap()
+        .items_center()
+        .gap_x(px(12.0))
+        .gap_y(px(6.0))
+        .child(
+            div()
+                .flex_none()
+                .w(px(SETTING_LABEL_W))
+                .text_size(px(12.0))
+                .line_height(px(16.0))
+                .text_color(t.text)
+                .child(label),
+        )
+        .child(div().min_w_0().child(control))
+}
+
+/// A choice chip (pink: automations.rs `render_editor` `choice`, a small
+/// `button::chip` announced as a radio button).
+fn choice(id: String, label: String, on: bool, t: &Pink) -> gpui::Stateful<Div> {
+    pink::chip(id, on, ControlSize::Sm, t)
+        .role(Role::RadioButton)
+        .aria_label(SharedString::from(label.clone()))
+        .child(label)
+}
+
+/// A row of choice chips (pink's kind chips: a wrapping row, gap 6).
+fn choices() -> Div {
+    div()
+        .flex()
+        .flex_row()
+        .flex_wrap()
+        .items_center()
+        .gap(px(6.0))
+}
+
+/// A switch and what it does, on one line (pink: automations.rs "Archive run
+/// chats": the switch, gap 8, a shrinking row description).
+fn switch_line(control: gpui::Stateful<Div>, extra: Option<Div>, note: String, t: &Pink) -> Div {
+    div()
+        .flex()
+        .flex_row()
+        .flex_wrap()
+        .items_center()
+        .gap(px(8.0))
+        .child(control)
+        .children(extra)
+        .child(pink::row_description(note, t).flex_shrink(1.0))
+}
+
+fn plan_card(
     key: &str,
     state: &Entity<PlanState>,
+    s: &PlanState,
     customer: &SharedString,
     caption: &SharedString,
+    t: &Pink,
+) -> Div {
+    let plan = &s.plan;
+    let term = plan.term.max(1);
+    let header = pink::section_header(
+        customer.clone(),
+        (!caption.is_empty()).then(|| caption.clone()),
+        t,
+    )
+    .child(
+        pink::row_controls().child(pink::badge("Draft", Tone::Neutral, t).line_height(px(14.0))),
+    );
+
+    // Schedule: the start month, the term, and what they mean in words
+    // (pink's schedule summary beside CLOCK_CIRCLE).
+    let start = {
+        let state = state.clone();
+        stepper(
+            &format!("{key}-start"),
+            plan.month_label(0),
+            64.0,
+            (ICON_PREV, ICON_NEXT),
+            ("Previous month".into(), "Next month".into()),
+            (true, true),
+            t,
+            move |delta, window, cx| {
+                edit(&state, window, cx, |s| {
+                    let index = s.plan.month_index(0) + delta;
+                    s.plan.start_year = index.div_euclid(12);
+                    s.plan.start_month = index.rem_euclid(12) as u32 + 1;
+                })
+            },
+        )
+    };
+    let mut terms = TERMS.to_vec();
+    if !terms.contains(&term) {
+        terms.push(term);
+        terms.sort_unstable();
+    }
+    let terms = choices().children(terms.into_iter().map(|months| {
+        let state = state.clone();
+        choice(
+            format!("{key}-term-{months}"),
+            format!("{months} mo"),
+            term == months,
+            t,
+        )
+        .on_click(move |_, window, cx| edit(&state, window, cx, |s| s.plan.term = months))
+    }));
+    let words = if term == 1 {
+        format!("One invoice, on {}", plan.date_label(0))
+    } else {
+        format!(
+            "Monthly on the 1st, {} to {} · {term} invoices",
+            plan.month_label(0),
+            plan.month_label(term - 1)
+        )
+    };
+    let summary = div()
+        .id(SharedString::from(format!("{key}-schedule-summary")))
+        .w_full()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(6.0))
+        .child(
+            svg()
+                .path(ICON_SCHEDULE)
+                .size(px(14.0))
+                .flex_none()
+                .text_color(t.accent),
+        )
+        .child(
+            div()
+                .min_w_0()
+                .text_size(px(13.0))
+                .line_height(px(18.0))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(t.text)
+                .child(words),
+        );
+    let schedule = group(format!("{key}-schedule"), "Schedule", t)
+        .child(setting("Starts", start, t))
+        .child(setting("Term", terms, t))
+        .child(summary);
+
+    // Adjustments: each behind a switch; its choices show while it's on.
+    let savings = plan.savings();
+    let discount = {
+        let toggle = state.clone();
+        let on = plan.discount.is_some();
+        let chips = on.then(|| {
+            choices().children(DISCOUNTS.map(|pct| {
+                let state = state.clone();
+                choice(
+                    format!("{key}-pct-{pct}"),
+                    format!("{pct}%"),
+                    plan.discount == Some(pct),
+                    t,
+                )
+                .on_click(move |_, window, cx| {
+                    edit(&state, window, cx, |s| {
+                        s.plan.discount = Some(pct);
+                        s.last_discount = pct;
+                    })
+                })
+            }))
+        });
+        let note = if on {
+            format!("Saves {} over the term", money(savings))
+        } else {
+            "Take a share off every invoice".into()
+        };
+        switch_line(
+            pink::switch_control(format!("{key}-discount"), "Discount", on, t).on_click(
+                move |_, window, cx| {
+                    edit(&toggle, window, cx, |s| {
+                        s.plan.discount = match s.plan.discount {
+                            Some(_) => None,
+                            None => Some(s.last_discount),
+                        }
+                    })
+                },
+            ),
+            chips,
+            note,
+            t,
+        )
+    };
+    let minimum = {
+        let toggle = state.clone();
+        let on = plan.minimum.is_some();
+        let stepper = plan.minimum.map(|min| {
+            let state = state.clone();
+            stepper(
+                &format!("{key}-min"),
+                money_short(min),
+                64.0,
+                (ICON_MINUS, ICON_PLUS),
+                ("Lower the minimum".into(), "Raise the minimum".into()),
+                (min > MINIMUM_STEP, true),
+                t,
+                move |delta, window, cx| {
+                    edit(&state, window, cx, |s| {
+                        let next = (min + delta as i64 * MINIMUM_STEP).max(MINIMUM_STEP);
+                        s.plan.minimum = Some(next);
+                        s.last_minimum = next;
+                    })
+                },
+            )
+        });
+        let lifted = plan.topped_up().iter().filter(|t| **t).count();
+        let note = match (on, lifted) {
+            (false, _) => "Top small invoices up to a floor".to_string(),
+            (true, 0) => "Every invoice is already above it".to_string(),
+            (true, n) => format!("Tops up {n} of {term} invoices"),
+        };
+        switch_line(
+            pink::switch_control(format!("{key}-minimum"), "Monthly minimum", on, t).on_click(
+                move |_, window, cx| {
+                    edit(&toggle, window, cx, |s| {
+                        s.plan.minimum = match s.plan.minimum {
+                            Some(_) => None,
+                            None => Some(s.last_minimum),
+                        }
+                    })
+                },
+            ),
+            stepper,
+            note,
+            t,
+        )
+    };
+    let adjustments = group(format!("{key}-adjustments"), "Adjustments", t)
+        .child(setting("Discount", discount, t))
+        .child(setting("Monthly minimum", minimum, t));
+
+    pink::section_card(t)
+        .child(header)
+        .child(schedule)
+        .child(adjustments)
+}
+
+/// A value between − and + (a month, a quantity, an amount). Pink has no
+/// stepper: this is its Secondary control frame (pink: button.rs Secondary,
+/// `fill(Quaternary)`, a `separator(true)` edge, the size's radius) holding
+/// two of its icon buttons inset by the edge, the value in the control's
+/// type with tabular figures between them.
+#[allow(clippy::too_many_arguments)]
+fn stepper(
+    id: &str,
+    value: impl Into<SharedString>,
+    value_w: f32,
+    glyphs: (&'static str, &'static str),
+    names: (SharedString, SharedString),
+    can: (bool, bool),
+    t: &Pink,
+    on_step: impl Fn(i32, &mut Window, &mut App) + 'static,
+) -> Div {
+    let size = ControlSize::Sm;
+    let inner = size.height() - 2.0;
+    let on_step = Rc::new(on_step);
+    let step = |suffix: &str, glyph: &'static str, name: SharedString, enabled: bool, delta| {
+        let on_step = on_step.clone();
+        pink::icon_button_enabled(format!("{id}-{suffix}"), glyph, size, enabled, t)
+            .w(px(inner))
+            .h(px(inner))
+            .rounded(px(size.radius() - 1.0))
+            .aria_label(name)
+            .when(enabled, |b| {
+                b.on_click(move |_, window, cx| on_step(delta, window, cx))
+            })
+    };
+    div()
+        .flex_none()
+        .flex()
+        .flex_row()
+        .items_center()
+        .h(px(size.height()))
+        .rounded(px(size.radius()))
+        .border_1()
+        .border_color(t.separator(true))
+        .bg(t.fill(FillTier::Quaternary))
+        .child(step("less", glyphs.0, names.0, can.0, -1))
+        .child(
+            div()
+                .w(px(value_w))
+                .flex()
+                .justify_center()
+                .text_size(px(size.text()))
+                .line_height(px(size.line_height()))
+                .font_features(pink::tabular_figures())
+                .text_color(t.text)
+                .child(value.into()),
+        )
+        .child(step("more", glyphs.1, names.1, can.1, 1))
+}
+
+// ---------------------------------------------------------------------------
+// Line items card
+// ---------------------------------------------------------------------------
+
+fn lines_card(
+    key: &str,
+    state: &Entity<PlanState>,
+    s: &PlanState,
     catalog: &[Product],
     t: &Pink,
-    cx: &App,
-) -> impl IntoElement {
-    let s = state.read(cx);
+) -> Div {
     let plan = &s.plan;
-
-    let initials: String = customer
-        .split_whitespace()
-        .take(2)
-        .filter_map(|w| w.chars().next())
-        .collect::<String>()
-        .to_uppercase();
-    let header = div()
-        .flex()
-        .items_center()
-        .gap(px(space::S12))
-        .child(
-            div()
-                .size(px(36.))
-                .flex_none()
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(radius::MD))
-                .bg(t.fill(FillTier::Tertiary))
-                .text_size(px(text::FOOTNOTE))
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(t.text_muted)
-                .child(initials),
-        )
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .flex_1()
-                .child(
-                    div()
-                        .text_size(px(text::CALLOUT))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .child(customer.clone()),
-                )
-                .child(
-                    div()
-                        .text_size(px(text::FOOTNOTE))
-                        .text_color(t.text_muted)
-                        .child(caption.clone()),
-                ),
-        )
-        .child(pink::badge("Draft", Tone::Warning, t));
-
-    // Start month stepper and term chips.
-    let shift = |delta: i32| {
-        let state = state.clone();
-        move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
-            edit(&state, window, cx, |s| {
-                let index = s.plan.start_year * 12 + s.plan.start_month as i32 - 1 + delta;
-                s.plan.start_year = index.div_euclid(12);
-                s.plan.start_month = index.rem_euclid(12) as u32 + 1;
-            })
-        }
-    };
-    let start = div()
-        .flex()
-        .items_center()
-        .h(px(28.))
-        .rounded(px(radius::MD))
-        .border_1()
-        .border_color(t.border)
-        .bg(t.input_bg)
-        .child(
-            pink::icon_button(format!("{key}-start-prev"), ICON_PREV, ControlSize::Sm, t)
-                .on_click(shift(-1)),
-        )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(space::S6))
-                .px(px(space::S4))
-                .w(px(92.))
-                .justify_center()
-                .text_size(px(text::FOOTNOTE))
-                .font_weight(FontWeight::MEDIUM)
-                .child(
-                    svg()
-                        .path(ICON_CALENDAR)
-                        .size(px(13.))
-                        .text_color(t.text_faint),
-                )
-                .child(plan.month_label(0)),
-        )
-        .child(
-            pink::icon_button(format!("{key}-start-next"), ICON_NEXT, ControlSize::Sm, t)
-                .on_click(shift(1)),
-        );
-    let terms = div()
-        .flex()
-        .gap(px(space::S4))
-        .children(TERMS.map(|months| {
-            let state = state.clone();
-            pink::chip(
-                format!("{key}-term-{months}"),
-                plan.term == months,
-                ControlSize::Md,
-                t,
-            )
-            .child(format!("{months} mo"))
-            .on_click(move |_, window, cx| edit(&state, window, cx, |s| s.plan.term = months))
-        }));
-    let controls = div()
-        .flex()
-        .items_end()
-        .gap(px(space::S20))
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(space::S6))
-                .child(label("Starts", t))
-                .child(start),
-        )
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(space::S6))
-                .child(label("Term", t))
-                .child(terms),
-        );
-
-    // Line items.
-    let lines: Vec<_> = plan
-        .lines
-        .iter()
-        .zip(s.keys.iter().copied())
-        .enumerate()
-        .map(|(ix, (line, lkey))| line_row(key, ix, lkey, line, state, t))
-        .collect();
     let available: Vec<Product> = catalog
         .iter()
         .filter(|p| !plan.lines.iter().any(|l| l.id == p.id))
         .cloned()
         .collect();
-    let add = {
-        let state = state.clone();
-        let open = s.menu_open;
-        let disabled = available.is_empty();
-        let menu = (open && !disabled).then(|| add_menu(key, state.clone(), &available, t));
-        div()
-            .relative()
-            .child(
-                pink::button(format!("{key}-add"), ButtonKind::Ghost, ControlSize::Md, t)
-                    .when(disabled, |b| b.opacity(0.5))
-                    .child(pink::glyph(ICON_PLUS, ControlSize::Md).text_color(t.text_muted))
-                    .child("Add item")
-                    .on_click(move |_, _, cx| {
-                        state.update(cx, |s, cx| {
-                            s.menu_open = !s.menu_open && !disabled;
-                            cx.notify();
-                        })
-                    }),
+    let enabled = !available.is_empty();
+    let open = s.menu == Some(Menu::Catalog);
+    let menu = s
+        .menu_phase(Menu::Catalog)
+        .filter(|_| enabled)
+        .map(|exit| catalog_menu(key, state, &available, exit, t));
+    let add = div()
+        .relative()
+        .flex_none()
+        .child(
+            pink::button_enabled(
+                format!("{key}-add"),
+                ButtonKind::Secondary,
+                ControlSize::Md,
+                enabled,
+                t,
             )
-            .children(menu)
-    };
-
-    // Adjustments: discount and minimum.
-    let discount_on = plan.discount.is_some();
-    let minimum_on = plan.minimum.is_some();
-    let discount = {
-        let toggle = state.clone();
-        let chips = discount_on.then(|| {
-            div()
-                .flex()
-                .gap(px(space::S4))
-                .children(DISCOUNTS.map(|pct| {
-                    let state = state.clone();
-                    pink::chip(
-                        format!("{key}-pct-{pct}"),
-                        plan.discount == Some(pct),
-                        ControlSize::Sm,
-                        t,
-                    )
-                    .child(format!("{pct}%"))
-                    .on_click(move |_, window, cx| {
-                        edit(&state, window, cx, |s| {
-                            s.plan.discount = Some(pct);
-                            s.last_discount = pct;
-                        })
+            .aria_label("Add a line item")
+            .aria_expanded(open)
+            .child(pink::glyph(ICON_PLUS, ControlSize::Md))
+            .child("Add item")
+            .when(enabled, |b| {
+                let state = state.clone();
+                b.on_click(move |_, _, cx| {
+                    state.update(cx, |s, cx| {
+                        s.toggle_menu(Menu::Catalog);
+                        cx.notify();
                     })
-                }))
-        });
-        adjustment(
-            &format!("{key}-discount"),
-            ICON_TAG,
-            "Discount",
-            "Taken off every invoice",
-            discount_on,
-            t,
-            move |window, cx| {
-                edit(&toggle, window, cx, |s| {
-                    s.plan.discount = match s.plan.discount {
-                        Some(_) => None,
-                        None => Some(s.last_discount),
-                    }
                 })
-            },
+            }),
         )
-        .children(chips)
-    };
-    let minimum = {
-        let toggle = state.clone();
-        let stepper = plan.minimum.map(|min| {
-            let down = state.clone();
-            let up = state.clone();
-            div()
-                .flex()
-                .items_center()
-                .h(px(24.))
-                .rounded(px(radius::SM))
-                .border_1()
-                .border_color(t.border)
-                .bg(t.input_bg)
-                .child(
-                    pink::icon_button(format!("{key}-min-down"), ICON_MINUS, ControlSize::Sm, t)
-                        .size(px(22.))
-                        .on_click(move |_, window, cx| {
-                            edit(&down, window, cx, |s| {
-                                let next = (min - MINIMUM_STEP).max(MINIMUM_STEP);
-                                s.plan.minimum = Some(next);
-                                s.last_minimum = next;
-                            })
-                        }),
-                )
-                .child(
-                    div()
-                        .w(px(72.))
-                        .flex()
-                        .justify_center()
-                        .text_size(px(text::FOOTNOTE))
-                        .font_family(pink::MONO)
-                        .child(money(min).trim_end_matches(".00").to_string()),
-                )
-                .child(
-                    pink::icon_button(format!("{key}-min-up"), ICON_PLUS, ControlSize::Sm, t)
-                        .size(px(22.))
-                        .on_click(move |_, window, cx| {
-                            edit(&up, window, cx, |s| {
-                                let next = min + MINIMUM_STEP;
-                                s.plan.minimum = Some(next);
-                                s.last_minimum = next;
-                            })
-                        }),
-                )
-        });
-        adjustment(
-            &format!("{key}-minimum"),
-            ICON_FLOOR,
-            "Monthly minimum",
-            "Small invoices are topped up",
-            minimum_on,
-            t,
-            move |window, cx| {
-                edit(&toggle, window, cx, |s| {
-                    s.plan.minimum = match s.plan.minimum {
-                        Some(_) => None,
-                        None => Some(s.last_minimum),
-                    }
-                })
-            },
-        )
-        .children(stepper)
-    };
+        .children(menu);
 
-    div()
-        .flex_1()
-        .min_w_0()
-        .flex()
-        .flex_col()
-        .gap(px(space::S16))
-        .p(px(space::S20))
-        .child(header)
-        .child(controls)
+    let count = plan.lines.len();
+    let description = match count {
+        0 => "Nothing billed yet.".to_string(),
+        1 => "1 item, billed on its own cadence.".to_string(),
+        n => format!("{n} items, each billed on its own cadence."),
+    };
+    let raw_total: i64 = plan.lines.iter().map(|l| plan.line_term(l)).sum();
+    let rows: Vec<AnyElement> = plan
+        .lines
+        .iter()
+        .zip(s.keys.iter().copied())
+        .enumerate()
+        .map(|(ix, (line, lkey))| {
+            let share = if raw_total > 0 {
+                plan.line_term(line) as f64 / raw_total as f64
+            } else {
+                0.0
+            };
+            line_row(key, ix, lkey, line, share, s, state, t)
+        })
+        .collect();
+
+    pink::section_card(t)
         .child(
-            div()
-                .flex()
-                .flex_col()
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .mb(px(space::S4))
-                        .child(label("Line items", t))
-                        .child(add),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .rounded(px(radius::LG))
-                        .border_1()
-                        .border_color(t.border)
-                        .children(lines),
-                ),
+            pink::section_header("Line items", Some(description.into()), t)
+                .child(pink::row_controls().child(add)),
         )
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(space::S8))
-                .child(discount)
-                .child(minimum),
-        )
+        .children(rows)
+        .when(count == 0, |card| {
+            card.child(pink::card_row(false, t).child(pink::row_description(
+                "Add an item from the catalog to start the schedule.",
+                t,
+            )))
+        })
 }
 
+/// One line item: a card row (pink: usage.rs price editor rows, its provider
+/// rows' 13/18 medium amount) with the cadence pop-up, quantity, amount and
+/// a remove button in its controls. Lines added after the builder's rise in
+/// (pink: motion.rs `fade_in`).
+#[allow(clippy::too_many_arguments)]
 fn line_row(
     key: &str,
     ix: usize,
     lkey: u64,
     line: &Product,
+    share: f64,
+    s: &PlanState,
     state: &Entity<PlanState>,
     t: &Pink,
-) -> impl IntoElement {
+) -> AnyElement {
     let rkey = format!("{key}-line-{lkey}");
-    let hover = motion::hover_t(&rkey);
-    let cycle = state.clone();
-    let less = state.clone();
-    let more = state.clone();
-    let remove = state.clone();
-    let qty = line.qty;
-    let unit_line = match &line.unit {
+    let menu_kind = Menu::Cadence(lkey);
+    let open = s.menu == Some(menu_kind);
+    let unit = match &line.unit {
         Some(unit) => format!("{} {unit}", money(line.price)),
         None => money(line.price),
     };
-    let cadence = line.cadence;
-    let cadence_key = format!("{rkey}-cadence");
+    let description = format!("{unit} · {} of the term", percent(share));
 
-    motion::rise_in(
-        SharedString::from(format!("{rkey}-in")),
-        motion::ROW_IN,
-        6.,
+    let cadence = {
+        let toggle = state.clone();
+        let menu = s
+            .menu_phase(menu_kind)
+            .map(|exit| cadence_menu(&rkey, ix, line.cadence, state, exit, t));
         div()
-            .id(SharedString::from(rkey.clone()))
-            .flex()
-            .items_center()
-            .gap(px(space::S8))
-            .h(px(52.))
-            .pl(px(space::S10))
-            .pr(px(space::S4))
-            .when(ix > 0, |d| d.border_t_1().border_color(t.border))
-            .hover_fill(
-                rkey.clone(),
-                t.fill(FillTier::Quaternary).opacity(0.),
-                t.fill(FillTier::Quaternary),
-            )
+            .relative()
+            .flex_none()
             .child(
-                div()
-                    .size(px(30.))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(radius::SM))
-                    .bg(t.fill(FillTier::Tertiary))
-                    .text_size(px(text::CAPTION))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(t.text_muted)
-                    .child(line.monogram()),
+                pink::select(
+                    format!("{rkey}-cadence"),
+                    line.cadence.label(),
+                    ControlSize::Sm,
+                    open,
+                    t,
+                )
+                .w(px(CADENCE_W))
+                .aria_label(SharedString::from(format!(
+                    "{} cadence: {}",
+                    line.name,
+                    line.cadence.label()
+                )))
+                .on_click(move |_, _, cx| {
+                    toggle.update(cx, |s, cx| {
+                        s.toggle_menu(menu_kind);
+                        cx.notify();
+                    })
+                }),
             )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_w_0()
-                    .child(
-                        div()
-                            .truncate()
-                            .font_weight(FontWeight::MEDIUM)
-                            .child(line.name.clone()),
-                    )
-                    .child(
-                        div()
-                            .truncate()
-                            .text_size(px(text::FOOTNOTE))
-                            .text_color(t.text_faint)
-                            .child(unit_line),
-                    ),
-            )
-            .child(
-                div()
-                    .id(SharedString::from(cadence_key.clone()))
-                    .flex()
-                    .items_center()
-                    .gap(px(4.))
-                    .h(px(24.))
-                    .w(px(84.))
-                    .px(px(space::S8))
-                    .rounded(px(radius::SM))
-                    .cursor_pointer()
-                    .text_size(px(text::FOOTNOTE))
-                    .hover_fill_fg(
-                        cadence_key,
-                        t.fill(FillTier::Quaternary),
-                        t.fill(FillTier::Secondary),
-                        t.text_muted,
-                        t.text,
-                    )
-                    .child(
-                        svg()
-                            .path(ICON_REPEAT)
-                            .size(px(12.))
-                            .text_color(t.text_faint),
-                    )
-                    .child(cadence.label())
-                    .on_click(move |_, window, cx| {
-                        edit(&cycle, window, cx, |s| {
-                            if let Some(l) = s.plan.lines.get_mut(ix) {
-                                l.cadence = l.cadence.next();
-                            }
-                        })
-                    }),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .h(px(24.))
-                    .rounded(px(radius::SM))
-                    .border_1()
-                    .border_color(t.border)
-                    .bg(t.input_bg)
-                    .child(
-                        pink::icon_button(format!("{rkey}-less"), ICON_MINUS, ControlSize::Sm, t)
-                            .size(px(22.))
-                            .on_click(move |_, window, cx| {
-                                edit(&less, window, cx, |s| {
-                                    if let Some(l) = s.plan.lines.get_mut(ix) {
-                                        l.qty = l.qty.saturating_sub(1).max(1);
-                                    }
-                                })
-                            }),
-                    )
-                    .child(
-                        div()
-                            .w(px(28.))
-                            .flex()
-                            .justify_center()
-                            .text_size(px(text::FOOTNOTE))
-                            .font_family(pink::MONO)
-                            .child(qty.to_string()),
-                    )
-                    .child(
-                        pink::icon_button(format!("{rkey}-more"), ICON_PLUS, ControlSize::Sm, t)
-                            .size(px(22.))
-                            .on_click(move |_, window, cx| {
-                                edit(&more, window, cx, |s| {
-                                    if let Some(l) = s.plan.lines.get_mut(ix) {
-                                        l.qty += 1;
-                                    }
-                                })
-                            }),
-                    ),
-            )
-            .child(
-                div()
-                    .w(px(92.))
-                    .flex()
-                    .flex_col()
-                    .items_end()
-                    .child(
-                        div()
-                            .font_weight(FontWeight::MEDIUM)
-                            .child(money(line.price * qty as i64)),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(text::CAPTION))
-                            .text_color(t.text_faint)
-                            .child(cadence.suffix()),
-                    ),
-            )
-            .child(
-                pink::icon_button(format!("{rkey}-remove"), ICON_REMOVE, ControlSize::Sm, t)
-                    .opacity(0.25 + 0.75 * hover)
-                    .on_click(move |_, window, cx| {
-                        edit(&remove, window, cx, |s| {
-                            if ix < s.plan.lines.len() {
-                                s.plan.lines.remove(ix);
-                                s.keys.remove(ix);
-                            }
-                        })
-                    }),
+            .children(menu)
+    };
+    let qty = {
+        let state = state.clone();
+        stepper(
+            &format!("{rkey}-qty"),
+            line.qty.to_string(),
+            32.0,
+            (ICON_MINUS, ICON_PLUS),
+            (
+                format!("Fewer {}", line.name).into(),
+                format!("More {}", line.name).into(),
             ),
+            (line.qty > 1, true),
+            t,
+            move |delta, window, cx| {
+                edit(&state, window, cx, |s| {
+                    if let Some(l) = s.plan.lines.get_mut(ix) {
+                        l.qty = l.qty.saturating_add_signed(delta).max(1);
+                    }
+                })
+            },
+        )
+    };
+    let amount = div()
+        .flex_none()
+        .w(px(AMOUNT_W))
+        .flex()
+        .justify_end()
+        .text_size(px(13.0))
+        .line_height(px(18.0))
+        .font_weight(FontWeight::MEDIUM)
+        .font_features(pink::tabular_figures())
+        .text_color(t.text)
+        .child(money(line.charge()));
+    let remove = {
+        let state = state.clone();
+        pink::icon_button(format!("{rkey}-remove"), ICON_REMOVE, ControlSize::Sm, t)
+            .aria_label(SharedString::from(format!("Remove {}", line.name)))
+            .tooltip(pink::text_tooltip("Remove"))
+            .tooltip_show_delay(layout::TOOLTIP_DELAY)
+            .on_click(move |_, window, cx| {
+                edit(&state, window, cx, |s| {
+                    if ix < s.plan.lines.len() {
+                        s.plan.lines.remove(ix);
+                        s.keys.remove(ix);
+                        s.menu = None;
+                    }
+                })
+            })
+    };
+
+    let row = pink::card_row(false, t)
+        .child(pink::row_text(
+            line.name.clone(),
+            Some(description.into()),
+            t,
+        ))
+        .child(
+            pink::row_controls()
+                .child(cadence)
+                .child(qty)
+                .child(amount)
+                .child(remove),
+        );
+    if lkey > s.seeded_through {
+        motion::fade_in_rise(SharedString::from(format!("{rkey}-in")), row).into_any_element()
+    } else {
+        row.into_any_element()
+    }
+}
+
+/// A menu row's leading check slot (pink: usage.rs environment menu
+/// `check`): 14 square, holding the check on the current choice.
+fn check_slot(on: bool, t: &Pink) -> Div {
+    div().flex_none().size(px(14.0)).when(on, |slot| {
+        slot.child(pink::line_glyph(pink::glyphs::CHECK, 14.0, t.text))
+    })
+}
+
+fn cadence_menu(
+    rkey: &str,
+    ix: usize,
+    current: Cadence,
+    state: &Entity<PlanState>,
+    exit: Option<f32>,
+    t: &Pink,
+) -> AnyElement {
+    let close = state.clone();
+    let rows = Cadence::ALL.map(|cadence| {
+        let state = state.clone();
+        pink::menu_row(format!("{rkey}-cadence-{}", cadence.label()), false, t)
+            .role(Role::MenuItemRadio)
+            .aria_label(cadence.label())
+            .aria_toggled(toggled(cadence == current))
+            .child(check_slot(cadence == current, t))
+            .child(div().flex_1().min_w_0().child(cadence.label()))
+            .child(
+                div()
+                    .flex_none()
+                    .text_size(px(11.0))
+                    .text_color(t.text_muted)
+                    .child(cadence.every()),
+            )
+            .on_click(move |_, window, cx| {
+                edit(&state, window, cx, |s| {
+                    if let Some(l) = s.plan.lines.get_mut(ix) {
+                        l.cadence = cadence;
+                    }
+                    s.close_menu();
+                })
+            })
+    });
+    let card = pink::popover_card(t)
+        .w(px(layout::MENU_W_S))
+        .flex()
+        .flex_col()
+        .on_mouse_down_out(move |_, _, cx| {
+            close.update(cx, |s, cx| {
+                s.close_menu();
+                cx.notify();
+            })
+        })
+        .children(rows);
+    menu_below_end(
+        SharedString::from(format!("{rkey}-cadence-menu")),
+        card.into_any_element(),
+        exit,
     )
 }
 
-fn add_menu(
+fn catalog_menu(
     key: &str,
-    state: Entity<PlanState>,
+    state: &Entity<PlanState>,
     products: &[Product],
+    exit: Option<f32>,
     t: &Pink,
-) -> impl IntoElement {
+) -> AnyElement {
     let close = state.clone();
-    let items = products.iter().enumerate().map(|(ix, product)| {
+    let rows = products.iter().map(|product| {
         let state = state.clone();
         let product = product.clone();
-        let hover = format!("{key}-catalog-{ix}");
-        div()
-            .id(SharedString::from(hover.clone()))
-            .flex()
-            .items_center()
-            .gap(px(space::S10))
-            .h(px(40.))
-            .px(px(space::S8))
-            .rounded(px(radius::SM))
-            .cursor_pointer()
-            .hover_fill(hover, t.element_hover.opacity(0.), t.element_hover)
+        pink::menu_row(format!("{key}-catalog-{}", product.id), false, t)
+            .role(Role::MenuItem)
+            .aria_label(product.name.clone())
             .child(
                 div()
-                    .size(px(24.))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(radius::XS))
-                    .bg(t.fill(FillTier::Tertiary))
-                    .text_size(px(10.))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(t.text_muted)
-                    .child(product.monogram()),
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .child(product.name.clone()),
             )
             .child(
                 div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .child(
-                        div()
-                            .font_weight(FontWeight::MEDIUM)
-                            .child(product.name.clone()),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(text::CAPTION))
-                            .text_color(t.text_faint)
-                            .child(format!(
-                                "{} {}",
-                                money(product.price),
-                                product.cadence.suffix()
-                            )),
-                    ),
+                    .flex_none()
+                    .text_size(px(11.0))
+                    .text_color(t.text_muted)
+                    .child(format!(
+                        "{} {}",
+                        money(product.price),
+                        product.cadence.suffix()
+                    )),
             )
             .on_click(move |_, window, cx| {
                 let product = product.clone();
                 edit(&state, window, cx, |s| {
                     s.push_line(product);
-                    s.menu_open = false;
+                    s.close_menu();
                 })
             })
     });
-    deferred(
-        div()
-            .absolute()
-            .top(px(32.))
-            .right_0()
-            .child(motion::pop_in(
-                SharedString::from(format!("{key}-menu")),
-                pink::overlay(t)
-                    .id(SharedString::from(format!("{key}-menu-list")))
-                    .w(px(248.))
-                    .p(px(space::S4))
-                    .flex()
-                    .flex_col()
-                    .on_mouse_down_out(move |_, _, cx| {
-                        close.update(cx, |s, cx| {
-                            s.menu_open = false;
-                            cx.notify();
-                        })
-                    })
-                    .child(
-                        div()
-                            .px(px(space::S8))
-                            .pt(px(space::S4))
-                            .pb(px(space::S6))
-                            .text_size(px(text::CAPTION))
-                            .text_color(t.text_faint)
-                            .child("Catalog"),
-                    )
-                    .children(items),
-            )),
-    )
-    .with_priority(1)
-}
-
-/// A switch row for an optional adjustment; its controls follow when it's on.
-fn adjustment(
-    key: &str,
-    icon: &'static str,
-    title: &'static str,
-    hint: &'static str,
-    on: bool,
-    t: &Pink,
-    toggle: impl Fn(&mut Window, &mut App) + 'static,
-) -> gpui::Stateful<gpui::Div> {
-    div()
-        .id(SharedString::from(key.to_string()))
+    let card = pink::popover_card(t)
+        .w(px(layout::MENU_W_M))
         .flex()
-        .items_center()
-        .gap(px(space::S10))
-        .h(px(36.))
-        .child(
-            div()
-                .id(SharedString::from(format!("{key}-toggle")))
-                .flex()
-                .items_center()
-                .gap(px(space::S10))
-                .flex_1()
-                .cursor_pointer()
-                .on_click(move |_, window, cx| toggle(window, cx))
-                .child(switch(key, on, t))
-                .child(svg().path(icon).size(px(14.)).text_color(if on {
-                    t.accent
-                } else {
-                    t.text_faint
-                }))
-                .child(
-                    div()
-                        .flex()
-                        .items_baseline()
-                        .gap(px(space::S6))
-                        .child(div().font_weight(FontWeight::MEDIUM).child(title))
-                        .child(
-                            div()
-                                .text_size(px(text::FOOTNOTE))
-                                .text_color(t.text_faint)
-                                .child(hint),
-                        ),
-                ),
-        )
+        .flex_col()
+        .on_mouse_down_out(move |_, _, cx| {
+            close.update(cx, |s, cx| {
+                s.close_menu();
+                cx.notify();
+            })
+        })
+        .child(pink::menu_heading("Catalog", t))
+        .children(rows);
+    menu_below_end(
+        SharedString::from(format!("{key}-catalog-menu")),
+        card.into_any_element(),
+        exit,
+    )
 }
 
-fn summary(key: &str, state: &Entity<PlanState>, t: &Pink, cx: &App) -> impl IntoElement {
-    let s = state.read(cx);
+/// A menu hanging 6 px below its trigger, right-aligned to it (pink:
+/// popover.rs `anchored_menu_below_end` + `menu_motion_from`): `MENU_IN`
+/// with a 6 px drop while open, `MENU_OUT` under an occluder while it
+/// closes, kept 8 px inside the window. Put it in a `.relative()` wrapper
+/// beside the trigger.
+fn menu_below_end(id: SharedString, content: AnyElement, exit: Option<f32>) -> AnyElement {
+    let inner = div().occlude().pt(px(layout::POPOVER_GAP)).child(content);
+    let layer = match exit {
+        Some(progress) => motion::menu_out(
+            SharedString::from(format!("{id}-out")),
+            progress,
+            inner.relative().child(div().absolute().inset_0().occlude()),
+        )
+        .into_any_element(),
+        None => motion::menu_in_from(id, motion::MENU_RISE_DOWN, inner).into_any_element(),
+    };
+    div()
+        .absolute()
+        .bottom_0()
+        .right_0()
+        .size_0()
+        .child(
+            deferred(
+                anchored()
+                    .anchor(Anchor::TopRight)
+                    .snap_to_window_with_margin(px(layout::WINDOW_MARGIN))
+                    .child(layer),
+            )
+            .priority(1),
+        )
+        .into_any_element()
+}
+
+// ---------------------------------------------------------------------------
+// Invoice schedule card (pink: usage.rs "Estimated cost" + "Totals")
+// ---------------------------------------------------------------------------
+
+fn schedule_card(key: &str, state: &Entity<PlanState>, s: &PlanState, t: &Pink) -> Div {
     let plan = &s.plan;
     let invoices = plan.invoices();
     let topped = plan.topped_up();
     let term = invoices.len();
-    let peak = invoices.iter().copied().max().unwrap_or(0).max(1) as f32;
-    let first = invoices.first().copied().unwrap_or(0);
     let total: i64 = invoices.iter().sum();
+    let first = invoices.first().copied().unwrap_or(0);
+    let peak = invoices.iter().copied().max().unwrap_or(0);
     let average = total / term.max(1) as i64;
     let savings = plan.savings();
+    let lifted = topped.iter().filter(|t| **t).count();
+    let hovered = s.hovered.filter(|m| *m < term);
 
-    // Bars: equal widths across the chart, heights gliding to scale.
-    let chart_w = SUMMARY_W - 2. * space::S20;
-    let gap = if term > 12 { 2. } else { 4. };
-    let bar_w = ((chart_w - gap * (term as f32 - 1.)) / term as f32).max(2.);
-    let hovered = s.hovered.filter(|h| *h < term);
-    let bars = invoices.iter().enumerate().map(|(m, amount)| {
-        let h = motion::follow(
-            &format!("{key}-bar-{m}"),
-            (*amount as f32 / peak) * (CHART_H - 4.) + 2.,
-            MotionSpec::new(480, motion::EASE_OUT_QUINT).with_delay((m as u64 * 12).min(200)),
-        );
-        let color: Hsla = if topped.get(m).copied().unwrap_or(false) {
-            t.warning
-        } else if m == 0 {
-            t.accent_strong
+    let mut caption = format!(
+        "{term} invoices · {} to {}",
+        plan.month_label(0),
+        plan.month_label(term - 1)
+    );
+    if let Some(pct) = plan.discount {
+        caption.push_str(&format!(" · {pct}% off"));
+    }
+    if lifted > 0 {
+        caption.push_str(&format!(" · {lifted} topped up"));
+    }
+
+    // Totals: four figures, two to a line in this column.
+    let figures = pink::card_row(false, t)
+        .items_stretch()
+        .child(metric_cell("First invoice", money(first), t))
+        .child(metric_cell("Average month", money(average), t))
+        .child(metric_cell("Largest invoice", money(peak), t))
+        .child(metric_cell(
+            "Discount",
+            if savings > 0 {
+                money(savings)
+            } else {
+                "None".into()
+            },
+            t,
+        ));
+
+    // Pink puts the hovered period's breakdown in the row description and
+    // its total in a trailing readout. In this narrow column either would
+    // wrap and push the chart away from the pointer, so the description
+    // turns into the one-line readout and the tooltip carries the
+    // breakdown.
+    let readout = hovered.map(|m| {
+        format!(
+            "Invoice {} · {} · {}",
+            m + 1,
+            plan.month_label(m),
+            money(invoices[m])
+        )
+    });
+    let chart = pink::card_row(false, t)
+        .child(pink::row_text(
+            "Monthly invoices",
+            Some(
+                readout
+                    .unwrap_or_else(|| "One point per invoice; hover for its items.".into())
+                    .into(),
+            ),
+            t,
+        ))
+        .child(pink::row_block().child(invoice_chart(key, state, plan, &invoices, hovered, t)));
+
+    pink::section_card(t)
+        .child(pink::section_header(
+            "Invoice schedule",
+            Some(caption.into()),
+            t,
+        ))
+        .child(
+            pink::card_row(false, t).child(
+                div()
+                    .min_w_0()
+                    .type_style(TextStyle::Display)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(t.text)
+                    .child(money(total)),
+            ),
+        )
+        .child(figures)
+        .child(chart)
+}
+
+/// What one invoice is made of, in words: its date, each item due, the
+/// discount and any top-up, then the total.
+fn invoice_parts(plan: &BillingPlan, m: usize) -> Vec<String> {
+    let raw: i64 = plan
+        .lines
+        .iter()
+        .filter(|l| l.cadence.due(m))
+        .map(Product::charge)
+        .sum();
+    let discounted = plan.discounted(raw);
+    let billed = discounted.max(plan.minimum.unwrap_or(0));
+    let mut parts = vec![format!("Invoice {} · {}", m + 1, plan.date_label(m))];
+    parts.extend(
+        plan.lines
+            .iter()
+            .filter(|l| l.cadence.due(m))
+            .map(|l| format!("{} {}", l.name, money(l.charge()))),
+    );
+    if raw == 0 {
+        parts.push("Nothing due".into());
+    }
+    if discounted < raw {
+        parts.push(format!("Discount {}", money(discounted - raw)));
+    }
+    if billed > discounted {
+        parts.push(format!("Topped up {}", money(billed - discounted)));
+    }
+    parts.push(format!("Total {}", money(billed)));
+    parts
+}
+
+/// One figure in the Totals grid (pink: usage.rs `metric_cell`): a caption
+/// label over a Title3 value on the resting plate; cells share a row and wrap
+/// below 96.
+fn metric_cell(label: &'static str, value: String, t: &Pink) -> Div {
+    div()
+        .min_w(px(96.0))
+        .flex_1()
+        .rounded(px(8.0))
+        .border_1()
+        .border_color(t.separator(false))
+        .bg(t.fill(FillTier::Quaternary))
+        .px(px(12.0))
+        .py(px(10.0))
+        .flex()
+        .flex_col()
+        .gap(px(4.0))
+        .child(
+            div()
+                .text_size(px(11.0))
+                .line_height(px(14.0))
+                .text_color(t.readable_muted(0.85))
+                .child(label),
+        )
+        .child(
+            div()
+                .type_style(TextStyle::Title3)
+                .text_color(t.text)
+                .child(value),
+        )
+}
+
+/// The chart's value scale: the peak rounded up to a 1/2/5 step of half of
+/// it (pink: usage.rs `usage_chart`).
+fn chart_scale(peak: f64) -> f64 {
+    if peak <= 0.0 {
+        return 1.0;
+    }
+    let rough = peak / 2.0;
+    let magnitude = 10_f64.powf(rough.log10().floor());
+    let unit = [1.0, 2.0, 5.0, 10.0]
+        .into_iter()
+        .find(|step| step * magnitude >= rough)
+        .unwrap_or(10.0)
+        * magnitude;
+    (peak / unit).ceil() * unit
+}
+
+/// Monotone cubic tangents, so the curve never draws a false peak between
+/// two invoices (pink: usage.rs `monotone_usage_tangents`).
+fn monotone_tangents(points: &[(f32, f32)]) -> Vec<f32> {
+    if points.len() < 2 {
+        return vec![0.0; points.len()];
+    }
+    let slopes: Vec<f32> = points
+        .windows(2)
+        .map(|pair| {
+            let dx = pair[1].0 - pair[0].0;
+            if dx == 0.0 {
+                0.0
+            } else {
+                (pair[1].1 - pair[0].1) / dx
+            }
+        })
+        .collect();
+    let mut tangents = vec![0.0; points.len()];
+    tangents[0] = slopes[0];
+    tangents[points.len() - 1] = slopes[slopes.len() - 1];
+    for index in 1..points.len() - 1 {
+        let previous = slopes[index - 1];
+        let next = slopes[index];
+        tangents[index] = if previous * next <= 0.0 {
+            0.0
         } else {
-            t.accent
+            (previous + next) / 2.0
         };
-        let dim = hovered.is_some_and(|hm| hm != m);
+    }
+    for (index, slope) in slopes.iter().copied().enumerate() {
+        if slope == 0.0 {
+            tangents[index] = 0.0;
+            tangents[index + 1] = 0.0;
+            continue;
+        }
+        let a = tangents[index] / slope;
+        let b = tangents[index + 1] / slope;
+        let magnitude = a * a + b * b;
+        if magnitude > 9.0 {
+            let scale = 3.0 / magnitude.sqrt();
+            tangents[index] = scale * a * slope;
+            tangents[index + 1] = scale * b * slope;
+        }
+    }
+    tangents
+}
+
+/// The per-invoice cost chart (pink: usage.rs `usage_chart`, one series in
+/// pink's neutral series tone, `text`): three `border` gridlines, the area
+/// at 12% under a 2 px monotone line, a 1 px `text_muted` guide at the
+/// hovered invoice, a 56 px value-axis gutter and three uppercase month
+/// labels, all 11/14 in `readable_muted(0.85)`. Each invoice owns an equal
+/// hover cell with a tooltip of its items.
+fn invoice_chart(
+    key: &str,
+    state: &Entity<PlanState>,
+    plan: &BillingPlan,
+    invoices: &[i64],
+    hovered: Option<usize>,
+    t: &Pink,
+) -> AnyElement {
+    let values: Vec<f64> = invoices.iter().map(|c| *c as f64 / 100.0).collect();
+    let peak = values.iter().copied().fold(0.0_f64, f64::max);
+    let scale = chart_scale(peak);
+    let labels = if peak <= 0.0 {
+        [String::new(), String::new(), "0".into()]
+    } else {
+        [scale, scale / 2.0, 0.0].map(|value| {
+            if value == 0.0 {
+                "0".into()
+            } else {
+                money_short((value * 100.0).round() as i64)
+            }
+        })
+    };
+    let series = t.text;
+    let grid = t.border;
+    let hover_color = t.text_muted;
+    let drawing = values.clone();
+    let plot = canvas(
+        |_, _, _| (),
+        move |bounds, _, window, _| {
+            let width = f32::from(bounds.size.width);
+            let height = f32::from(bounds.size.height);
+            if width < 2.0 || height < 2.0 {
+                return;
+            }
+            let x0 = bounds.origin.x;
+            let y0 = bounds.origin.y;
+            for ratio in [0.0_f32, 0.5, 1.0] {
+                let mut path = PathBuilder::stroke(px(1.0));
+                let y = y0 + px(ratio * height);
+                path.move_to(point(x0, y));
+                path.line_to(point(x0 + px(width), y));
+                if let Ok(path) = path.build() {
+                    window.paint_path(path, grid);
+                }
+            }
+            if drawing.is_empty() || drawing.iter().all(|v| *v <= 0.0) {
+                return;
+            }
+            let length = drawing.len();
+            let x_at = |position: usize| {
+                if length == 1 {
+                    width / 2.0
+                } else {
+                    width * position as f32 / (length - 1) as f32
+                }
+            };
+            let coordinates: Vec<(f32, f32)> = drawing
+                .iter()
+                .enumerate()
+                .map(|(position, value)| {
+                    let y = height - (value / scale).clamp(0.0, 1.0) as f32 * (height - 8.0);
+                    (x_at(position), y)
+                })
+                .collect();
+            let tangents = monotone_tangents(&coordinates);
+            for fill in [true, false] {
+                let mut path = if fill {
+                    PathBuilder::fill()
+                } else {
+                    PathBuilder::stroke(px(2.0))
+                };
+                path.move_to(point(x0 + px(coordinates[0].0), y0 + px(coordinates[0].1)));
+                for (index, pair) in coordinates.windows(2).enumerate() {
+                    let (xa, ya) = pair[0];
+                    let (xb, yb) = pair[1];
+                    let dx = (xb - xa) / 3.0;
+                    path.cubic_bezier_to(
+                        point(x0 + px(xb), y0 + px(yb)),
+                        point(x0 + px(xa + dx), y0 + px(ya + tangents[index] * dx)),
+                        point(x0 + px(xb - dx), y0 + px(yb - tangents[index + 1] * dx)),
+                    );
+                }
+                if fill {
+                    let last = coordinates[coordinates.len() - 1].0;
+                    path.line_to(point(x0 + px(last), y0 + px(height)));
+                    path.line_to(point(x0 + px(coordinates[0].0), y0 + px(height)));
+                    path.close();
+                }
+                if let Ok(path) = path.build() {
+                    window.paint_path(path, if fill { series.opacity(0.12) } else { series });
+                }
+            }
+            if let Some(index) = hovered.filter(|index| *index < length) {
+                let x = x_at(index);
+                let mut guide = PathBuilder::stroke(px(1.0));
+                guide.move_to(point(x0 + px(x), y0));
+                guide.line_to(point(x0 + px(x), y0 + px(height)));
+                if let Ok(guide) = guide.build() {
+                    window.paint_path(guide, hover_color);
+                }
+            }
+        },
+    )
+    .w_full()
+    .h(px(CHART_HEIGHT));
+
+    let x_labels = if invoices.is_empty() {
+        [String::new(), String::new(), String::new()]
+    } else {
+        let last = invoices.len() - 1;
+        [0, invoices.len() / 2, last].map(|m| plan.month_label(m).to_uppercase())
+    };
+    let hover_cells = (0..invoices.len()).map(|m| {
         let state = state.clone();
+        let tip: SharedString = invoice_parts(plan, m).join("\n").into();
         div()
-            .id(SharedString::from(format!("{key}-col-{m}")))
-            .w(px(bar_w))
+            .id(SharedString::from(format!("{key}-chart-{m}")))
+            .flex_1()
             .h_full()
-            .flex()
-            .flex_col()
-            .justify_end()
             .on_hover(move |hovering, _, cx| {
                 state.update(cx, |s, cx| {
                     if *hovering {
@@ -1158,209 +1624,74 @@ fn summary(key: &str, state: &Entity<PlanState>, t: &Pink, cx: &App) -> impl Int
                     cx.notify();
                 })
             })
-            .child(
-                div()
-                    .w_full()
-                    .h(px(h.max(2.)))
-                    .rounded_t(px(radius::XS.min(bar_w / 2.)))
-                    .rounded_b(px(1.))
-                    .bg(color.opacity(if dim {
-                        0.35
-                    } else if m == 0 {
-                        1.
-                    } else {
-                        0.7
-                    })),
-            )
+            .tooltip(move |_, cx| cx.new(|_| ChartTooltip(tip.clone())).into())
     });
-
-    let readout: (String, i64) = match hovered {
-        Some(m) => (
-            format!("Invoice {} · {}", m + 1, plan.month_label(m)),
-            invoices[m],
-        ),
-        None => ("Largest invoice".into(), peak as i64),
-    };
-
-    let counter = |name: &str, cents: i64| {
-        let shown = motion::follow(&format!("{key}-count-{name}"), cents as f32 / 100., COUNT);
-        let settled = (shown - cents as f32 / 100.).abs() < 0.01;
-        if settled {
-            money(cents)
-        } else {
-            money((shown * 100.).round() as i64)
-        }
-    };
-    let row = |name: &'static str, value: String, color: Hsla| {
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .h(px(26.))
-            .child(div().text_color(t.text_muted).child(name))
-            .child(
-                div()
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(color)
-                    .child(value),
-            )
-    };
-
+    let label_tone = t.readable_muted(0.85);
     div()
-        .w(px(SUMMARY_W))
-        .flex_none()
+        .w_full()
+        .min_w_0()
         .flex()
         .flex_col()
-        .gap(px(space::S16))
-        .p(px(space::S20))
-        .bg(t.fill(FillTier::Quaternary))
-        .border_l_1()
-        .border_color(t.border)
-        .rounded_r(px(radius::LG))
+        .gap(px(6.0))
         .child(
             div()
+                .w_full()
                 .flex()
-                .flex_col()
-                .gap(px(2.))
-                .child(label("Invoice schedule", t))
+                .gap(px(CHART_AXIS_GAP))
                 .child(
                     div()
-                        .text_size(px(text::FOOTNOTE))
-                        .text_color(t.text_faint)
-                        .child(format!(
-                            "{} – {} · {term} invoices",
-                            plan.month_label(0),
-                            plan.month_label(term - 1)
-                        )),
+                        .w(px(CHART_AXIS_WIDTH))
+                        .h(px(CHART_HEIGHT))
+                        .flex_none()
+                        .flex()
+                        .flex_col()
+                        .justify_between()
+                        .text_right()
+                        .text_size(px(11.0))
+                        .line_height(px(14.0))
+                        .text_color(label_tone)
+                        .children(labels),
+                )
+                .child(
+                    div()
+                        .relative()
+                        .flex_1()
+                        .min_w_0()
+                        .h(px(CHART_HEIGHT))
+                        .child(plot)
+                        .child(div().absolute().inset_0().flex().children(hover_cells)),
                 ),
         )
         .child(
             div()
+                .w_full()
+                .pl(px(CHART_AXIS_WIDTH + CHART_AXIS_GAP))
                 .flex()
-                .flex_col()
-                .gap(px(space::S8))
-                .child(
-                    div()
-                        .flex()
-                        .items_baseline()
-                        .justify_between()
-                        .child(
-                            div()
-                                .text_size(px(text::CAPTION))
-                                .text_color(t.text_faint)
-                                .child(readout.0),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(text::FOOTNOTE))
-                                .font_weight(FontWeight::MEDIUM)
-                                .font_family(pink::MONO)
-                                .child(money(readout.1)),
-                        ),
-                )
-                .child(
-                    div()
-                        .id(SharedString::from(format!("{key}-chart")))
-                        .h(px(CHART_H))
-                        .flex()
-                        .items_end()
-                        .gap(px(gap))
-                        .border_b_1()
-                        .border_color(t.border_strong)
-                        .children(bars),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .justify_between()
-                        .text_size(px(text::CAPTION))
-                        .text_color(t.text_faint)
-                        .child(plan.month_label(0))
-                        .child(plan.month_label(term - 1)),
-                )
-                .when(topped.iter().any(|t| *t), |d| {
-                    d.child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(space::S6))
-                            .text_size(px(text::CAPTION))
-                            .text_color(t.text_muted)
-                            .child(
-                                div()
-                                    .size(px(8.))
-                                    .rounded(px(2.))
-                                    .bg(t.warning.opacity(0.7)),
-                            )
-                            .child("Topped up to the monthly minimum"),
-                    )
-                }),
+                .justify_between()
+                .text_size(px(11.0))
+                .line_height(px(14.0))
+                .text_color(label_tone)
+                .children(x_labels),
         )
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .text_size(px(text::BODY))
-                .child(row("First invoice", counter("first", first), t.text))
-                .child(row("Average month", counter("average", average), t.text))
-                .when(savings > 0, |d| {
-                    d.child(row(
-                        "Discount",
-                        format!("−{}", counter("savings", savings)),
-                        t.success,
-                    ))
-                })
-                .child(div().my(px(space::S8)).child(pink::divider(t)))
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .child(div().font_weight(FontWeight::MEDIUM).child("Term total"))
-                                .child(
-                                    div()
-                                        .text_size(px(text::CAPTION))
-                                        .text_color(t.text_faint)
-                                        .child(format!("over {term} months")),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(text::LARGE))
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(t.text)
-                                .child(counter("total", total)),
-                        ),
-                ),
-        )
+        .into_any_element()
 }
 
-/// An on/off switch whose knob glides.
-fn switch(key: &str, on: bool, t: &Pink) -> impl IntoElement {
-    let k = motion::follow(
-        &format!("{key}-knob"),
-        if on { 1. } else { 0. },
-        MotionSpec::new(240, motion::EASE_OUT_QUINT),
-    );
-    div()
-        .w(px(30.))
-        .h(px(18.))
-        .flex_none()
-        .p(px(2.))
-        .rounded_full()
-        .bg(motion::mix(t.surface_raised_hover, t.accent_strong, k))
-        .child(
-            div()
-                .size(px(14.))
-                .ml(px(12. * k))
-                .rounded_full()
-                .bg(gpui::white())
-                .shadow(vec![shadow(0., 1., 2., 0., gpui::black().opacity(0.22))]),
-        )
+/// The chart's hover tooltip (pink: shell.rs `SurfaceTabTooltip`): the tooltip
+/// card at `max_w 380`, `px 8 / py 5`, 11/14 in `text`, one line per part.
+struct ChartTooltip(SharedString);
+
+impl Render for ChartTooltip {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = Pink::get(cx);
+        pink::tooltip_card(&t)
+            .max_w(px(380.0))
+            .px(px(8.0))
+            .py(px(5.0))
+            .text_size(px(11.0))
+            .line_height(px(14.0))
+            .text_color(t.text)
+            .child(self.0.clone())
+    }
 }
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
@@ -1408,8 +1739,14 @@ mod tests {
         assert_eq!(inv[0], (10_000 + 5_000 + 3_000) * 9 / 10);
         assert_eq!(inv[1], 10_000); // 9,000 after discount, lifted to the minimum
         assert_eq!(inv[3], 13_000 * 9 / 10);
+        assert_eq!(plan.topped_up(), [false, true, true, false, true, true]);
+        assert_eq!(plan.line_term(&plan.lines[2]), 6_000);
         assert_eq!(plan.month_label(2), "Jan 2027");
+        assert_eq!(plan.date_label(2), "Jan 1, 2027");
         assert_eq!(money(1_234_567), "$12,345.67");
         assert_eq!(money(-5), "−$0.05");
+        assert_eq!(money_short(250_000), "$2,500");
+        assert_eq!(chart_scale(5_958.0), 10_000.0);
+        assert_eq!(percent(0.6923), "69.2%");
     }
 }
