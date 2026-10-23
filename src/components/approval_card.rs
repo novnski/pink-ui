@@ -236,14 +236,14 @@ impl ApprovalRequest {
     }
 }
 
-/// How an answered request reads in the transcript chip: the header, then
-/// what was picked (pink appends " · no reply in time, PINK picked …" when
-/// the auto answer fired).
+/// How an answered request reads in the transcript chip (pink: transcript.rs
+/// `rows_for_entry`, `MessagePart::Input`): its header, plus " · no reply in
+/// time, PINK picked …" when the auto answer fired.
 fn record_value(header: &str, label: &str, by_pink: bool) -> String {
     if by_pink {
         format!("{header} · no reply in time, PINK picked {label}")
     } else {
-        format!("{header} · {label}")
+        header.to_string()
     }
 }
 
@@ -1045,7 +1045,7 @@ mod tests {
     fn records_name_the_request_and_who_answered() {
         assert_eq!(
             record_value("Approve command", "Allow once", false),
-            "Approve command · Allow once"
+            "Approve command"
         );
         assert_eq!(
             record_value("Approve command", "Deny", true),
