@@ -332,12 +332,18 @@ impl RenderOnce for CompactBreakdown {
                     .child((self.format)(total)),
             )
             .when_some(readout, |row, text| {
-                // pink: usage.rs chart row's hover readout, swapping like
-                // the working line's status (`STATUS_SWAP`).
+                // pink: usage.rs chart row's hover readout (11/14 in
+                // `readable_muted(0.85)`), swapping like the working line's
+                // status (`STATUS_SWAP`).
                 let id = loaders::label_id(&format!("{key}-readout"), &text);
                 row.child(
-                    pink::row_controls()
-                        .child(motion::status_swap(id, pink::row_description(text, &t))),
+                    pink::row_controls().child(motion::status_swap(
+                        id,
+                        div()
+                            .type_style(TextStyle::Caption)
+                            .text_color(t.readable_muted(0.85))
+                            .child(text),
+                    )),
                 )
             })
             .child(pink::row_block().child(bar));
