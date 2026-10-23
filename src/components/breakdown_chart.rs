@@ -1,13 +1,21 @@
-//! Breakdown Chart – stacked columns over a small data cube, with a linked table.
+//! Breakdown Chart – a small data cube shown the way pink's Usage page shows
+//! spend: a view card that picks what to show, a summary card with the total
+//! and a stacked-column chart, and a Breakdown card with the same numbers as
+//! a table.
 //!
-//! A sentence sets up the view: "Show [Cost] by [Team] split by [Service]".
-//! Each bracket is a picker (a measure or one of the cube's dimensions), and
-//! the swap button trades the two dimensions. The columns stack the split's
-//! parts; hovering one dims the rest and floats a breakdown card beside it.
-//! The table under the chart holds the same numbers and is linked to it:
-//! hovering a row lights its column and the other way round, a split header
-//! isolates that part in every column, and the Total header sorts both the
-//! columns and the rows, which slide into their new places.
+//! pink: `shell/usage.rs` `render_usage_page`. The view card is its
+//! "Show" / "Period" card (settings rows, each with a segmented control);
+//! here the rows pick the measure, the dimension along the x axis and the one
+//! stacked in each column (picking the other row's dimension swaps the two).
+//! The summary card is pink's: the total in Display type, here with the
+//! parts' series dots beside it (pink puts each dot on a provider row), then
+//! the chart row. The chart reproduces `usage_chart`'s frame: a 56 px value gutter,
+//! three hairline gridlines, caption labels, and per-column hover cells with
+//! a tooltip and a readout in the row above. Pink has no stacked columns, so
+//! each part is painted the way pink paints an area series: a 12% body under
+//! a 2 px line in the series tone. The table is pink's Breakdown table
+//! (`usage_table_row` anatomy) with its segmented toggle in the section
+//! header; here it orders the columns and rows, which glide into place.
 //!
 //! ```ignore
 //! BreakdownChart::new("spend", "Cloud spend", cube)
@@ -15,43 +23,50 @@
 //!     .segment(2) // dimension stacked inside each column
 //! ```
 
-use std::{cell::Cell, rc::Rc, sync::Arc};
+use std::{rc::Rc, sync::Arc};
 
 use gpui::{
-    AnyView, App, Bounds, Corners, ElementId, FocusHandle, FontWeight, Hsla, KeyDownEvent,
-    MouseButton, MouseMoveEvent, Pixels, SharedString, Window, canvas, deferred, div, fill, point,
-    prelude::*, px, quad, size, svg,
+    AnyElement, AnyView, App, Bounds, Context, Corners, ElementId, FocusHandle, FontWeight, Hsla,
+    KeyDownEvent, MouseButton, Render, SharedString, TextAlign, Window, canvas, div, fill, point,
+    prelude::*, px, quad, relative, rgb, size,
 };
 
 use crate::{
-    HoverFill,
-    motion::{self, MotionSpec},
-    pink::{self, ControlSize, FillTier, Pink, radius, space, text},
+    motion,
+    pink::{self, ControlSize, FillTier, Pink, Segment, TextStyle, TypeStyleExt, layout, radius},
     story,
 };
 
 pub const NAME: &str = "Breakdown Chart";
-pub const DESCRIPTION: &str = "Stacked columns you set up in a sentence – measure, slice and split – with a floating breakdown on hover and a linked, sortable table";
+pub const DESCRIPTION: &str = "A measure split two ways on pink's usage page – Show, Group by and Split by rows on segmented tracks, the total with its parts' series dots, stacked columns in the usage chart's frame with hover readouts, and a Breakdown table whose columns and rows glide into order";
 
-const ICON_STACK: &str = "icons/breakdown-chart/stack.svg";
-const ICON_CHEVRON: &str = "icons/breakdown-chart/chevron-down.svg";
-const ICON_CHECK: &str = "icons/breakdown-chart/check.svg";
-const ICON_SWAP: &str = "icons/breakdown-chart/swap.svg";
-const ICON_SORT: &str = "icons/breakdown-chart/sort.svg";
+/// pink `icons::CHART`, the Usage page's empty-state tile.
+const ICON_CHART: &str = "icons/breakdown-chart/chart.svg";
 
-const PLOT_H: f32 = 196.;
-const AXIS_W: f32 = 48.;
-const ROW_H: f32 = 32.;
-const GROW: MotionSpec = MotionSpec::new(720, motion::EASE_OUT_QUINT);
-const SLIDE: MotionSpec = MotionSpec::new(520, motion::EASE_OUT_QUINT);
-const DIM: MotionSpec = MotionSpec::new(180, motion::EASE);
+/// pink `usage.rs` `CHART_HEIGHT`, `CHART_AXIS_WIDTH`, `CHART_AXIS_GAP`.
+const CHART_HEIGHT: f32 = 200.0;
+const CHART_AXIS_WIDTH: f32 = 56.0;
+const CHART_AXIS_GAP: f32 = 8.0;
+/// Headroom above the tallest mark (pink `usage_chart`: `height - 8`).
+const CHART_HEADROOM: f32 = 8.0;
+/// A column takes 40% of its slot, up to this width.
+const COLUMN_MAX_WIDTH: f32 = 48.0;
+/// A series' line on top of its body (pink `usage_chart`: 2 px stroke).
+const SERIES_LINE: f32 = 2.0;
+/// A series' body under its line (pink `usage_chart`: fill at 12%).
+const SERIES_BODY_ALPHA: f32 = 0.12;
+/// The hovered column's wash reaches this far past its sides.
+const HOVER_WASH_PAD: f32 = 8.0;
+/// pink `usage_table_row`: header and body row heights.
+const TABLE_HEADER_HEIGHT: f32 = 30.0;
+const TABLE_ROW_HEIGHT: f32 = 36.0;
 
 /// How a measure prints.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum MeasureFormat {
-    /// "$12.4k"
+    /// "$12.4K" in the chart and table, "$184,213.52" as the total.
     Currency,
-    /// "1.2M"
+    /// "1.2M".
     Count,
 }
 
@@ -69,43 +84,24 @@ impl Measure {
         }
     }
 
-    /// Like [`Self::fmt`] but always with one decimal, so table columns line up.
-    fn fmt_fixed(&self, v: f64) -> String {
-        let prefix = if self.format == MeasureFormat::Currency {
-            "$"
-        } else {
-            ""
-        };
-        let a = v.abs();
-        let body = if a >= 1e9 {
-            format!("{:.1}B", v / 1e9)
-        } else if a >= 1e6 {
-            format!("{:.1}M", v / 1e6)
-        } else if a >= 1e3 {
-            format!("{:.1}k", v / 1e3)
-        } else {
-            format!("{v:.0}")
-        };
-        format!("{prefix}{body}")
+    /// A figure in the chart, the readouts and the table (pink
+    /// `compact_tokens`, with a "$" for currency), short enough for the
+    /// value gutter and a table with a column per part.
+    fn fmt(&self, v: f64) -> String {
+        let body = compact(v);
+        match self.format {
+            MeasureFormat::Currency => format!("${body}"),
+            MeasureFormat::Count => body,
+        }
     }
 
-    fn fmt(&self, v: f64) -> String {
-        let prefix = if self.format == MeasureFormat::Currency {
-            "$"
-        } else {
-            ""
-        };
-        let a = v.abs();
-        let body = if a >= 1e9 {
-            format!("{}B", trim(v / 1e9))
-        } else if a >= 1e6 {
-            format!("{}M", trim(v / 1e6))
-        } else if a >= 1e3 {
-            format!("{}k", trim(v / 1e3))
-        } else {
-            format!("{v:.0}")
-        };
-        format!("{prefix}{body}")
+    /// The summary card's total (pink `money` for cost, `compact_tokens`
+    /// for counts).
+    fn fmt_total(&self, v: f64) -> String {
+        match self.format {
+            MeasureFormat::Currency => money(v),
+            MeasureFormat::Count => compact(v),
+        }
     }
 }
 
@@ -120,7 +116,7 @@ impl Dimension {
     pub fn new(name: impl Into<SharedString>, values: Vec<SharedString>) -> Self {
         Self {
             name: name.into(),
-            values: values,
+            values,
         }
     }
 }
@@ -161,13 +157,6 @@ impl Cube {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Picker {
-    Measure,
-    Slice,
-    Segment,
-}
-
 #[derive(IntoElement)]
 pub struct BreakdownChart {
     id: ElementId,
@@ -177,6 +166,7 @@ pub struct BreakdownChart {
     measure: usize,
     slice: usize,
     segment: usize,
+    largest_first: bool,
 }
 
 impl BreakdownChart {
@@ -189,9 +179,11 @@ impl BreakdownChart {
             measure: 0,
             slice: 0,
             segment: 1,
+            largest_first: false,
         }
     }
 
+    /// The caption under the summary card's title.
     pub fn subtitle(mut self, subtitle: impl Into<SharedString>) -> Self {
         self.subtitle = Some(subtitle.into());
         self
@@ -214,79 +206,84 @@ impl BreakdownChart {
         self.segment = ix;
         self
     }
+
+    /// Start with the columns and rows ordered largest first.
+    pub fn largest_first(mut self, on: bool) -> Self {
+        self.largest_first = on;
+        self
+    }
 }
 
 struct State {
     measure: usize,
     slice: usize,
     segment: usize,
-    sorted: bool,
-    /// Slice value under the pointer, in the chart or the table.
+    largest_first: bool,
+    /// Slice value under the pointer (in the chart or the table) or picked
+    /// with the arrow keys.
     hot: Option<usize>,
-    /// Segment value isolated from the table header.
-    isolated: Option<usize>,
-    open: Option<Picker>,
-    /// Highlighted option in the open menu.
-    menu_ix: usize,
-    /// Picker button under the pointer, so a click on it toggles rather than reopens.
-    trigger_hover: Option<Picker>,
-    plot: Rc<Cell<Bounds<Pixels>>>,
     focus: FocusHandle,
 }
 
 impl State {
-    fn options(&self, picker: Picker, cube: &Cube) -> Vec<SharedString> {
-        match picker {
-            Picker::Measure => cube.measures.iter().map(|m| m.name.clone()).collect(),
-            Picker::Slice | Picker::Segment => {
-                cube.dimensions.iter().map(|d| d.name.clone()).collect()
-            }
+    /// Puts dimension `ix` along the x axis; the split's dimension swaps in.
+    fn choose_slice(&mut self, ix: usize) {
+        if ix == self.segment {
+            self.segment = self.slice;
         }
-    }
-
-    fn current(&self, picker: Picker) -> usize {
-        match picker {
-            Picker::Measure => self.measure,
-            Picker::Slice => self.slice,
-            Picker::Segment => self.segment,
-        }
-    }
-
-    /// Picks an option; choosing the other axis's dimension swaps the two.
-    fn choose(&mut self, picker: Picker, ix: usize) {
-        match picker {
-            Picker::Measure => self.measure = ix,
-            Picker::Slice => {
-                if ix == self.segment {
-                    self.segment = self.slice;
-                }
-                self.slice = ix;
-            }
-            Picker::Segment => {
-                if ix == self.slice {
-                    self.slice = self.segment;
-                }
-                self.segment = ix;
-            }
-        }
+        self.slice = ix;
         self.hot = None;
-        self.isolated = None;
-        self.open = None;
+    }
+
+    /// Stacks dimension `ix` in the columns; the x axis' dimension swaps in.
+    fn choose_segment(&mut self, ix: usize) {
+        if ix == self.slice {
+            self.slice = self.segment;
+        }
+        self.segment = ix;
+        self.hot = None;
     }
 }
 
-fn palette(t: &Pink) -> [Hsla; 5] {
-    let amber = if t.dark {
-        t.warning
-    } else {
-        pink::oklch(0.70, 0.165, 62.)
-    };
-    let rose = if t.dark {
-        pink::oklch(0.70, 0.17, 5.)
-    } else {
-        pink::oklch(0.63, 0.20, 8.)
-    };
-    [t.accent, t.success, amber, rose, pink::neutral(0.62)]
+/// The parts' series tones. The first three are pink's Usage chart series
+/// (`usage.rs` `provider_tone`: `text`, `#5b9bbd`, `#d97757`); further parts
+/// take pink's project hues (`sidebar_projects.rs` `PROJECT_HUES`) that sit
+/// clear of those, floored to the non-text contrast target.
+fn series_tones(t: &Pink, count: usize) -> Vec<Hsla> {
+    let mut tones = vec![t.text, rgb(0x5b9bbd).into(), rgb(0xd97757).into()];
+    // Hues 150, 40, 250 and 325 of the project ladder.
+    for hue_ix in [1, 2, 0, 4] {
+        tones.push(t.readable_icon(pink::project_tint(hue_ix)));
+    }
+    (0..count).map(|ix| tones[ix % tones.len()]).collect()
+}
+
+/// pink `usage.rs` widths for its segmented rows: 150 for two options, 216
+/// for three, 300 for four; about 75 per option past that.
+fn segmented_width(count: usize) -> f32 {
+    match count {
+        0..=2 => 150.0,
+        3 => 216.0,
+        4 => 300.0,
+        n => 75.0 * n as f32,
+    }
+}
+
+/// The chart's top value: twice a round half-step at or above half the
+/// peak, so the three gridlines (0, ½, 1) land on round figures (pink
+/// `usage_chart` scales the same way, from a coarser 1-2-5 ladder).
+fn chart_scale(peak: f64) -> f64 {
+    if peak <= 0.0 {
+        return 1.0;
+    }
+    let half = peak / 2.0;
+    let magnitude = 10_f64.powf(half.log10().floor());
+    let step = [1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0]
+        .into_iter()
+        .find(|step| step * magnitude >= half - 1e-9)
+        .unwrap_or(10.0)
+        * magnitude;
+    step * 2.0
 }
 
 impl RenderOnce for BreakdownChart {
@@ -294,795 +291,579 @@ impl RenderOnce for BreakdownChart {
         let t = Pink::get(cx);
         let key = self.id.to_string();
         let cube = self.cube.clone();
-        let (m0, s0, g0) = (self.measure, self.slice, self.segment);
+        let dims = cube.dimensions.len();
+        if dims < 2 || cube.measures.is_empty() {
+            return empty_card(&t).id(self.id.clone()).into_any_element();
+        }
+        let (m0, s0, g0, sorted0) = (
+            self.measure.min(cube.measures.len() - 1),
+            self.slice.min(dims - 1),
+            self.segment.min(dims - 1),
+            self.largest_first,
+        );
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
             cx,
             |_, cx| State {
                 measure: m0,
                 slice: s0,
-                segment: g0,
-                sorted: false,
+                segment: if g0 == s0 { (s0 + 1) % dims } else { g0 },
+                largest_first: sorted0,
                 hot: None,
-                isolated: None,
-                open: None,
-                menu_ix: 0,
-                trigger_hover: None,
-                plot: Rc::new(Cell::new(Bounds::default())),
-                focus: cx.focus_handle(),
+                focus: cx.focus_handle().tab_stop(true),
             },
         );
-        if cube.dimensions.len() < 2 || cube.measures.is_empty() {
-            return pink::card(&t).id(self.id.clone());
-        }
         let s = state.read(cx);
         let measure_ix = s.measure.min(cube.measures.len() - 1);
         let (slice_dim, seg_dim) = (s.slice, s.segment);
-        let (sorted, hot, isolated, open, menu_ix) =
-            (s.sorted, s.hot, s.isolated, s.open, s.menu_ix);
-        let plot_cell = s.plot.clone();
+        let (largest_first, hot) = (s.largest_first, s.hot);
         let focus = s.focus.clone();
 
         let measure = cube.measures[measure_ix].clone();
+        let slice_name = cube.dimensions[slice_dim].name.clone();
+        let seg_name = cube.dimensions[seg_dim].name.clone();
         let slices = cube.dimensions[slice_dim].values.clone();
         let parts = cube.dimensions[seg_dim].values.clone();
         let matrix = cube.matrix(measure_ix, slice_dim, seg_dim);
         let totals: Vec<f64> = matrix.iter().map(|r| r.iter().sum()).collect();
         let grand: f64 = totals.iter().sum();
         let mut order: Vec<usize> = (0..slices.len()).collect();
-        if sorted {
+        if largest_first {
             order.sort_by(|a, b| totals[*b].total_cmp(&totals[*a]));
         }
-        let colors = palette(&t);
-        let color_of = |g: usize| colors[g % colors.len()];
         let n = slices.len().max(1);
+        let tones = series_tones(&t, parts.len());
+        let muted = t.readable_muted(0.85);
 
-        // Scale: four round steps over the tallest column.
-        let peak = totals.iter().copied().fold(0., f64::max) as f32;
-        let step = nice_step(peak / 4.);
-        let top = motion::follow(&format!("{key}-top"), step * 4., GROW);
+        // Scale: pink's three gridlines at 0, ½ and the top.
+        let peak = totals.iter().copied().fold(0.0_f64, f64::max);
+        let scale = chart_scale(peak);
+        let axis_labels = [scale, scale / 2.0, 0.0].map(|v| {
+            if peak <= 0.0 && v > 0.0 {
+                String::new()
+            } else if v == 0.0 {
+                "0".into()
+            } else {
+                measure.fmt(v)
+            }
+        });
 
-        // Per-column geometry, gliding between layouts.
+        // Per-column geometry: slot centers glide on a re-sort, part heights
+        // (as fractions of the scale) glide between measures and grow in when
+        // the dimensions change.
         let dims_key = format!("{key}-{slice_dim}-{seg_dim}");
+        let slot_of = |sl: usize| order.iter().position(|o| *o == sl).unwrap_or(sl);
         let columns: Vec<Column> = (0..slices.len())
-            .map(|sl| {
-                let slot = order.iter().position(|o| *o == sl).unwrap_or(sl);
-                let x = motion::follow(
+            .map(|sl| Column {
+                x: motion::follow(
                     &format!("{dims_key}-x-{sl}"),
-                    (slot as f32 + 0.5) / n as f32,
-                    SLIDE,
-                );
-                let heights = (0..parts.len())
+                    (slot_of(sl) as f32 + 0.5) / n as f32,
+                    motion::RESORT,
+                ),
+                fractions: (0..parts.len())
                     .map(|g| {
                         motion::follow_from(
                             &format!("{dims_key}-h-{sl}-{g}"),
-                            0.,
-                            matrix[sl][g] as f32,
-                            GROW.with_delay(60 + slot as u64 * 45),
+                            0.0,
+                            (matrix[sl][g] / scale) as f32,
+                            motion::EMPHASIZED,
                         )
                     })
-                    .collect();
-                let lit = hot.is_none_or(|h| h == sl);
-                Column {
-                    x,
-                    heights,
-                    opacity: motion::follow(
-                        &format!("{key}-col-op-{sl}"),
-                        if lit { 1. } else { 0.35 },
-                        DIM,
-                    ),
-                }
+                    .collect(),
+                hot: motion::follow(
+                    &format!("{key}-hot-{sl}"),
+                    if hot == Some(sl) { 1.0 } else { 0.0 },
+                    motion::HOVER_FADE,
+                ),
             })
             .collect();
-        let part_opacity: Vec<f32> = (0..parts.len())
-            .map(|g| {
-                motion::follow(
-                    &format!("{key}-part-op-{g}"),
-                    if isolated.is_none_or(|i| i == g) {
-                        1.
-                    } else {
-                        0.18
-                    },
-                    DIM,
-                )
-            })
-            .collect();
-        let part_colors: Vec<Hsla> = (0..parts.len()).map(color_of).collect();
 
-        // --- Header ---------------------------------------------------
-        let header = div()
-            .flex()
-            .items_start()
-            .justify_between()
+        // --- View card: pink's "Show" / "Period" rows --------------------
+        let measure_control = {
+            let state = state.clone();
+            pink::segmented(
+                format!("{key}-measure"),
+                cube.measures
+                    .iter()
+                    .enumerate()
+                    .map(|(ix, m)| Segment::new(ix.to_string(), m.name.clone()))
+                    .collect(),
+                measure_ix,
+                segmented_width(cube.measures.len()),
+                ControlSize::Md,
+                &t,
+                move |ix, _, cx| {
+                    state.update(cx, |s, cx| {
+                        s.measure = *ix;
+                        cx.notify();
+                    })
+                },
+            )
+        };
+        let dimension_segments: Vec<Segment> = cube
+            .dimensions
+            .iter()
+            .enumerate()
+            .map(|(ix, d)| Segment::new(ix.to_string(), d.name.clone()))
+            .collect();
+        let slice_control = {
+            let state = state.clone();
+            pink::segmented(
+                format!("{key}-slice"),
+                dimension_segments.clone(),
+                slice_dim,
+                segmented_width(dims),
+                ControlSize::Md,
+                &t,
+                move |ix, _, cx| {
+                    state.update(cx, |s, cx| {
+                        s.choose_slice(*ix);
+                        cx.notify();
+                    })
+                },
+            )
+        };
+        let segment_control = {
+            let state = state.clone();
+            pink::segmented(
+                format!("{key}-segment"),
+                dimension_segments,
+                seg_dim,
+                segmented_width(dims),
+                ControlSize::Md,
+                &t,
+                move |ix, _, cx| {
+                    state.update(cx, |s, cx| {
+                        s.choose_segment(*ix);
+                        cx.notify();
+                    })
+                },
+            )
+        };
+        let view_card = pink::section_card(&t)
+            .mt_0()
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(space::S10))
-                    .child(
-                        div()
-                            .flex_none()
-                            .size(px(32.))
-                            .rounded(px(radius::MD))
-                            .bg(t.accent_wash)
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(svg().path(ICON_STACK).size(px(16.)).text_color(if t.dark {
-                                t.text
-                            } else {
-                                t.accent
-                            })),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .child(
-                                div()
-                                    .text_size(px(text::CALLOUT))
-                                    .line_height(px(18.))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_color(t.text)
-                                    .child(self.title.clone()),
-                            )
-                            .when_some(self.subtitle.clone(), |d, sub| {
-                                d.child(
-                                    div()
-                                        .text_size(px(text::FOOTNOTE))
-                                        .line_height(px(16.))
-                                        .text_color(t.text_faint)
-                                        .child(sub),
-                                )
-                            }),
-                    ),
+                pink::card_row(true, &t)
+                    .child(pink::row_text(
+                        "Show",
+                        Some("The figure the chart and the table add up.".into()),
+                        &t,
+                    ))
+                    .child(pink::row_controls().child(measure_control)),
             )
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_end()
-                    .child(
-                        div()
-                            .text_size(px(22.))
-                            .line_height(px(26.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(t.text)
-                            .child(measure.fmt(motion::follow(
-                                &format!("{key}-grand"),
-                                grand as f32,
-                                GROW,
-                            ) as f64)),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(text::FOOTNOTE))
-                            .text_color(t.text_faint)
-                            .child(format!("total {}", measure.name.to_lowercase())),
-                    ),
+                pink::card_row(false, &t)
+                    .child(pink::row_text(
+                        "Group by",
+                        Some("One column, and one table row, per value.".into()),
+                        &t,
+                    ))
+                    .child(pink::row_controls().child(slice_control)),
+            )
+            .child(
+                pink::card_row(false, &t)
+                    .child(pink::row_text(
+                        "Split by",
+                        Some("The parts stacked in each column.".into()),
+                        &t,
+                    ))
+                    .child(pink::row_controls().child(segment_control)),
             );
 
-        // --- The sentence ------------------------------------------------
-        let token = |picker: Picker, label: SharedString| {
-            let tkey = format!("{key}-pick-{picker:?}");
-            let listener = motion::hover_listener(tkey.clone());
-            let is_open = open == Some(picker);
-            let hover_state = state.clone();
-            let click_state = state.clone();
-            let cube = cube.clone();
-            let focus = focus.clone();
-            let menu = is_open.then(|| {
-                let options = state.read(cx).options(picker, &cube);
-                let current = state.read(cx).current(picker);
-                let close_state = state.clone();
-                deferred(
-                    pink::overlay(&t)
-                        .id(SharedString::from(format!("{tkey}-menu")))
-                        .absolute()
-                        .top(px(32.))
-                        .left_0()
-                        .min_w(px(168.))
-                        .p(px(space::S4))
-                        .flex()
-                        .flex_col()
-                        .gap(px(1.))
-                        .on_mouse_down_out(move |_, _, cx| {
-                            close_state.update(cx, |s, cx| {
-                                if s.trigger_hover != s.open {
-                                    s.open = None;
-                                    cx.notify();
-                                }
-                            })
-                        })
-                        .children(options.into_iter().enumerate().map(|(ix, name)| {
-                            let pick_state = state.clone();
-                            let row_key = format!("{tkey}-opt-{ix}");
-                            let wash = if ix == menu_ix {
-                                t.fill(FillTier::Tertiary)
-                            } else {
-                                t.fill(FillTier::Tertiary).opacity(0.)
-                            };
-                            let disabled_hint = match picker {
-                                Picker::Slice if ix == seg_dim => Some("swap"),
-                                Picker::Segment if ix == slice_dim => Some("swap"),
-                                _ => None,
-                            };
-                            div()
-                                .id(SharedString::from(row_key))
-                                .h(px(28.))
-                                .px(px(space::S8))
-                                .flex()
-                                .items_center()
-                                .gap(px(space::S8))
-                                .rounded(px(radius::SM))
-                                .bg(wash)
-                                .cursor_pointer()
-                                .text_size(px(text::BODY))
-                                .text_color(t.text)
-                                .on_hover({
-                                    let state = state.clone();
-                                    move |h, _, cx| {
-                                        if *h {
-                                            state.update(cx, |s, cx| {
-                                                s.menu_ix = ix;
-                                                cx.notify();
-                                            })
-                                        }
-                                    }
-                                })
-                                .on_click(move |_, _, cx| {
-                                    pick_state.update(cx, |s, cx| {
-                                        s.choose(picker, ix);
-                                        cx.notify();
-                                    })
-                                })
-                                .child(div().flex_1().child(name))
-                                .when_some(disabled_hint, |d, hint| {
-                                    d.child(
-                                        div()
-                                            .text_size(px(text::CAPTION))
-                                            .text_color(t.text_faint)
-                                            .child(hint),
-                                    )
-                                })
-                                .child(svg().path(ICON_CHECK).size(px(14.)).text_color(
-                                    if ix == current {
-                                        t.accent
-                                    } else {
-                                        gpui::transparent_black()
-                                    },
-                                ))
-                        })),
-                )
-                .with_priority(1)
-            });
-            let rest = t.fill(FillTier::Quaternary);
-            let bg = if is_open {
-                t.fill(FillTier::Secondary)
-            } else {
-                motion::hover_blend(&tkey, rest, t.fill(FillTier::Secondary))
-            };
-            div()
-                .relative()
-                .child(
-                    div()
-                        .id(SharedString::from(tkey.clone()))
-                        .h(px(26.))
-                        .pl(px(space::S8))
-                        .pr(px(space::S6))
-                        .flex()
-                        .items_center()
-                        .gap(px(space::S4))
-                        .rounded(px(radius::SM))
-                        .border_1()
-                        .border_color(if is_open { t.border_strong } else { t.border })
-                        .bg(bg)
-                        .cursor_pointer()
-                        .text_size(px(text::BODY))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(t.text)
-                        .on_hover(move |h, window, cx| {
-                            listener(h, window, cx);
-                            hover_state.update(cx, |s, _| {
-                                if *h {
-                                    s.trigger_hover = Some(picker);
-                                } else if s.trigger_hover == Some(picker) {
-                                    s.trigger_hover = None;
-                                }
-                            })
-                        })
-                        .on_click(move |_, window, cx| {
-                            window.focus(&focus, cx);
-                            click_state.update(cx, |s, cx| {
-                                if s.open == Some(picker) {
-                                    s.open = None;
-                                } else {
-                                    s.open = Some(picker);
-                                    s.menu_ix = s.current(picker);
-                                }
-                                cx.notify();
-                            })
-                        })
-                        .child(label)
-                        .child(
-                            svg()
-                                .path(ICON_CHEVRON)
-                                .size(px(14.))
-                                .text_color(t.text_faint),
-                        ),
-                )
-                .children(menu)
-        };
-        let word = |w: &'static str| {
-            div()
-                .text_size(px(text::BODY))
-                .text_color(t.text_muted)
-                .child(w)
-        };
-        let swap_state = state.clone();
-        let sort_state = state.clone();
-        let sentence = div()
+        // --- Summary card: the total and its parts, then the chart row ----
+        // The parts' key: pink's provider-row title line (an 8 px dot in the
+        // series tone, gap 6, the name), here as one wrapping line beside
+        // the total instead of a row per part, since the Breakdown table
+        // already carries every part's figures.
+        let parts_key = div()
+            .flex_1()
+            .min_w_0()
             .flex()
+            .flex_row()
+            .flex_wrap()
+            .justify_end()
             .items_center()
-            .justify_between()
-            .child(
+            .gap_x(px(12.0))
+            .gap_y(px(4.0))
+            .children(parts.iter().enumerate().map(|(g, name)| {
                 div()
                     .flex()
+                    .flex_row()
                     .items_center()
-                    .gap(px(space::S8))
-                    .child(word("Show"))
-                    .child(token(Picker::Measure, measure.name.clone()))
-                    .child(word("by"))
-                    .child(token(
-                        Picker::Slice,
-                        cube.dimensions[slice_dim].name.clone(),
-                    ))
+                    .gap(px(6.0))
+                    .child(div().flex_none().size(px(8.0)).rounded_full().bg(tones[g]))
                     .child(
-                        pink::icon_button(
-                            SharedString::from(format!("{key}-swap")),
-                            ICON_SWAP,
-                            ControlSize::Sm,
-                            &t,
-                        )
-                        .on_click(move |_, _, cx| {
-                            swap_state.update(cx, |s, cx| {
-                                std::mem::swap(&mut s.slice, &mut s.segment);
-                                s.hot = None;
-                                s.isolated = None;
-                                cx.notify();
-                            })
-                        }),
+                        div()
+                            .text_size(px(12.0))
+                            .line_height(px(16.0))
+                            .text_color(muted)
+                            .child(name.clone()),
                     )
-                    .child(word("split by"))
-                    .child(token(
-                        Picker::Segment,
-                        cube.dimensions[seg_dim].name.clone(),
-                    )),
-            )
+            }));
+        // pink: the total in Display, forced semibold.
+        let total_row = pink::card_row(false, &t)
             .child(
-                pink::chip(
-                    SharedString::from(format!("{key}-sort")),
-                    sorted,
-                    ControlSize::Sm,
+                div()
+                    .flex_none()
+                    .type_style(TextStyle::Display)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(t.text)
+                    .child(measure.fmt_total(grand)),
+            )
+            .child(parts_key);
+
+        // pink: the hovered period's detail and total.
+        let hover_detail = hot.filter(|sl| *sl < slices.len()).map(|sl| {
+            let values: Vec<String> = (0..parts.len())
+                .filter(|g| matrix[sl][*g] > 0.0)
+                .map(|g| format!("{} {}", parts[g], measure.fmt(matrix[sl][g])))
+                .collect();
+            if values.is_empty() {
+                format!("{} · No activity", slices[sl])
+            } else {
+                format!(
+                    "{} · {} · Total {}",
+                    slices[sl],
+                    values.join(" · "),
+                    measure.fmt(totals[sl])
+                )
+            }
+        });
+        let hover_readout = hot
+            .filter(|sl| *sl < slices.len())
+            .map(|sl| format!("{} · Total {}", slices[sl], measure.fmt(totals[sl])));
+        let chart = self.chart(
+            &t,
+            &key,
+            &state,
+            &focus,
+            &columns,
+            &order,
+            &slices,
+            &parts,
+            &matrix,
+            &totals,
+            &tones,
+            &measure,
+            axis_labels,
+        );
+        // The description becomes the hovered column's detail (pink); it
+        // keeps to one line so the chart under it never shifts.
+        let chart_description = hover_detail.unwrap_or_else(|| {
+            format!(
+                "One column per {}, stacked by {}. Hover for values.",
+                slice_name.to_lowercase(),
+                seg_name.to_lowercase()
+            )
+        });
+        let chart_row = pink::card_row(false, &t)
+            .child(
+                pink::row_text(
+                    format!("{} by {}", measure.name, slice_name.to_lowercase()),
+                    None,
                     &t,
                 )
-                .child(svg().path(ICON_SORT).size(px(12.)).text_color(if sorted {
-                    t.accent
-                } else {
-                    t.text_faint
-                }))
-                .child("Largest first")
-                .on_click(move |_, _, cx| toggle_sort(&sort_state, cx)),
-            );
-
-        // --- Chart ------------------------------------------------------
-        let grid = t.border;
-        let paint_columns = columns.clone();
-        let paint_part_opacity = part_opacity.clone();
-        let paint_part_colors = part_colors.clone();
-        let chart_canvas = canvas(
-            {
-                let plot_cell = plot_cell.clone();
-                move |bounds, _, _| plot_cell.set(bounds)
-            },
-            move |bounds, _, window, _| {
-                let w = f32::from(bounds.size.width);
-                let h = f32::from(bounds.size.height);
-                let at = |x: f32, y: f32| bounds.origin + point(px(x), px(y));
-                for k in 0..=4 {
-                    let y = ((h - 1.) * k as f32 / 4.).round();
-                    window.paint_quad(fill(Bounds::new(at(0., y), size(px(w), px(1.))), grid));
-                }
-                let slot = w / n as f32;
-                let cw = (slot * 0.4).min(56.);
-                for col in &paint_columns {
-                    let cx = col.x * w;
-                    let mut y = h - 1.;
-                    let last = col.heights.iter().rposition(|v| *v > 0.);
-                    for (g, v) in col.heights.iter().enumerate() {
-                        let ph = v / top.max(1.) * (h - 4.);
-                        if ph <= 0.2 {
-                            continue;
-                        }
-                        let gap = if Some(g) == last { 0. } else { 1.5 };
-                        let r = if Some(g) == last { 4. } else { 0. };
-                        let seg_h = (ph - gap).max(0.5);
-                        window.paint_quad(quad(
-                            Bounds::new(at(cx - cw / 2., y - ph), size(px(cw), px(seg_h))),
-                            Corners {
-                                top_left: px(r),
-                                top_right: px(r),
-                                bottom_left: px(0.),
-                                bottom_right: px(0.),
-                            },
-                            paint_part_colors[g].opacity(col.opacity * paint_part_opacity[g]),
-                            px(0.),
-                            gpui::transparent_black(),
-                            Default::default(),
-                        ));
-                        y -= ph;
-                    }
-                }
-            },
-        )
-        .size_full();
-
-        let plot_w = f32::from(plot_cell.get().size.width);
-        let breakdown = hot.map(|sl| {
-            let fx = columns[sl].x;
-            let x = plot_w * fx;
-            let cw = (plot_w / n as f32 * 0.4).min(56.);
-            let total = totals[sl];
-            let card = div()
-                .absolute()
-                .top(px(space::S4))
-                .w(px(204.))
-                .p(px(space::S10))
-                .flex()
-                .flex_col()
-                .gap(px(space::S4))
-                .rounded(px(radius::MD))
-                .bg(t.surface_overlay)
-                .border_1()
-                .border_color(t.border)
-                .shadow(t.tooltip_shadow())
-                .child(
-                    div()
-                        .flex()
-                        .justify_between()
-                        .pb(px(space::S4))
-                        .text_size(px(text::FOOTNOTE))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(t.text)
-                        .child(slices[sl].clone())
-                        .child(div().font_family(pink::MONO).child(measure.fmt(total))),
+                .child(pink::row_description(chart_description, &t).truncate()),
+            )
+            .when_some(hover_readout, |row, readout| {
+                row.child(
+                    pink::row_controls().child(
+                        div()
+                            .type_style(TextStyle::Caption)
+                            .text_color(muted)
+                            .child(readout),
+                    ),
                 )
-                .children((0..parts.len()).rev().map(|g| {
-                    let v = matrix[sl][g];
-                    let share = if total > 0. { v / total } else { 0. };
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(space::S6))
-                        .text_size(px(text::FOOTNOTE))
-                        .line_height(px(18.))
-                        .when(isolated.is_some_and(|i| i != g), |d| d.opacity(0.45))
-                        .child(div().size(px(8.)).rounded(px(2.)).bg(part_colors[g]))
-                        .child(
-                            div()
-                                .flex_1()
-                                .text_color(t.text_muted)
-                                .child(parts[g].clone()),
-                        )
-                        .child(
-                            div()
-                                .font_family(pink::MONO)
-                                .text_color(t.text)
-                                .child(measure.fmt(v)),
-                        )
-                        .child(
-                            div()
-                                .w(px(32.))
-                                .flex()
-                                .justify_end()
-                                .font_family(pink::MONO)
-                                .text_color(t.text_faint)
-                                .child(format!("{:.0}%", share * 100.)),
-                        )
-                }));
-            let card = if fx < 0.6 {
-                card.left(px(x + cw / 2. + 10.))
-            } else {
-                card.right(px(plot_w - x + cw / 2. + 10.))
-            };
-            motion::fade_in(SharedString::from(format!("{key}-tip-{sl}")), card)
-        });
+            })
+            .child(pink::row_block().child(chart));
+        let summary_card = pink::section_card(&t)
+            .child(pink::section_header(
+                self.title.clone(),
+                self.subtitle.clone(),
+                &t,
+            ))
+            .child(total_row)
+            .child(chart_row);
 
-        let axis = div()
-            .relative()
-            .flex_none()
-            .w(px(AXIS_W))
-            .h(px(PLOT_H))
-            .children((0..=4).map(|k| {
-                let y = (PLOT_H - 1.) * k as f32 / 4.;
-                div()
-                    .absolute()
-                    .left_0()
-                    .top(px(y - 8.))
-                    .text_size(px(text::CAPTION))
-                    .line_height(px(16.))
-                    .font_family(pink::MONO)
-                    .text_color(t.text_faint)
-                    .child(measure.fmt((step * (4 - k) as f32) as f64))
-            }));
-
-        let plot = {
-            let move_state = state.clone();
-            let leave_state = state.clone();
-            let plot_cell = plot_cell.clone();
-            let order = order.clone();
-            div()
-                .id(SharedString::from(format!("{key}-plot")))
-                .relative()
-                .flex_1()
-                .h(px(PLOT_H))
-                .child(chart_canvas)
-                .children(breakdown)
-                .on_mouse_move(move |ev: &MouseMoveEvent, _, cx| {
-                    let b = plot_cell.get();
-                    if b.size.width <= px(0.) {
-                        return;
-                    }
-                    let fx = ((ev.position.x - b.origin.x) / b.size.width).clamp(0., 0.999);
-                    let slot = (fx * n as f32) as usize;
-                    let sl = order.get(slot).copied();
-                    move_state.update(cx, |s, cx| {
-                        if s.hot != sl {
-                            s.hot = sl;
-                            cx.notify();
-                        }
+        // --- Breakdown card: pink's table under a section header ---------
+        let order_control = {
+            let state = state.clone();
+            pink::segmented(
+                format!("{key}-order"),
+                vec![
+                    Segment::new("listed", "Listed"),
+                    Segment::new("largest", "Largest"),
+                ],
+                usize::from(largest_first),
+                segmented_width(2),
+                ControlSize::Md,
+                &t,
+                move |ix, _, cx| {
+                    state.update(cx, |s, cx| {
+                        s.largest_first = *ix == 1;
+                        cx.notify();
                     })
-                })
-                .on_hover(move |h, _, cx| {
-                    if !h {
-                        set_hot(&leave_state, None, cx);
-                    }
-                })
+                },
+            )
         };
-        let x_labels = div()
-            .relative()
-            .h(px(18.))
-            .ml(px(AXIS_W))
-            .mt(px(space::S6))
-            .children((0..slices.len()).map(|sl| {
-                let slot_w = plot_w / n as f32;
-                div()
-                    .absolute()
-                    .top_0()
-                    .left(px(columns[sl].x * plot_w - slot_w / 2.))
-                    .w(px(slot_w))
-                    .flex()
-                    .justify_center()
-                    .text_size(px(text::FOOTNOTE))
-                    .line_height(px(18.))
-                    .text_color(if hot == Some(sl) {
-                        t.text
-                    } else {
-                        t.text_muted
-                    })
-                    .child(slices[sl].clone())
-            }));
-
-        // --- Linked table ------------------------------------------------
-        let cell_w = 84.;
-        let total_w = 92.;
-        let header_cell = |content: gpui::AnyElement| {
+        // pink `usage.rs`: the label takes 40%, the figures share the rest.
+        let column_width = 0.60 / (parts.len() + 2) as f32;
+        let figure = |value: String, color: Hsla| {
             div()
-                .flex_none()
-                .w(px(cell_w))
-                .flex()
-                .justify_end()
-                .child(content)
+                .w(relative(column_width))
+                .min_w_0()
+                .truncate()
+                .text_align(TextAlign::Right)
+                .text_color(color)
+                .child(value)
         };
-        let table_head = div()
-            .h(px(30.))
-            .px(px(space::S8))
+        let header_row = div()
+            .w_full()
+            .min_h(px(TABLE_HEADER_HEIGHT))
             .flex()
             .items_center()
-            .border_b_1()
-            .border_color(t.border)
-            .text_size(px(text::CAPTION))
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(t.text_faint)
+            .type_style(TextStyle::Caption)
+            .text_color(muted)
             .child(
                 div()
-                    .flex_1()
-                    .child(cube.dimensions[slice_dim].name.to_uppercase()),
+                    .w(relative(0.40))
+                    .min_w_0()
+                    .truncate()
+                    .child(slice_name.clone()),
             )
-            .children((0..parts.len()).map(|g| {
-                let iso_state = state.clone();
-                let hkey = format!("{key}-head-{g}");
-                let lit = isolated == Some(g);
-                header_cell(
-                    div()
-                        .id(SharedString::from(hkey.clone()))
-                        .flex()
-                        .items_center()
-                        .gap(px(space::S6))
-                        .px(px(space::S6))
-                        .h(px(22.))
-                        .rounded(px(radius::SM))
-                        .cursor_pointer()
-                        .when(lit, |d| {
-                            d.bg(t.fill(FillTier::Secondary)).text_color(t.text)
-                        })
-                        .when(!lit, |d| {
-                            d.hover_fill_fg(
-                                hkey.clone(),
-                                t.fill(FillTier::Tertiary).opacity(0.),
-                                t.fill(FillTier::Tertiary),
-                                t.text_faint,
-                                t.text,
-                            )
-                        })
-                        .on_click(move |_, _, cx| {
-                            iso_state.update(cx, |s, cx| {
-                                s.isolated = if s.isolated == Some(g) { None } else { Some(g) };
-                                cx.notify();
-                            })
-                        })
-                        .child(div().size(px(8.)).rounded(px(2.)).bg(part_colors[g]))
-                        .child(parts[g].to_uppercase())
-                        .into_any_element(),
-                )
-            }))
-            .child({
-                let sort_state = state.clone();
-                let hkey = format!("{key}-head-total");
-                div().flex_none().w(px(total_w)).flex().justify_end().child(
-                    div()
-                        .id(SharedString::from(hkey.clone()))
-                        .flex()
-                        .items_center()
-                        .gap(px(space::S4))
-                        .px(px(space::S6))
-                        .h(px(22.))
-                        .rounded(px(radius::SM))
-                        .cursor_pointer()
-                        .hover_fill_fg(
-                            hkey,
-                            t.fill(FillTier::Tertiary).opacity(0.),
-                            t.fill(FillTier::Tertiary),
-                            if sorted { t.text } else { t.text_faint },
-                            t.text,
-                        )
-                        .on_click(move |_, _, cx| toggle_sort(&sort_state, cx))
-                        .child("TOTAL")
-                        .child(svg().path(ICON_SORT).size(px(11.)).text_color(if sorted {
-                            t.accent
-                        } else {
-                            t.text_faint
-                        })),
-                )
-            });
-        let table_rows = div()
+            .children(parts.iter().map(|name| figure(name.to_string(), muted)))
+            .child(figure("Total".into(), muted))
+            .child(figure("Share".into(), muted));
+        let body = div()
             .relative()
-            .h(px(ROW_H * slices.len() as f32))
+            .w_full()
+            .h(px(TABLE_ROW_HEIGHT * slices.len() as f32))
             .children((0..slices.len()).map(|sl| {
-                let slot = order.iter().position(|o| *o == sl).unwrap_or(sl);
-                let top =
-                    motion::follow(&format!("{dims_key}-row-{sl}"), slot as f32 * ROW_H, SLIDE);
+                let top = motion::follow(
+                    &format!("{dims_key}-row-{sl}"),
+                    slot_of(sl) as f32 * TABLE_ROW_HEIGHT,
+                    motion::RESORT,
+                );
+                // Rows aren't controls (no plate); the hovered or chart-lit
+                // row brightens its secondary figures instead.
+                let quiet = motion::mix(muted, t.text, columns[sl].hot);
+                let share = if grand > 0.0 { totals[sl] / grand } else { 0.0 };
                 let row_state = state.clone();
-                let lit = hot == Some(sl);
                 div()
                     .id(SharedString::from(format!("{key}-row-{sl}")))
                     .absolute()
                     .left_0()
                     .right_0()
                     .top(px(top))
-                    .h(px(ROW_H))
-                    .px(px(space::S8))
+                    .h(px(TABLE_ROW_HEIGHT))
                     .flex()
                     .items_center()
-                    .rounded(px(radius::SM))
-                    .bg(if lit {
-                        t.fill(FillTier::Tertiary)
-                    } else {
-                        t.fill(FillTier::Tertiary).opacity(0.)
-                    })
-                    .on_hover(move |h, _, cx| {
-                        if *h {
-                            set_hot(&row_state, Some(sl), cx);
-                        }
-                    })
+                    .border_t_1()
+                    .border_color(t.border)
+                    .text_size(px(13.0))
+                    .line_height(px(18.0))
+                    .on_hover(move |hovered, _, cx| set_hot(&row_state, sl, *hovered, cx))
                     .child(
                         div()
-                            .flex_1()
-                            .text_size(px(text::BODY))
+                            .w(relative(0.40))
+                            .min_w_0()
+                            .truncate()
                             .text_color(t.text)
                             .child(slices[sl].clone()),
                     )
-                    .children((0..parts.len()).map(|g| {
-                        let focus_cell = isolated == Some(g);
-                        div()
-                            .flex_none()
-                            .w(px(cell_w))
-                            .flex()
-                            .justify_end()
-                            .pr(px(space::S6))
-                            .font_family(pink::MONO)
-                            .text_size(px(text::FOOTNOTE))
-                            .text_color(if focus_cell || isolated.is_none() {
-                                t.text_muted
-                            } else {
-                                t.text_faint.opacity(0.6)
-                            })
-                            .when(focus_cell, |d| d.text_color(t.text))
-                            .child(measure.fmt_fixed(matrix[sl][g]))
-                    }))
-                    .child(
-                        div()
-                            .flex_none()
-                            .w(px(total_w))
-                            .flex()
-                            .justify_end()
-                            .pr(px(space::S6))
-                            .font_family(pink::MONO)
-                            .text_size(px(text::FOOTNOTE))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(t.text)
-                            .child(measure.fmt_fixed(totals[sl])),
-                    )
+                    .children((0..parts.len()).map(|g| figure(measure.fmt(matrix[sl][g]), quiet)))
+                    .child(figure(measure.fmt(totals[sl]), t.text))
+                    .child(figure(percent(share), quiet))
             }));
-        let table = {
-            let leave_state = state.clone();
-            div()
-                .id(SharedString::from(format!("{key}-table")))
-                .flex()
-                .flex_col()
-                .gap(px(space::S4))
-                .child(table_head)
-                .child(table_rows)
-                .on_hover(move |h, _, cx| {
-                    if !h {
-                        set_hot(&leave_state, None, cx);
-                    }
-                })
-        };
+        let table = div()
+            .w_full()
+            .border_t_1()
+            .border_color(t.border)
+            .px(px(layout::ROW_PAD_X))
+            .pt(px(4.0))
+            .pb(px(8.0))
+            .flex()
+            .flex_col()
+            .child(header_row)
+            .child(body)
+            .when(slices.is_empty(), |table| {
+                table.child(
+                    pink::row_description("Nothing to break down yet.", &t)
+                        .border_t_1()
+                        .border_color(t.border)
+                        .py(px(12.0)),
+                )
+            });
+        let breakdown_card = pink::section_card(&t)
+            .child(
+                pink::section_header(
+                    "Breakdown",
+                    Some(
+                        format!(
+                            "{} per {} and {}, {}.",
+                            measure.name,
+                            slice_name.to_lowercase(),
+                            seg_name.to_lowercase(),
+                            if largest_first {
+                                "largest first"
+                            } else {
+                                "as listed"
+                            }
+                        )
+                        .into(),
+                    ),
+                    &t,
+                )
+                .child(pink::row_controls().child(order_control)),
+            )
+            .child(table);
 
-        // Keyboard: the open menu first, then the columns.
+        motion::keep_alive(window);
+        // pink: the settings page column, at most 720 wide.
+        div()
+            .id(self.id.clone())
+            .w_full()
+            .max_w(px(layout::PAGE_MAX_WIDTH))
+            .flex()
+            .flex_col()
+            .child(view_card)
+            .child(summary_card)
+            .child(breakdown_card)
+            .into_any_element()
+    }
+}
+
+impl BreakdownChart {
+    /// The chart block (pink `usage_chart`): the value gutter and the plot
+    /// side by side, the slice labels under the plot.
+    #[allow(clippy::too_many_arguments)]
+    fn chart(
+        &self,
+        t: &Pink,
+        key: &str,
+        state: &gpui::Entity<State>,
+        focus: &FocusHandle,
+        columns: &[Column],
+        order: &[usize],
+        slices: &[SharedString],
+        parts: &[SharedString],
+        matrix: &[Vec<f64>],
+        totals: &[f64],
+        tones: &[Hsla],
+        measure: &Measure,
+        axis_labels: [String; 3],
+    ) -> AnyElement {
+        let n = slices.len().max(1);
+        let label_tone = t.readable_muted(0.85);
+        let grid = t.border;
+        let wash = t.fill(FillTier::Tertiary);
+        let paint_columns = columns.to_vec();
+        let paint_tones = tones.to_vec();
+        let plot = canvas(
+            |_, _, _| (),
+            move |bounds, _, window, _| {
+                let width = f32::from(bounds.size.width);
+                let height = f32::from(bounds.size.height);
+                if width < 2.0 || height < 2.0 {
+                    return;
+                }
+                let at = |x: f32, y: f32| bounds.origin + point(px(x), px(y));
+                // pink: 1 px gridlines in `border` at 0, ½ and the top.
+                for y in [0.0, (height / 2.0).floor(), height - 1.0] {
+                    window.paint_quad(fill(
+                        Bounds::new(at(0.0, y), size(px(width), px(1.0))),
+                        grid,
+                    ));
+                }
+                let slot = width / n as f32;
+                let column_w = (slot * 0.4).min(COLUMN_MAX_WIDTH);
+                let rise = height - CHART_HEADROOM;
+                for col in &paint_columns {
+                    let center = col.x * width;
+                    if col.hot > 0.0 {
+                        let wash_w = column_w + HOVER_WASH_PAD * 2.0;
+                        window.paint_quad(quad(
+                            Bounds::new(
+                                at(center - wash_w / 2.0, 0.0),
+                                size(px(wash_w), px(height)),
+                            ),
+                            Corners::all(px(radius::SM)),
+                            wash.opacity(col.hot),
+                            px(0.0),
+                            gpui::transparent_black(),
+                            Default::default(),
+                        ));
+                    }
+                    let left = center - column_w / 2.0;
+                    let mut base = 0.0_f32;
+                    for (g, fraction) in col.fractions.iter().enumerate() {
+                        let part_h = fraction.max(0.0) * rise;
+                        if part_h < 0.5 {
+                            continue;
+                        }
+                        let top = height - base - part_h;
+                        let tone = paint_tones[g];
+                        window.paint_quad(fill(
+                            Bounds::new(at(left, top), size(px(column_w), px(part_h))),
+                            tone.opacity(SERIES_BODY_ALPHA),
+                        ));
+                        window.paint_quad(fill(
+                            Bounds::new(
+                                at(left, top),
+                                size(px(column_w), px(SERIES_LINE.min(part_h))),
+                            ),
+                            tone,
+                        ));
+                        base += part_h;
+                    }
+                }
+            },
+        )
+        .size_full();
+
+        // Hover cells, one per slot (pink: one per period), each with the
+        // tooltip pink shows for a period.
+        let cells = order.iter().map(|&sl| {
+            let detail = std::iter::once(slices[sl].to_string())
+                .chain(
+                    (0..parts.len())
+                        .map(|g| format!("{} {}", parts[g], measure.fmt(matrix[sl][g]))),
+                )
+                .chain(std::iter::once(format!(
+                    "Total {}",
+                    measure.fmt(totals[sl])
+                )))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let cell_state = state.clone();
+            div()
+                .id(SharedString::from(format!("{key}-cell-{sl}")))
+                .flex_1()
+                .h_full()
+                .on_hover(move |hovered, _, cx| set_hot(&cell_state, sl, *hovered, cx))
+                .tooltip(move |_, cx| {
+                    let detail = SharedString::from(detail.clone());
+                    cx.new(|_| ChartTooltip(detail)).into()
+                })
+                .tooltip_show_delay(layout::TOOLTIP_DELAY)
+        });
+
+        // Keyboard: the arrows walk the columns in their shown order.
         let key_state = state.clone();
-        let key_cube = cube.clone();
-        let key_order = order.clone();
+        let key_order = order.to_vec();
         let on_key = move |ev: &KeyDownEvent, _: &mut Window, cx: &mut App| {
+            if key_order.is_empty() {
+                return;
+            }
             let k = ev.keystroke.key.as_str();
             let handled = key_state.update(cx, |s, cx| {
-                if let Some(picker) = s.open {
-                    let len = s.options(picker, &key_cube).len().max(1);
-                    match k {
-                        "down" => s.menu_ix = (s.menu_ix + 1) % len,
-                        "up" => s.menu_ix = (s.menu_ix + len - 1) % len,
-                        "enter" | "space" => {
-                            let ix = s.menu_ix;
-                            s.choose(picker, ix);
-                        }
-                        "escape" => s.open = None,
-                        _ => return false,
-                    }
-                } else {
-                    let pos = s.hot.and_then(|h| key_order.iter().position(|o| *o == h));
-                    let last = key_order.len().saturating_sub(1);
-                    match k {
-                        "right" => s.hot = Some(key_order[pos.map_or(0, |p| (p + 1).min(last))]),
-                        "left" => {
-                            s.hot = Some(key_order[pos.map_or(last, |p| p.saturating_sub(1))])
-                        }
-                        "escape" => {
-                            s.hot = None;
-                            s.isolated = None;
-                        }
-                        _ => return false,
-                    }
+                let pos = s.hot.and_then(|h| key_order.iter().position(|o| *o == h));
+                let last = key_order.len() - 1;
+                match k {
+                    "right" => s.hot = Some(key_order[pos.map_or(0, |p| (p + 1).min(last))]),
+                    "left" => s.hot = Some(key_order[pos.map_or(last, |p| p.saturating_sub(1))]),
+                    "escape" if s.hot.is_some() => s.hot = None,
+                    _ => return false,
                 }
                 cx.notify();
                 true
@@ -1091,32 +872,76 @@ impl RenderOnce for BreakdownChart {
                 cx.stop_propagation();
             }
         };
-
-        motion::keep_alive(window);
+        let ring = t.focus_ring();
         let focus_click = focus.clone();
-        pink::card(&t)
-            .id(self.id.clone())
-            .w(px(780.))
-            .p(px(space::S20))
-            .flex()
-            .flex_col()
-            .gap(px(space::S16))
-            .font_family(pink::SANS)
-            .track_focus(&focus)
+        let plot_box = div()
+            .id(SharedString::from(format!("{key}-plot")))
+            .relative()
+            .flex_1()
+            .min_w_0()
+            .h(px(CHART_HEIGHT))
+            .rounded(px(radius::SM))
+            .track_focus(focus)
+            .focus_visible(move |style| pink::focus_ring(style, ring))
             .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                 window.focus(&focus_click, cx)
             })
             .on_key_down(on_key)
-            .child(header)
-            .child(sentence)
+            .child(plot)
+            .child(div().absolute().inset_0().flex().children(cells));
+
+        // Slice labels ride with their columns.
+        let x_labels = div()
+            .w_full()
+            .pl(px(CHART_AXIS_WIDTH + CHART_AXIS_GAP))
             .child(
                 div()
+                    .relative()
+                    .w_full()
+                    .h(px(14.0))
+                    .type_style(TextStyle::Caption)
+                    .children(columns.iter().enumerate().map(|(sl, col)| {
+                        let w = 1.0 / n as f32;
+                        div()
+                            .absolute()
+                            .top_0()
+                            .left(relative(col.x - w / 2.0))
+                            .w(relative(w))
+                            .flex()
+                            .justify_center()
+                            .text_color(motion::mix(label_tone, t.text, col.hot))
+                            .child(div().min_w_0().truncate().child(slices[sl].clone()))
+                    })),
+            );
+
+        div()
+            .w_full()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .gap(px(6.0))
+            .child(
+                div()
+                    .w_full()
                     .flex()
-                    .flex_col()
-                    .child(div().flex().child(axis).child(plot))
-                    .child(x_labels),
+                    .gap(px(CHART_AXIS_GAP))
+                    .child(
+                        div()
+                            .w(px(CHART_AXIS_WIDTH))
+                            .h(px(CHART_HEIGHT))
+                            .flex_none()
+                            .flex()
+                            .flex_col()
+                            .justify_between()
+                            .text_align(TextAlign::Right)
+                            .type_style(TextStyle::Caption)
+                            .text_color(label_tone)
+                            .children(axis_labels),
+                    )
+                    .child(plot_box),
             )
-            .child(table)
+            .child(x_labels)
+            .into_any_element()
     }
 }
 
@@ -1124,50 +949,126 @@ impl RenderOnce for BreakdownChart {
 struct Column {
     /// Slot center as a fraction of the plot width.
     x: f32,
-    heights: Vec<f32>,
-    opacity: f32,
+    /// Each part's height as a fraction of the scale, bottom part first.
+    fractions: Vec<f32>,
+    /// How lit the column is (hovered here or in the table), 0 to 1.
+    hot: f32,
 }
 
-fn set_hot(state: &gpui::Entity<State>, hot: Option<usize>, cx: &mut App) {
+/// pink's hover cells: entering lights the slice, leaving clears it only if
+/// it is still the lit one.
+fn set_hot(state: &gpui::Entity<State>, sl: usize, hovered: bool, cx: &mut App) {
     state.update(cx, |s, cx| {
-        if s.hot != hot {
-            s.hot = hot;
+        let next = if hovered {
+            Some(sl)
+        } else if s.hot == Some(sl) {
+            None
+        } else {
+            return;
+        };
+        if s.hot != next {
+            s.hot = next;
             cx.notify();
         }
     })
 }
 
-fn toggle_sort(state: &gpui::Entity<State>, cx: &mut App) {
-    state.update(cx, |s, cx| {
-        s.sorted = !s.sorted;
-        cx.notify();
-    })
+/// The empty state (pink's "No usage yet" card): a row tile and row text.
+fn empty_card(t: &Pink) -> gpui::Div {
+    pink::section_card(t)
+        .mt_0()
+        .w_full()
+        .max_w(px(layout::PAGE_MAX_WIDTH))
+        .child(
+            pink::card_row(true, t)
+                .child(pink::row_tile(ICON_CHART, t))
+                .child(pink::row_text(
+                    "Nothing to break down yet",
+                    Some("Add a measure and at least two dimensions.".into()),
+                    t,
+                )),
+        )
 }
 
-/// A round axis step at or above `raw`.
-fn nice_step(raw: f32) -> f32 {
-    if raw <= 0. {
-        return 1.;
+/// The chart's hover detail (pink `shell.rs` `SurfaceTabTooltip`): the
+/// tooltip card up to 380 wide, `px 8 / py 5`, 11/14 `text`, one line per
+/// part.
+struct ChartTooltip(SharedString);
+
+impl Render for ChartTooltip {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = Pink::get(cx);
+        pink::tooltip_card(&t)
+            .max_w(px(380.0))
+            .px(px(8.0))
+            .py(px(5.0))
+            .type_style(TextStyle::Caption)
+            .text_color(t.text)
+            .child(self.0.clone())
     }
-    let base = 10f32.powf(raw.log10().floor());
-    let f = raw / base;
-    let nice = [1., 1.5, 2., 2.5, 3., 4., 5., 6., 8., 10.]
-        .into_iter()
-        .find(|c| f <= *c + 1e-4)
-        .unwrap_or(10.);
-    nice * base
 }
 
-fn trim(v: f64) -> String {
-    if (v - v.round()).abs() < 0.05 {
-        format!("{}", v.round())
+/// pink `usage.rs` `count`: thousands separators.
+fn count(value: u64) -> String {
+    let text = value.to_string();
+    let mut grouped = String::new();
+    for (index, ch) in text.chars().rev().enumerate() {
+        if index > 0 && index % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(ch);
+    }
+    grouped.chars().rev().collect()
+}
+
+/// pink `usage.rs` `money`: "$1,234.56".
+fn money(value: f64) -> String {
+    let cents = (value.max(0.0) * 100.0).round() as u64;
+    format!("${}.{:02}", count(cents / 100), cents % 100)
+}
+
+/// pink `usage.rs` `compact_tokens`: "52.2K", "1.25M", "940".
+fn compact(value: f64) -> String {
+    let value = value.max(0.0).round() as u64;
+    for (threshold, suffix) in [
+        (1_000_000_000_000, "T"),
+        (1_000_000_000, "B"),
+        (1_000_000, "M"),
+        (1_000, "K"),
+    ] {
+        if value >= threshold {
+            let scaled = value as f64 / threshold as f64;
+            let digits = if scaled >= 100.0 {
+                0
+            } else if scaled >= 10.0 {
+                1
+            } else {
+                2
+            };
+            let formatted = format!("{scaled:.digits$}");
+            let trimmed = if formatted.contains('.') {
+                formatted.trim_end_matches('0').trim_end_matches('.')
+            } else {
+                &formatted
+            };
+            return format!("{trimmed}{suffix}");
+        }
+    }
+    count(value)
+}
+
+/// pink `usage.rs` `usage_percent`: "28.4%", "<0.1%".
+fn percent(value: f64) -> String {
+    let percent = value * 100.0;
+    if percent > 0.0 && percent < 0.1 {
+        "<0.1%".into()
     } else {
-        format!("{v:.1}")
+        format!("{percent:.1}%")
     }
 }
 
 // ---------------------------------------------------------------------------
-// Demo: a quarter of cloud spend by team, region, service and environment.
+// Demo: a quarter of cloud spend by team, region, service and stage.
 // ---------------------------------------------------------------------------
 
 fn jitter(seed: u32) -> f64 {
@@ -1191,9 +1092,9 @@ pub fn demo_cube() -> Cube {
     let teams = ["Platform", "Growth", "Data", "Mobile", "Payments"];
     let regions = ["us-east", "eu-west", "ap-south"];
     let services = ["Compute", "Storage", "Database", "Network"];
-    let envs = ["Production", "Staging", "Development"];
-    // Quarterly cost per team and requests per team (millions), with the
-    // share of each region, service and environment.
+    let stages = ["Production", "Staging", "Development"];
+    // Quarterly cost per team and requests per team, with the share of each
+    // region, service and stage.
     let team_cost = [52_000., 31_000., 44_000., 22_000., 35_000.];
     let team_requests = [820e6, 610e6, 240e6, 940e6, 380e6];
     let region_w = [0.52, 0.31, 0.17];
@@ -1205,13 +1106,13 @@ pub fn demo_cube() -> Cube {
         [0.36, 0.10, 0.40, 0.14],
     ];
     let service_req = [0.30, 0.22, 0.33, 0.15];
-    let env_w = [0.72, 0.17, 0.11];
+    let stage_w = [0.72, 0.17, 0.11];
     let mut facts = Vec::new();
     let mut seed = 7;
     for (t, _) in teams.iter().enumerate() {
         for (r, rw) in region_w.iter().enumerate() {
             for (s, _) in services.iter().enumerate() {
-                for (e, ew) in env_w.iter().enumerate() {
+                for (e, ew) in stage_w.iter().enumerate() {
                     seed += 1;
                     let j = 0.8 + 0.4 * jitter(seed);
                     let k = 0.8 + 0.4 * jitter(seed + 991);
@@ -1231,7 +1132,7 @@ pub fn demo_cube() -> Cube {
             Dimension::new("Team", names(&teams)),
             Dimension::new("Region", names(&regions)),
             Dimension::new("Service", names(&services)),
-            Dimension::new("Environment", names(&envs)),
+            Dimension::new("Stage", names(&stages)),
         ],
         measures: vec![
             Measure::new("Cost", MeasureFormat::Currency),
@@ -1242,11 +1143,15 @@ pub fn demo_cube() -> Cube {
 }
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
+    // Teams along the x axis, split by their three regions (pink's three
+    // series tones), largest team first.
     story::view(cx, |_, _| {
         BreakdownChart::new("breakdown-chart", "Cloud spend", demo_cube())
-            .subtitle("Q3 2026 · all accounts")
+            .subtitle("Q3 2026 · all accounts · list prices")
+            .measure(0)
             .slice(0)
-            .segment(2)
+            .segment(1)
+            .largest_first(true)
     })
 }
 
@@ -1266,22 +1171,22 @@ mod tests {
     }
 
     #[test]
-    fn choosing_the_other_axis_swaps() {
-        let cx_state = |slice, segment| (slice, segment);
-        let (mut slice, mut segment) = cx_state(0, 2);
-        // Mirrors State::choose for Picker::Slice.
-        let ix = 2;
-        if ix == segment {
-            segment = slice;
-        }
-        slice = ix;
-        assert_eq!((slice, segment), (2, 0));
+    fn scale_lands_gridlines_on_round_figures() {
+        assert_eq!(chart_scale(52_000.), 60_000.);
+        assert_eq!(chart_scale(31_000.), 40_000.);
+        assert_eq!(chart_scale(940e6), 1e9);
+        assert_eq!(chart_scale(0.), 1.);
     }
 
     #[test]
-    fn currency_format() {
-        let m = Measure::new("Cost", MeasureFormat::Currency);
-        assert_eq!(m.fmt(52_000.), "$52k");
-        assert_eq!(m.fmt(12_430.), "$12.4k");
+    fn figures_print_like_pink() {
+        let cost = Measure::new("Cost", MeasureFormat::Currency);
+        assert_eq!(cost.fmt(52_000.), "$52K");
+        assert_eq!(cost.fmt(12_430.), "$12.4K");
+        assert_eq!(cost.fmt_total(184_213.524), "$184,213.52");
+        let count = Measure::new("Requests", MeasureFormat::Count);
+        assert_eq!(count.fmt(1_250_000.), "1.25M");
+        assert_eq!(count.fmt(940.), "940");
+        assert_eq!(percent(0.2843), "28.4%");
     }
 }
