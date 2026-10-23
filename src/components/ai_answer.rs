@@ -1,85 +1,141 @@
 //! AI Answer – a pink component.
 //!
-//! A question, the sources the assistant gathered and its streamed reply in
-//! one card. While it searches, monogram tiles drop into a stacked "sources"
-//! pill and skeleton lines breathe where the answer will go. The reply then
-//! writes itself word by word behind a blinking caret, with small numbered
-//! citations that pop in place: point at one to preview its source, click it
-//! to pin the preview. The pill unfolds into the full source list. When the
-//! answer settles, copy, retry and rating buttons rise in under it, followed
-//! by suggested follow-up questions.
+//! One assistant turn the way pink's transcript draws it (pink:
+//! `transcript.rs` `render_row`, `render_tool_group`, `render_working_trailer`
+//! and `markdown/render.rs`). There is no card. The question sits in the
+//! right-aligned user bubble. The web search and the pages the answer read
+//! form a tool group: a quiet 24px plate summarising "Searched 1 time ·
+//! fetched 4 pages" that unfolds into rows on the activity rail, open while
+//! the search runs and folding shut once the reply starts. The reply is bare
+//! markdown at 14/22 whose newly streamed words dissolve in under pink's
+//! opacity veil. While the turn runs, the working line under it names what it
+//! is doing ("Searching the web for …", "Fetching …", "Writing") beside a
+//! timer and a Stop that shows on hover. Once it settles, a reserved lane
+//! under each entry shows its timestamp, Retry and Copy while the pointer is
+//! over it.
+//!
+//! Citations are the one part pink has no twin for. They are superscript
+//! numbers in pink's list-marker tone that preview their source in pink's
+//! quoted-passage hover card and open it on click.
 //!
 //! The component renders whatever it is given, so a caller streams by passing
 //! the blocks received so far (or the whole answer plus `.reveal(words)`):
 //!
 //! ```ignore
-//! AiAnswer::new("answer", "Why did checkout conversion drop?")
+//! AiAnswer::new("answer", "Is it safe to keep refresh tokens in localStorage?")
+//!     .query("refresh token localStorage XSS")
 //!     .sources(sources)
 //!     .blocks(vec![Block::paragraph(vec![
-//!         Span::strong("Mobile Safari"), Span::text(" fell 11 points"), Span::cite(0), Span::text("."),
+//!         Span::strong("Not if you can avoid it."), Span::text(" Any script can read it"),
+//!         Span::cite(0), Span::text("."),
 //!     ])])
 //!     .status(AnswerStatus::Writing)
-//!     .on_follow_up(|question, _, _| println!("{question}"))
+//!     .elapsed(turn_started.elapsed())
+//!     .on_stop(|_, cx| stop_turn(cx))
 //! ```
 
-use std::{cell::Cell, f32::consts::TAU, rc::Rc, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    f32::consts::FRAC_PI_2,
+    ops::Range,
+    rc::Rc,
+    sync::Arc,
+};
 use web_time::{Duration, Instant};
 
 use gpui::{
-    Anchor, Animation, AnyElement, AnyView, App, ClipboardItem, Context, ElementId, Entity,
-    FontWeight, Hsla, IntoElement, SharedString, Task, Transformation, Window, anchored, canvas,
-    deferred, div, percentage, point, prelude::*, px, radians, svg,
+    AnyElement, AnyView, App, BoxShadow, ClickEvent, ClipboardItem, Context, Div, ElementId,
+    Entity, FillOptions, FillRule, Font, FontFeatures, FontWeight, Hsla, InteractiveText,
+    IntoElement, MouseMoveEvent, PathBuilder, PathStyle, Pixels, Point, Render, Role, SharedString,
+    Stateful, StyledText, Task, TextRun, Transformation, Window, canvas, div, point, prelude::*,
+    px, radians, svg,
 };
 
 use crate::{
     HoverFill,
-    motion::{self, AnimationExt, EASE_OUT, GLIDE, MotionSpec, ROW_IN},
-    pink::{self, FillTier, Pink, Tone, radius, space, text},
+    motion::{self, DISCLOSURE, TOOL_CONNECTOR_REVEAL, TOOL_ROW_REVEAL},
+    pink::{
+        self, FillTier, Pink,
+        loaders::{
+            LIVE_STATUS_OBJECT_CHARS, TOOL_LABEL_LINE_HEIGHT, TOOL_LABEL_SIZE,
+            WORKING_STATUS_LINE_HEIGHT, WORKING_TIMER_SIZE, ellipsize_chars, fnv1a,
+            mini_glyph_spinner, orb_slot, shimmer_text, working_status, working_timer,
+        },
+        radius, space,
+    },
     story,
 };
 
 pub const NAME: &str = "AI Answer";
-pub const DESCRIPTION: &str = "A streamed answer card: sources stack up while it searches, the reply writes itself word by word with numbered citations that preview their source, then copy, retry, rating and follow-up questions settle in underneath";
+pub const DESCRIPTION: &str = "One assistant turn as pink's transcript draws it – the question in a bubble, the searches and pages behind the reply folded into a tool group, an answer that fades in as it streams with citations that preview their source, and Retry and Copy on hover once it settles";
 
 const ICON_COPY: &str = "icons/ai-answer/copy.svg";
-const ICON_CHECK: &str = "icons/ai-answer/check.svg";
-const ICON_RETRY: &str = "icons/ai-answer/retry.svg";
-const ICON_UP: &str = "icons/ai-answer/up.svg";
-const ICON_DOWN: &str = "icons/ai-answer/down.svg";
-const ICON_CHEVRON: &str = "icons/ai-answer/chevron.svg";
-const ICON_STOP: &str = "icons/ai-answer/stop.svg";
-const ICON_OPEN: &str = "icons/ai-answer/open.svg";
-const ICON_FOLLOW: &str = "icons/ai-answer/follow.svg";
-const ICON_SPARK: &str = "icons/ai-answer/spark.svg";
-const ICON_RING: &str = "icons/ai-answer/ring.svg";
-const ICON_ARC: &str = "icons/ai-answer/arc.svg";
+const ICON_COPY_CHECK: &str = "icons/ai-answer/copy-check.svg";
+const ICON_RESTART: &str = "icons/ai-answer/restart.svg";
+const ICON_GLOBAL: &str = "icons/ai-answer/global.svg";
+const ICON_CHEVRON: &str = "icons/ai-answer/alt-arrow-right.svg";
+const ICON_OPEN: &str = "icons/ai-answer/arrow-right-up.svg";
 
-/// Body type: callout size on a relaxed line.
-const BODY_SIZE: f32 = text::CALLOUT;
-const BODY_LINE: f32 = 22.;
-/// A word space at the body size.
-const WORD_GAP: f32 = BODY_SIZE * 0.25;
-/// Horizontal step between stacked source tiles.
-const TILE_STEP: f32 = 15.;
+/// pink: `markdown/render.rs` `MD_TEXT_SIZE`, `MD_LINE_HEIGHT`, `MD_BLOCK_GAP`.
+const MD_TEXT_SIZE: f32 = 14.;
+const MD_LINE_HEIGHT: f32 = 22.;
+const MD_BLOCK_GAP: f32 = 12.;
+/// pink: `render_block` `Block::List` – an 18px marker column holding a 5px
+/// accent disc, 8px to the text, 4px between items.
+const LIST_MARKER_MIN_W: f32 = 18.;
+const LIST_DISC: f32 = 5.;
+const LIST_MARKER_GAP: f32 = 8.;
+const LIST_ITEM_GAP: f32 = 4.;
+/// pink: `transcript.rs` `USER_LINE_HEIGHT`; the bubble caps at 80% of the
+/// column.
+const USER_LINE_HEIGHT: f32 = 22.;
+const USER_BUBBLE_SHARE: f32 = 0.8;
+/// pink: `META_LANE_HEIGHT` – the reserved lane holds 24px actions under a
+/// 4px lead.
+const META_LANE_HEIGHT: f32 = 28.;
+const META_ACTION_SIZE: f32 = 24.;
+/// pink: `copy_message` keeps the "Copied" check this long.
+const COPIED_FOR: Duration = Duration::from_millis(1200);
+/// pink: the tool group header, its rows and the activity rail.
+const TOOL_GROUP_HEADER_HEIGHT: f32 = 26.;
+const TOOL_TREE_ROW_HEIGHT: f32 = 32.;
+const CHIP_CARD_HEIGHT: f32 = 30.;
+const CHIPS_TOP_PAD: f32 = 2.;
+const ACTIVITY_GUTTER_WIDTH: f32 = 48.;
+const ACTIVITY_TEXT_GAP: f32 = 8.;
+const ACTIVITY_TRUNK_X: f32 = 12.5;
+const ACTIVITY_BEND_RADIUS: f32 = 6.;
+const ACTIVITY_BRANCH_END_X: f32 = 28.;
+const ACTIVITY_ICON_LEFT: f32 = 32.;
+const ACTIVITY_ICON_SIZE: f32 = 14.;
+const DISCLOSURE_CHEVRON_SIZE: f32 = 12.;
+/// pink: `chip_header_row`'s trailing tile.
+const TRAIL_TILE: f32 = 18.;
+/// pink: `badges.rs` `BadgeCard`.
+const CARD_WIDTH: f32 = 320.;
+/// pink: `markdown/veil.rs`.
+const VEIL_EMA_SEED_MS: f32 = 160.;
+const VEIL_MIN_FADE_MS: f32 = 120.;
+const VEIL_MAX_FADE_MS: f32 = 400.;
+const VEIL_CURVE_POW: f32 = 1.6;
+const VEIL_GAP_CLAMP_MS: f32 = 1000.;
+/// A thin space between adjacent citation numbers, so ¹ ² never reads as ¹².
+const CITE_GAP: &str = "\u{2009}";
 
 type Handler = Rc<dyn Fn(&mut Window, &mut App)>;
 type SourceHandler = Rc<dyn Fn(usize, &mut Window, &mut App)>;
-type TextHandler = Rc<dyn Fn(SharedString, &mut Window, &mut App)>;
-type VoteHandler = Rc<dyn Fn(Option<bool>, &mut Window, &mut App)>;
 
-/// A document the answer draws on.
+/// A page the answer read: a row of the tool group, and what a citation of it
+/// previews.
 #[derive(Clone)]
 pub struct Source {
     pub title: SharedString,
-    /// Where it lives ("Linear", "docs.acme.dev").
+    /// The host it was read from ("developer.mozilla.org").
     pub site: SharedString,
-    /// Kind and freshness ("Issue · opened Thu").
-    pub meta: SharedString,
+    /// The address fetched; the site when unset.
+    pub url: Option<SharedString>,
     /// A passage shown in the citation preview.
     pub snippet: SharedString,
-    /// One or two letters for the tile; the site's initial when unset.
-    pub monogram: Option<SharedString>,
-    pub tone: Tone,
 }
 
 impl Source {
@@ -87,15 +143,13 @@ impl Source {
         Self {
             title: title.into(),
             site: site.into(),
-            meta: SharedString::default(),
+            url: None,
             snippet: SharedString::default(),
-            monogram: None,
-            tone: Tone::Neutral,
         }
     }
 
-    pub fn meta(mut self, meta: impl Into<SharedString>) -> Self {
-        self.meta = meta.into();
+    pub fn url(mut self, url: impl Into<SharedString>) -> Self {
+        self.url = Some(url.into());
         self
     }
 
@@ -104,25 +158,9 @@ impl Source {
         self
     }
 
-    pub fn monogram(mut self, letters: impl Into<SharedString>) -> Self {
-        self.monogram = Some(letters.into());
-        self
-    }
-
-    pub fn tone(mut self, tone: Tone) -> Self {
-        self.tone = tone;
-        self
-    }
-
-    fn letters(&self) -> SharedString {
-        self.monogram.clone().unwrap_or_else(|| {
-            self.site
-                .chars()
-                .next()
-                .map(|c| c.to_uppercase().to_string())
-                .unwrap_or_default()
-                .into()
-        })
+    /// What the fetch row names: the url, else the site.
+    pub fn address(&self) -> SharedString {
+        self.url.clone().unwrap_or_else(|| self.site.clone())
     }
 }
 
@@ -166,13 +204,14 @@ impl Block {
     }
 }
 
-/// Where the answer is.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// Where the turn is. Searching and Writing show the working line; a settled
+/// turn (Done, or Stopped part way) shows the hover lane instead.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AnswerStatus {
     Searching,
     Writing,
-    Done { took: Duration },
-    Stopped { after: Duration },
+    Done,
+    Stopped,
 }
 
 impl AnswerStatus {
@@ -194,27 +233,53 @@ pub fn piece_count(blocks: &[Block]) -> usize {
 
 /// The answer as plain text, citations as `[n]`.
 pub fn plain_text(blocks: &[Block]) -> String {
-    let line = |spans: &[Span]| {
-        spans
-            .iter()
-            .map(|s| match s {
-                Span::Text(t) | Span::Strong(t) => t.to_string(),
-                Span::Cite(ix) => format!("[{}]", ix + 1),
-            })
-            .collect::<String>()
+    plain_text_upto(blocks, usize::MAX)
+}
+
+/// [`plain_text`] of the first `limit` pieces: what Copy takes from a reply
+/// that was stopped part way.
+fn plain_text_upto(blocks: &[Block], limit: usize) -> String {
+    let mut n = 0usize;
+    let mut line = |spans: &[Span]| {
+        let mut out = String::new();
+        for (piece, space) in pieces(spans) {
+            n += 1;
+            if n > limit {
+                continue;
+            }
+            match piece {
+                Piece::Word { text, .. } => out.push_str(&text),
+                Piece::Cite(ix) => out.push_str(&format!("[{}]", ix + 1)),
+            }
+            if space {
+                out.push(' ');
+            }
+        }
+        out.trim_end().to_string()
     };
-    blocks
-        .iter()
-        .map(|b| match b {
-            Block::Paragraph(spans) => line(spans),
-            Block::Bullets(items) => items
-                .iter()
-                .map(|s| format!("- {}", line(s)))
-                .collect::<Vec<_>>()
-                .join("\n"),
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n")
+    let mut parts: Vec<String> = Vec::new();
+    for block in blocks {
+        match block {
+            Block::Paragraph(spans) => {
+                let text = line(spans);
+                if !text.is_empty() {
+                    parts.push(text);
+                }
+            }
+            Block::Bullets(items) => {
+                let lines: Vec<String> = items
+                    .iter()
+                    .map(|spans| line(spans))
+                    .filter(|text| !text.is_empty())
+                    .map(|text| format!("- {text}"))
+                    .collect();
+                if !lines.is_empty() {
+                    parts.push(lines.join("\n"));
+                }
+            }
+        }
+    }
+    parts.join("\n\n")
 }
 
 /// One streamed unit: a word or a citation.
@@ -257,31 +322,566 @@ fn pieces(spans: &[Span]) -> Vec<(Piece, bool)> {
     out
 }
 
+/// pink: `transcript.rs` `url_host`.
+fn url_host(url: &str) -> String {
+    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    rest.split(['/', '?', '#'])
+        .next()
+        .unwrap_or(rest)
+        .to_string()
+}
+
+fn plural(n: usize, one: &str, many: &str) -> String {
+    if n == 1 {
+        format!("{n} {one}")
+    } else {
+        format!("{n} {many}")
+    }
+}
+
+/// pink: `pink_proto::view::tool_group_summary` for web tools – "Searched 1
+/// time · fetched 4 pages", first segment capitalized.
+fn tool_group_summary(searches: usize, fetches: usize) -> String {
+    let mut segments: Vec<String> = Vec::new();
+    if searches > 0 {
+        segments.push(format!("searched {}", plural(searches, "time", "times")));
+    }
+    if fetches > 0 {
+        segments.push(format!("fetched {}", plural(fetches, "page", "pages")));
+    }
+    let summary = segments.join(" · ");
+    let mut chars = summary.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => summary,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Streaming veil (pink: `markdown/veil.rs`)
+// ---------------------------------------------------------------------------
+
+/// A veiled byte range and its current opacity.
+type VeilSpan = (Range<usize>, f32);
+
+/// pink: `veil_opacity` – the veil dissolves as `(1 − p)^1.6`.
+fn veil_opacity(p: f32) -> f32 {
+    1. - (1. - p.clamp(0., 1.)).powf(VEIL_CURVE_POW)
+}
+
+struct Chunk {
+    range: Range<usize>,
+    started: Instant,
+    duration_ms: f32,
+}
+
+/// pink: `ElemVeil` – remembers the last rendered text of one element and
+/// fades every newly appended suffix exactly once, over `clamp(ema × 3, 120,
+/// 400)` ms of the stream's cadence, sped up when 3+ chunks overlap.
+struct ElemVeil {
+    prev: String,
+    chunks: Vec<Chunk>,
+    ema_ms: f32,
+    last_append: Option<Instant>,
+}
+
+impl Default for ElemVeil {
+    fn default() -> Self {
+        Self {
+            prev: String::new(),
+            chunks: Vec::new(),
+            ema_ms: VEIL_EMA_SEED_MS,
+            last_append: None,
+        }
+    }
+}
+
+fn common_prefix(a: &str, b: &str) -> usize {
+    let mut p = a
+        .as_bytes()
+        .iter()
+        .zip(b.as_bytes())
+        .take_while(|(x, y)| x == y)
+        .count();
+    while p > 0 && !b.is_char_boundary(p) {
+        p -= 1;
+    }
+    p
+}
+
+impl ElemVeil {
+    fn advance(&mut self, text: &str, now: Instant) -> Vec<VeilSpan> {
+        if text != self.prev {
+            let p = common_prefix(&self.prev, text);
+            self.chunks.retain_mut(|c| {
+                c.range.end = c.range.end.min(p);
+                c.range.start < c.range.end
+            });
+            if text.len() > p {
+                if let Some(last) = self.last_append {
+                    let gap = now.saturating_duration_since(last).as_secs_f32() * 1000.;
+                    self.ema_ms = self.ema_ms * 0.7 + gap.min(VEIL_GAP_CLAMP_MS) * 0.3;
+                }
+                self.last_append = Some(now);
+                self.chunks.push(Chunk {
+                    range: p..text.len(),
+                    started: now,
+                    duration_ms: (self.ema_ms * 3.).clamp(VEIL_MIN_FADE_MS, VEIL_MAX_FADE_MS),
+                });
+            }
+            self.prev.clear();
+            self.prev.push_str(text);
+        }
+        let boost = |active: usize| 1. + 0.3 * active.saturating_sub(2) as f32;
+        let elapsed_ms = |c: &Chunk| now.saturating_duration_since(c.started).as_secs_f32() * 1000.;
+        let b = boost(self.chunks.len());
+        self.chunks.retain(|c| elapsed_ms(c) * b < c.duration_ms);
+        let b = boost(self.chunks.len());
+        self.chunks
+            .iter()
+            .map(|c| {
+                let progress = (elapsed_ms(c) * b / c.duration_ms).clamp(0., 1.);
+                (c.range.clone(), veil_opacity(progress))
+            })
+            .collect()
+    }
+}
+
+/// pink: `RowVeil` – the veils of one streaming reply, keyed per text
+/// element. While `seeding`, an element seen for the first time adopts its
+/// text without fading (a reply already on screen when the turn mounts).
+#[derive(Default)]
+struct RowVeil {
+    elems: HashMap<usize, ElemVeil>,
+    seeding: bool,
+}
+
+impl RowVeil {
+    fn advance(&mut self, elem: usize, text: &str, now: Instant) -> Vec<VeilSpan> {
+        if self.seeding && !self.elems.contains_key(&elem) {
+            let baseline = ElemVeil {
+                prev: text.to_string(),
+                ..ElemVeil::default()
+            };
+            self.elems.insert(elem, baseline);
+            return Vec::new();
+        }
+        self.elems.entry(elem).or_default().advance(text, now)
+    }
+
+    fn is_fading(&self) -> bool {
+        self.elems.values().any(|e| !e.chunks.is_empty())
+    }
+}
+
+/// pink: `apply_veil` – multiplies the veil into the runs' colors, splitting
+/// runs at span edges. Paint only: text, fonts and lengths are untouched.
+fn apply_veil(runs: Vec<TextRun>, spans: &[VeilSpan]) -> Vec<TextRun> {
+    if spans.is_empty() || spans.iter().all(|(_, a)| *a >= 1.) {
+        return runs;
+    }
+    let mut out = Vec::with_capacity(runs.len() + spans.len() * 2);
+    let mut pos = 0usize;
+    for run in runs {
+        let (start, end) = (pos, pos + run.len);
+        pos = end;
+        let mut cuts = vec![start, end];
+        for (r, _) in spans {
+            if r.start > start && r.start < end {
+                cuts.push(r.start);
+            }
+            if r.end > start && r.end < end {
+                cuts.push(r.end);
+            }
+        }
+        cuts.sort_unstable();
+        cuts.dedup();
+        for w in cuts.windows(2) {
+            let (s, e) = (w[0], w[1]);
+            let mut piece = run.clone();
+            piece.len = e - s;
+            if let Some(alpha) = spans
+                .iter()
+                .find(|(r, _)| r.start <= s && e <= r.end)
+                .map(|(_, a)| *a)
+                && alpha < 1.
+            {
+                piece.color = piece.color.opacity(alpha);
+            }
+            out.push(piece);
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Answer text: spans → shaped runs (pink: `flatten_runs`)
+// ---------------------------------------------------------------------------
+
+/// A citation inside a text element.
+#[derive(Clone)]
+struct Cite {
+    range: Range<usize>,
+    source: usize,
+    /// Its position among all the answer's citations.
+    ordinal: usize,
+}
+
+/// One text element's flat text and runs.
+struct TextFlat {
+    elem: usize,
+    text: String,
+    runs: Vec<TextRun>,
+    cites: Vec<Cite>,
+}
+
+enum BlockFlat {
+    Paragraph(TextFlat),
+    Bullets(Vec<TextFlat>),
+}
+
+fn sans(weight: FontWeight) -> Font {
+    Font {
+        weight,
+        ..gpui::font(pink::SANS)
+    }
+}
+
+/// Geist's superscript figures (OpenType `sups`), at 500. The weight is
+/// load-bearing: the shaper joins runs that differ only in features, so a
+/// number straight after a regular word would otherwise lose its `sups`.
+fn superscript() -> Font {
+    Font {
+        features: FontFeatures(Arc::new(vec![("sups".into(), 1)])),
+        weight: FontWeight::MEDIUM,
+        ..gpui::font(pink::SANS)
+    }
+}
+
+fn push_run(flat: &mut TextFlat, s: &str, font: Font, color: Hsla) {
+    if s.is_empty() {
+        return;
+    }
+    flat.text.push_str(s);
+    if let Some(last) = flat.runs.last_mut()
+        && last.font == font
+        && last.color == color
+    {
+        last.len += s.len();
+        return;
+    }
+    flat.runs.push(TextRun {
+        len: s.len(),
+        font,
+        color,
+        background_color: None,
+        underline: None,
+        strikethrough: None,
+    });
+}
+
+/// Flattens the revealed part of one span list. Words are Geist regular, or
+/// semibold when strong (pink: strong runs never drop below semibold), in
+/// `text`; citations are superscript numbers in pink's list-marker tone,
+/// brightening to `text` while pointed at.
+#[allow(clippy::too_many_arguments)]
+fn flatten(
+    elem: usize,
+    spans: &[Span],
+    counter: &mut usize,
+    cite_counter: &mut usize,
+    limit: usize,
+    hover: Option<usize>,
+    t: &Pink,
+) -> TextFlat {
+    let mut flat = TextFlat {
+        elem,
+        text: String::new(),
+        runs: Vec::new(),
+        cites: Vec::new(),
+    };
+    let marker = t.readable_tone(t.accent, 1.);
+    let mut after_cite = false;
+    for (piece, space) in pieces(spans) {
+        let n = *counter;
+        *counter += 1;
+        let ordinal = matches!(piece, Piece::Cite(_)).then(|| {
+            let o = *cite_counter;
+            *cite_counter += 1;
+            o
+        });
+        if n >= limit {
+            continue;
+        }
+        match piece {
+            Piece::Word { text, strong } => {
+                let weight = if strong {
+                    FontWeight::SEMIBOLD
+                } else {
+                    FontWeight::NORMAL
+                };
+                push_run(&mut flat, &text, sans(weight), t.text);
+                after_cite = false;
+            }
+            Piece::Cite(source) => {
+                let ordinal = ordinal.unwrap_or_default();
+                let color = if hover == Some(ordinal) {
+                    t.text
+                } else {
+                    marker
+                };
+                if after_cite {
+                    push_run(&mut flat, CITE_GAP, superscript(), marker);
+                }
+                let start = flat.text.len();
+                push_run(&mut flat, &(source + 1).to_string(), superscript(), color);
+                flat.cites.push(Cite {
+                    range: start..flat.text.len(),
+                    source,
+                    ordinal,
+                });
+                after_cite = true;
+            }
+        }
+        if space {
+            push_run(&mut flat, " ", sans(FontWeight::NORMAL), t.text);
+            after_cite = false;
+        }
+    }
+    flat
+}
+
+/// The revealed blocks, flattened. Element keys stay stable while the reply
+/// grows, so each one's veil keeps its history.
+fn flatten_blocks(
+    blocks: &[Block],
+    limit: usize,
+    hover: Option<usize>,
+    t: &Pink,
+) -> Vec<BlockFlat> {
+    let mut counter = 0usize;
+    let mut cites = 0usize;
+    let mut out = Vec::new();
+    for (bix, block) in blocks.iter().enumerate() {
+        if counter >= limit {
+            break;
+        }
+        match block {
+            Block::Paragraph(spans) => {
+                let flat = flatten(bix * 1000, spans, &mut counter, &mut cites, limit, hover, t);
+                if !flat.text.is_empty() {
+                    out.push(BlockFlat::Paragraph(flat));
+                }
+            }
+            Block::Bullets(items) => {
+                let mut flats = Vec::new();
+                for (iix, spans) in items.iter().enumerate() {
+                    if counter >= limit {
+                        break;
+                    }
+                    let elem = bix * 1000 + 1 + iix;
+                    let flat = flatten(elem, spans, &mut counter, &mut cites, limit, hover, t);
+                    if !flat.text.is_empty() {
+                        flats.push(flat);
+                    }
+                }
+                if !flats.is_empty() {
+                    out.push(BlockFlat::Bullets(flats));
+                }
+            }
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CopyTarget {
+    Question,
+    Answer,
+}
+
+/// pink: `ToolGroupReveal` + the group's `FoldState`.
+#[derive(Default)]
+struct GroupState {
+    keys: Vec<SharedString>,
+    starts: Vec<Option<Instant>>,
+    header_started_at: Option<Instant>,
+    shimmer_started_at: Option<Instant>,
+    /// The user's toggle; `None` follows the auto-open rule.
+    user_open: Option<bool>,
+    rendered_open: Option<bool>,
+    rendered_height: f32,
+    fold_from: f32,
+    toggled_at: Option<Instant>,
+}
+
+/// One frame of the tool group's motion.
+struct GroupFrame {
+    open: bool,
+    /// The group is the live tail of the turn: its title shimmers.
+    active: bool,
+    auto_open: bool,
+    header_reveal: f32,
+    reveals: Vec<f32>,
+    connectors: Vec<f32>,
+    viewport: f32,
+    body_height: f32,
+    disclosure: f32,
+    shimmer_start: Option<Instant>,
+    moving: bool,
+}
+
+impl GroupState {
+    /// pink: the reveal bookkeeping in `Transcript::sync_rows` – a new group
+    /// reveals its header now and its rows from 90ms, 65ms apart; rows
+    /// already on screen keep their start; a group mounted settled is
+    /// history and stays still.
+    fn sync(&mut self, keys: &[SharedString], historical: bool, now: Instant) {
+        if keys.is_empty() {
+            *self = Self::default();
+            return;
+        }
+        let new_group = self.keys.is_empty() && !historical;
+        self.shimmer_started_at.get_or_insert(now);
+        if new_group {
+            self.header_started_at.get_or_insert(now);
+        }
+        let mut arrival = 0;
+        let starts = keys
+            .iter()
+            .enumerate()
+            .map(|(ix, key)| {
+                if self.keys.get(ix) == Some(key) {
+                    return self.starts.get(ix).copied().flatten();
+                }
+                if historical {
+                    return None;
+                }
+                let start = now + motion::tool_row_arrival_delay(arrival, new_group);
+                arrival += 1;
+                Some(start)
+            })
+            .collect();
+        self.keys = keys.to_vec();
+        self.starts = starts;
+    }
+
+    /// pink: `render_tool_group`'s fold – open while it is the turn's live
+    /// tail (or a row is still arriving) unless the user chose; a change of
+    /// openness tweens the body from its rendered height on `DISCLOSURE`.
+    fn frame(&mut self, live: bool, reduced: bool, now: Instant) -> GroupFrame {
+        let reveals: Vec<f32> = self
+            .starts
+            .iter()
+            .map(|s| motion::reveal_progress(TOOL_ROW_REVEAL, *s, now, reduced))
+            .collect();
+        let connectors: Vec<f32> = self
+            .starts
+            .iter()
+            .map(|s| motion::reveal_progress(TOOL_CONNECTOR_REVEAL, *s, now, reduced))
+            .collect();
+        let header_reveal =
+            motion::reveal_progress(TOOL_ROW_REVEAL, self.header_started_at, now, reduced);
+        let connector_span = TOOL_CONNECTOR_REVEAL.total().mul_f32(motion::speed_scale());
+        let arrival_pending = !reduced
+            && self
+                .starts
+                .iter()
+                .flatten()
+                .any(|start| now.saturating_duration_since(*start) < connector_span);
+        let auto_open = live || arrival_pending;
+        let open = self.user_open.unwrap_or(auto_open);
+        if self.rendered_open.is_some_and(|previous| previous != open) {
+            self.fold_from = self.rendered_height;
+            self.toggled_at = Some(now);
+        }
+        self.rendered_open = Some(open);
+        let viewport = CHIPS_TOP_PAD
+            + reveals
+                .iter()
+                .map(|p| TOOL_TREE_ROW_HEIGHT * p)
+                .sum::<f32>();
+        let target = if open { viewport } else { 0. };
+        let mut moving = header_reveal < 1.
+            || reveals.iter().any(|p| *p < 1.)
+            || connectors.iter().any(|p| *p < 1.);
+        let (body_height, disclosure) = match self.toggled_at.filter(|_| !reduced) {
+            Some(at) => {
+                let t = DISCLOSURE.progress_at(now.saturating_duration_since(at));
+                if t < 1. {
+                    moving = true;
+                } else {
+                    self.toggled_at = None;
+                }
+                (
+                    motion::lerp(self.fold_from, target, t),
+                    if open { t } else { 1. - t },
+                )
+            }
+            None => (target, if open { 1. } else { 0. }),
+        };
+        self.rendered_height = body_height;
+        GroupFrame {
+            open,
+            active: live,
+            auto_open,
+            header_reveal,
+            reveals,
+            connectors,
+            viewport,
+            body_height,
+            disclosure,
+            shimmer_start: self.shimmer_started_at,
+            moving,
+        }
+    }
+
+    /// pink: `toggle_fold`.
+    fn toggle(&mut self, open_height: f32, auto_open: bool) {
+        let currently_open = self.user_open.unwrap_or(auto_open);
+        self.fold_from = if currently_open { open_height } else { 0. };
+        self.user_open = Some(!currently_open);
+        self.toggled_at = Some(Instant::now());
+    }
+}
+
+#[derive(Default)]
 struct State {
+    seen: bool,
+    was_busy: bool,
+    hover_question: bool,
+    hover_answer: bool,
     hover_cite: Option<usize>,
-    pinned_cite: Option<usize>,
-    sources_open: bool,
-    copied: bool,
-    vote: Option<bool>,
-    list_height: Rc<Cell<f32>>,
+    copied: Option<CopyTarget>,
+    group: GroupState,
+    veil: RowVeil,
     _copy_reset: Option<Task<()>>,
 }
+
+// ---------------------------------------------------------------------------
+// The component
+// ---------------------------------------------------------------------------
 
 #[derive(IntoElement)]
 pub struct AiAnswer {
     id: ElementId,
     question: SharedString,
+    query: Option<SharedString>,
     sources: Vec<Source>,
     blocks: Vec<Block>,
-    follow_ups: Vec<SharedString>,
     status: AnswerStatus,
     reveal: Option<usize>,
+    elapsed: Option<Duration>,
+    asked_at: Option<SharedString>,
+    answered_at: Option<SharedString>,
     width: f32,
     on_stop: Option<Handler>,
     on_regenerate: Option<Handler>,
-    on_follow_up: Option<TextHandler>,
     on_open_source: Option<SourceHandler>,
-    on_feedback: Option<VoteHandler>,
 }
 
 impl AiAnswer {
@@ -289,20 +889,28 @@ impl AiAnswer {
         Self {
             id: id.into(),
             question: question.into(),
+            query: None,
             sources: Vec::new(),
             blocks: Vec::new(),
-            follow_ups: Vec::new(),
             status: AnswerStatus::Writing,
             reveal: None,
+            elapsed: None,
+            asked_at: None,
+            answered_at: None,
             width: 640.,
             on_stop: None,
             on_regenerate: None,
-            on_follow_up: None,
             on_open_source: None,
-            on_feedback: None,
         }
     }
 
+    /// The web search the turn ran: the tool group's first row.
+    pub fn query(mut self, query: impl Into<SharedString>) -> Self {
+        self.query = Some(query.into());
+        self
+    }
+
+    /// The pages read so far, one fetch row each, in arrival order.
     pub fn sources(mut self, sources: Vec<Source>) -> Self {
         self.sources = sources;
         self
@@ -310,11 +918,6 @@ impl AiAnswer {
 
     pub fn blocks(mut self, blocks: Vec<Block>) -> Self {
         self.blocks = blocks;
-        self
-    }
-
-    pub fn follow_ups(mut self, questions: Vec<SharedString>) -> Self {
-        self.follow_ups = questions;
         self
     }
 
@@ -329,30 +932,44 @@ impl AiAnswer {
         self
     }
 
+    /// Time since the turn began, for the working line's "· 12s".
+    pub fn elapsed(mut self, elapsed: Duration) -> Self {
+        self.elapsed = Some(elapsed);
+        self
+    }
+
+    /// The question's timestamp in its hover lane ("Oct 23, 3:41 PM").
+    pub fn asked_at(mut self, label: impl Into<SharedString>) -> Self {
+        self.asked_at = Some(label.into());
+        self
+    }
+
+    /// The answer's timestamp in its hover lane.
+    pub fn answered_at(mut self, label: impl Into<SharedString>) -> Self {
+        self.answered_at = Some(label.into());
+        self
+    }
+
+    /// The column width; the question bubble caps at 80% of it.
     pub fn width(mut self, width: f32) -> Self {
         self.width = width;
         self
     }
 
+    /// Shows the working line's hover-only Stop.
     pub fn on_stop(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_stop = Some(Rc::new(handler));
         self
     }
 
+    /// Shows Retry in the settled answer's hover lane.
     pub fn on_regenerate(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_regenerate = Some(Rc::new(handler));
         self
     }
 
-    pub fn on_follow_up(
-        mut self,
-        handler: impl Fn(SharedString, &mut Window, &mut App) + 'static,
-    ) -> Self {
-        self.on_follow_up = Some(Rc::new(handler));
-        self
-    }
-
-    /// Called with the source index from a preview or the source list.
+    /// Called with the source index from a citation or a fetch row, which
+    /// then wear pink's open-arrow tile.
     pub fn on_open_source(
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
@@ -361,387 +978,932 @@ impl AiAnswer {
         self
     }
 
-    /// `Some(true)` for a good rating, `Some(false)` for a bad one, `None` when cleared.
-    pub fn on_feedback(
-        mut self,
-        handler: impl Fn(Option<bool>, &mut Window, &mut App) + 'static,
-    ) -> Self {
-        self.on_feedback = Some(Rc::new(handler));
-        self
+    fn tool_rows(&self) -> Vec<ToolRow> {
+        let mut rows = Vec::new();
+        if let Some(query) = &self.query {
+            rows.push(ToolRow {
+                label: "Web",
+                detail: query.clone(),
+                key: format!("web:{query}").into(),
+                source: None,
+            });
+        }
+        for (ix, source) in self.sources.iter().enumerate() {
+            let address = source.address();
+            rows.push(ToolRow {
+                label: "Fetch",
+                key: format!("fetch:{address}").into(),
+                detail: address,
+                source: Some(ix),
+            });
+        }
+        rows
     }
+
+    /// pink: `live_status` – the newest tool in flight names the work
+    /// ("Searching the web for …", "Fetching <host>"), then "Writing" once
+    /// the reply streams.
+    fn live_status(&self) -> (SharedString, Option<SharedString>) {
+        let object = |s: &str| {
+            let s = s.trim();
+            (!s.is_empty())
+                .then(|| SharedString::from(ellipsize_chars(s, LIVE_STATUS_OBJECT_CHARS)))
+        };
+        if self.status == AnswerStatus::Writing {
+            return ("Writing".into(), None);
+        }
+        match (self.sources.last(), &self.query) {
+            (Some(source), _) => ("Fetching".into(), object(&url_host(&source.address()))),
+            (None, Some(query)) => ("Searching the web for".into(), object(query)),
+            (None, None) => ("Searching the web".into(), None),
+        }
+    }
+}
+
+/// One row of the tool group (pink `tool_chip_content`: "Web" + query,
+/// "Fetch" + url).
+struct ToolRow {
+    label: &'static str,
+    detail: SharedString,
+    key: SharedString,
+    source: Option<usize>,
+}
+
+/// What the render helpers share.
+struct Ctx<'a> {
+    t: &'a Pink,
+    key: &'a str,
+    state: &'a Entity<State>,
+    sources: Rc<Vec<Source>>,
+    on_open_source: Option<SourceHandler>,
 }
 
 // ---------------------------------------------------------------------------
 // Small pieces
 // ---------------------------------------------------------------------------
 
-fn measure(cell: Rc<Cell<f32>>) -> impl IntoElement {
-    canvas(
-        move |bounds, window, _| {
-            let h = f32::from(bounds.size.height);
-            if (cell.get() - h).abs() > 0.5 {
-                cell.set(h);
-                window.on_next_frame(|window, _| window.refresh());
-            }
-        },
-        |_, _, _, _| {},
-    )
-    .absolute()
-    .top_0()
-    .left_0()
-    .size_full()
-}
-
-fn spinner(id: impl Into<ElementId>, size: f32, color: Hsla, reduced: bool) -> AnyElement {
-    let arc = svg().path(ICON_ARC).size(px(size)).text_color(color);
+/// pink: `meta_action` – one action in a message's hover lane: a 24px icon
+/// button, transparent → `ink(0.08)` on the shared hover fade, a 14px glyph
+/// in `content_muted`, a text tooltip and the inset focus ring.
+fn meta_action(
+    id: SharedString,
+    icon: &'static str,
+    label: &'static str,
+    t: &Pink,
+) -> Stateful<Div> {
+    let ring = t.focus_ring();
     div()
-        .relative()
-        .flex_none()
-        .size(px(size))
-        .child(
-            svg()
-                .path(ICON_RING)
-                .absolute()
-                .size(px(size))
-                .text_color(color.opacity(0.22)),
-        )
-        .child(if reduced {
-            arc.into_any_element()
-        } else {
-            arc.with_animation(
-                id,
-                Animation::new(Duration::from_millis(850)).repeat(),
-                |s, d| s.with_transformation(Transformation::rotate(percentage(d))),
-            )
-            .into_any_element()
-        })
-        .into_any_element()
-}
-
-/// The source's letter tile; opaque so stacked tiles can overlap.
-fn tile(source: &Source, size: f32, ring: Option<Hsla>, t: &Pink) -> gpui::Div {
-    let color = source.tone.color(t);
-    let wash = motion::mix(t.surface_card, color, if t.dark { 0.22 } else { 0.13 });
-    div()
-        .flex_none()
-        .size(px(size))
+        .id(id.clone())
+        .role(Role::Button)
+        .aria_label(label)
+        .tab_index(0)
+        .size(px(META_ACTION_SIZE))
         .flex()
         .items_center()
         .justify_center()
         .rounded(px(radius::SM))
-        .bg(wash)
-        .when_some(ring, |d, ring| d.border_2().border_color(ring))
-        .text_size(px((size * 0.45).round()))
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(color)
-        .child(source.letters())
+        .cursor_pointer()
+        .hover_fill(format!("tl-{id}"), gpui::transparent_black(), t.ink(0.08))
+        .focus_visible(move |style| pink::focus_ring(style, ring))
+        .tooltip(pink::text_tooltip(label))
+        .tooltip_show_delay(pink::layout::TOOLTIP_DELAY)
+        .child(
+            svg()
+                .path(icon)
+                .size(px(pink::icon_size::SM))
+                .text_color(t.content_muted),
+        )
 }
 
-/// A square icon button whose glyph can stay lit.
-fn tool_button(
-    id: impl Into<SharedString>,
-    icon: &'static str,
-    active: bool,
+/// pink: the hover metadata strip under an entry's last row – a reserved
+/// 28px lane, so revealing it never moves layout, whose timestamp (12
+/// `content_faint`) and actions fade in over 150ms while the entry is
+/// hovered. User entries align end, under the bubble.
+fn meta_lane(
+    id: SharedString,
+    end: bool,
+    hovered: bool,
+    timestamp: Option<SharedString>,
+    actions: Vec<AnyElement>,
     t: &Pink,
-) -> gpui::Stateful<gpui::Div> {
-    let id: SharedString = id.into();
-    let key = format!("ans-tool-{id}");
-    let rest_fg = if active { t.accent } else { t.text_faint };
-    let tone = motion::hover_blend(&key, rest_fg, if active { t.accent } else { t.text });
-    let (rest, hover) = if active {
-        (t.accent_wash, t.accent_wash)
-    } else {
-        (
-            t.fill(FillTier::Tertiary).opacity(0.),
-            t.fill(FillTier::Tertiary),
-        )
-    };
+) -> Div {
+    let metadata = div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(2.))
+        .child(div().mr(px(6.)))
+        .children(timestamp.map(|stamp| {
+            div()
+                .text_size(px(pink::text::FOOTNOTE))
+                .text_color(t.content_faint)
+                .child(stamp)
+        }))
+        .children(actions);
     div()
-        .id(id)
-        .flex_none()
-        .size(px(28.))
+        .h(px(META_LANE_HEIGHT))
+        .pt(px(META_LANE_HEIGHT - META_ACTION_SIZE))
+        .w_full()
         .flex()
         .items_center()
-        .justify_center()
-        .rounded(px(radius::MD))
+        .when(end, |el| el.justify_end())
+        .when(hovered, |el| el.child(motion::fade_quick(id, metadata)))
+}
+
+/// Copy in a hover lane, with pink's 1.2s "Copied" check.
+fn copy_action(
+    id: SharedString,
+    target: CopyTarget,
+    text: SharedString,
+    copied: bool,
+    state: &Entity<State>,
+    t: &Pink,
+) -> Stateful<Div> {
+    let state = state.clone();
+    meta_action(
+        id,
+        if copied { ICON_COPY_CHECK } else { ICON_COPY },
+        if copied { "Copied" } else { "Copy" },
+        t,
+    )
+    .on_click(move |_, _, cx| {
+        cx.stop_propagation();
+        cx.write_to_clipboard(ClipboardItem::new_string(text.to_string()));
+        state.update(cx, |s, cx| {
+            s.copied = Some(target);
+            s._copy_reset = Some(cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(COPIED_FOR).await;
+                this.update(cx, |s, cx| {
+                    s.copied = None;
+                    cx.notify();
+                })
+                .ok();
+            }));
+            cx.notify();
+        });
+    })
+}
+
+/// pink: the working trailer's "Stop" – a quiet way out that appears only
+/// under the pointer (or on focus): 11/16 `content_muted`, `ml 4 px 6 r 6`,
+/// the shared hover wash.
+fn stop_button(id: SharedString, group: SharedString, on_stop: Handler, t: &Pink) -> Stateful<Div> {
+    div()
+        .id(id.clone())
+        .role(Role::Button)
+        .aria_label("Stop the current turn")
+        .tab_index(0)
+        .flex_none()
+        .ml(px(space::XS))
+        .px(px(space::S6))
+        .rounded(px(radius::CONTROL))
         .cursor_pointer()
-        .hover_fill(key, rest, hover)
-        .child(svg().path(icon).size(px(15.)).text_color(tone))
+        .text_size(px(WORKING_TIMER_SIZE))
+        .line_height(px(WORKING_STATUS_LINE_HEIGHT))
+        .text_color(t.content_muted)
+        .opacity(0.)
+        .group_hover(group, |style| style.opacity(1.))
+        .focus_visible(|style| style.opacity(1.))
+        .hover_wash(format!("tl-{id}"), t.fill(FillTier::Tertiary))
+        .child("Stop")
+        .on_click(move |_: &ClickEvent, window, cx| {
+            cx.stop_propagation();
+            on_stop(window, cx);
+        })
+}
+
+/// pink: `reveal_tool_row` – an arriving row grows to its height.
+fn reveal_tool_row(row: AnyElement, height: f32, progress: f32) -> AnyElement {
+    if progress >= 1. {
+        return row;
+    }
+    div()
+        .w_full()
+        .h(px(height * progress))
+        .flex_none()
+        .overflow_hidden()
+        .child(row)
+        .into_any_element()
+}
+
+/// pink: `activity_branch_points` – the elbow from the trunk to the branch
+/// tip, cut to `progress` of its length.
+fn branch_points(progress: f32) -> Vec<Point<f32>> {
+    let mut path: Vec<Point<f32>> = (0..=24)
+        .map(|step| {
+            let t = step as f32 / 24.;
+            point(
+                ACTIVITY_BEND_RADIUS * t * t,
+                ACTIVITY_BEND_RADIUS * (2. * t - t * t),
+            )
+        })
+        .collect();
+    path.push(point(
+        ACTIVITY_BRANCH_END_X - ACTIVITY_TRUNK_X,
+        ACTIVITY_BEND_RADIUS,
+    ));
+    if progress >= 1. {
+        return path;
+    }
+    let lengths: Vec<f32> = path
+        .windows(2)
+        .map(|pair| (pair[1].x - pair[0].x).hypot(pair[1].y - pair[0].y))
+        .collect();
+    let mut remaining = lengths.iter().sum::<f32>() * progress.clamp(0., 1.);
+    let mut visible = vec![path[0]];
+    for (pair, length) in path.windows(2).zip(lengths) {
+        if remaining <= 0. {
+            break;
+        }
+        let t = (remaining / length).min(1.);
+        visible.push(point(
+            motion::lerp(pair[0].x, pair[1].x, t),
+            motion::lerp(pair[0].y, pair[1].y, t),
+        ));
+        remaining -= length;
+    }
+    visible
+}
+
+/// pink: `activity_ribbon` – a 1px ribbon contour; nonzero fill unions the
+/// trunk and the elbow so the fork paints one alpha.
+fn ribbon(path: &mut PathBuilder, points: &[Point<Pixels>]) {
+    if points.len() < 2 {
+        return;
+    }
+    let mut left = Vec::with_capacity(points.len());
+    let mut right = Vec::with_capacity(points.len());
+    for (ix, p) in points.iter().enumerate() {
+        let a = points[ix.saturating_sub(1)];
+        let b = points[(ix + 1).min(points.len() - 1)];
+        let dx = f32::from(b.x - a.x);
+        let dy = f32::from(b.y - a.y);
+        let length = dx.hypot(dy).max(0.0001);
+        let normal = point(px(-dy / length * 0.5), px(dx / length * 0.5));
+        left.push(*p + normal);
+        right.push(*p - normal);
+    }
+    path.move_to(left[0]);
+    for p in left.iter().skip(1).chain(right.iter().rev()) {
+        path.line_to(*p);
+    }
+    path.close();
+}
+
+/// pink: `activity_rail` – the 48px gutter of one row: the trunk at x 12.5
+/// drawing down from the row above, a 6px elbow to x 28 and the tool glyph
+/// (14, `content_muted`) at x 32, or the running row's mini spinner. The
+/// ribbons are `hairline(0.12)`.
+fn activity_rail(
+    has_predecessor: bool,
+    continues: bool,
+    reveal: f32,
+    continuation: f32,
+    running: Option<AnyElement>,
+    t: &Pink,
+) -> Div {
+    let color = t.hairline(0.12);
+    let row_height = TOOL_TREE_ROW_HEIGHT;
+    let (incoming, branch) = motion::tool_connector_parts(reveal, has_predecessor);
+    let icon_top = row_height / 2. - ACTIVITY_ICON_SIZE / 2.;
+    div()
+        .relative()
+        .w(px(ACTIVITY_GUTTER_WIDTH))
+        .flex_none()
+        .child(
+            canvas(
+                |_, _, _| (),
+                move |bounds, _, window, _| {
+                    let x = bounds.origin.x + px(ACTIVITY_TRUNK_X);
+                    let bend_y = bounds.origin.y + px(row_height / 2. - ACTIVITY_BEND_RADIUS);
+                    let mut tree = PathBuilder::fill().with_style(PathStyle::Fill(
+                        FillOptions::default().with_fill_rule(FillRule::NonZero),
+                    ));
+                    if incoming > 0. {
+                        let mut bottom = point(
+                            x,
+                            bounds.origin.y
+                                + px((row_height / 2. - ACTIVITY_BEND_RADIUS) * incoming),
+                        );
+                        if incoming >= 1. && continues && continuation > 0. {
+                            let below = (f32::from(bounds.size.height)
+                                - (row_height / 2. - ACTIVITY_BEND_RADIUS))
+                                .max(0.);
+                            bottom = point(x, bend_y + px(below * continuation));
+                        }
+                        ribbon(&mut tree, &[point(x, bounds.origin.y), bottom]);
+                    }
+                    if branch > 0. {
+                        let points: Vec<Point<Pixels>> = branch_points(branch)
+                            .into_iter()
+                            .map(|p| point(x + px(p.x), bend_y + px(p.y)))
+                            .collect();
+                        ribbon(&mut tree, &points);
+                    }
+                    if let Ok(path) = tree.build() {
+                        window.paint_path(path, color);
+                    }
+                },
+            )
+            .absolute()
+            .inset_0(),
+        )
+        .child(match running {
+            Some(spinner) => div()
+                .absolute()
+                .left(px(ACTIVITY_ICON_LEFT))
+                .top(px(icon_top))
+                .size(px(ACTIVITY_ICON_SIZE))
+                .flex()
+                .items_center()
+                .justify_center()
+                .opacity(branch)
+                .child(spinner)
+                .into_any_element(),
+            None => svg()
+                .path(ICON_GLOBAL)
+                .absolute()
+                .left(px(ACTIVITY_ICON_LEFT))
+                .top(px(icon_top))
+                .size(px(ACTIVITY_ICON_SIZE))
+                .opacity(branch)
+                .text_color(t.content_muted)
+                .into_any_element(),
+        })
+}
+
+/// pink: `chip_header_row` for an activity row – label and detail at 12/18
+/// in `content_muted`, the detail truncating. A row that opens its page
+/// (`hover` names its fade) gets the trailing open-arrow tile, half strength
+/// until the row is hovered, and its text brightens to `text` with it.
+fn chip_header_row(row: &ToolRow, hover: Option<&str>, t: &Pink) -> Div {
+    let tone = hover.map_or(t.content_muted, |key| {
+        motion::hover_blend(key, t.content_muted, t.text)
+    });
+    div()
+        .h(px(CHIP_CARD_HEIGHT))
+        .w_full()
+        .min_w_0()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(space::SM))
+        .text_size(px(TOOL_LABEL_SIZE))
+        .line_height(px(TOOL_LABEL_LINE_HEIGHT))
+        .text_color(tone)
+        .child(
+            div()
+                .flex_none()
+                .h(px(TOOL_LABEL_LINE_HEIGHT))
+                .flex()
+                .items_center()
+                .child(row.label),
+        )
+        .child(
+            div()
+                .min_w_0()
+                .h(px(TOOL_LABEL_LINE_HEIGHT))
+                .flex()
+                .items_center()
+                .truncate()
+                .child(div().min_w_0().truncate().child(row.detail.clone())),
+        )
+        .child(div().flex_1().min_w(px(4.)))
+        .when_some(hover, |el, key| {
+            el.child(
+                div()
+                    .size(px(TRAIL_TILE))
+                    .flex_none()
+                    .opacity(0.5 + 0.5 * motion::hover_t(key))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        svg()
+                            .path(ICON_OPEN)
+                            .size(px(DISCLOSURE_CHEVRON_SIZE))
+                            .text_color(t.readable_muted(0.8)),
+                    ),
+            )
+        })
+}
+
+/// pink: `badges.rs` `BadgeCard` – the quoted-passage hover card, here
+/// previewing a citation: a 320px plate, one inset passage row (`p 8 r 6`,
+/// `ink(0.05)`, a 2px `solid @ 0.35` bar) holding the host in mono 11 with
+/// the citation's number as a tag, the page title, and the passage.
+struct CitationCard {
+    number: usize,
+    source: Source,
+}
+
+impl Render for CitationCard {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = Pink::get(cx);
+        let passage = div()
+            .flex()
+            .flex_row()
+            .gap(px(space::SM))
+            .p(px(space::SM))
+            .rounded(px(radius::SM))
+            .bg(t.ink(0.05))
+            .child(
+                div()
+                    .flex_none()
+                    .w(px(2.))
+                    .rounded(px(1.))
+                    .bg(t.solid.opacity(0.35)),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap(px(space::XS))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap(px(space::S6))
+                            .font_family(pink::MONO)
+                            .text_size(px(pink::text::CAPTION))
+                            .line_height(px(14.))
+                            .text_color(t.text_faint)
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .child(self.source.site.clone()),
+                            )
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .px(px(space::XS))
+                                    .rounded(px(3.))
+                                    .bg(t.ink(0.10))
+                                    .child(self.number.to_string()),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(pink::text::FOOTNOTE))
+                            .line_height(px(16.))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(t.text)
+                            .child(self.source.title.clone()),
+                    )
+                    .when(!self.source.snippet.is_empty(), |el| {
+                        el.child(
+                            div()
+                                .min_w_0()
+                                .text_size(px(pink::text::FOOTNOTE))
+                                .line_height(px(16.))
+                                .text_color(t.readable_muted(0.85))
+                                .child(self.source.snippet.clone()),
+                        )
+                    }),
+            );
+        pink::popover_card(&t)
+            .bg(t.tooltip_surface())
+            .w(px(CARD_WIDTH))
+            .p(px(space::S6))
+            .flex()
+            .flex_col()
+            .gap(px(space::XS))
+            .child(passage)
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Render
 // ---------------------------------------------------------------------------
 
-struct Ctx<'a> {
-    t: &'a Pink,
-    key: &'a str,
-    reduced: bool,
-    state: &'a Entity<State>,
-    sources: &'a [Source],
-    hover: Option<usize>,
-    pinned: Option<usize>,
-    on_open_source: Option<SourceHandler>,
-}
-
 impl AiAnswer {
-    fn render_flow(
-        cx: &Ctx,
-        spans: &[Span],
-        counter: &mut usize,
-        cite_counter: &mut usize,
-        limit: usize,
-        caret: bool,
-    ) -> gpui::Div {
+    /// pink: `RowKind::User` – the question in the right-aligned bubble
+    /// (`user_bubble_bg`, a 1px inset edge in light, r16, `px 16 py 10`,
+    /// 14/22), then its hover lane.
+    fn render_question(&self, cx: &Ctx, hovered: bool, copied: bool) -> AnyElement {
         let t = cx.t;
-        let mut groups: Vec<gpui::Div> = Vec::new();
-        let mut group: Vec<AnyElement> = Vec::new();
-        let mut caret_placed = false;
-        let all = pieces(spans);
-        let total = all.len();
-        for (i, (piece, space)) in all.into_iter().enumerate() {
-            let n = *counter;
-            *counter += 1;
-            let cite_ix = if let Piece::Cite(_) = piece {
-                let c = *cite_counter;
-                *cite_counter += 1;
-                Some(c)
-            } else {
-                None
-            };
-            if n >= limit {
-                continue;
-            }
-            let element = match piece {
-                Piece::Word { text, strong } => div()
-                    .flex_none()
-                    .when(strong, |d| {
-                        d.font_weight(FontWeight::SEMIBOLD).text_color(t.text)
-                    })
-                    .child(text)
-                    .with_animation(
-                        ElementId::NamedInteger("ans-w".into(), n as u64),
-                        MotionSpec::new(200, EASE_OUT).animation(),
-                        |el, d| el.opacity(0.2 + 0.8 * d),
-                    )
-                    .into_any_element(),
-                Piece::Cite(source) => Self::citation(cx, cite_ix.unwrap_or(0), source, n),
-            };
-            group.push(element);
-            let last_shown = n + 1 == limit || i + 1 == total;
-            if caret && n + 1 == limit {
-                group.push(Self::caret(cx));
-                caret_placed = true;
-            }
-            if space || last_shown {
-                groups.push(
-                    div()
-                        .flex()
-                        .flex_none()
-                        .items_center()
-                        .when(space, |d| d.pr(px(WORD_GAP)))
-                        .children(std::mem::take(&mut group)),
-                );
-            }
-        }
-        if !group.is_empty() {
-            groups.push(div().flex().flex_none().items_center().children(group));
-        }
-        if caret && !caret_placed && limit == usize::MAX {
-            groups.push(div().flex().items_center().child(Self::caret(cx)));
-        }
-        div()
-            .flex()
-            .flex_wrap()
-            .items_center()
-            .line_height(px(BODY_LINE))
-            .children(groups)
-    }
-
-    fn caret(cx: &Ctx) -> AnyElement {
-        let bar = div()
-            .flex_none()
-            .ml(px(2.))
-            .w(px(2.))
-            .h(px(15.))
-            .rounded(px(1.))
-            .bg(cx.t.accent);
-        if cx.reduced {
-            bar.into_any_element()
-        } else {
-            bar.with_animation(
-                "ans-caret",
-                Animation::new(Duration::from_millis(1000)).repeat(),
-                |el, d| el.opacity(0.6 + 0.4 * (d * TAU).cos()),
-            )
-            .into_any_element()
-        }
-    }
-
-    /// The numbered chip, its hover/pin state and the anchored preview.
-    fn citation(cx: &Ctx, cite_ix: usize, source_ix: usize, n: usize) -> AnyElement {
-        let t = cx.t;
-        let lit = cx.hover == Some(cite_ix) || cx.pinned == Some(cite_ix);
-        let open = lit && source_ix < cx.sources.len();
-        let chip_key = format!("{}-cite-{cite_ix}", cx.key);
-        let (rest_bg, rest_fg) = (t.fill(FillTier::Secondary), t.text_muted);
-        let (lit_bg, lit_fg) = (t.accent_wash, if t.dark { t.text } else { t.accent });
-        let glow = if lit { 1. } else { motion::hover_t(&chip_key) };
-        let state = cx.state.clone();
-        let state_hover = cx.state.clone();
-        let chip = div()
-            .id(ElementId::NamedInteger("ans-cite".into(), cite_ix as u64))
-            .flex_none()
-            .h(px(16.))
-            .min_w(px(16.))
-            .px(px(4.))
-            .ml(px(2.))
-            .mr(px(1.))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(px(radius::XS))
-            .text_size(px(10.5))
-            .line_height(px(16.))
-            .font_weight(FontWeight::MEDIUM)
-            .cursor_pointer()
-            .bg(motion::mix(rest_bg, lit_bg, glow))
-            .text_color(motion::mix(rest_fg, lit_fg, glow))
-            .on_hover(move |hovered, window, cx| {
-                motion::set_hover(&chip_key, *hovered, motion::reduced_motion(cx));
-                window.refresh();
-                state_hover.update(cx, |s, cx| {
-                    if *hovered {
-                        s.hover_cite = Some(cite_ix);
-                    } else if s.hover_cite == Some(cite_ix) {
-                        s.hover_cite = None;
-                    }
-                    cx.notify();
-                })
+        let bubble = div()
+            .min_w_0()
+            .max_w(px(self.width * USER_BUBBLE_SHARE))
+            .bg(t.user_bubble_bg())
+            .when_some(t.user_bubble_edge(), |el, edge| {
+                el.shadow(vec![BoxShadow {
+                    color: edge,
+                    offset: point(px(0.), px(0.)),
+                    blur_radius: px(0.),
+                    spread_radius: px(1.),
+                    inset: true,
+                }])
             })
-            .on_click(move |_, _, cx| {
-                state.update(cx, |s, cx| {
-                    s.pinned_cite = if s.pinned_cite == Some(cite_ix) {
-                        None
-                    } else {
-                        Some(cite_ix)
-                    };
-                    cx.notify();
-                })
-            })
-            .child(format!("{}", source_ix + 1));
-
-        let popover = open.then(|| Self::preview(cx, cite_ix, source_ix));
-        div()
-            .relative()
-            .flex_none()
-            .child(chip)
-            .children(popover)
-            .with_animation(
-                ElementId::NamedInteger("ans-cite-in".into(), n as u64),
-                MotionSpec::new(320, motion::EASE_OUT_QUINT).animation(),
-                |el, d| el.opacity(d).top(px(3. * (1. - d))),
-            )
-            .into_any_element()
-    }
-
-    fn preview(cx: &Ctx, cite_ix: usize, source_ix: usize) -> AnyElement {
-        let t = cx.t;
-        let source = &cx.sources[source_ix];
-        let pinned = cx.pinned == Some(cite_ix);
+            .rounded(px(radius::BUBBLE))
+            .px(px(space::LG))
+            .py(px(space::S10))
+            .text_size(px(MD_TEXT_SIZE))
+            .line_height(px(USER_LINE_HEIGHT))
+            .text_color(t.text)
+            .child(self.question.clone());
         let state = cx.state.clone();
-        let on_open = cx.on_open_source.clone();
-        let card = pink::overlay(t)
-            .id(ElementId::NamedInteger(
-                "ans-preview".into(),
-                cite_ix as u64,
-            ))
-            .w(px(300.))
-            .p(px(space::S12))
+        let copy = copy_action(
+            format!("{}-copy-q", cx.key).into(),
+            CopyTarget::Question,
+            self.question.clone(),
+            copied,
+            cx.state,
+            t,
+        );
+        div()
+            .id(SharedString::from(format!("{}-question", cx.key)))
+            .w_full()
             .flex()
             .flex_col()
-            .gap(px(space::S6))
-            .font_family(pink::SANS)
-            .line_height(px(18.))
-            .on_mouse_down_out(move |_, _, cx| {
+            .on_hover(move |hovered, _, cx| {
+                let hovered = *hovered;
                 state.update(cx, |s, cx| {
-                    if s.pinned_cite == Some(cite_ix) {
-                        s.pinned_cite = None;
+                    if s.hover_question != hovered {
+                        s.hover_question = hovered;
                         cx.notify();
                     }
                 })
             })
             .child(
                 div()
+                    .w_full()
                     .flex()
+                    .justify_end()
+                    .items_end()
+                    .child(bubble),
+            )
+            .child(meta_lane(
+                format!("{}-meta-q", cx.key).into(),
+                true,
+                hovered,
+                self.asked_at.clone(),
+                vec![copy.into_any_element()],
+                t,
+            ))
+            .into_any_element()
+    }
+
+    /// pink: `render_tool_group` – the summary plate (24px, r6, Quaternary →
+    /// Tertiary with its text and glyph brightening, a chevron turning 90°
+    /// as it opens) over the fold of rail rows.
+    fn render_group(&self, cx: &Ctx, rows: &[ToolRow], frame: &GroupFrame) -> AnyElement {
+        let t = cx.t;
+        let key = cx.key;
+        let ring = t.focus_ring();
+        let searches = usize::from(self.query.is_some());
+        let summary: SharedString = tool_group_summary(searches, self.sources.len()).into();
+        let hover_key = format!("tl-{key}-hdr");
+        let title = match frame.shimmer_start.filter(|_| frame.active) {
+            Some(start) => shimmer_text(
+                summary.clone(),
+                TOOL_LABEL_SIZE,
+                TOOL_LABEL_LINE_HEIGHT,
+                t.content_muted,
+                t.text,
+            )
+            .started_at(start)
+            .flex_none()
+            .into_any_element(),
+            None => summary.clone().into_any_element(),
+        };
+        let toggle = {
+            let state = cx.state.clone();
+            let (viewport, auto_open) = (frame.viewport, frame.auto_open);
+            move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                cx.stop_propagation();
+                state.update(cx, |s, cx| {
+                    s.group.toggle(viewport, auto_open);
+                    cx.notify();
+                })
+            }
+        };
+        let header = div()
+            .h(px(TOOL_GROUP_HEADER_HEIGHT))
+            .flex()
+            .flex_row()
+            .items_center()
+            .child(
+                div()
+                    .id(SharedString::from(format!("{key}-hdr")))
+                    .rounded(px(radius::CONTROL))
+                    .focus_visible(move |style| pink::focus_ring(style, ring))
+                    .role(Role::Button)
+                    .aria_label(SharedString::from(format!("Tool activity: {summary}")))
+                    .aria_expanded(frame.open)
+                    .tab_index(0)
+                    .flex_none()
+                    .max_w_full()
+                    .min_w_0()
+                    .h(px(TOOL_GROUP_HEADER_HEIGHT - 2.))
+                    .flex()
+                    .flex_row()
                     .items_center()
-                    .gap(px(space::S8))
-                    .child(tile(source, 18., None, t))
+                    .gap(px(space::S6))
+                    .pl(px(ACTIVITY_TRUNK_X - ACTIVITY_ICON_SIZE / 2.))
+                    .pr(px(space::SM))
+                    .cursor_pointer()
+                    .text_size(px(TOOL_LABEL_SIZE))
+                    .line_height(px(TOOL_LABEL_LINE_HEIGHT))
+                    .hover_fill_fg(
+                        hover_key.clone(),
+                        t.fill(FillTier::Quaternary),
+                        t.fill(FillTier::Tertiary),
+                        t.content_muted,
+                        t.text,
+                    )
+                    .on_click(toggle)
                     .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .text_size(px(text::FOOTNOTE))
-                            .text_color(t.text_muted)
-                            .child(format!("{} · {}", source.site, source.meta)),
+                        svg()
+                            .path(ICON_GLOBAL)
+                            .flex_none()
+                            .size(px(ACTIVITY_ICON_SIZE))
+                            .text_color(motion::hover_blend(&hover_key, t.content_muted, t.text)),
                     )
                     .child(
                         div()
+                            .min_w_0()
+                            .h(px(TOOL_LABEL_LINE_HEIGHT))
+                            .flex()
+                            .items_center()
+                            .truncate()
+                            .child(title),
+                    )
+                    .child(
+                        svg()
+                            .path(ICON_CHEVRON)
                             .flex_none()
-                            .text_size(px(text::CAPTION))
-                            .font_family(pink::MONO)
-                            .text_color(t.text_faint)
-                            .child(format!("{}", source_ix + 1)),
+                            .size(px(DISCLOSURE_CHEVRON_SIZE))
+                            .with_transformation(Transformation::rotate(radians(
+                                FRAC_PI_2 * frame.disclosure,
+                            )))
+                            .text_color(t.content_faint),
                     ),
-            )
-            .child(
-                div()
-                    .text_size(px(text::BODY))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(t.text)
-                    .child(source.title.clone()),
-            )
-            .child(
-                div()
-                    .text_size(px(text::FOOTNOTE))
-                    .text_color(t.text_muted)
-                    .line_clamp(3)
-                    .child(source.snippet.clone()),
-            )
-            .when(pinned, |d| {
-                d.child(
-                    div().flex().pt(px(space::S4)).child(
-                        pink::button(
-                            format!("{}-open-{cite_ix}", cx.key),
-                            pink::ButtonKind::Secondary,
-                            pink::ControlSize::Sm,
-                            t,
+            );
+
+        let body = (frame.body_height > 0.).then(|| {
+            let searching = self.status == AnswerStatus::Searching;
+            let chips = div().pt(px(CHIPS_TOP_PAD)).flex().flex_col().children(
+                rows.iter().enumerate().map(|(ix, row)| {
+                    let connector = frame.connectors[ix];
+                    let content = motion::tool_connector_parts(connector, ix > 0).1;
+                    let continuation =
+                        motion::tool_connector_continuation(frame.connectors.get(ix + 1).copied());
+                    let running = (searching && ix + 1 == rows.len()).then(|| {
+                        mini_glyph_spinner(format!("{key}-running-{ix}"), 2., t.glyph)
+                            .into_any_element()
+                    });
+                    let rail = activity_rail(
+                        ix > 0,
+                        ix + 1 < rows.len(),
+                        connector,
+                        continuation,
+                        running,
+                        t,
+                    );
+                    let link = row.source.zip(cx.on_open_source.clone());
+                    let hover_key = format!("tl-{key}-tool-{ix}");
+                    let header =
+                        chip_header_row(row, link.is_some().then_some(hover_key.as_str()), t);
+                    let header = match link {
+                        Some((source, on_open)) => div()
+                            .id(SharedString::from(format!("{key}-tool-btn-{ix}")))
+                            .on_hover(motion::hover_listener(hover_key.clone()))
+                            .role(Role::Button)
+                            .aria_label(SharedString::from(format!(
+                                "{}: {}",
+                                row.label, row.detail
+                            )))
+                            .tab_index(0)
+                            .rounded(px(radius::CONTROL))
+                            .focus_visible(move |style| pink::focus_ring(style, ring))
+                            .h(px(CHIP_CARD_HEIGHT))
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .items_center()
+                            .cursor_pointer()
+                            .on_click(move |_, window, cx| {
+                                cx.stop_propagation();
+                                on_open(source, window, cx);
+                            })
+                            .child(header)
+                            .into_any_element(),
+                        None => header.into_any_element(),
+                    };
+                    let card = div()
+                        .ml(px(ACTIVITY_TEXT_GAP))
+                        .my(px((TOOL_TREE_ROW_HEIGHT - CHIP_CARD_HEIGHT) / 2.))
+                        .h(px(CHIP_CARD_HEIGHT))
+                        .min_w_0()
+                        .flex_1()
+                        .flex()
+                        .items_center()
+                        .overflow_hidden()
+                        .when(content < 1., |card| {
+                            card.relative()
+                                .top(px(4. * (1. - content)))
+                                .opacity(content)
+                        })
+                        .child(header);
+                    let row_el = div()
+                        .h(px(TOOL_TREE_ROW_HEIGHT))
+                        .w_full()
+                        .flex_none()
+                        .flex()
+                        .flex_row()
+                        .child(rail)
+                        .child(card)
+                        .into_any_element();
+                    reveal_tool_row(row_el, TOOL_TREE_ROW_HEIGHT, frame.reveals[ix])
+                }),
+            );
+            div()
+                .overflow_hidden()
+                .h(px(frame.body_height))
+                .child(chips)
+        });
+
+        div()
+            .relative()
+            .flex()
+            .flex_col()
+            .font_family(pink::SANS)
+            .child(reveal_tool_row(
+                header.into_any_element(),
+                TOOL_GROUP_HEADER_HEIGHT,
+                frame.header_reveal,
+            ))
+            .children(body)
+            .into_any_element()
+    }
+
+    /// One paragraph or list item: shaped runs at 14/22 (pink:
+    /// `text_element`), veiled while streaming. Citations are clickable
+    /// ranges with a hover card.
+    fn render_text(cx: &Ctx, flat: TextFlat, spans: &[VeilSpan]) -> AnyElement {
+        let key = cx.key;
+        let elem = flat.elem;
+        let runs = apply_veil(flat.runs, spans);
+        let styled = StyledText::new(flat.text).with_runs(runs);
+        if flat.cites.is_empty() {
+            return div().w_full().child(styled).into_any_element();
+        }
+        let cites = Rc::new(flat.cites);
+        let hover = {
+            let cites = cites.clone();
+            let state = cx.state.clone();
+            move |index: Option<usize>, _: MouseMoveEvent, _: &mut Window, cx: &mut App| {
+                let hovered = index.and_then(|i| {
+                    cites
+                        .iter()
+                        .find(|c| c.range.contains(&i))
+                        .map(|c| c.ordinal)
+                });
+                state.update(cx, |s, cx| {
+                    if s.hover_cite != hovered {
+                        s.hover_cite = hovered;
+                        cx.notify();
+                    }
+                });
+            }
+        };
+        let tooltip = {
+            let cites = cites.clone();
+            let sources = cx.sources.clone();
+            move |index: usize, _: &mut Window, cx: &mut App| -> Option<AnyView> {
+                let cite = cites.iter().find(|c| c.range.contains(&index))?;
+                let source = sources.get(cite.source)?.clone();
+                let number = cite.source + 1;
+                Some(cx.new(|_| CitationCard { number, source }).into())
+            }
+        };
+        let mut text = InteractiveText::new(SharedString::from(format!("{key}-md-{elem}")), styled)
+            .on_hover(hover)
+            .tooltip(tooltip);
+        if let Some(on_open) = cx.on_open_source.clone() {
+            let ranges = cites.iter().map(|c| c.range.clone()).collect();
+            let cites = cites.clone();
+            text = text.on_click(ranges, move |ix, window, cx| {
+                if let Some(cite) = cites.get(ix) {
+                    on_open(cite.source, window, cx);
+                }
+            });
+        }
+        let leave = cx.state.clone();
+        div()
+            .id(SharedString::from(format!("{key}-md-{elem}-box")))
+            .w_full()
+            .on_hover(move |hovered, _, cx| {
+                if !*hovered {
+                    leave.update(cx, |s, cx| {
+                        if s.hover_cite.take().is_some() {
+                            cx.notify();
+                        }
+                    });
+                }
+            })
+            .child(text)
+            .into_any_element()
+    }
+
+    /// pink: `render_block` – a paragraph, or a list of 5px accent discs in
+    /// an 18px column, 8px from the text, items 4px apart.
+    fn render_block(
+        cx: &Ctx,
+        block: BlockFlat,
+        veils: &mut HashMap<usize, Vec<VeilSpan>>,
+    ) -> AnyElement {
+        let t = cx.t;
+        let mut text = |flat: TextFlat| {
+            let spans = veils.remove(&flat.elem).unwrap_or_default();
+            Self::render_text(cx, flat, &spans)
+        };
+        let el = match block {
+            BlockFlat::Paragraph(flat) => text(flat),
+            BlockFlat::Bullets(items) => div()
+                .flex()
+                .flex_col()
+                .gap(px(LIST_ITEM_GAP))
+                .children(items.into_iter().map(|flat| {
+                    div()
+                        .flex()
+                        .flex_row()
+                        .gap(px(LIST_MARKER_GAP))
+                        .child(
+                            div()
+                                .flex_none()
+                                .min_w(px(LIST_MARKER_MIN_W))
+                                .h(px(MD_LINE_HEIGHT))
+                                .flex()
+                                .items_center()
+                                .child(
+                                    div()
+                                        .ml(px(1.))
+                                        .w(px(LIST_DISC))
+                                        .h(px(LIST_DISC))
+                                        .rounded_full()
+                                        .bg(t.accent),
+                                ),
                         )
                         .child(
-                            pink::glyph(ICON_OPEN, pink::ControlSize::Sm).text_color(t.text_muted),
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .flex()
+                                .flex_col()
+                                .gap(px(LIST_ITEM_GAP))
+                                .child(text(flat)),
                         )
-                        .child(format!("Open in {}", source.site))
-                        .when_some(on_open, |b, f| {
-                            b.on_click(move |_, window, cx| f(source_ix, window, cx))
-                        }),
-                    ),
-                )
-            });
+                }))
+                .into_any_element(),
+        };
         div()
-            .absolute()
-            .top(px(20.))
-            .left(px(-6.))
-            .child(deferred(
-                anchored()
-                    .anchor(Anchor::TopLeft)
-                    .offset(point(px(0.), px(2.)))
-                    .snap_to_window_with_margin(px(8.))
-                    .child(motion::pop_in(
-                        ElementId::NamedInteger("ans-pop".into(), cite_ix as u64),
-                        card,
-                    )),
-            ))
+            .w_full()
+            .text_size(px(MD_TEXT_SIZE))
+            .line_height(px(MD_LINE_HEIGHT))
+            .text_color(t.text)
+            .child(el)
+            .into_any_element()
+    }
+
+    /// pink: `render_working_trailer` – `pt 16`, `gap 8`, top-aligned: the
+    /// breathing orb, the shimmering status, "· 12s" and a hover-only Stop.
+    fn render_trailer(&self, cx: &Ctx) -> AnyElement {
+        let t = cx.t;
+        let group: SharedString = format!("{}-working", cx.key).into();
+        let (verb, object) = self.live_status();
+        let mut status = working_status(verb, t.content_muted, t.text);
+        if let Some(object) = object {
+            status = status.object(object);
+        }
+        div()
+            .id(SharedString::from(format!("{}-working-trailer", cx.key)))
+            .group(group.clone())
+            .flex()
+            .flex_row()
+            .items_start()
+            .gap(px(space::SM))
+            .pt(px(space::LG))
+            .min_w_0()
+            .child(orb_slot(t.accent))
+            .child(status)
+            .when_some(self.elapsed, |el, elapsed| {
+                el.child(working_timer(elapsed.as_secs() as i64, t.content_faint))
+            })
+            .when_some(self.on_stop.clone(), |el, on_stop| {
+                el.child(stop_button(
+                    format!("{}-stop", cx.key).into(),
+                    group.clone(),
+                    on_stop,
+                    t,
+                ))
+            })
             .into_any_element()
     }
 }
@@ -750,776 +1912,264 @@ impl RenderOnce for AiAnswer {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Pink::get(cx);
         let reduced = motion::reduced_motion(cx);
+        let now = Instant::now();
         let key = self.id.to_string();
+        // One state per question, so a new question starts a fresh turn.
         let state = window.use_keyed_state(
-            ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
+            ElementId::NamedChild(
+                Arc::new(self.id.clone()),
+                format!("turn-{:x}", fnv1a(self.question.as_bytes())).into(),
+            ),
             cx,
-            |_, _: &mut Context<State>| State {
-                hover_cite: None,
-                pinned_cite: None,
-                sources_open: false,
-                copied: false,
-                vote: None,
-                list_height: Rc::new(Cell::new(0.)),
-                _copy_reset: None,
-            },
+            |_, _: &mut Context<State>| State::default(),
         );
-        let s = state.read(cx);
-        let (hover, pinned, sources_open, copied, vote) = (
-            s.hover_cite,
-            s.pinned_cite,
-            s.sources_open,
-            s.copied,
-            s.vote,
-        );
-        let list_height = s.list_height.clone();
         let busy = self.status.busy();
         let searching = self.status == AnswerStatus::Searching;
-        let settled = !busy;
+        // pink: only a live row wears the veil; reduced motion renders none.
+        let streaming = self.status == AnswerStatus::Writing && !reduced;
+        let limit = self.reveal.unwrap_or(usize::MAX);
 
-        // ---- sources pill + status -----------------------------------------
-        let pill_key = format!("{key}-sources");
-        let lit_source = hover.or(pinned).and_then(|c| {
-            self.blocks
-                .iter()
-                .flat_map(|b| match b {
-                    Block::Paragraph(s) => s.clone(),
-                    Block::Bullets(items) => items.concat(),
-                })
-                .filter_map(|s| match s {
-                    Span::Cite(ix) => Some(ix),
-                    _ => None,
-                })
-                .nth(c)
-        });
-        let tiles = self.sources.iter().enumerate().map(|(ix, source)| {
-            let ring = if lit_source == Some(ix) {
-                t.accent
-            } else {
-                t.surface_card
-            };
-            div()
-                .absolute()
-                .top_0()
-                .left(px(ix as f32 * TILE_STEP))
-                .child(motion::rise_in(
-                    ElementId::NamedInteger("ans-tile".into(), ix as u64),
-                    MotionSpec::new(360, motion::EASE_OUT_QUINT),
-                    -6.,
-                    tile(source, 22., Some(ring), &t),
-                ))
-        });
-        let count = self.sources.len();
-        let stack_width = motion::follow(
-            &format!("{key}-stack"),
-            if count == 0 {
-                0.
-            } else {
-                22. + TILE_STEP * (count - 1) as f32
-            },
-            GLIDE,
-        );
-        let pill_label: SharedString = if searching {
-            match count {
-                0 => "Searching your workspace".into(),
-                1 => "Found 1 source".into(),
-                n => format!("Found {n} sources").into(),
-            }
-        } else {
-            match count {
-                1 => "1 source".into(),
-                n => format!("{n} sources").into(),
-            }
-        };
-        let chevron_turn = motion::follow(
-            &format!("{key}-chev"),
-            if sources_open { 0.5 } else { 0. },
-            GLIDE,
-        );
-        let pill = div()
-            .id("ans-sources")
-            .h(px(30.))
-            .pl(px(4.))
-            .pr(px(space::S8))
-            .flex()
-            .items_center()
-            .gap(px(space::S8))
-            .rounded(px(radius::MD))
-            .cursor_pointer()
-            .hover_fill(
-                pill_key.clone(),
-                t.fill(FillTier::Quaternary),
-                t.fill(FillTier::Tertiary),
-            )
-            .on_click({
-                let state = state.clone();
-                move |_, _, cx| {
-                    state.update(cx, |s, cx| {
-                        s.sources_open = !s.sources_open;
-                        cx.notify();
-                    })
+        let rows = self.tool_rows();
+        let row_keys: Vec<SharedString> = rows.iter().map(|r| r.key.clone()).collect();
+        let hover_cite = state.read(cx).hover_cite;
+        let blocks = flatten_blocks(&self.blocks, limit, hover_cite, &t);
+
+        let (group, mut veils, fading, hover_question, hover_answer, copied) =
+            state.update(cx, |s, _| {
+                // A settled turn that starts again (Retry) is a new reply.
+                if s.seen && busy && !s.was_busy {
+                    s.group = GroupState::default();
+                    s.veil = RowVeil::default();
+                    s.hover_cite = None;
                 }
-            })
-            .when(count > 0, |d| {
-                d.child(
-                    div()
-                        .relative()
-                        .flex_none()
-                        .h(px(22.))
-                        .w(px(stack_width))
-                        .children(tiles),
-                )
-            })
-            .when(count == 0, |d| d.pl(px(space::S8)))
-            .child(
-                div()
-                    .text_size(px(text::FOOTNOTE))
-                    .text_color(motion::hover_blend(&pill_key, t.text_muted, t.text))
-                    .child(pill_label),
-            )
-            .when(count > 0, |d| {
-                d.child(
-                    svg()
-                        .path(ICON_CHEVRON)
-                        .size(px(14.))
-                        .text_color(t.text_faint)
-                        .with_transformation(Transformation::rotate(radians(chevron_turn * TAU))),
+                let historical = !s.seen && !busy;
+                if !s.seen {
+                    s.veil.seeding = true;
+                }
+                s.seen = true;
+                s.was_busy = busy;
+                s.group.sync(&row_keys, historical, now);
+                let group = (!rows.is_empty()).then(|| s.group.frame(searching, reduced, now));
+                let mut veils: HashMap<usize, Vec<VeilSpan>> = HashMap::new();
+                if streaming {
+                    let mut seen = HashSet::new();
+                    let mut advance = |flat: &TextFlat| {
+                        seen.insert(flat.elem);
+                        veils.insert(flat.elem, s.veil.advance(flat.elem, &flat.text, now));
+                    };
+                    for block in &blocks {
+                        match block {
+                            BlockFlat::Paragraph(flat) => advance(flat),
+                            BlockFlat::Bullets(items) => items.iter().for_each(&mut advance),
+                        }
+                    }
+                    s.veil.elems.retain(|elem, _| seen.contains(elem));
+                } else {
+                    s.veil.elems.clear();
+                }
+                s.veil.seeding = false;
+                (
+                    group,
+                    veils,
+                    s.veil.is_fading(),
+                    s.hover_question,
+                    s.hover_answer,
+                    s.copied,
                 )
             });
+        if fading {
+            motion::pulse_keep(window, cx);
+        }
+        if group.as_ref().is_some_and(|g| g.moving) {
+            window.request_animation_frame();
+        }
 
-        let status = match self.status {
-            AnswerStatus::Searching | AnswerStatus::Writing => {
-                let label = if searching { "Searching" } else { "Writing" };
-                let on_stop = self.on_stop.clone();
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(space::S8))
-                    .child(spinner("ans-spin", 12., t.accent, reduced))
-                    .child(
-                        div()
-                            .text_size(px(text::FOOTNOTE))
-                            .text_color(t.text_muted)
-                            .child(label),
-                    )
-                    .child(
-                        pink::button(
-                            format!("{key}-stop"),
-                            pink::ButtonKind::Secondary,
-                            pink::ControlSize::Sm,
-                            &t,
-                        )
-                        .child(
-                            pink::glyph(ICON_STOP, pink::ControlSize::Sm).text_color(t.text_muted),
-                        )
-                        .child("Stop")
-                        .when_some(on_stop, |b, f| {
-                            b.on_click(move |_, window, cx| f(window, cx))
-                        }),
-                    )
-                    .into_any_element()
-            }
-            AnswerStatus::Done { took } | AnswerStatus::Stopped { after: took } => {
-                let stopped = matches!(self.status, AnswerStatus::Stopped { .. });
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(space::S6))
-                    .text_size(px(text::FOOTNOTE))
-                    .text_color(t.text_faint)
-                    .child(
-                        svg()
-                            .path(if stopped { ICON_STOP } else { ICON_SPARK })
-                            .size(px(13.))
-                            .text_color(if stopped { t.text_faint } else { t.accent }),
-                    )
-                    .child(if stopped {
-                        format!("Stopped after {:.1}s", took.as_secs_f32())
-                    } else {
-                        format!("Answered in {:.1}s", took.as_secs_f32())
-                    })
-                    .into_any_element()
-            }
-        };
-
-        // ---- source list (unfolds under the pill) --------------------------
-        let on_open_source = self.on_open_source.clone();
-        let rows = self.sources.iter().enumerate().map(|(ix, source)| {
-            let row_key = format!("{key}-src-{ix}");
-            let on_open = on_open_source.clone();
-            div()
-                .id(ElementId::NamedInteger("ans-src".into(), ix as u64))
-                .h(px(44.))
-                .px(px(space::S8))
-                .flex()
-                .items_center()
-                .gap(px(space::S10))
-                .rounded(px(radius::MD))
-                .cursor_pointer()
-                .hover_fill(
-                    row_key.clone(),
-                    t.fill(FillTier::Tertiary).opacity(0.),
-                    t.fill(FillTier::Tertiary),
-                )
-                .when_some(on_open, |d, f| {
-                    d.on_click(move |_, window, cx| f(ix, window, cx))
-                })
-                .child(
-                    div()
-                        .w(px(14.))
-                        .text_size(px(text::CAPTION))
-                        .font_family(pink::MONO)
-                        .text_color(t.text_faint)
-                        .child(format!("{}", ix + 1)),
-                )
-                .child(tile(source, 24., None, &t))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .child(
-                            div()
-                                .truncate()
-                                .text_size(px(text::BODY))
-                                .line_height(px(18.))
-                                .text_color(t.text)
-                                .child(source.title.clone()),
-                        )
-                        .child(
-                            div()
-                                .truncate()
-                                .text_size(px(text::FOOTNOTE))
-                                .line_height(px(16.))
-                                .text_color(t.text_faint)
-                                .child(format!("{} · {}", source.site, source.meta)),
-                        ),
-                )
-                .child(
-                    svg()
-                        .path(ICON_OPEN)
-                        .size(px(14.))
-                        .text_color(motion::hover_blend(
-                            &row_key,
-                            t.text_faint.opacity(0.),
-                            t.text_muted,
-                        )),
-                )
-        });
-        let natural = list_height.get();
-        let list_open = motion::follow(
-            &format!("{key}-list"),
-            if sources_open { 1. } else { 0. },
-            GLIDE,
-        );
-        let source_list = div()
-            .overflow_hidden()
-            .h(px(natural * list_open))
-            .opacity(list_open)
-            .child(
-                div()
-                    .relative()
-                    .flex_none()
-                    .pt(px(space::S8))
-                    .flex()
-                    .flex_col()
-                    .gap(px(2.))
-                    .children(rows)
-                    .child(measure(list_height)),
-            );
-
-        // ---- body -------------------------------------------------------------
         let ctx = Ctx {
             t: &t,
             key: &key,
-            reduced,
             state: &state,
-            sources: &self.sources,
-            hover,
-            pinned,
+            sources: Rc::new(self.sources.clone()),
             on_open_source: self.on_open_source.clone(),
         };
-        let limit = self.reveal.unwrap_or(usize::MAX);
-        let streaming = self.status == AnswerStatus::Writing;
-        let total_pieces = piece_count(&self.blocks);
-        let frontier = limit.min(total_pieces);
-        let mut counter = 0usize;
-        let mut cites = 0usize;
-        let mut blocks: Vec<AnyElement> = Vec::new();
-        for block in &self.blocks {
-            if counter >= limit {
-                break;
-            }
-            match block {
-                Block::Paragraph(spans) => {
-                    let start = counter;
-                    let len = pieces(spans).len();
-                    let caret = streaming && frontier > start && frontier <= start + len;
-                    blocks.push(
-                        Self::render_flow(&ctx, spans, &mut counter, &mut cites, frontier, caret)
-                            .into_any_element(),
-                    );
-                }
-                Block::Bullets(items) => {
-                    let mut list = div().flex().flex_col().gap(px(space::S4));
-                    for spans in items {
-                        if counter >= limit {
-                            break;
-                        }
-                        let start = counter;
-                        let len = pieces(spans).len();
-                        let caret = streaming && frontier > start && frontier <= start + len;
-                        let flow = Self::render_flow(
-                            &ctx,
-                            spans,
-                            &mut counter,
-                            &mut cites,
-                            frontier,
-                            caret,
-                        );
-                        list = list.child(
-                            div()
-                                .flex()
-                                .gap(px(space::S8))
-                                .child(
-                                    div()
-                                        .flex_none()
-                                        .w(px(12.))
-                                        .h(px(BODY_LINE))
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .child(div().size(px(4.)).rounded_full().bg(t.text_faint)),
-                                )
-                                .child(div().flex_1().min_w_0().child(flow)),
-                        );
-                    }
-                    blocks.push(list.into_any_element());
-                }
-            }
-        }
 
-        let skeleton = (searching || (streaming && frontier == 0)).then(|| {
-            let bars = [0.94f32, 0.82, 0.58];
-            div().flex().flex_col().gap(px(10.)).py(px(4.)).children(
-                bars.into_iter().enumerate().map(|(i, w)| {
-                    let bar = div()
-                        .h(px(10.))
-                        .w(gpui::relative(w))
-                        .rounded(px(radius::XS))
-                        .bg(t.fill(FillTier::Secondary));
-                    if reduced {
-                        bar.into_any_element()
-                    } else {
-                        bar.with_animation(
-                            ElementId::NamedInteger("ans-skel".into(), i as u64),
-                            Animation::new(Duration::from_millis(1400)).repeat(),
-                            move |el, d| {
-                                let phase = d * TAU - i as f32 * 0.9;
-                                el.opacity(0.55 + 0.45 * phase.cos())
-                            },
-                        )
-                        .into_any_element()
-                    }
-                }),
-            )
-        });
+        let question =
+            self.render_question(&ctx, hover_question, copied == Some(CopyTarget::Question));
 
-        // ---- actions + follow-ups ------------------------------------------
-        let copy_text = plain_text(&self.blocks);
-        let actions = settled.then(|| {
-            let on_regenerate = self.on_regenerate.clone();
-            let on_feedback = self.on_feedback.clone();
-            let vote_button = |up: bool| {
-                let state = state.clone();
-                let on_feedback = on_feedback.clone();
-                tool_button(
-                    format!("{key}-{}", if up { "up" } else { "down" }),
-                    if up { ICON_UP } else { ICON_DOWN },
-                    vote == Some(up),
+        // ---- the assistant entry -------------------------------------------
+        let has_group = group.is_some();
+        let group_el = group
+            .as_ref()
+            .map(|frame| self.render_group(&ctx, &rows, frame));
+        // pink: `top_gap_for` – 16 opens a turn, 12 follows a tool group and
+        // separates markdown blocks.
+        let first_gap = if has_group { space::MD } else { space::LG };
+        let answer_blocks: Vec<AnyElement> = blocks
+            .into_iter()
+            .enumerate()
+            .map(|(ix, block)| {
+                div()
+                    .pt(px(if ix == 0 { first_gap } else { MD_BLOCK_GAP }))
+                    .child(Self::render_block(&ctx, block, &mut veils))
+                    .into_any_element()
+            })
+            .collect();
+
+        let lane = (!busy).then(|| {
+            let copy_text = plain_text_upto(&self.blocks, limit);
+            let retry = self.on_regenerate.clone().map(|on_regenerate| {
+                meta_action(format!("{key}-retry").into(), ICON_RESTART, "Retry", &t)
+                    .on_click(move |_, window, cx| {
+                        cx.stop_propagation();
+                        on_regenerate(window, cx);
+                    })
+                    .on_key_down(pink::swallow_activation_key)
+                    .into_any_element()
+            });
+            let copy = (!copy_text.is_empty()).then(|| {
+                copy_action(
+                    format!("{key}-copy-a").into(),
+                    CopyTarget::Answer,
+                    copy_text.into(),
+                    copied == Some(CopyTarget::Answer),
+                    &state,
                     &t,
                 )
-                .on_click(move |_, window, cx| {
-                    let next = state.update(cx, |s, cx| {
-                        s.vote = if s.vote == Some(up) { None } else { Some(up) };
-                        cx.notify();
-                        s.vote
-                    });
-                    if let Some(f) = &on_feedback {
-                        f(next, window, cx);
-                    }
-                })
-            };
-            let copy = tool_button(
-                format!("{key}-copy"),
-                if copied { ICON_CHECK } else { ICON_COPY },
-                copied,
+                .into_any_element()
+            });
+            meta_lane(
+                format!("{key}-meta-a").into(),
+                false,
+                hover_answer,
+                self.answered_at.clone(),
+                retry.into_iter().chain(copy).collect(),
                 &t,
             )
-            .on_click({
-                let state = state.clone();
-                move |_, _, cx| {
-                    cx.write_to_clipboard(ClipboardItem::new_string(copy_text.clone()));
-                    let entity = state.clone();
-                    state.update(cx, |s, cx| {
-                        s.copied = true;
-                        cx.notify();
-                        s._copy_reset = Some(cx.spawn(async move |_, cx| {
-                            cx.background_executor()
-                                .timer(Duration::from_millis(1400))
-                                .await;
-                            let _ = entity.update(cx, |s, cx| {
-                                s.copied = false;
-                                cx.notify();
-                            });
-                        }));
-                    });
-                }
-            });
-            let retry = tool_button(format!("{key}-retry"), ICON_RETRY, false, &t)
-                .when_some(on_regenerate, |b, f| {
-                    b.on_click(move |_, window, cx| f(window, cx))
-                });
-            let buttons: Vec<AnyElement> = vec![
-                copy.into_any_element(),
-                retry.into_any_element(),
-                div()
-                    .w(px(1.))
-                    .h(px(14.))
-                    .mx(px(space::S4))
-                    .bg(t.border)
-                    .into_any_element(),
-                vote_button(true).into_any_element(),
-                vote_button(false).into_any_element(),
-            ];
-            div()
-                .flex()
-                .items_center()
-                .gap(px(2.))
-                .mt(px(space::S2))
-                .ml(px(-6.))
-                .children(buttons.into_iter().enumerate().map(|(i, b)| {
-                    motion::rise_in(
-                        ElementId::NamedInteger("ans-act".into(), i as u64),
-                        ROW_IN.with_delay(40 * i as u64),
-                        4.,
-                        div().child(b),
-                    )
-                }))
-                .when(copied, |d| {
-                    d.child(motion::fade_in(
-                        "ans-copied",
-                        div()
-                            .ml(px(space::S6))
-                            .text_size(px(text::FOOTNOTE))
-                            .text_color(t.text_faint)
-                            .child("Copied"),
-                    ))
-                })
         });
+        let trailer = busy.then(|| self.render_trailer(&ctx));
 
-        let follow_ups =
-            (settled && !self.follow_ups.is_empty()).then(|| {
-                let on_follow_up = self.on_follow_up.clone();
-                div()
-                    .border_t_1()
-                    .border_color(t.border)
-                    .px(px(space::S20))
-                    .pt(px(space::S12))
-                    .pb(px(space::S16))
-                    .flex()
-                    .flex_col()
-                    .gap(px(space::S8))
-                    .child(motion::fade_in(
-                        "ans-next-label",
-                        div()
-                            .text_size(px(text::FOOTNOTE))
-                            .text_color(t.text_faint)
-                            .child("Ask next"),
-                    ))
-                    .child(div().flex().flex_wrap().gap(px(space::S6)).children(
-                        self.follow_ups.iter().enumerate().map(|(i, q)| {
-                            let fkey = format!("{key}-next-{i}");
-                            let on_follow_up = on_follow_up.clone();
-                            let q2 = q.clone();
-                            motion::rise_in(
-                                ElementId::NamedInteger("ans-next".into(), i as u64),
-                                ROW_IN.with_delay(160 + 70 * i as u64),
-                                5.,
-                                div()
-                                    .id(ElementId::NamedInteger("ans-next-btn".into(), i as u64))
-                                    .h(px(30.))
-                                    .pl(px(space::S8))
-                                    .pr(px(space::S10))
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(space::S6))
-                                    .rounded(px(radius::MD))
-                                    .border_1()
-                                    .border_color(t.border)
-                                    .cursor_pointer()
-                                    .text_size(px(text::BODY))
-                                    .hover_fill_fg(
-                                        fkey.clone(),
-                                        t.fill(FillTier::Quaternary),
-                                        t.fill(FillTier::Tertiary),
-                                        t.text_muted,
-                                        t.text,
-                                    )
-                                    .when_some(on_follow_up, |d, f| {
-                                        d.on_click(move |_, window, cx| f(q2.clone(), window, cx))
-                                    })
-                                    .child(svg().path(ICON_FOLLOW).size(px(14.)).text_color(
-                                        motion::hover_blend(&fkey, t.text_faint, t.accent),
-                                    ))
-                                    .child(q.clone()),
-                            )
-                        }),
-                    ))
-            });
-
-        let body = div()
-            .id(SharedString::from(format!("ans-body-{}", self.question)))
-            .px(px(space::S20))
-            .pt(px(space::S16))
-            .pb(px(if settled { space::S12 } else { space::S20 }))
+        let hover_state = state.clone();
+        let answer = div()
+            .id(SharedString::from(format!("{key}-answer")))
+            .w_full()
             .flex()
             .flex_col()
-            .gap(px(space::S10))
-            .text_size(px(BODY_SIZE))
-            .line_height(px(BODY_LINE))
-            .text_color(t.text)
-            .children(skeleton)
-            .children(blocks)
-            .children(actions);
+            .on_hover(move |hovered, _, cx| {
+                let hovered = *hovered;
+                hover_state.update(cx, |s, cx| {
+                    if s.hover_answer != hovered {
+                        s.hover_answer = hovered;
+                        cx.notify();
+                    }
+                })
+            })
+            .when_some(group_el, |el, group| {
+                el.child(div().pt(px(space::LG)).child(group))
+            })
+            .children(answer_blocks)
+            .children(lane)
+            .children(trailer);
 
         div()
             .id(self.id.clone())
             .w(px(self.width))
             .max_w_full()
+            .flex()
+            .flex_col()
             .font_family(pink::SANS)
-            .child(
-                pink::card(&t)
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .px(px(space::S20))
-                            .pt(px(space::S16 + 2.))
-                            .child(
-                                div()
-                                    .text_size(px(text::TITLE))
-                                    .line_height(px(24.))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_color(t.text)
-                                    .child(self.question.clone()),
-                            )
-                            .child(
-                                div()
-                                    .mt(px(space::S10))
-                                    .ml(px(-4.))
-                                    .flex()
-                                    .items_center()
-                                    .justify_between()
-                                    .gap(px(space::S12))
-                                    .child(pill)
-                                    .child(status),
-                            )
-                            .child(source_list),
-                    )
-                    .child(
-                        div()
-                            .mx(px(space::S20))
-                            .mt(px(space::S12))
-                            .child(pink::divider(&t)),
-                    )
-                    .child(body)
-                    .children(follow_ups),
-            )
+            .text_color(t.text)
+            .child(question)
+            .child(answer)
     }
 }
 
 // ---------------------------------------------------------------------------
-// Story: a product analytics question with follow-ups that play their own
-// answers.
+// Story: a security question answered from four pages.
 // ---------------------------------------------------------------------------
 
-struct Script {
-    question: &'static str,
-    sources: Vec<usize>,
-    blocks: fn() -> Vec<Block>,
-    follow_ups: [&'static str; 2],
-}
+const QUESTION: &str = "Is it safe to keep refresh tokens in localStorage?";
+const QUERY: &str = "refresh token localStorage XSS best practice";
+const ASKED_AT: &str = "Oct 23, 3:41 PM";
 
 fn library() -> Vec<Source> {
     vec![
-        Source::new("Checkout funnel, week 41", "Amplitude")
-            .meta("Dashboard · updated 2h ago")
-            .snippet("Mobile Safari: cart → payment 61.2% (previous week 72.8%). Desktop and Android flat week over week.")
-            .tone(Tone::Accent),
-        Source::new("WEB-2214 Pay button hidden behind consent banner", "Linear")
-            .meta("Issue · opened Thursday")
-            .snippet("On iPhone SE and mini the consent banner covers the Apple Pay button until it is dismissed. Regression from 4.12.")
-            .tone(Tone::Danger),
-        Source::new("Release 4.12", "GitHub")
-            .meta("Release · Oct 8")
-            .snippet("New EU consent banner, sticky order summary on mobile, wallet buttons now lazy-load on the payment step.")
-            .tone(Tone::Neutral),
-        Source::new("#payments: drop-off on iOS", "Slack")
-            .meta("Thread · 14 replies")
-            .snippet("Support has 23 tickets since Wednesday saying they can't find the pay button. Every one of them is on iOS.")
-            .tone(Tone::Warning),
-        Source::new("Revenue by platform", "Looker")
-            .meta("Report · daily")
-            .snippet("iOS web revenue down €3.6k–€3.9k a day against the four-week baseline from Wed 9 Oct. Average order value unchanged.")
-            .tone(Tone::Success),
+        Source::new("HTML5 Security Cheat Sheet", "cheatsheetseries.owasp.org")
+            .url("https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html")
+            .snippet("Do not store session identifiers in local storage as the data is always accessible by JavaScript. Cookies can mitigate this risk using the httpOnly flag."),
+        Source::new("Set-Cookie header", "developer.mozilla.org")
+            .url("https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie")
+            .snippet("HttpOnly forbids JavaScript from accessing the cookie, for example through the Document.cookie property."),
+        Source::new("RFC 9700: Best Current Practice for OAuth 2.0 Security", "datatracker.ietf.org")
+            .url("https://datatracker.ietf.org/doc/html/rfc9700")
+            .snippet("Refresh tokens for public clients must be sender-constrained or use refresh token rotation, and should expire when the client has been inactive for some time."),
+        Source::new("OAuth 2.0 for Browser-Based Applications", "datatracker.ietf.org")
+            .url("https://datatracker.ietf.org/doc/html/draft-ietf-oauth-browser-based-apps")
+            .snippet("In the Backend for Frontend pattern a server-side component obtains and stores the tokens, so they never reach the browser; the frontend holds only a session cookie."),
     ]
 }
 
-const QUESTIONS: [&str; 3] = [
-    "Why did checkout conversion drop last week?",
-    "How much revenue did this cost us?",
-    "Draft a status update for #payments",
-];
-
-fn scripts() -> Vec<Script> {
+fn answer() -> Vec<Block> {
     vec![
-        Script {
-            question: QUESTIONS[0],
-            sources: vec![0, 1, 2, 3],
-            blocks: || {
-                vec![
-                    Block::paragraph(vec![
-                        Span::strong("Mobile Safari"),
-                        Span::text(
-                            " accounts for almost all of it: its cart-to-payment rate fell from 72.8% to 61.2% while desktop and Android held steady",
-                        ),
-                        Span::cite(0),
-                        Span::text("."),
-                    ]),
-                    Block::bullets(vec![
-                        vec![
-                            Span::strong("Cause:"),
-                            Span::text(
-                                " release 4.12 added a consent banner that covers the Apple Pay button on smaller iPhones",
-                            ),
-                            Span::cite(1),
-                            Span::cite(2),
-                            Span::text("."),
-                        ],
-                        vec![
-                            Span::strong("Timing:"),
-                            Span::text(
-                                " the drop starts Wednesday morning, when 4.12 reached all iOS traffic",
-                            ),
-                            Span::cite(2),
-                            Span::text("."),
-                        ],
-                        vec![
-                            Span::strong("Support:"),
-                            Span::text(
-                                " 23 tickets say the pay button is missing, every one from iOS",
-                            ),
-                            Span::cite(3),
-                            Span::text("."),
-                        ],
-                    ]),
-                    Block::paragraph(vec![
-                        Span::text(
-                            "Collapsing the banner on the payment step is a quick win until the fix in WEB-2214 ships",
-                        ),
-                        Span::cite(1),
-                        Span::text("."),
-                    ]),
-                ]
-            },
-            follow_ups: [QUESTIONS[1], QUESTIONS[2]],
-        },
-        Script {
-            question: QUESTIONS[1],
-            sources: vec![4, 0],
-            blocks: || {
-                vec![
-                    Block::paragraph(vec![
-                        Span::text("About "),
-                        Span::strong("€18,700"),
-                        Span::text(" over five days, all of it from iOS web"),
-                        Span::cite(0),
-                        Span::text("."),
-                    ]),
-                    Block::bullets(vec![
-                        vec![
-                            Span::strong("Volume:"),
-                            Span::text(
-                                " roughly 390 fewer orders, 78 a day below the four-week baseline",
-                            ),
-                            Span::cite(1),
-                            Span::text("."),
-                        ],
-                        vec![
-                            Span::strong("Basket:"),
-                            Span::text(
-                                " average order value held at €47.90, so this is lost checkouts, not smaller ones",
-                            ),
-                            Span::cite(0),
-                            Span::text("."),
-                        ],
-                    ]),
-                    Block::paragraph(vec![Span::text(
-                        "Most of it comes back once the banner stops covering the button, ideally before the weekend peak.",
-                    )]),
-                ]
-            },
-            follow_ups: [QUESTIONS[2], QUESTIONS[0]],
-        },
-        Script {
-            question: QUESTIONS[2],
-            sources: vec![1, 0, 4],
-            blocks: || {
-                vec![
-                    Block::paragraph(vec![Span::text("Here is a short update you can post:")]),
-                    Block::bullets(vec![
-                        vec![
-                            Span::strong("What happened:"),
-                            Span::text(
-                                " since Wednesday a new consent banner hid the Apple Pay button on smaller iPhones",
-                            ),
-                            Span::cite(0),
-                            Span::text("."),
-                        ],
-                        vec![
-                            Span::strong("Impact:"),
-                            Span::text(
-                                " mobile Safari checkout fell 11.6 points, about €18.7k in lost orders",
-                            ),
-                            Span::cite(1),
-                            Span::cite(2),
-                            Span::text("."),
-                        ],
-                        vec![
-                            Span::strong("Next:"),
-                            Span::text(
-                                " the banner collapses on the payment step today; the full fix ships with WEB-2214",
-                            ),
-                            Span::cite(0),
-                            Span::text("."),
-                        ],
-                    ]),
-                ]
-            },
-            follow_ups: [QUESTIONS[0], QUESTIONS[1]],
-        },
+        Block::paragraph(vec![
+            Span::strong("Not if you can avoid it."),
+            Span::text(
+                " Every script on the page can read localStorage, so one XSS bug hands an attacker a token that outlives the session",
+            ),
+            Span::cite(0),
+            Span::text("."),
+        ]),
+        Block::bullets(vec![
+            vec![
+                Span::strong("Use a cookie:"),
+                Span::text(
+                    " keep the refresh token in an HttpOnly, Secure, SameSite cookie that page scripts can't read",
+                ),
+                Span::cite(0),
+                Span::cite(1),
+                Span::text("."),
+            ],
+            vec![
+                Span::strong("Rotate it:"),
+                Span::text(
+                    " issue a new refresh token on every use and revoke the whole family when an old one comes back",
+                ),
+                Span::cite(2),
+                Span::text("."),
+            ],
+            vec![
+                Span::strong("Or keep it server-side:"),
+                Span::text(
+                    " a backend for frontend holds the tokens and gives the browser only a session cookie",
+                ),
+                Span::cite(3),
+                Span::text("."),
+            ],
+        ]),
+        Block::paragraph(vec![
+            Span::text(
+                "If the token has to live in the browser, pair rotation with an idle timeout so a stolen one expires on its own",
+            ),
+            Span::cite(2),
+            Span::text("."),
+        ]),
     ]
 }
 
-/// Seconds spent searching; sources land evenly across it.
-const SEARCH_SECS: f32 = 1.8;
+/// When each page comes back, in seconds after the question.
+const FETCHED_AT: [f32; 4] = [0.6, 1.05, 1.45, 1.85];
+/// When the reply starts streaming.
+const WRITE_AT: f32 = 2.4;
 /// Words and citations streamed per second.
-const PIECES_PER_SEC: f32 = 26.;
+const PIECES_PER_SEC: f32 = 28.;
+/// The stream closes a beat after its last word, so that word's veil lands.
+const SETTLE_AFTER: f32 = 0.4;
+/// Room for the settled turn and its hover lane.
+const STAGE_HEIGHT: f32 = 460.;
+
+fn settles_at() -> f32 {
+    WRITE_AT + piece_count(&answer()) as f32 / PIECES_PER_SEC + SETTLE_AFTER
+}
 
 struct Demo {
-    script: usize,
     started: Instant,
     stopped: Option<f32>,
     _ticker: Task<()>,
@@ -1532,21 +2182,24 @@ impl Demo {
                 cx.background_executor()
                     .timer(Duration::from_millis(33))
                     .await;
-                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                let alive = this.update(cx, |demo, cx| {
+                    if demo.stopped.is_none() && demo.at() < settles_at() + 0.1 {
+                        cx.notify();
+                    }
+                });
+                if alive.is_err() {
                     break;
                 }
             }
         });
         Demo {
-            script: 0,
             started: Instant::now(),
             stopped: None,
             _ticker: ticker,
         }
     }
 
-    fn play(&mut self, script: usize) {
-        self.script = script;
+    fn replay(&mut self) {
         self.started = Instant::now();
         self.stopped = None;
     }
@@ -1561,63 +2214,31 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |window, cx| {
         let demo = window.use_keyed_state("ai-answer-demo", cx, |_, cx| Demo::new(cx));
         let d = demo.read(cx);
-        let scripts = scripts();
-        let script = &scripts[d.script];
-        let library = library();
         let at = d.at();
-        let all_sources: Vec<Source> = script
-            .sources
-            .iter()
-            .map(|&ix| library[ix].clone())
-            .collect();
-        let blocks = (script.blocks)();
+        let blocks = answer();
         let total = piece_count(&blocks);
-        let shown = (((at - SEARCH_SECS).max(0.)) * PIECES_PER_SEC) as usize;
-        let write_secs = total as f32 / PIECES_PER_SEC;
-
-        let (status, found) = if let Some(after) = d.stopped {
-            (
-                AnswerStatus::Stopped {
-                    after: Duration::from_secs_f32(after),
-                },
-                all_sources.len(),
-            )
-        } else if at < SEARCH_SECS {
-            let per = SEARCH_SECS / (all_sources.len() as f32 + 1.);
-            (
-                AnswerStatus::Searching,
-                ((at / per) as usize).min(all_sources.len()),
-            )
-        } else if shown < total {
-            (AnswerStatus::Writing, all_sources.len())
+        let found = FETCHED_AT.iter().filter(|fetched| **fetched <= at).count();
+        let shown = ((at - WRITE_AT).max(0.) * PIECES_PER_SEC) as usize;
+        let status = if d.stopped.is_some() {
+            AnswerStatus::Stopped
+        } else if at < WRITE_AT {
+            AnswerStatus::Searching
+        } else if at < settles_at() {
+            AnswerStatus::Writing
         } else {
-            (
-                AnswerStatus::Done {
-                    took: Duration::from_secs_f32(SEARCH_SECS + write_secs),
-                },
-                all_sources.len(),
-            )
+            AnswerStatus::Done
         };
-
         let stop = demo.clone();
-        let regen = demo.clone();
-        let follow = demo.clone();
-        AiAnswer::new("ai-answer", script.question)
-            .sources(all_sources.into_iter().take(found).collect())
+        let replay = demo.clone();
+        let turn = AiAnswer::new("ai-answer", QUESTION)
+            .query(QUERY)
+            .sources(library().into_iter().take(found).collect())
             .blocks(blocks)
-            .reveal(if status == AnswerStatus::Searching {
-                0
-            } else {
-                shown
-            })
+            .reveal(shown.min(total))
             .status(status)
-            .follow_ups(
-                script
-                    .follow_ups
-                    .iter()
-                    .map(|q| SharedString::from(*q))
-                    .collect(),
-            )
+            .elapsed(Duration::from_secs_f32(at))
+            .asked_at(ASKED_AT)
+            .answered_at(ASKED_AT)
             .on_stop(move |_, cx| {
                 stop.update(cx, |d, cx| {
                     d.stopped = Some(d.at());
@@ -1625,20 +2246,19 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                 })
             })
             .on_regenerate(move |_, cx| {
-                regen.update(cx, |d, cx| {
-                    let s = d.script;
-                    d.play(s);
+                replay.update(cx, |d, cx| {
+                    d.replay();
                     cx.notify();
                 })
             })
-            .on_follow_up(move |question, _, cx| {
-                follow.update(cx, |d, cx| {
-                    if let Some(ix) = QUESTIONS.iter().position(|q| *q == question.as_ref()) {
-                        d.play(ix);
-                        cx.notify();
-                    }
-                })
-            })
+            .on_open_source(|ix, _, cx| {
+                if let Some(source) = library().get(ix) {
+                    cx.open_url(&source.address());
+                }
+            });
+        // A transcript column: the turn grows downward from its question
+        // instead of re-centering as the reply streams.
+        div().w(px(640.)).h(px(STAGE_HEIGHT)).child(turn)
     })
 }
 
@@ -1666,5 +2286,53 @@ mod tests {
     fn plain_text_numbers_citations() {
         let blocks = vec![Block::bullets(vec![vec![Span::text("Up"), Span::cite(1)]])];
         assert_eq!(plain_text(&blocks), "- Up[2]");
+        let stopped = vec![Block::paragraph(vec![Span::text("One two three")])];
+        assert_eq!(plain_text_upto(&stopped, 2), "One two");
+    }
+
+    #[test]
+    fn summary_and_status_read_like_pink() {
+        assert_eq!(
+            tool_group_summary(1, 4),
+            "Searched 1 time · fetched 4 pages"
+        );
+        assert_eq!(tool_group_summary(0, 1), "Fetched 1 page");
+        assert_eq!(
+            url_host("https://datatracker.ietf.org/doc/html/rfc9700"),
+            "datatracker.ietf.org"
+        );
+    }
+
+    #[test]
+    fn veil_fades_each_append_once() {
+        let mut veil = ElemVeil::default();
+        let t0 = Instant::now();
+        assert_eq!(veil.advance("Not if", t0).len(), 1);
+        let later = t0 + Duration::from_millis(500);
+        assert!(veil.advance("Not if", later).is_empty());
+        let spans = veil.advance("Not if you", later);
+        assert_eq!(spans[0].0, 6..10);
+        assert!(spans[0].1 < 0.01);
+        assert_eq!(veil_opacity(1.), 1.);
+    }
+
+    #[test]
+    fn citations_flatten_to_superscript_ranges() {
+        let t = Pink::dark();
+        let spans = vec![
+            Span::text("Read it"),
+            Span::cite(0),
+            Span::cite(1),
+            Span::text("."),
+        ];
+        let (mut n, mut c) = (0, 0);
+        let flat = flatten(0, &spans, &mut n, &mut c, usize::MAX, None, &t);
+        assert_eq!(flat.text, format!("Read it1{CITE_GAP}2."));
+        assert_eq!(flat.cites.len(), 2);
+        assert_eq!(&flat.text[flat.cites[1].range.clone()], "2");
+        assert_eq!(
+            flat.runs.iter().map(|r| r.len).sum::<usize>(),
+            flat.text.len()
+        );
     }
 }
