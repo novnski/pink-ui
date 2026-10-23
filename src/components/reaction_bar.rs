@@ -415,10 +415,13 @@ impl RenderOnce for ReactionBar {
             .map(|(ix, (key, count, active, taps, focus))| {
                 let on_react = self.on_react.clone();
                 let click = state.clone();
-                // Enter and Space on a focused action click it too (GPUI)
-                reaction_action(window, &bar, key, count, active, taps, &focus, &t).on_click(
-                    move |_, window, cx| toggle(&click, ix, on_react.as_ref(), window, cx),
-                )
+                // Enter and Space on a focused action click it too (GPUI);
+                // like pink's meta actions, the key stops there.
+                reaction_action(window, &bar, key, count, active, taps, &focus, &t)
+                    .on_click(move |_, window, cx| {
+                        toggle(&click, ix, on_react.as_ref(), window, cx)
+                    })
+                    .on_key_down(pink::swallow_activation_key)
             })
             .collect();
 
@@ -494,8 +497,11 @@ fn toggle(
 
 /// The demo's content column.
 const COLUMN: f32 = 560.;
-/// Avatar plus its gap: the body and the bar line up with the name.
+/// Avatar plus its gap: the body lines up with the name.
 const BODY_INSET: f32 = 20. + space::S8;
+/// The bar sits a glyph inset further out, so the first glyph (not its
+/// hover plate) lines up with the text, like pink's leading-edge menus.
+const BAR_INSET: f32 = BODY_INSET - GLYPH_INSET;
 
 struct Post {
     initial: &'static str,
@@ -627,7 +633,7 @@ fn post(ix: usize, post: &Post, t: &Pink) -> Div {
                 .text_color(t.text)
                 .child(post.body),
         )
-        .child(div().pl(px(BODY_INSET)).child(bar))
+        .child(div().pl(px(BAR_INSET)).child(bar))
 }
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
