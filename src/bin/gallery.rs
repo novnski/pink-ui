@@ -17,6 +17,7 @@ use gpui::{
 use pink_ui::{
     ActiveTheme, Assets, HoverFill, Theme, ThemeMode,
     components::{CATEGORIES, COMPONENTS},
+    pink::Pink,
     primitives::{SANS, hex, hexa},
 };
 
@@ -86,7 +87,8 @@ impl Chrome {
             Chrome {
                 brand: hex(0xf472b6),
                 bg: hex(0x0c0c0d),
-                preview: hex(0x1f1f21),
+                // Pink's content panel, so the stage around a demo is the app's.
+                preview: Pink::dark().bg,
                 text: hex(0xededed),
                 muted: hex(0x8a8a8f),
                 border: hex(0x262628),
@@ -98,7 +100,7 @@ impl Chrome {
             Chrome {
                 brand: hex(0xdb2777),
                 bg: hex(0xf5f5f5),
-                preview: hex(0xfafafa),
+                preview: Pink::light().bg,
                 text: hex(0x0a0a0a),
                 muted: hex(0x737373),
                 border: hex(0xe5e5e5),

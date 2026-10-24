@@ -37,6 +37,8 @@ impl Render for Story {
             .flex()
             .items_center()
             .justify_center()
+            // Every demo sits on Pink's content panel, as it would in the app.
+            .bg(pink::Pink::get(cx).bg)
             .font_family(pink::SANS)
             .on_children_prepainted(move |bounds, _, _| {
                 if let Some(demo) = bounds.first() {

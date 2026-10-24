@@ -20,12 +20,7 @@ use gpui::{
     AnyView, App, ApplicationHandle, AsyncApp, Context, Pixels, Size, Window, WindowHandle,
     WindowOptions, div, prelude::*, px,
 };
-use pink_ui::{
-    ActiveTheme, Theme, ThemeMode,
-    components::COMPONENTS,
-    primitives::{SANS, hex},
-    story::Story,
-};
+use pink_ui::{Theme, ThemeMode, components::COMPONENTS, primitives::SANS, story::Story};
 use wasm_bindgen::prelude::*;
 
 /// The running app. The handle keeps it alive; calls from the page go through
@@ -85,12 +80,9 @@ impl Render for Player {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         pink_ui::motion::frame(window, cx);
         self.report_size(cx);
-        // The gallery's stage, and `--stage` in site/styles.css.
-        let stage = if cx.theme().mode.is_dark() {
-            hex(0x1f1f21)
-        } else {
-            hex(0xfafafa)
-        };
+        // Pink's content panel: the gallery's stage, and `--stage` in
+        // site/styles.css.
+        let stage = pink_ui::pink::Pink::get(cx).bg;
         let stage_size = self.stage.clone();
         div()
             .size_full()

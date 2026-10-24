@@ -14,7 +14,7 @@
   --surface: #ffffff;
   --raised: #fafafa;
   /* The player's stage color (web/src/lib.rs). */
-  --stage: #fafafa;
+  --stage: #fbfcfe; /* Pink's content panel (Pink::light().bg) */
   --text: #0b0b0f;
   --text-2: #3f3f46;
   --muted: #71717a;
@@ -51,7 +51,7 @@
   --bg-tint: #140d11;
   --surface: #121214;
   --raised: #17171a;
-  --stage: #1f1f21;
+  --stage: #060606; /* Pink's content panel (Pink::dark().bg) */
   --text: #ededef;
   --text-2: #c9c9ce;
   --muted: #8d8d96;
