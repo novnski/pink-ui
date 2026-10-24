@@ -405,15 +405,15 @@ impl WritingAssistant {
 }
 
 /// Pink: composer.rs `composer_surface` – the pill chrome the question
-/// wizard shares with the composer: radius 26, a 1 px `border`, the opaque
-/// `input_glass_bg` plate. `floating` adds the opaque treatment's
-/// `shadow_lg`; the nested field stays flat.
+/// wizard shares with the composer: radius 26, a 1 px `border`, the frosted
+/// composer plate (`surface_bg`). `floating` adds `shadow_lg`; the nested
+/// field stays flat.
 fn composer_surface(floating: bool, t: &Pink) -> Div {
     div()
         .rounded(px(radius::COMPOSER))
         .border_1()
         .border_color(t.border)
-        .bg(t.input_glass_bg())
+        .bg(t.surface_bg())
         .when(floating, |el| el.shadow(pink::shadow_lg()))
 }
 

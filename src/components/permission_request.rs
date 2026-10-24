@@ -452,13 +452,13 @@ impl PermState {
 }
 
 /// The pill the composer and the request share (Pink: composer.rs
-/// `composer_surface`, opaque treatment).
+/// `composer_surface`, on the frosted composer plate).
 fn composer_surface(t: &Pink) -> Div {
     div()
         .rounded(px(radius::COMPOSER))
         .border_1()
         .border_color(t.border)
-        .bg(t.input_glass_bg())
+        .bg(t.surface_bg())
         .shadow(pink::shadow_lg())
 }
 

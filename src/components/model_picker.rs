@@ -2186,7 +2186,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                     .rounded(px(radius::COMPOSER))
                     .border_1()
                     .border_color(t.border)
-                    .bg(t.input_glass_bg())
+                    .bg(t.surface_bg())
                     .shadow(pink::shadow_lg())
                     .child(
                         div()

@@ -832,9 +832,8 @@ fn chip(
     state: &Entity<WindowState>,
 ) -> Stateful<Div> {
     let compacting = s.is_compacting();
-    let plate = t.input_glass_bg();
-    let color = t.readable_on(tone, plate, TEXT_CONTRAST_TARGET);
-    let ring_color = t.readable_on(tone, plate, NON_TEXT_CONTRAST_TARGET);
+    let color = t.readable_on_composer(tone, TEXT_CONTRAST_TARGET);
+    let ring_color = t.readable_on_composer(tone, NON_TEXT_CONTRAST_TARGET);
     let track = t.text_faint.opacity(0.25);
     let text = label(compacting, fraction);
     let accessible: SharedString = if compacting {
@@ -1622,7 +1621,7 @@ fn story_states(t: &Pink) -> Div {
         .rounded(px(radius::COMPOSER))
         .border_1()
         .border_color(t.border)
-        .bg(t.input_glass_bg())
+        .bg(t.surface_bg())
         .px(px(32.))
         .pt(px(10.))
         .pb(px(12.))
@@ -1694,7 +1693,7 @@ fn story_composer(t: &Pink) -> Div {
         .rounded(px(radius::COMPOSER))
         .border_1()
         .border_color(t.border)
-        .bg(t.input_glass_bg())
+        .bg(t.surface_bg())
         .shadow(pink::shadow_lg())
         .flex()
         .flex_col()

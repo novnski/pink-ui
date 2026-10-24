@@ -1432,7 +1432,7 @@ impl RenderOnce for ChatComposer {
             .child(mic)
             .child(send);
 
-        // ---- the pill (Pink `composer_surface`, opaque treatment) -------------
+        // ---- the pill (Pink `composer_surface`, the frosted plate) ------------
         // The pill's height eases to its content over `COLLAPSE` (Pink's
         // committed-height morph): the content hangs from the pill's
         // stationary bottom edge, so the controls stay put while the top
@@ -1471,7 +1471,7 @@ impl RenderOnce for ChatComposer {
             .rounded(px(radius::COMPOSER))
             .border_1()
             .border_color(t.border)
-            .bg(t.input_glass_bg())
+            .bg(t.surface_bg())
             .shadow(pink::shadow_lg())
             .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                 // Padding and controls belong to the text; an open menu keeps

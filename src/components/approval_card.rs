@@ -626,13 +626,13 @@ fn input_chip(value: SharedString, t: &Pink) -> Div {
 }
 
 /// The pill chrome the composer and the question panel share (Pink:
-/// composer.rs `composer_surface`, opaque treatment).
+/// composer.rs `composer_surface`, on the frosted composer plate).
 fn composer_surface(t: &Pink) -> Div {
     div()
         .rounded(px(radius::COMPOSER))
         .border_1()
         .border_color(t.border)
-        .bg(t.input_glass_bg())
+        .bg(t.surface_bg())
         .shadow(pink::shadow_lg())
 }
 

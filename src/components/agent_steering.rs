@@ -2507,8 +2507,8 @@ enum DiscMode {
     Stop,
 }
 
-/// The composer pill (Pink `composer_surface` in the opaque treatment): radius
-/// 26, a hairline edge, the input plate and `shadow_lg`. The textarea (`pt 16
+/// The composer pill (Pink `composer_surface`): radius 26, a hairline edge,
+/// the frosted composer plate (`surface_bg`) and `shadow_lg`. The textarea (`pt 16
 /// pb 4 px 16`, 14/22.75, at least 60 tall) sits over the 46px controls row:
 /// the Steer chip, then the disc.
 fn composer_pill(c: &Ctx, focused: bool) -> Stateful<Div> {
@@ -2530,7 +2530,7 @@ fn composer_pill(c: &Ctx, focused: bool) -> Stateful<Div> {
         .rounded(px(radius::COMPOSER))
         .border_1()
         .border_color(t.border)
-        .bg(t.input_glass_bg())
+        .bg(t.surface_bg())
         .shadow(pink::shadow_lg())
         .on_mouse_down(MouseButton::Left, move |_, window, cx| {
             TextInput::focus(&input, window, cx)

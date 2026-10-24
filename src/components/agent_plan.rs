@@ -1631,7 +1631,7 @@ impl RenderOnce for AgentPlan {
 }
 
 /// The composer the demo stacks the plan on (Pink: composer.rs
-/// `composer_surface` in the opaque treatment, holding an empty session
+/// `composer_surface`, on the frosted plate, holding an empty session
 /// draft and the recessed Send disc of `render_send_button`).
 fn demo_composer(t: &Pink) -> Div {
     div()
@@ -1641,7 +1641,7 @@ fn demo_composer(t: &Pink) -> Div {
         .rounded(px(radius::COMPOSER))
         .border_1()
         .border_color(t.border)
-        .bg(t.input_glass_bg())
+        .bg(t.surface_bg())
         .shadow(pink::shadow_lg())
         .child(
             div()

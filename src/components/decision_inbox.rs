@@ -630,7 +630,7 @@ fn composer_surface(t: &Pink) -> Div {
         .rounded(px(radius::COMPOSER))
         .border_1()
         .border_color(t.border)
-        .bg(t.input_glass_bg())
+        .bg(t.surface_bg())
 }
 
 /// One numbered option (Pink: composer.rs `render_wizard` option rows).

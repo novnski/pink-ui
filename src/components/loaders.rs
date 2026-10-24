@@ -702,7 +702,7 @@ fn preview(
         LoaderKind::BreathingOrb => plate(t.bg).child(sending_strip(t)),
         LoaderKind::WorkingLine => plate(t.bg).child(working_line(&live.working, t)),
         LoaderKind::GlyphSpinner => plate(t.bg).child(running_tool_row(key, t)),
-        LoaderKind::MonoSpinner => plate(t.surface).child(reconnecting_line(key, t)),
+        LoaderKind::MonoSpinner => plate(t.chrome_surface()).child(reconnecting_line(key, t)),
         LoaderKind::GradientSpinner => plate(t.bg).child(loading_pane(t)),
         LoaderKind::SkeletonRows => plate(t.card_glass_bg()).px(px(space::S12)).child(
             div()
@@ -723,7 +723,7 @@ fn preview(
                 .relative()
                 .when(live.splash != SplashPhase::Gone, |el| {
                     el.child(loaders::splash_overlay(
-                        t.surface,
+                        t.chrome_surface(),
                         t.glyph,
                         SPLASH_LABEL,
                         t.readable_muted(0.7),

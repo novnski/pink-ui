@@ -608,7 +608,7 @@ fn composer(t: &Pink) -> impl IntoElement {
         .rounded(px(radius::COMPOSER))
         .border_1()
         .border_color(t.border)
-        .bg(t.input_glass_bg())
+        .bg(t.surface_bg())
         .shadow(pink::shadow_lg())
         .child(
             div()
