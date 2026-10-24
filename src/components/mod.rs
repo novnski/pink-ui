@@ -12,6 +12,7 @@ pub mod agent_plan;
 pub mod agent_steering;
 pub mod agent_tree;
 pub mod ai_answer;
+pub mod appearance_picker;
 pub mod approval_card;
 pub mod automation_editor;
 pub mod autonomy_dial;
@@ -39,6 +40,7 @@ pub mod experiment_card;
 pub mod file_tree;
 pub mod filter_menu;
 pub mod find_bar;
+pub mod git_actions;
 pub mod image_lightbox;
 pub mod inline_diff;
 pub mod integration_picker;
@@ -65,6 +67,7 @@ pub mod smart_recommendation;
 pub mod stepper_form;
 pub mod subagent_cards;
 pub mod tab_bar;
+pub mod terminal;
 pub mod thinking_loader;
 pub mod thinking_state;
 pub mod tips_panel;
@@ -519,6 +522,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         story: settings_page::story,
     },
     ComponentEntry {
+        slug: "appearance-picker",
+        name: appearance_picker::NAME,
+        category: "Inputs",
+        description: appearance_picker::DESCRIPTION,
+        story: appearance_picker::story,
+    },
+    ComponentEntry {
         slug: "decision-inbox",
         name: decision_inbox::NAME,
         category: "Feedback",
@@ -580,6 +590,20 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Code",
         description: commit_history::DESCRIPTION,
         story: commit_history::story,
+    },
+    ComponentEntry {
+        slug: "git-actions",
+        name: git_actions::NAME,
+        category: "Code",
+        description: git_actions::DESCRIPTION,
+        story: git_actions::story,
+    },
+    ComponentEntry {
+        slug: "terminal",
+        name: terminal::NAME,
+        category: "Code",
+        description: terminal::DESCRIPTION,
+        story: terminal::story,
     },
 ];
 

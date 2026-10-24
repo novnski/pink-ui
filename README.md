@@ -8,14 +8,14 @@
   <a href="https://crates.io/crates/gpui-pre"><img alt="GPUI: gpui-pre 0.3.9" src="https://img.shields.io/badge/GPUI-gpui--pre%200.3.9-7c3aed"></a>
   <img alt="Rust: stable" src="https://img.shields.io/badge/rust-stable-b7410e">
   <br>
-  <a href="#components"><img alt="components: 69" src="https://img.shields.io/badge/components-69-ec4899"></a>
+  <a href="#components"><img alt="components: 72" src="https://img.shields.io/badge/components-72-ec4899"></a>
   <a href="https://gpui.rs"><img alt="platforms: anywhere GPUI runs" src="https://img.shields.io/badge/platforms-anywhere%20GPUI%20runs-0f766e"></a>
   <a href="LICENSE"><img alt="license: MIT" src="https://img.shields.io/badge/license-MIT-2563eb"></a>
 </p>
 
 <p align="center">
   <b>Animated components for GPUI, written in Rust.</b><br>
-  69 components for Zed's GPU-accelerated UI framework, one file each, in the
+  72 components for Zed's GPU-accelerated UI framework, one file each, in the
   Pink app's design language. Build one, drop it into <code>.child(…)</code>, and
   it animates – on the desktop, and live in your browser through WebAssembly.
 </p>
@@ -32,7 +32,7 @@
 
 ![The live Pink UI showcase in light mode](docs/images/gallery-light.jpg)
 
-- **69 components** in the Pink app's design language: its runtime palette
+- **72 components** in the Pink app's design language: its runtime palette
   (Geist, neutral surfaces, the violet accent), its radius, spacing and type
   ladders, its controls, motion and loaders, in light and dark.
 - **Twins are exact copies.** Where the app has the component – the working
@@ -90,6 +90,8 @@ div().child(
 | Agents | [Subagent Cards](https://novnski.github.io/pink-ui/#subagent-cards) | The cards a chat's helper agents leave in its transcript – each names its model, wears a status dot with a ticking or settled timer and a one-line preview of the ask or the latest reply, and opens the helper's chat on its own or in a split, with its result posted below as a linked notice |
 | Code | [Diff Viewer](https://novnski.github.io/pink-ui/#diff-viewer) | A checkout's changes as Pink's diff pane – one folding section per file with its icon, path and +N −N, hunk bands over unified or side-by-side rows with the changed words washed, a sticky file header, scope and base pickers, and a + on any line to leave a review comment |
 | Code | [Commit History](https://novnski.github.io/pink-ui/#commit-history) | A repository's commits as Pink's History pane – a lane graph that traces every branch and merge, branch, remote and tag pills, author, date and SHA columns you can resize and reorder, and a toolbar to search, fetch and fold the list down to branch tips |
+| Code | [Git Actions](https://novnski.github.io/pink-ui/#git-actions) | The Git card from Pink's changes pane – branch and remote, the one next step it recommends with that button lit, the pull request's state, checks and draft form, file checkpoints, staged files to pick for a commit, and Commit and Push that say when they run, land or fail |
+| Code | [Terminal](https://novnski.github.io/pink-ui/#terminal) | A terminal drawer as Pink draws it – session tabs you can reorder, a monospace grid in Pink's sixteen ANSI colors with a translucent block cursor, drag, word and line selection, scrollback behind a quiet rail, and a Commands shelf for the project's saved tasks |
 | Cards | [Email Draft](https://novnski.github.io/pink-ui/#email-draft) | An agent-written email waiting for review – switch the recipient from a menu, pick a tone, edit the text in place or drop the attachment, then send or discard it into a one-line receipt with undo |
 | Cards | [Project Card](https://novnski.github.io/pink-ui/#project-card) | A project as a quiet ticket card – its status and due date beside a ring with one segment per subtask, linked by hover to its people and subtasks, that folds open into a status picker, a people filter and a checklist |
 | Cards | [Smart Recommendation](https://novnski.github.io/pink-ui/#smart-recommendation) | A suggested next step with its reason and a confidence signal – alternatives to switch to, the accent on the button that accepts it, and undo |
@@ -122,6 +124,7 @@ div().child(
 | Inputs | [Stepper Form](https://novnski.github.io/pink-ui/#stepper-form) | A multi-step setup flow on one paged card – a step counter, captioned fields, numbered choices that move on by themselves, invites you can take back, a review with edit links and a Back / Next footer that says what's missing |
 | Inputs | [Find Bar](https://novnski.github.io/pink-ui/#find-bar) | A floating find bar over a conversation – type to wash every match in the transcript, step through them with Enter, Shift+Enter or the arrows, match case with Aa, and read where you are as "3 of 7" |
 | Inputs | [Settings Page](https://novnski.github.io/pink-ui/#settings-page) | Pink's settings window – sections in a sidebar with a search that jumps to any setting and marks it, and pages of titled cards whose rows hold switches, segmented tracks and pop-up menus, each with a reset back to its default |
+| Inputs | [Appearance Picker](https://novnski.github.io/pink-ui/#appearance-picker) | Pink's Appearance settings – System, Light and Dark as miniature windows of the themes you pick, a menu each for the light and dark theme, accent swatches that re-tint the page, frosted or opaque glass, the interface font and size, and a conversation width slider |
 | Feedback | [Decision Inbox](https://novnski.github.io/pink-ui/#decision-inbox) | Decisions waiting on you under a Needs you heading – the current one opens in the question panel with two numbered answers, the rest wait as one-line cards, and answered ones settle into a record you can click to change |
 | Feedback | [Notification Stack](https://novnski.github.io/pink-ui/#notification-stack) | Notices piled up above the composer – plates tinted by their tone with a glyph, a label, a capsule action and the message, the ones behind peeking out below the front card until you dismiss it |
 | Feedback | [Progress Tracker](https://novnski.github.io/pink-ui/#progress-tracker) | Onboarding checklist card – a done/total summary over a quiet meter, and square checkboxes that tick steps off, one after another in auto play |
