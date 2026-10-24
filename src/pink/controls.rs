@@ -1004,7 +1004,8 @@ pub fn message_badge(t: &Pink) -> Div {
 // ---------------------------------------------------------------------------
 
 /// A keyboard hint inside a menu row or tooltip (Pink `popover::kbd_hint`):
-/// `px 5 / py 1`, radius 5, `fill(Quaternary)`, 11 Geist Mono `text_muted`.
+/// `px 5 / py 1`, radius 5, `fill(Quaternary)`, 11 Geist Mono in the
+/// popup's `text_muted` (`for_popup`).
 pub fn kbd(keys: impl Into<SharedString>, t: &Pink) -> Div {
     div()
         .flex_none()
@@ -1014,7 +1015,7 @@ pub fn kbd(keys: impl Into<SharedString>, t: &Pink) -> Div {
         .bg(t.fill(FillTier::Quaternary))
         .text_size(px(11.0))
         .font_family(MONO)
-        .text_color(t.text_muted)
+        .text_color(t.for_popup().text_muted)
         .child(keys.into())
 }
 
@@ -1039,21 +1040,22 @@ pub fn key_cap(t: &Pink) -> Div {
         .bg(t.fill(FillTier::Quaternary))
 }
 
-/// The small verb after a key cap: 11 `text_muted`.
+/// The small verb after a key cap: 11 in the popup's `text_muted`.
 fn key_hint_label(label: impl Into<SharedString>, t: &Pink) -> Div {
     div()
         .text_size(px(11.0))
-        .text_color(t.text_muted)
+        .text_color(t.for_popup().text_muted)
         .child(label.into())
 }
 
-/// A footer legend: one glyph key cap (12.5 px, `text_muted`) and its verb,
-/// gap 5 (Pink `popover::key_hint`).
+/// A footer legend: one glyph key cap (12.5 px, the popup's `text_muted`)
+/// and its verb, gap 5 (Pink `popover::key_hint`).
 pub fn key_hint(
     icon_path: impl Into<SharedString>,
     label: impl Into<SharedString>,
     t: &Pink,
 ) -> Div {
+    let t = &t.for_popup();
     div()
         .flex()
         .flex_row()
@@ -1077,6 +1079,7 @@ pub fn key_hint_text(
     label: impl Into<SharedString>,
     t: &Pink,
 ) -> Div {
+    let t = &t.for_popup();
     div()
         .flex()
         .flex_row()
@@ -1100,6 +1103,7 @@ pub fn key_hint_pair(
     label: impl Into<SharedString>,
     t: &Pink,
 ) -> Div {
+    let t = &t.for_popup();
     let icon = |path: SharedString| {
         svg()
             .path(path)

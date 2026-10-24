@@ -12,19 +12,35 @@ kit and this guide to match it.
 PINK is a calm, dense tool. Surfaces are neutral and close in tone: near-black panels in dark mode,
 cool off-whites in light mode. They are separated by hairlines and faint, text-tinted washes, not
 by color or depth. Content sits flat in the flow and is never shadowed. Only floating things
-(menus, tooltips, dialogs, the palette) get an opaque plate and a shadow. The accent (Violet) is
+(menus, tooltips, dialogs, the palette) get a hairline and elevation. The accent (Violet) is
 reserved for focus, selection and live state: the focus ring, selection rings, the caret, the
 working orb, unread dots and switch tracks. It never decorates. Type is Geist at 11–14 px with
 weights 400/500/600. Motion is short and decelerating, and it never bounces.
 
-The app ships Frosted surfaces by default: translucent tints over a 16 px backdrop blur. pink-ui's
-GPUI (`gpui-pre 0.3.9`) has no backdrop blur and no `EdgeFade`. The kit therefore reproduces
-Pink's other shipped treatment, **Opaque** (Settings → Surface → Opaque), with the default theme
+The kit reproduces what users see: Pink's default **Frosted** treatment, with the default theme
 (`pink-dark` / `pink-light`) and the default Violet accent, using the runtime palette Pink paints
-after `Theme::from_variant` and its contrast hardening. Every floating plate is an opaque color
-plus a GPUI shadow, and every secondary text tone is floored against those same plates. Don't fake
-frost with alpha. Without the blur, a translucent menu turns muddy, and the hardened tones no
-longer hold their contrast.
+after `Theme::from_variant` and its contrast hardening. Under frost the shell is a glass tint over
+the desktop, and popovers, menus, dialogs, the palette and the composer are a 15% tint over a
+16 px backdrop blur of the window, so they read as dark (or light) glass, not grey slabs.
+
+pink-ui's GPUI (`gpui-pre 0.3.9`) has no backdrop blur and no `EdgeFade`, and a translucent tint
+without blur would show the content behind it unblurred. So the kit adapts frost in two halves:
+
+- **Text is Pink's frosted text.** Every secondary tone (`text_muted`, `text_faint`,
+  `border_strong`, the `*_muted` status copy, `code_text`, syntax) and every paint-time floor
+  (`readable_*`, `legible`, `focus_ring`, `for_popup`) is derived with Pink's own algorithm over
+  Pink's frosted reading surfaces: the glass over the *adverse* desktop (white under dark, black
+  under light) and the floating, input and card tints over it. That is why dark `text_muted` is
+  `#c9c9cc`: the frosted chrome can be as light as `#3d3d3d`.
+- **Plates are Pink's frosted tints, baked over the canvas.** Each tint is flattened over
+  `Pink::bg`, the canvas behind every demo, which stands in for the blurred backdrop. Every
+  helper returns an opaque color: a popover plate equals the canvas (as a frosted card over a dark
+  window does), and floating cards separate from it by their hairline, `menu_shadows` /
+  `shadow_lg` and Pink's frost elevation rings (`t.elevation_rings()`). Tooltips and toasts are
+  opaque in Pink too, and keep Pink's exact `tooltip_surface()`.
+
+Paint plates from the helpers below, never from `surface`, `surface_overlay` or `input_bg`
+directly, and don't fake frost with alpha.
 
 ### Ground rules
 
@@ -42,28 +58,33 @@ longer hold their contrast.
 
 | Role | Field / helper | Dark | Light |
 |---|---|---|---|
-| Content panel, window | `bg` | `#060606` | `#fbfcfe` |
-| Shell, sidebar, settings cards | `surface` = `card_glass_bg()` | `#0d0d0d` | `#f0f3f7` |
-| Popover / menu / dialog / palette plate | `surface_bg()` (= `input_glass_bg()`) | `#27272a` | `#ffffff` |
-| Tooltip, hover card, toast | `tooltip_surface()` (= `surface_overlay`) | `#1b1b1c` | `#ffffff` |
+| Content panel, window, the canvas behind demos | `bg` | `#060606` | `#fbfcfe` |
+| Shell chrome, sidebar (glass `surface` .80 / .94 over `bg`) | `chrome_surface()` | `#0c0c0c` | `#f1f4f7` |
+| Settings section cards (`surface` .40 over `bg`) | `card_glass_bg()` | `#090909` | `#f7f8fb` |
+| Popover / menu / dialog / palette / composer plate (15% tint over `bg`) | `surface_bg()` | `#060606` | `#fafcfe` |
+| Input plate (`input_bg` .52 / white .30 over `bg`) | `input_glass_bg()` | `#1e1e20` | `#fcfdfe` |
+| Tooltip, hover card, toast (opaque in Pink) | `tooltip_surface()` | `#262627` | `#fbfbfc` |
 | Inline standalone card | `surface_card` | `#0e0e0e` | `#ffffff` |
 | Opaque raised disc | `surface_raised` | `#343438` | `#e7ecf2` |
 | Primary text | `text` | `#e8e8ea` | `#202631` |
-| Secondary chrome text | `text_muted` | `#a9a9ae` | `#445064` |
-| Hints in chrome | `text_faint` | `#9e9ea2` | `#546174` |
-| Secondary / tertiary on the canvas | `content_muted` / `content_faint` | `#a9a9ae` / `#85858a` | `#445064` / `#586579` |
+| Secondary chrome text | `text_muted` (= `text_dim`) | `#c9c9cc` | `#445064` |
+| Hints in chrome | `text_faint` | `#ccccce` | `#4d586a` |
+| Secondary / tertiary on the canvas | `content_muted` / `content_faint` | `#a9a9ae` / `#8f8f94` | `#445064` / `#586579` |
+| Composer placeholder | `placeholder` | `#949499` | `#586579` |
+| Muted / faint text inside a menu | `t.for_popup().text_muted` / `.text_faint` | `text` .64 / .584 | `text` .64 / .688 |
 | Card and popover edge | `border` | white .102 | black .122 |
-| Tooltip and capsule edge | `border_strong` | white .426 | black .454 |
+| Tooltip and capsule edge | `border_strong` | white .508 | black .454 |
 | Divider / strong divider | `separator(false)` / `separator(true)` | `#eaeaec` .08 / .14 | `#14181f` .108 / .189 |
 | Chrome hover wash, trigger chips | `element_hover` | white .110 | black .059 |
 | Accent (also `accent_strong`, `busy`, `caret`) | `accent` | `#8b7cf6` | `#5b43e8` |
 | Selected chip plate, inline code plate | `accent_wash` (= `code_wash`) | accent .220 | accent .122 |
-| Focus ring | `focus_ring()` | `#9587f7` | `#5b43e8` |
+| Focus ring | `focus_ring()` | `#bbb3fa` | `#5b43e8` |
 | Text selection | `selection` | accent .349 | accent .239 |
 | Solid plate / its label | `solid` / `on_solid` | `#ebebef` / `#000` | `#232328` / `#fff` |
-| Danger / copy | `danger` (= `danger_strong`) / `danger_muted` | `#f87171` / `#f49293` | `#dc2626` / `#a72629` |
-| Warning / copy | `warning` / `warning_muted` | `#facc15` / `#f6d34a` | `#a16207` / `#815312` |
-| Success / copy | `success` / `success_muted` | `#34d399` / `#61d8ad` | `#15803d` / `#186a3a` |
+| Danger / copy | `danger` (= `danger_strong`) / `danger_muted` | `#f87171` / `#f8bbbc` | `#dc2626` / `#a72629` |
+| Warning / copy | `warning` / `warning_muted` | `#facc15` / `#f6d34a` | `#a16207` / `#7c5011` |
+| Success / copy | `success` / `success_muted` | `#34d399` / `#75ddb7` | `#15803d` / `#176638` |
+| Inline code text | `code_text` | `#ada2f9` | `#5b43e8` |
 | Spinner tints `[light, mid, deep]` | `glyph` | `#aba1f9 #8b7cf6 #7266ca` | `#7864ec #5b43e8 #4332ac` |
 
 Code and terminal tokens are `code_text`, `diff_add`, `diff_del`, `diff_hunk_bg`, `terminal_*`,
@@ -79,6 +100,9 @@ Code and terminal tokens are `code_text`, `diff_add`, `diff_del`, `diff_hunk_bg`
 | Status copy (errors, warnings) | `t.readable_tone(t.danger_muted, 0.9)` | raw `danger` text |
 | Text on its own translucent pill | `t.readable_on(tone, tone.opacity(0.12), pink::TEXT_CONTRAST_TARGET)` | |
 | Status glyph | `t.readable_icon(tone)` (floored at 3.1:1) | |
+| Muted text or glyphs inside a menu or popover | `let p = t.for_popup();` then `p.text_muted` / `p.text_faint` | the chrome `text_muted` |
+| A tone on the composer's controls row | `t.readable_on_composer(tone, pink::TEXT_CONTRAST_TARGET)` | `readable_on(tone, t.surface_bg(), ..)` |
+| The composer pill (and the question panel sharing it) | `.bg(t.surface_bg())` with a 1 px `border` | `input_glass_bg()` (an input plate) |
 | Resting plate (ghost/secondary buttons, wells) | `t.fill(FillTier::Quaternary)` | `ink(0.04)` |
 | Hover | `t.fill(FillTier::Tertiary)`, through `hover_wash` | GPUI `.hover()` (it snaps) |
 | Pressed, or hover on a filled control | `t.fill(FillTier::Secondary)` | |
@@ -91,7 +115,7 @@ Code and terminal tokens are `code_text`, `diff_add`, `diff_del`, `diff_hunk_bg`
 | Label on Primary / Danger plate | `t.on_solid` / `t.on_danger()` | `on_accent` |
 
 `readable_*` take a dark-mode opacity, and light mode paints the full token. Both results are
-floored to 4.6:1 (text) or 3.1:1 (icons) over Pink's reading surfaces. They are memoized, so call
+floored to 4.6:1 (text) or 3.1:1 (icons) over Pink's frosted reading surfaces. They are memoized, so call
 them on every frame. Fill tiers are tinted by the text hue, never pure white or black.
 
 ## 3. Ladders
@@ -180,8 +204,8 @@ motion::menu_in_from("model-menu", motion::MENU_RISE_DOWN,   // +6 (MENU_RISE_UP
         .child(pink::menu_separator(&t)))
 ```
 
-`popover_card` is r12, `border`, `surface_bg()`, `menu_shadows()`, `p 4`, gap 2, clipped, 13
-Geist. Widths `MENU_W_S/M/L` (240/280/320) may widen with content, never shrink. Place it with
+`popover_card` is r12, `border`, `surface_bg()`, the frost `elevation_rings()` over
+`menu_shadows()`, `p 4`, gap 2, clipped, 13 Geist. Its headings and kbd hints read `for_popup()`. Widths `MENU_W_S/M/L` (240/280/320) may widen with content, never shrink. Place it with
 `anchored().snap_to_window_with_margin(px(8.))`, 6 px from the trigger. Leading-aligned menus shift
 −4 so row text lines up with the trigger glyph, and submenus sit beside the parent at −(4 + 6).
 Use `popover_card_flush` for rail + list panes and `stack_popup_card` (r20, p6) above a composer.
@@ -206,7 +230,7 @@ Hover never looks like selection. Pink: `popover::menu_row`.
 
 | Where | Recipe |
 |---|---|
-| Inside a menu | `pink::menu_heading("Recent", &t)`: 11/600 `text_muted`, UPPERCASE with hair-space tracking. This is the only uppercase label. |
+| Inside a menu | `pink::menu_heading("Recent", &t)`: 11/600 `for_popup().text_muted`, UPPERCASE with hair-space tracking. This is the only uppercase label. |
 | List / sidebar group | h28, `px 8`, r6, `hover_wash`; 11/600 `readable_faint(0.9)`, sentence case; chevron only on group hover; trailing count 11 `readable_faint(0.7)` |
 | Palette group / small group label | 11/500 sentence case: `text_faint` (`px 10 / pb 4`, after a `border@0.6` rule) / `readable_muted(0.6)` (`px 8 / pb 2`) |
 | Settings card header | `pink::section_header(title, Some(desc), &t)`: Title3 + 12/16 description |
@@ -361,8 +385,8 @@ pink::modal_scrim(&t).child(motion::dialog_in("delete-dialog", pink::dialog_card
         .child(pink::button("delete", ButtonKind::Danger, ControlSize::Lg, &t).child("Delete")))))
 ```
 
-`dialog_card` is 360 wide, `p 20`, r16, `surface_bg()`, a `separator(false)` edge and
-`shadow_lg`. Use `pink::checkbox(id, "Don't show again", checked, &t)` for an opt-out. A command
+`dialog_card` is 360 wide, `p 20`, r16, `surface_bg()`, a `separator(false)` edge, and the frost
+`elevation_rings()` over `shadow_lg`. Use `pink::checkbox(id, "Don't show again", checked, &t)` for an opt-out. A command
 palette is `pink::palette_card(560., radius::PALETTE, &t)`, anchored at `max(20% of the viewport,
 88)` from the top, entering on `PALETTE_IN` + 6. Its header and footer rules are `hairline(0.06)`,
 and its footer holds `key_hint`s. Pink: `popover::dialog_card`.

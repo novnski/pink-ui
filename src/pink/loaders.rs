@@ -445,8 +445,8 @@ pub fn upload_progress_ring(percent: u8, diameter: f32) -> AnyElement {
 // ---------------------------------------------------------------------------
 
 /// Pink's full-window boot splash (Pink `splash_overlay`): an absolute
-/// `inset_0` layer of `bg` (Pink: the glass tint, which is the opaque surface
-/// without blur) with a [`gradient_spinner`] at cell 2.5 above a 12px
+/// `inset_0` layer of `bg` (Pink: the glass tint; pass `t.chrome_surface()`,
+/// the glass baked over the canvas) with a [`gradient_spinner`] at cell 2.5 above a 12px
 /// `label` in `label_color` (Pink: "Setting up PINK environment" in
 /// `readable_muted(0.7)`), 12px apart, centered. While `fading` it plays
 /// [`motion::splash_out`]: 150ms hold, then a 500ms fade and 6px lift.

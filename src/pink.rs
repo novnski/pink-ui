@@ -10,10 +10,22 @@
 //!   Pink resolves the registry variant (`crates/theme/src/builtins.rs`)
 //!   through `Theme::from_variant` and then hardens every secondary tone
 //!   against the surfaces it sits on (`harden_composited_foregrounds`,
-//!   `crates/ui/src/theme.rs`). GPUI here has no backdrop blur, so the kit
-//!   reproduces Pink's **Opaque** surface treatment (Settings → Surface →
-//!   Opaque): every plate is an opaque color or a box shadow, and the text
-//!   tones are the ones Pink hardens against those same plates.
+//!   `crates/ui/src/theme.rs`). The kit reproduces Pink's default **Frosted**
+//!   surface treatment, the one users see: every text tone is the one Pink
+//!   hardens against its frosted reading surfaces (the glass over the
+//!   adverse desktop, the floating, input and card tints over it).
+//! - **Surfaces, baked over the canvas**: Pink's frosted plates are
+//!   translucent tints over a 16 px backdrop blur. GPUI here has no backdrop
+//!   blur, so a translucent tint would show the content behind it unblurred.
+//!   The kit therefore takes each of Pink's frosted tints (`glass`,
+//!   `glass_overlay`, `input_glass_bg`, `card_glass_bg` and the popover's
+//!   `composer_sidebar_tint`) and flattens it over [`Pink::bg`], the canvas
+//!   that sits behind every demo and stands in for the blurred backdrop.
+//!   Every paint helper returns an opaque color: a popover is the near-canvas
+//!   tint Pink's frosted card shows over a dark window, not the grey slab of
+//!   the Opaque treatment. Floating cards keep their hairline and shadows,
+//!   plus Pink's frost elevation rings, so they still separate from the
+//!   canvas. Tooltips and toasts stay opaque, as in Pink.
 //! - **Paint helpers** on [`Pink`]: Pink's `ink` / `hairline` / `wash` /
 //!   `scrim` tiers, the text-tinted [`FillTier`] ladder and `separator`, the
 //!   selection washes and rings, and the contrast floors (`readable_muted`,
@@ -25,7 +37,9 @@
 //!   `surface_chrome` and `popover` modules.
 //! - **Elevation**: `menu_shadows`, `tooltip_shadows`, GPUI's
 //!   `shadow_sm/md/lg`, the 2 px inset focus ring and the 1 px selection ring,
-//!   verbatim (GPUI `blur_radius` is a Gaussian sigma, as Pink writes it).
+//!   verbatim (GPUI `blur_radius` is a Gaussian sigma, as Pink writes it),
+//!   and Pink's frosted-card elevation rings (`frost::paint_elevation`) as
+//!   crisp box shadows ([`Pink::elevation_rings`]).
 //! - **Control kit** (`controls`, `surfaces`, re-exported here): Pink's
 //!   `button` module (buttons, icon buttons, selects, chips, segmented
 //!   controls, selection rings), settings widgets (switch, section cards and
@@ -394,6 +408,12 @@ pub const NON_TEXT_CONTRAST_TARGET: f32 = 3.1;
 pub const INK_HAIRLINE_SCALE: f32 = 1.35;
 /// The standard modal backdrop's dark-mode alpha (`SCRIM_ALPHA_DARK`).
 pub const SCRIM_ALPHA_DARK: f32 = 0.60;
+/// Dark frost coverage of the shell glass over the desktop
+/// (`Theme::GLASS_ALPHA`), raised if shell text would not read.
+pub const GLASS_ALPHA: f32 = 0.80;
+/// Light frost coverage (`Theme::GLASS_ALPHA_LIGHT`): heavier, since dark
+/// text is more vulnerable to the desktop showing through.
+pub const GLASS_ALPHA_LIGHT: f32 = 0.94;
 /// The scrim behind dialogs and palettes (`popover::MODAL_SCRIM`).
 pub const MODAL_SCRIM: f32 = 0.35;
 
@@ -645,7 +665,7 @@ pub fn shadow_md() -> Vec<BoxShadow> {
 }
 
 /// GPUI's `shadow_lg()` as a list (dialogs, palettes, the composer and
-/// inline cards in the opaque treatment).
+/// inline cards).
 pub fn shadow_lg() -> Vec<BoxShadow> {
     vec![
         shadow(0., 10., 15., -3., hsla(0., 0., 0., 0.1)),
@@ -697,8 +717,9 @@ impl FillTier {
     }
 }
 
-/// Pink's resolved syntax colors (`Theme::syntax`), hardened for the opaque
-/// treatment. Keys that share a color share a field.
+/// Pink's resolved syntax colors (`Theme::syntax`), hardened over the
+/// frosted reading surfaces and the diff washes. Keys that share a color
+/// share a field.
 #[derive(Clone, Copy, Debug)]
 pub struct Syntax {
     pub comment: Hsla,
@@ -728,18 +749,22 @@ pub struct Syntax {
 }
 
 /// Pink's tokens for the active light/dark mode: the runtime palette of
-/// `pink-dark` / `pink-light` with the Violet accent, opaque treatment.
+/// `pink-dark` / `pink-light` with the Violet accent, Frosted treatment (the
+/// app default), hardened as Pink hardens it.
 ///
 /// Read them with [`Pink::get`]. Colors Pink derives at paint time are
 /// methods: [`fill`](Self::fill), [`separator`](Self::separator),
 /// [`focus_ring`](Self::focus_ring), the `readable_*` floors and the
-/// surface recipes.
+/// surface recipes (opaque, baked over [`bg`](Self::bg)).
 #[derive(Clone, Debug)]
 pub struct Pink {
     pub dark: bool,
     /// The content panel and window (`background` seed): #060606 / #fbfcfe.
     pub bg: Hsla,
-    /// Shell, sidebar and settings-card tone (`shell` seed): #0d0d0d / #f0f3f7.
+    /// Shell and sidebar tone (`shell` seed): #0d0d0d / #f0f3f7. Pink tints
+    /// its glass and settings cards with it; paint
+    /// [`chrome_surface`](Self::chrome_surface) or
+    /// [`card_glass_bg`](Self::card_glass_bg).
     pub surface: Hsla,
     /// Opaque raised pills and discs (`raised` seed): #343438 / #e7ecf2.
     pub surface_raised: Hsla,
@@ -749,7 +774,9 @@ pub struct Pink {
     pub surface_card: Hsla,
     /// Dialog tone (`card` mixed toward `raised`): #151516 / #fefefe.
     pub surface_dialog: Hsla,
-    /// The floating overlay tone, the tooltip fill: #1b1b1c / #ffffff.
+    /// The floating overlay tone (#1b1b1c / #ffffff) Pink tints floating
+    /// cards with; paint [`glass_overlay`](Self::glass_overlay) or
+    /// [`tooltip_surface`](Self::tooltip_surface).
     pub surface_overlay: Hsla,
     /// Chrome hover wash: white 11% / black 6%.
     pub element_hover: Hsla,
@@ -757,20 +784,24 @@ pub struct Pink {
     pub element_active: Hsla,
     /// Hairline border: white 10% / black 12%.
     pub border: Hsla,
-    /// Strong hairline (tooltips, capsule actions), hardened to 3.1:1.
+    /// Strong hairline (tooltips, capsule actions), hardened to 3.1:1 on the
+    /// frosted reading surfaces: white 51% / black 45%.
     pub border_strong: Hsla,
     pub text: Hsla,
-    /// Secondary chrome text, hardened to 4.6:1 on every reading surface.
+    /// Secondary chrome text, hardened to 4.6:1 on every frosted reading
+    /// surface: #c9c9cc / #445064.
     pub text_muted: Hsla,
-    /// Placeholders and hints in chrome, hardened.
+    /// Placeholders and hints in chrome, hardened: #ccccce / #4d586a. On dark
+    /// it lands a shade above `text_muted`, as in Pink.
     pub text_faint: Hsla,
     /// Pink's `text_dim`, hardened (resolves to `text_muted`).
     pub text_dim: Hsla,
-    /// Secondary text on the content canvas (transcript).
+    /// Secondary text on the content canvas (transcript): #a9a9ae / #445064.
     pub content_muted: Hsla,
-    /// Tertiary text on the canvas: timestamps, timers.
+    /// Tertiary text on the canvas: timestamps, timers (#8f8f94 / #586579).
     pub content_faint: Hsla,
-    /// The composer's placeholder, floored on the composer plate.
+    /// The composer's placeholder, floored on the composer plates
+    /// (#949499 / #586579).
     pub placeholder: Hsla,
     /// Solid plate (Send disc, accents of solid): #ebebef / #232328.
     pub solid: Hsla,
@@ -797,7 +828,7 @@ pub struct Pink {
     /// `GlyphPalette::rows` order (loaders, the mini glyph spinner).
     pub glyph: [Hsla; 3],
     /// The input tint (`raised` at 72% on dark). Paint
-    /// [`input_glass_bg`](Self::input_glass_bg) for the opaque plate.
+    /// [`input_glass_bg`](Self::input_glass_bg) for the input plate.
     pub input_bg: Hsla,
     /// Text selection wash: accent 35% / 24%.
     pub selection: Hsla,
@@ -828,6 +859,23 @@ thread_local! {
     static CURRENT_DARK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Paint-time memo for derived foregrounds (Pink `Theme::memo_color`).
     static MEMO: RefCell<HashMap<(u64, Vec<u32>), Hsla>> = RefCell::new(HashMap::new());
+    /// Pink's frosted tints per palette (Pink memoizes the glass search too).
+    static FROST: RefCell<HashMap<u64, Frost>> = RefCell::new(HashMap::new());
+}
+
+/// Pink's frosted tints for one palette, translucent, before baking.
+#[derive(Clone, Copy, Debug)]
+struct Frost {
+    /// The shell glass (`Theme::glass`).
+    glass: Hsla,
+    /// Floating cards (`Theme::glass_overlay`).
+    overlay: Hsla,
+    /// Input plates (`Theme::input_glass_bg`).
+    input: Hsla,
+    /// Settings cards (`Theme::card_glass_bg`).
+    card: Hsla,
+    /// Popovers, dialogs and the composer (`Theme::composer_sidebar_tint`).
+    composer: Hsla,
 }
 
 impl Pink {
@@ -849,7 +897,7 @@ impl Pink {
         Self::for_mode(CURRENT_DARK.with(|current| current.get()))
     }
 
-    /// `pink-dark`, Violet accent, opaque treatment.
+    /// `pink-dark`, Violet accent, Frosted treatment.
     pub fn dark() -> Self {
         let text = hex(0xe8e8ea);
         let accent = hex(0x8b7cf6);
@@ -866,19 +914,22 @@ impl Pink {
             element_hover: hexa(0xffffff, 0x1c),
             element_active: hexa(0x8b7cf6, 0x2e),
             border: hexa(0xffffff, 0x1a),
-            // hairline(0.18) hardened to 3.1:1.
-            border_strong: hsla(0.0, 0.0, 1.0, 0.4263),
+            // hairline(0.18) hardened to 3.1:1 over the frosted reading
+            // surfaces.
+            border_strong: hsla(0.0, 0.0, 1.0, 0.508_235),
             text,
-            text_muted: hex(0xa9a9ae),
-            // #85858a hardened to 4.6:1: five of Pink's 24 lightness steps
-            // toward white (#9e9ea2).
-            text_faint: hsla(0.666_667, 0.020_921, 0.629_004, 1.0),
-            text_dim: hex(0xa9a9ae),
+            // #a9a9ae hardened to 4.6:1: the glass over the white desktop
+            // reads #3d3d3d, so muted lightens (#c9c9cc).
+            text_muted: hsla(0.666_667, 0.029_940, 0.795_343, 1.0),
+            // #85858a hardened the same way, a shade past muted (#ccccce).
+            text_faint: hsla(0.666_667, 0.020_921, 0.804_739, 1.0),
+            text_dim: hsla(0.666_667, 0.029_940, 0.795_343, 1.0),
             content_muted: hex(0xa9a9ae),
-            content_faint: hex(0x85858a),
-            // #85858a floored on the composer plate: two lightness steps
-            // (#8f8f94).
-            placeholder: hsla(0.666_667, 0.020_921, 0.570_425, 1.0),
+            // #85858a floored on the canvas and its code plate: two
+            // lightness steps (#8f8f94).
+            content_faint: hsla(0.666_667, 0.020_921, 0.570_425, 1.0),
+            // #85858a floored on the composer plates (#949499).
+            placeholder: hsla(0.666_667, 0.020_921, 0.589_951, 1.0),
             solid: hex(0xebebef),
             on_solid: hex(0x000000),
             accent,
@@ -886,21 +937,23 @@ impl Pink {
             accent_wash: hexa(0x8b7cf6, 0x38),
             on_accent: hex(0x000000),
             danger: hex(0xf87171),
-            danger_muted: hex(0xf49293),
+            // #f49293 hardened (#f8bbbc).
+            danger_muted: hsla(0.998_299, 0.816_667, 0.852_941, 1.0),
             danger_strong: hex(0xf87171),
             warning: hex(0xfacc15),
             warning_muted: hex(0xf6d34a),
             success: hex(0x34d399),
-            success_muted: hex(0x61d8ad),
+            // #61d8ad hardened (#75ddb7).
+            success_muted: hsla(0.439_776, 0.604_061, 0.662_010, 1.0),
             busy: accent,
             glyph: [hex(0xaba1f9), accent, hex(0x7266ca)],
             input_bg: hexa(0x343438, 0xb8),
             selection: hexa(0x8b7cf6, 0x59),
             caret: accent,
             cursor: hexa(0xe8e8ea, 0x66),
-            // The accent hardened on its own wash: two lightness steps
-            // (#9587f7).
-            code_text: hsla(0.687_158, 0.871_429, 0.748_366, 1.0),
+            // The accent hardened on its own wash over the frosted canvas
+            // (#ada2f9).
+            code_text: hsla(0.687_159, 0.871_429, 0.805_556, 1.0),
             code_wash: hexa(0x8b7cf6, 0x38),
             diff_add: hex(0x34d399),
             diff_del: hex(0xf87171),
@@ -913,7 +966,7 @@ impl Pink {
         }
     }
 
-    /// `pink-light`, Violet accent, opaque treatment.
+    /// `pink-light`, Violet accent, Frosted treatment.
     pub fn light() -> Self {
         let text = hex(0x202631);
         let accent = hex(0x5b43e8);
@@ -930,13 +983,13 @@ impl Pink {
             element_hover: hexa(0x000000, 0x0f),
             element_active: hexa(0x5b43e8, 0x1a),
             border: hexa(0x000000, 0x1f),
-            // black 22% hardened to 3.1:1.
-            border_strong: hsla(0.0, 0.0, 0.0, 0.4537),
+            // black 22% hardened to 3.1:1 over the frosted reading surfaces.
+            border_strong: hsla(0.0, 0.0, 0.0, 0.453_726),
             text,
             text_muted: hex(0x445064),
-            // #586579 hardened to 4.6:1: one of Pink's 24 lightness steps
-            // toward black (#546174).
-            text_faint: hsla(0.601_010, 0.157_895, 0.392_729, 1.0),
+            // #586579 hardened to 4.6:1 over the glass on the black desktop
+            // (#e2e4e8): three lightness steps toward black (#4d586a).
+            text_faint: hsla(0.601_010, 0.157_895, 0.358_578, 1.0),
             text_dim: hex(0x445064),
             content_muted: hex(0x445064),
             content_faint: hex(0x586579),
@@ -951,9 +1004,11 @@ impl Pink {
             danger_muted: hex(0xa72629),
             danger_strong: hex(0xdc2626),
             warning: hex(0xa16207),
-            warning_muted: hex(0x815312),
+            // #815312 hardened (#7c5011).
+            warning_muted: hsla(0.097_598, 0.755_102, 0.276_226, 1.0),
             success: hex(0x15803d),
-            success_muted: hex(0x186a3a),
+            // #186a3a hardened (#176638).
+            success_muted: hsla(0.402_439, 0.630_769, 0.244_281, 1.0),
             busy: accent,
             glyph: [hex(0x7864ec), accent, hex(0x4332ac)],
             input_bg: hex(0xffffff),
@@ -977,39 +1032,39 @@ impl Pink {
     pub fn syntax(&self) -> Syntax {
         if self.dark {
             Syntax {
-                comment: hex(0xa0a0a7),
-                keyword: hex(0x9e92f8),
-                string: hex(0x34d399),
-                string_special: hex(0x22d3ee),
+                comment: hex(0xc9c9cd),
+                keyword: hex(0xcac3fb),
+                string: hex(0x67deb2),
+                string_special: hex(0x47daf1),
                 number: hex(0xfacc15),
-                type_name: hex(0xc084fc),
-                function: hex(0x60a5fa),
-                property: hex(0xf472b6),
+                type_name: hex(0xddbcfd),
+                function: hex(0xa9cefc),
+                property: hex(0xfab9db),
                 variable: hex(0xe8e8ea),
-                punctuation: hex(0xa1a1aa),
-                markup_heading: hex(0x939aed),
-                markup_raw: hex(0x1eb787),
-                markup_link: hex(0xe77fb7),
-                markup_reference: hex(0xdba924),
-                invalid: hex(0xf87777),
+                punctuation: hex(0xc8c8cd),
+                markup_heading: hex(0xc2c6f5),
+                markup_raw: hex(0x4ae1b2),
+                markup_link: hex(0xf3bcda),
+                markup_reference: hex(0xe7c66d),
+                invalid: hex(0xfcb8b8),
             }
         } else {
             Syntax {
-                comment: hex(0x5e6470),
-                keyword: hex(0x5b43e8),
-                string: hex(0x127035),
-                string_special: hex(0x0d6a84),
-                number: hex(0x8d5606),
+                comment: hex(0x555a65),
+                keyword: hex(0x5138e7),
+                string: hex(0x116530),
+                string_special: hex(0x0c6178),
+                number: hex(0x7f4e06),
                 type_name: hex(0x7e22ce),
-                function: hex(0x1556e4),
-                property: hex(0xbe185d),
+                function: hex(0x134ed0),
+                property: hex(0xae1655),
                 variable: hex(0x303035),
                 punctuation: hex(0x52525b),
-                markup_heading: hex(0x5754b4),
+                markup_heading: hex(0x514db0),
                 markup_raw: hex(0x0f5b41),
                 markup_link: hex(0x8d2f58),
                 markup_reference: hex(0x7c451e),
-                invalid: hex(0xb91c1c),
+                invalid: hex(0xb11b1b),
             }
         }
     }
@@ -1173,12 +1228,162 @@ impl Pink {
         ]
     }
 
-    // ---- surfaces as composited (opaque treatment) ----
+    // ---- Pink's frosted tints (translucent, as Pink paints them) ----
 
-    /// The shell chrome as painted: `surface` (Pink `chrome_surface`; under
-    /// frost this is the glass over the desktop).
+    /// Pink's frosted tints for this palette, memoized by
+    /// [`palette_key`](Self::palette_key) (paint asks for them constantly).
+    fn frost(&self) -> Frost {
+        let key = self.palette_key();
+        if let Some(hit) = FROST.with_borrow(|cache| cache.get(&key).copied()) {
+            return hit;
+        }
+        let frost = self.derive_frost();
+        FROST.with_borrow_mut(|cache| {
+            if cache.len() > 64 {
+                cache.clear();
+            }
+            cache.insert(key, frost);
+        });
+        frost
+    }
+
+    fn derive_frost(&self) -> Frost {
+        let backdrop = self.adverse_backdrop();
+        let base = if self.dark {
+            GLASS_ALPHA
+        } else {
+            GLASS_ALPHA_LIGHT
+        };
+        let glass = self
+            .surface
+            .opacity(self.contrast_checked_glass_alpha(base));
+        // The desktop behind the window, at its worst for this appearance.
+        let window = flatten(glass, backdrop);
+        let overlay_base = if self.dark { 0.50 } else { 0.85 };
+        let overlay = self
+            .surface_overlay
+            .opacity(self.contrast_checked_tint_alpha(
+                self.surface_overlay,
+                overlay_base,
+                backdrop,
+            ));
+        let input_base = if self.dark { self.input_bg.a } else { 0.30 };
+        let input = self.input_bg.opacity(self.contrast_checked_tint_alpha(
+            self.input_bg,
+            input_base,
+            window,
+        ));
+        let card =
+            self.surface
+                .opacity(self.contrast_checked_tint_alpha(self.surface, 0.40, window));
+        Frost {
+            glass,
+            overlay,
+            input,
+            card,
+            composer: self.composer_sidebar_tint_for(glass),
+        }
+    }
+
+    /// Frost coverage over the adverse desktop (Pink
+    /// `contrast_checked_glass_alpha`): raised from `base` until primary
+    /// text clears its target on the chrome and everything derived from it
+    /// (hover and selected washes, the canvas, the active-tab wash, the code
+    /// plate), and muted text 3:1 on the chrome itself.
+    fn contrast_checked_glass_alpha(&self, base: f32) -> f32 {
+        let backdrop = self.adverse_backdrop();
+        // Light frost is checked against the darker recessed plane the
+        // canvas used to be (Pink audit SH-07).
+        let canvas_fill = if self.dark {
+            self.canvas_fill()
+        } else {
+            self.ink(0.035)
+        };
+        let tab_wash = self.wash(0.09);
+        let code_plate = self.ink(0.035);
+        for step in 0..=20 {
+            let alpha = base + (1.0 - base) * step as f32 / 20.0;
+            let chrome = flatten(self.surface.opacity(alpha), backdrop);
+            let canvas = flatten(canvas_fill, chrome);
+            let reads = [
+                chrome,
+                flatten(self.element_hover, chrome),
+                flatten(self.element_active, chrome),
+                canvas,
+                flatten(tab_wash, canvas),
+                flatten(code_plate, canvas),
+            ]
+            .iter()
+            .all(|surface| painted_contrast(self.text, *surface) >= TEXT_CONTRAST_TARGET);
+            if reads && painted_contrast(self.text_muted, chrome) >= 3.0 {
+                return alpha;
+            }
+        }
+        1.0
+    }
+
+    /// A frosted tint's coverage, raised from `base` only as far as primary
+    /// text needs 4.5:1 and muted text 3:1 over `backdrop` (Pink
+    /// `contrast_checked_tint_alpha`; `opacity` multiplies, as in GPUI).
+    fn contrast_checked_tint_alpha(&self, tint: Hsla, base: f32, backdrop: Hsla) -> f32 {
+        for step in 0..=20 {
+            let alpha = base + (1.0 - base) * step as f32 / 20.0;
+            let composite = flatten(tint.opacity(alpha), backdrop);
+            if painted_contrast(self.text, composite) >= 4.5
+                && painted_contrast(self.text_muted, composite) >= 3.0
+            {
+                return alpha;
+            }
+        }
+        1.0
+    }
+
+    /// Pink `composer_sidebar_tint`: the 15% tint that moves the blurred
+    /// canvas toward the right-pane tone, solved in RGB.
+    fn composer_sidebar_tint_for(&self, glass: Hsla) -> Hsla {
+        let target = if glass.a < 1.0 {
+            flatten(self.bg.opacity(0.4), flatten(glass, self.bg))
+        } else {
+            self.bg
+        };
+        let canvas = flatten(glass, self.bg);
+        let canvas = hsl_to_rgb(canvas.h, canvas.s, canvas.l);
+        let target = hsl_to_rgb(target.h, target.s, target.l);
+        let mut alpha: f32 = 0.60;
+        for (base, desired) in canvas.into_iter().zip(target) {
+            let needed = if desired > base {
+                (desired - base) / (1.0 - base).max(f32::EPSILON)
+            } else {
+                (base - desired) / base.max(f32::EPSILON)
+            };
+            alpha = alpha.max(needed);
+        }
+        let rgb: [f32; 3] = std::array::from_fn(|i| {
+            ((target[i] - canvas[i] * (1.0 - alpha)) / alpha).clamp(0.0, 1.0)
+        });
+        let (h, s, l) = rgb_to_hsl(rgb[0], rgb[1], rgb[2]);
+        hsla(h, s, l, 0.15)
+    }
+
+    fn adverse_backdrop(&self) -> Hsla {
+        if self.dark { grey(0xff) } else { grey(0) }
+    }
+
+    /// Pink's `chrome_surface`: the glass over the adverse desktop (white
+    /// under dark, black under light), the worst backdrop text can meet.
+    fn adverse_chrome(&self) -> Hsla {
+        flatten(self.frost().glass, self.adverse_backdrop())
+    }
+
+    // ---- surfaces, baked over the canvas ----
+    //
+    // Each is Pink's frosted tint flattened over `bg`, the canvas behind every
+    // demo, standing in for the blur GPUI here can't paint. All are opaque.
+
+    /// The shell chrome and sidebar: Pink's glass (`surface` at 80% / 94%)
+    /// over the canvas (#0c0c0c / #f1f4f7).
     pub fn chrome_surface(&self) -> Hsla {
-        flatten(self.surface, self.adverse_backdrop())
+        flatten(self.frost().glass, self.bg)
     }
 
     /// The workbench canvas tint over the chrome: `bg` at 55% / 96%.
@@ -1196,49 +1401,58 @@ impl Pink {
         self.bg.opacity(if self.dark { 0.6 } else { 0.55 })
     }
 
-    /// The floating overlay tint (opaque: `surface_overlay`).
+    /// A floating card's tint (Pink `glass_overlay`: `surface_overlay` at
+    /// 67.5% / 85%) over the canvas (#141415 / #fefefe).
     pub fn glass_overlay(&self) -> Hsla {
-        self.surface_overlay
+        flatten(self.frost().overlay, self.bg)
     }
 
-    /// Every tooltip and hover card's fill, always opaque (#1b1b1c / #ffffff).
+    /// Every tooltip, hover card and toast's fill. Pink paints these opaque
+    /// in every treatment: the overlay tint over the chrome as composited
+    /// (Pink `tooltip_surface`, the "overlay" reading surface), #262627 /
+    /// #fbfbfc.
     pub fn tooltip_surface(&self) -> Hsla {
-        flatten(self.glass_overlay(), self.chrome_surface())
+        flatten(self.frost().overlay, self.adverse_chrome())
     }
 
-    /// The composer, queue tray and input plate: `input_bg` over `bg`
-    /// (#27272a / #ffffff).
+    /// Input plates (fields, the queue tray in Pink's own words): Pink's
+    /// frosted `input_glass_bg` (`input_bg` at 52% / white 30%) over the
+    /// canvas (#1e1e20 / #fcfdfe). The composer pill itself is
+    /// [`surface_bg`](Self::surface_bg) under frost, as in Pink.
     pub fn input_glass_bg(&self) -> Hsla {
-        flatten(self.input_bg, self.bg)
+        flatten(self.frost().input, self.bg)
     }
 
-    /// The popover, menu, dialog and palette plate (Pink
-    /// `popover::surface_bg`; opaque: the input plate).
+    /// The popover, menu, dialog, palette and composer plate (Pink
+    /// `popover::surface_bg`, frosted: `composer_sidebar_tint`, a 15% tint
+    /// over the blur) over the canvas (#060606 / #fbfcfe). A frosted card
+    /// reads as the window behind it; its hairline and shadows lift it.
     pub fn surface_bg(&self) -> Hsla {
-        self.input_glass_bg()
+        flatten(self.frost().composer, self.bg)
     }
 
-    /// Settings section cards (opaque: `surface`).
+    /// Settings section cards: Pink's frosted `card_glass_bg` (`surface` at
+    /// 40%) over the canvas (#080808 / #f6f8fb).
     pub fn card_glass_bg(&self) -> Hsla {
-        self.surface
+        flatten(self.frost().card, self.bg)
     }
 
-    /// The terminal panel (opaque: the terminal background).
+    /// The terminal panel: Pink thins the terminal background to 40% on
+    /// glass; here baked over the chrome.
     pub fn terminal_panel_fill(&self) -> Hsla {
-        self.terminal_bg
+        flatten(self.terminal_bg.opacity(0.4), self.chrome_surface())
     }
 
-    fn adverse_backdrop(&self) -> Hsla {
-        if self.dark { grey(0xff) } else { grey(0) }
-    }
-
-    /// The opaque colors text sits on, as composited: chrome, its hover and
-    /// selected washes, the canvas, the code plate, raised chips, floating
-    /// cards, the input plate, settings cards and dialogs over their scrim
-    /// (Pink `Theme::reading_surfaces`, opaque treatment). Derived
-    /// foregrounds are floored on the worst of them.
+    /// The opaque colors text sits on, as Pink composites them under frost:
+    /// the glass over the adverse desktop (white under dark, black under
+    /// light), its hover and selected washes, the canvas, the code plate,
+    /// raised chips, the floating, input and settings-card tints over that
+    /// chrome, and dialogs over their scrim (Pink `Theme::reading_surfaces`).
+    /// Derived foregrounds are floored on the worst of them, so they read
+    /// over any backdrop, the baked canvas included.
     pub fn reading_surfaces(&self) -> [Hsla; 10] {
-        let chrome = self.chrome_surface();
+        let frost = self.frost();
+        let chrome = self.adverse_chrome();
         let canvas = flatten(self.canvas_fill(), chrome);
         [
             chrome,
@@ -1247,14 +1461,37 @@ impl Pink {
             canvas,
             flatten(self.ink(0.035), canvas),
             flatten(self.surface_raised, chrome),
-            flatten(self.glass_overlay(), chrome),
-            flatten(self.input_glass_bg(), chrome),
-            flatten(self.card_glass_bg(), chrome),
+            flatten(frost.overlay, chrome),
+            flatten(frost.input, chrome),
+            flatten(frost.card, chrome),
             flatten(
                 self.surface_dialog,
                 flatten(self.scrim(SCRIM_ALPHA_DARK), chrome),
             ),
         ]
+    }
+
+    /// The tokens text inside a floating card reads (Pink
+    /// `Theme::for_popup`): under frost, muted and faint become the text
+    /// color at 64% and 48%, floored on the card's tint over the adverse
+    /// chrome, so the primary > muted > hint ladder stays translucent.
+    /// Menu headings, kbd hints and key hints paint from it.
+    pub fn for_popup(&self) -> Pink {
+        let card = flatten(self.frost().overlay, self.adverse_chrome());
+        let mut popup = self.clone();
+        popup.text_muted = legible_on(
+            self.text.opacity(0.64),
+            self.text,
+            &[card],
+            TEXT_CONTRAST_TARGET,
+        );
+        popup.text_faint = legible_on(
+            self.text.opacity(0.48),
+            self.text,
+            &[card],
+            TEXT_CONTRAST_TARGET,
+        );
+        popup
     }
 
     // ---- contrast floors (Pink `Theme::readable_*`) ----
@@ -1341,8 +1578,15 @@ impl Pink {
         })
     }
 
+    /// `color` floored where the composer pill paints it (Pink
+    /// `readable_on_composer`): on the pill's frosted tint over every reading
+    /// surface. For the composer's controls row (the context share and ring).
+    pub fn readable_on_composer(&self, color: Hsla, min: f32) -> Hsla {
+        self.readable_on_stacks(color, &[&[self.frost().composer]], min)
+    }
+
     /// The keyboard focus ring color: the accent floored at 3.1:1 on every
-    /// reading surface and tab chip fill (#9587f7 dark, #5b43e8 light).
+    /// reading surface and tab chip fill (#bbb3fa dark, #5b43e8 light).
     pub fn focus_ring(&self) -> Hsla {
         let [rest, hover, active] = self.tab_chip_washes();
         let focused = self.tab_focused_fill();
@@ -1378,8 +1622,9 @@ impl Pink {
 
     // ---- elevation ----
 
-    /// Floating menus and popovers: a soft ambient drop plus a tight contact
-    /// shadow (Pink `menu_shadows`, painted on opaque cards).
+    /// Floating menus, popovers and toasts: a soft ambient drop plus a tight
+    /// contact shadow (Pink `menu_shadows`). The kit's cards are baked
+    /// opaque, so the shadow never stains through them.
     pub fn menu_shadows(&self) -> Vec<BoxShadow> {
         let (ambient, contact) = if self.dark {
             (0.45, 0.30)
@@ -1390,6 +1635,41 @@ impl Pink {
             shadow(0., 10., 24., -6., hsla(0., 0., 0., ambient)),
             shadow(0., 1., 2., 0., hsla(0., 0., 0., contact)),
         ]
+    }
+
+    /// Pink's frosted-card elevation (`frost::paint_elevation`, audit
+    /// CP-16): eight 1 px rings outside the card, a crisp contact rim (black
+    /// 42% / 10%) then an ambient falloff (`20% × (1 − (d − 1)/8)²`, light
+    /// 5.5%) drifting 0.45 px lower per ring. Painted here as crisp shadows
+    /// of spread `d`, each alpha solved so the stack shows ring `d`'s alpha
+    /// in the band `d` px out. Floating cards (popovers, menus, dialogs,
+    /// palettes) carry them above their own shadows.
+    pub fn elevation_rings(&self) -> Vec<BoxShadow> {
+        const RINGS: usize = 8;
+        let (contact, ambient) = if self.dark {
+            (0.42, 0.20)
+        } else {
+            (0.10, 0.055)
+        };
+        let ring = |d: usize| -> f32 {
+            match d {
+                1 => contact,
+                d if d <= RINGS => {
+                    let falloff = 1.0 - (d as f32 - 1.0) / RINGS as f32;
+                    ambient * falloff * falloff
+                }
+                _ => 0.0,
+            }
+        };
+        (1..=RINGS)
+            .map(|d| {
+                // Shadows d..=8 all cover the band d px out; this one adds
+                // what the outer ones leave.
+                let alpha = 1.0 - (1.0 - ring(d)) / (1.0 - ring(d + 1));
+                let drift = (d as f32 - 1.0) * 0.45;
+                shadow(0., drift, 0., d as f32, hsla(0., 0., 0., alpha))
+            })
+            .collect()
     }
 
     /// Tooltips and hover cards: one step below menus (Pink
@@ -1463,15 +1743,18 @@ impl Pink {
         derived
     }
 
-    /// A key for everything the reading surfaces depend on.
+    /// A key for everything the reading surfaces depend on: the frosted
+    /// tints' coverage reads `text` and `text_muted` (Pink `palette_key`).
     fn palette_key(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
         self.dark.hash(&mut hasher);
         for color in [
             self.text,
+            self.text_muted,
             self.bg,
             self.surface,
             self.surface_raised,
+            self.surface_card,
             self.surface_dialog,
             self.surface_overlay,
             self.input_bg,
@@ -1515,6 +1798,74 @@ mod tests {
         (a - b).abs() < 0.002
     }
 
+    /// The authored model values Pink hardens (`builtins.rs` `variant()`),
+    /// on this appearance's palette.
+    fn authored(dark: bool) -> Pink {
+        let mut a = Pink::for_mode(dark);
+        let (muted, faint) = if dark {
+            (hex(0xa9a9ae), hex(0x85858a))
+        } else {
+            (hex(0x445064), hex(0x586579))
+        };
+        a.text_muted = muted;
+        a.text_dim = muted;
+        a.text_faint = faint;
+        if dark {
+            a.danger_muted = hex(0xf49293);
+            a.warning_muted = hex(0xf6d34a);
+            a.success_muted = hex(0x61d8ad);
+            a.border_strong = hexa(0xffffff, 0x2e);
+        } else {
+            a.danger_muted = hex(0xa72629);
+            a.warning_muted = hex(0x815312);
+            a.success_muted = hex(0x186a3a);
+            a.border_strong = hexa(0x000000, 0x38);
+        }
+        a.code_text = a.accent;
+        a
+    }
+
+    /// Pink's `harden_composited_foregrounds` (two passes, because the
+    /// frosted tints' coverage reads `text_muted`), `harden_content_tones`
+    /// and the inline-code floor, verbatim, over the kit's reading surfaces.
+    fn pink_hardening(authored: &Pink) -> Pink {
+        let mut h = authored.clone();
+        for _ in 0..2 {
+            h.text_muted = h.legible(h.text_muted, TEXT_CONTRAST_TARGET);
+            h.text_dim = h.legible(h.text_dim, TEXT_CONTRAST_TARGET);
+            h.text_faint = h.legible(h.text_faint, TEXT_CONTRAST_TARGET);
+            h.danger_muted = h.legible(h.danger_muted, TEXT_CONTRAST_TARGET);
+            h.warning_muted = h.legible(h.warning_muted, TEXT_CONTRAST_TARGET);
+            h.success_muted = h.legible(h.success_muted, TEXT_CONTRAST_TARGET);
+            h.border_strong = h.legible(h.border_strong, NON_TEXT_CONTRAST_TARGET);
+        }
+        let canvas = flatten(h.canvas_fill(), h.adverse_chrome());
+        let content = [canvas, flatten(h.ink(0.035), canvas)];
+        let worst = |color: Hsla| {
+            content
+                .iter()
+                .map(|surface| painted_contrast(color, *surface))
+                .fold(f32::MAX, f32::min)
+        };
+        h.content_faint = legible_on(authored.text_faint, h.text, &content, TEXT_CONTRAST_TARGET);
+        let secondary_floor = (worst(h.content_faint) * 1.35)
+            .max(TEXT_CONTRAST_TARGET)
+            .min(worst(h.text) * 0.75);
+        h.content_muted = legible_on(authored.text_muted, h.text, &content, secondary_floor);
+        let frost = h.frost();
+        let plates = [
+            flatten(frost.composer, canvas),
+            flatten(frost.input, canvas),
+        ];
+        h.placeholder = legible_on(authored.text_faint, h.text, &plates, TEXT_CONTRAST_TARGET);
+        let chip = [
+            flatten(h.code_wash, canvas),
+            flatten(h.code_wash, flatten(h.ink(0.035), canvas)),
+        ];
+        h.code_text = legible_on(authored.code_text, h.text, &chip, TEXT_CONTRAST_TARGET);
+        h
+    }
+
     #[test]
     fn neutral_scale_matches_tailwind() {
         // neutral-950 is #0a0a0a, neutral-200 is #e5e5e5
@@ -1522,79 +1873,182 @@ mod tests {
         assert_eq!(rgb8(neutral(0.922)), 0xe5e5e5);
     }
 
+    /// Pink's frosted reading surfaces and the plates the kit bakes over
+    /// the canvas, against the verbatim port of Pink's resolution
+    /// (`chrome`, `chrome-hover`, `chrome-selected`, `canvas`, `code`,
+    /// `raised`, `overlay`, `input`, `card`, `dialog`).
     #[test]
     fn surfaces_match_pink_runtime() {
         let (d, l) = (Pink::dark(), Pink::light());
-        assert_eq!(rgb8(d.tooltip_surface()), 0x1b1b1c);
-        assert_eq!(rgb8(d.surface_bg()), 0x27272a);
+        let reading = |t: &Pink| t.reading_surfaces().map(rgb8);
+        assert_eq!(
+            reading(&d),
+            [
+                0x3d3d3d, 0x535353, 0x4b495f, 0x1f1f1f, 0x272727, 0x343438, 0x262627, 0x39393b,
+                0x2a2a2a, 0x151516,
+            ]
+        );
+        assert_eq!(
+            reading(&l),
+            [
+                0xe2e4e8, 0xd4d7db, 0xd4d4e8, 0xfafbfd, 0xf1f2f4, 0xe7ecf2, 0xfbfbfc, 0xeaecef,
+                0xe7eaee, 0xfefefe,
+            ]
+        );
+        // The frosted tints' coverage: glass 80/94%, overlay 67.5/85%,
+        // input 52.1/30%, settings card 40%, popover 15%.
+        for (t, alphas) in [
+            (&d, [0.80, 0.675, 0.5207, 0.40, 0.15]),
+            (&l, [0.94, 0.85, 0.30, 0.40, 0.15]),
+        ] {
+            let f = t.frost();
+            for (tint, alpha) in [f.glass, f.overlay, f.input, f.card, f.composer]
+                .into_iter()
+                .zip(alphas)
+            {
+                assert!(close(tint.a, alpha), "{tint:?}");
+            }
+        }
+        // Tooltips are opaque in Pink: the overlay tint over the chrome.
+        assert_eq!(rgb8(d.tooltip_surface()), 0x262627);
+        assert_eq!(rgb8(l.tooltip_surface()), 0xfbfbfc);
+        // Baked over the canvas: no grey plate behind popovers or cards.
+        for (t, chrome, popover, input, card) in [
+            (&d, 0x0c0c0c, 0x060606, 0x1e1e20, 0x090909),
+            (&l, 0xf1f4f7, 0xfafcfe, 0xfcfdfe, 0xf7f8fb),
+        ] {
+            assert_eq!(rgb8(t.chrome_surface()), chrome);
+            assert_eq!(rgb8(t.surface_bg()), popover);
+            assert_eq!(rgb8(t.input_glass_bg()), input);
+            assert_eq!(rgb8(t.card_glass_bg()), card);
+            for plate in [t.chrome_surface(), t.surface_bg(), t.card_glass_bg()] {
+                assert_eq!(plate.a, 1.0);
+            }
+        }
         assert_eq!(rgb8(d.canvas()), 0x090909);
-        assert_eq!(rgb8(l.surface_bg()), 0xffffff);
-        assert_eq!(rgb8(l.card_glass_bg()), 0xf0f3f7);
-        let [chrome, hover, selected, _, code, ..] = d.reading_surfaces();
-        assert_eq!(rgb8(chrome), 0x0d0d0d);
-        assert_eq!(rgb8(hover), 0x282828);
-        assert_eq!(rgb8(selected), 0x242137);
-        assert_eq!(rgb8(code), 0x121212);
-        assert_eq!(rgb8(l.reading_surfaces()[2]), 0xe1e1f5);
     }
 
+    /// Every hardened token is Pink's derivation from the authored seeds
+    /// over the frosted reading surfaces.
     #[test]
     fn hardened_tokens_are_pinks_derivation() {
         for t in [Pink::dark(), Pink::light()] {
-            let authored_faint = if t.dark { hex(0x85858a) } else { hex(0x586579) };
-            let faint = t.legible(authored_faint, TEXT_CONTRAST_TARGET);
-            assert_eq!(rgb8(faint), rgb8(t.text_faint));
-            let authored_strong = t.hairline(if t.dark { 0.18 } else { 0.22 / 1.35 });
-            let strong = t.legible(
-                Hsla {
-                    a: (authored_strong.a * 255.0).round() / 255.0,
-                    ..authored_strong
-                },
-                NON_TEXT_CONTRAST_TARGET,
-            );
-            assert!(close(strong.a, t.border_strong.a), "{strong:?}");
-            assert_eq!(t.legible(t.text_muted, TEXT_CONTRAST_TARGET), t.text_muted);
-            let danger_muted = t.legible(t.danger_muted, TEXT_CONTRAST_TARGET);
-            assert_eq!(rgb8(danger_muted), rgb8(t.danger_muted));
-            for tone in [t.warning_muted, t.success_muted] {
+            let h = pink_hardening(&authored(t.dark));
+            for (name, derived, token) in [
+                ("text_muted", h.text_muted, t.text_muted),
+                ("text_dim", h.text_dim, t.text_dim),
+                ("text_faint", h.text_faint, t.text_faint),
+                ("danger_muted", h.danger_muted, t.danger_muted),
+                ("warning_muted", h.warning_muted, t.warning_muted),
+                ("success_muted", h.success_muted, t.success_muted),
+                ("border_strong", h.border_strong, t.border_strong),
+                ("content_muted", h.content_muted, t.content_muted),
+                ("content_faint", h.content_faint, t.content_faint),
+                ("placeholder", h.placeholder, t.placeholder),
+                ("code_text", h.code_text, t.code_text),
+            ] {
+                assert_eq!(rgb8(derived), rgb8(token), "{name} {}", t.dark);
+                // The exact floored values, not only their 8-bit rendering.
+                assert!(
+                    close(derived.l, token.l) && close(derived.a, token.a),
+                    "{name} {}: {derived:?}",
+                    t.dark
+                );
+            }
+            // The resolved tokens are stable: hardening them again moves
+            // nothing.
+            for tone in [t.text_muted, t.text_faint, t.warning_muted, t.success_muted] {
                 assert_eq!(t.legible(tone, TEXT_CONTRAST_TARGET), tone);
             }
-            // The exact floored values, not only their 8-bit rendering.
-            assert!(close(faint.l, t.text_faint.l), "{faint:?}");
 
-            // `harden_content_tones` and the inline-code floor: content text
-            // on the canvas and its code plate, the placeholder on the
-            // composer plate, code text on its wash.
-            let canvas = t.canvas();
-            let content = [canvas, flatten(t.ink(0.035), canvas)];
-            let content_faint = legible_on(authored_faint, t.text, &content, TEXT_CONTRAST_TARGET);
-            assert_eq!(rgb8(content_faint), rgb8(t.content_faint));
-            let plate = [flatten(t.input_glass_bg(), canvas)];
-            let placeholder = legible_on(authored_faint, t.text, &plate, TEXT_CONTRAST_TARGET);
-            assert!(close(placeholder.l, t.placeholder.l), "{placeholder:?}");
-            let chip = [
-                flatten(t.code_wash, canvas),
-                flatten(t.code_wash, flatten(t.ink(0.035), canvas)),
+            // `harden_syntax`: each seed floored on the reading surfaces and
+            // the diff washes over the chrome and the canvas.
+            let mut surfaces = t.reading_surfaces().to_vec();
+            let chrome = t.adverse_chrome();
+            let canvas = flatten(t.canvas_fill(), chrome);
+            for tone in [t.diff_add, t.diff_del] {
+                let wash = Hsla { a: 0.055, ..tone };
+                surfaces.extend([flatten(wash, chrome), flatten(wash, canvas)]);
+            }
+            // [comment, keyword, string, attribute, number, type, function,
+            // property, variable, punctuation, invalid] (`builtins.rs`).
+            let seeds: [u32; 11] = if t.dark {
+                [
+                    0x92929a, 0x8b7cf6, 0x34d399, 0x22d3ee, 0xfacc15, 0xc084fc, 0x60a5fa, 0xf472b6,
+                    0xe8e8ea, 0xa1a1aa, 0xf87171,
+                ]
+            } else {
+                [
+                    0x6b7280, 0x5b43e8, 0x15803d, 0x0e7490, 0xa16207, 0x7e22ce, 0x2563eb, 0xbe185d,
+                    0x303035, 0x52525b, 0xb91c1c,
+                ]
+            };
+            let syntax = t.syntax();
+            let kit = [
+                syntax.comment,
+                syntax.keyword,
+                syntax.string,
+                syntax.string_special,
+                syntax.number,
+                syntax.type_name,
+                syntax.function,
+                syntax.property,
+                syntax.variable,
+                syntax.punctuation,
+                syntax.invalid,
             ];
-            let code = legible_on(t.accent, t.text, &chip, TEXT_CONTRAST_TARGET);
-            assert!(close(code.l, t.code_text.l), "{code:?}");
-            assert_eq!(rgb8(code), rgb8(t.code_text));
+            // Stored as 8-bit hex: within one step per channel.
+            let channels = |c: Hsla| {
+                let c = rgb8(c);
+                [c >> 16, (c >> 8) & 0xff, c & 0xff]
+            };
+            for (seed, kit) in seeds.into_iter().zip(kit) {
+                let hardened = legible_on(hex(seed), t.text, &surfaces, TEXT_CONTRAST_TARGET);
+                let near = channels(hardened)
+                    .into_iter()
+                    .zip(channels(kit))
+                    .all(|(a, b)| a.abs_diff(b) <= 1);
+                assert!(near, "#{seed:06x}: #{:06x}", rgb8(hardened));
+            }
         }
     }
 
+    /// Paint-time derivations, against the port's frosted dump.
     #[test]
     fn derived_paint_matches_pink() {
         let (d, l) = (Pink::dark(), Pink::light());
-        assert_eq!(rgb8(d.focus_ring()), 0x9587f7);
+        assert_eq!(rgb8(d.focus_ring()), 0xbbb3fa);
         assert_eq!(rgb8(l.focus_ring()), 0x5b43e8);
-        assert!(close(d.readable_muted(0.95).a, 0.95));
-        assert!(close(d.readable_muted(0.6).a, 0.92));
-        assert_eq!(rgb8(d.readable_faint(0.6)), 0x9e9ea2);
+        assert!(close(d.readable_muted(0.95).a, 0.985));
+        assert_eq!(rgb8(d.readable_muted(0.6)), 0xc9c9cc);
+        assert!(close(d.readable_muted(0.6).a, 1.0));
+        assert_eq!(rgb8(d.readable_faint(0.6)), 0xccccce);
+        assert_eq!(rgb8(l.readable_faint(0.6)), 0x4d586a);
         assert_eq!(rgb8(d.on_danger()), 0x000000);
         assert_eq!(rgb8(l.on_danger()), 0xffffff);
         assert_eq!(rgb8(d.fill(FillTier::Tertiary)), 0xeaeaec);
         assert_eq!(rgb8(l.fill(FillTier::Tertiary)), 0x14181f);
         assert!(close(l.separator(false).a, 0.108));
         assert!(close(l.hairline(0.5).a, 0.5));
+        // `for_popup`: the text color at 64% / 48%, floored on the card.
+        for (t, muted, faint) in [(&d, 0.64, 0.584), (&l, 0.64, 0.688)] {
+            let popup = t.for_popup();
+            assert_eq!(rgb8(popup.text_muted), rgb8(t.text));
+            assert!(close(popup.text_muted.a, muted), "{:?}", popup.text_muted);
+            assert!(close(popup.text_faint.a, faint), "{:?}", popup.text_faint);
+        }
+        // The frost elevation rings: the stacked shadows show ring d's alpha
+        // in the band d px out (contact 0.42, then 0.153 … dark; 0.10,
+        // 0.042 … light).
+        for (t, rings) in [(&d, [0.42, 0.153, 0.1125]), (&l, [0.10, 0.0421, 0.0309])] {
+            let shadows = t.elevation_rings();
+            for (band, ring) in rings.into_iter().enumerate() {
+                let covered = shadows
+                    .iter()
+                    .filter(|s| s.spread_radius >= px(band as f32 + 1.0))
+                    .fold(0.0, |under, s| s.color.a + under * (1.0 - s.color.a));
+                assert!(close(covered, ring), "band {band}: {covered}");
+            }
+        }
     }
 }

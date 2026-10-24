@@ -2,9 +2,11 @@
 //! field frames, tooltips and dialogs (Pink `popover.rs`,
 //! `settings/widgets.rs`, `surface_chrome.rs`, `transcript.rs`, `shell.rs`).
 //!
-//! Floating surfaces (popover, tooltip, dialog, palette) are opaque plates
-//! with a box shadow, Pink's Opaque treatment. In-flow cards are never
-//! shadowed.
+//! Plates follow Pink's default Frosted treatment, each tint baked over the
+//! canvas (`Pink::bg`) because GPUI here has no backdrop blur: a popover,
+//! dialog or palette reads as the window behind it, lifted by its hairline,
+//! its shadows and Pink's frost elevation rings (`Pink::elevation_rings`).
+//! Tooltips stay opaque, as in Pink. In-flow cards are never shadowed.
 
 use gpui::{
     AnyView, App, Context, Div, FontWeight, Hsla, IntoElement, Render, SharedString, Stateful,
@@ -22,8 +24,8 @@ use crate::HoverFill;
 // ---------------------------------------------------------------------------
 
 /// A card resting on the panel: the settings section card's surface (radius
-/// 12, 1 px `border`, `card_glass_bg()`, which is `surface` in the opaque
-/// treatment), without the section margin and clip, and with no shadow
+/// 12, 1 px `border`, `card_glass_bg()`: Pink's 40% frosted `surface` tint
+/// over the canvas), without the section margin and clip, and with no shadow
 /// (Pink never shadows in-flow content).
 pub fn card(t: &Pink) -> Div {
     div()
@@ -285,16 +287,18 @@ pub fn surface_state(
 // Popovers and menus
 // ---------------------------------------------------------------------------
 
-/// The popover / menu card (Pink `popover::popover_card`): 1 px `border`,
-/// radius 12, the popover plate (`surface_bg()`: #27272a / #ffffff),
-/// `menu_shadows()`, `p 4`, gap 2, clipped, 13 Geist in `text`. Chain
-/// `.flex().flex_col()` for a menu, and a width from `layout::MENU_W_*`.
+/// The popover / menu card (Pink `popover::popover_card` in its frosted
+/// mount): 1 px `border`, radius 12, the popover plate (`surface_bg()`, the
+/// frosted tint over the canvas: #060606 / #fafcfe), Pink's frost elevation
+/// rings over `menu_shadows()`, `p 4`, gap 2, clipped, 13 Geist in `text`.
+/// Chain `.flex().flex_col()` for a menu, and a width from
+/// `layout::MENU_W_*`. Text inside reads `t.for_popup()` tones.
 pub fn popover_card(t: &Pink) -> Div {
     div()
         .border_1()
         .border_color(t.border)
         .rounded(px(radius::POPOVER))
-        .shadow(t.menu_shadows())
+        .shadow(floating_shadows(t.menu_shadows(), t))
         .bg(t.surface_bg())
         .p(px(layout::CARD_INSET))
         .gap(px(layout::MENU_GAP))
@@ -407,8 +411,9 @@ pub fn menu_chevron(t: &Pink) -> gpui::Canvas<()> {
 }
 
 /// A small uppercase section heading inside a menu (Pink
-/// `popover::menu_heading`): `px 8 / pt 6 / pb 4`, 11 semibold `text_muted`,
-/// tracked with hair spaces.
+/// `popover::menu_heading`): `px 8 / pt 6 / pb 4`, 11 semibold in the
+/// popup's `text_muted` (`for_popup`: text at 64%), tracked with hair
+/// spaces.
 pub fn menu_heading(label: &str, t: &Pink) -> Div {
     div()
         .px(px(8.0))
@@ -416,7 +421,7 @@ pub fn menu_heading(label: &str, t: &Pink) -> Div {
         .pt(px(6.0))
         .text_size(px(11.0))
         .font_weight(FontWeight::SEMIBOLD)
-        .text_color(t.text_muted)
+        .text_color(t.for_popup().text_muted)
         .child(SharedString::from(tracked_upper(label)))
 }
 
@@ -581,9 +586,10 @@ pub fn text_tooltip(
 // Dialogs and palettes
 // ---------------------------------------------------------------------------
 
-/// A dialog card (Pink `popover::dialog_card`): 360 wide, `p 20`, radius 16,
-/// the popover plate, a `separator(false)` edge, `shadow_lg`, a column in
-/// `text`. Lay it on `t.scrim(MODAL_SCRIM)`.
+/// A dialog card (Pink `popover::dialog_card` in its frosted `modal`): 360
+/// wide, `p 20`, radius 16, the popover plate, a `separator(false)` edge,
+/// the frost elevation rings over `shadow_lg`, a column in `text`. Lay it on
+/// `t.scrim(MODAL_SCRIM)`.
 pub fn dialog_card(t: &Pink) -> Div {
     div()
         .w(px(layout::DIALOG_WIDTH))
@@ -592,7 +598,7 @@ pub fn dialog_card(t: &Pink) -> Div {
         .bg(t.surface_bg())
         .border_1()
         .border_color(t.separator(false))
-        .shadow(shadow_lg())
+        .shadow(floating_shadows(shadow_lg(), t))
         .flex()
         .flex_col()
         .font_family(SANS)
@@ -618,10 +624,11 @@ pub fn dialog_body(copy: impl Into<SharedString>, t: &Pink) -> Div {
         .child(copy.into())
 }
 
-/// A command-palette card (Pink `popover::palette_card`): `width`, radius
-/// `corner_radius` (Pink uses 16), a `separator(false)` edge, the popover
-/// plate, `shadow_lg`, clipped, a column. Rows inside are radius 8
-/// ([`radius::PALETTE_ITEM`]); header and footer rules are `hairline(0.06)`.
+/// A command-palette card (Pink `popover::palette_card`, mounted elevated):
+/// `width`, radius `corner_radius` (Pink uses 16), a `separator(false)`
+/// edge, the popover plate, the frost elevation rings over `shadow_lg`,
+/// clipped, a column. Rows inside are radius 8 ([`radius::PALETTE_ITEM`]);
+/// header and footer rules are `hairline(0.06)`.
 pub fn palette_card(width: f32, corner_radius: f32, t: &Pink) -> Div {
     div()
         .w(px(width))
@@ -629,12 +636,21 @@ pub fn palette_card(width: f32, corner_radius: f32, t: &Pink) -> Div {
         .border_1()
         .border_color(t.separator(false))
         .bg(t.surface_bg())
-        .shadow(shadow_lg())
+        .shadow(floating_shadows(shadow_lg(), t))
         .overflow_hidden()
         .flex()
         .flex_col()
         .font_family(SANS)
         .text_color(t.text)
+}
+
+/// A floating card's elevation: Pink's frost rings (a crisp contact rim and
+/// an 8 px falloff) above the card's own drop shadow. The kit's plates are
+/// opaque, so neither stains through.
+fn floating_shadows(drop: Vec<gpui::BoxShadow>, t: &Pink) -> Vec<gpui::BoxShadow> {
+    let mut shadows = t.elevation_rings();
+    shadows.extend(drop);
+    shadows
 }
 
 /// A dialog or palette scrim filling its parent: `t.scrim(MODAL_SCRIM)`
