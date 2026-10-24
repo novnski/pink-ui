@@ -5,6 +5,9 @@ use gpui::{AnyElement, Div, ElementId, FontWeight, Hsla, Stateful, div, prelude:
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActivityState {
     Running,
+    Thinking,
+    NeedsApproval,
+    NeedsInput,
     Recorded,
     Stopped,
     NeedsReview,
@@ -14,6 +17,9 @@ impl ActivityState {
     pub fn label(self) -> &'static str {
         match self {
             Self::Running => "Running",
+            Self::Thinking => "Thinking",
+            Self::NeedsApproval => "Needs approval",
+            Self::NeedsInput => "Needs input",
             Self::Recorded => "Recorded",
             Self::Stopped => "Stopped",
             Self::NeedsReview => "Needs review",
@@ -92,8 +98,11 @@ pub fn activity_header(
 ) -> Stateful<Div> {
     let s = style.scale;
     let status_color = match summary.state {
-        ActivityState::Running => style.active,
-        ActivityState::Stopped | ActivityState::NeedsReview => style.warning,
+        ActivityState::Running | ActivityState::Thinking => style.active,
+        ActivityState::Stopped
+        | ActivityState::NeedsReview
+        | ActivityState::NeedsApproval
+        | ActivityState::NeedsInput => style.warning,
         ActivityState::Recorded => style.muted,
     };
     div()
