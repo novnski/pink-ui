@@ -1,6 +1,6 @@
 //! pink-ui: animated components for [GPUI](https://gpui.rs).
 //!
-//! Fifty-six components, one file each, drawn by GPUI natively and in the
+//! Sixty-nine components, one file each, drawn by GPUI natively and in the
 //! browser through its web platform. Every component is drawn in Pink's design
 //! language ([`pink`]: the app's tokens, ladders, controls, motion and loaders)
 //! and follows light and dark mode. Call [`init`] once at startup, then render

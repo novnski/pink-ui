@@ -75,8 +75,11 @@ drawn from the same sets where Pink does not bundle a glyph:
   [Simple Icons](https://simpleicons.org), CC0 1.0. The mark itself belongs to
   its owner.
 
-The rest (a few line glyphs in the same style, and the fictional model brand
-marks) are drawn for pink-ui.
+The harness marks (`claude-mark.svg`, `openai-mark.svg`, `opencode-mark.svg`
+in `sidebar/` and `tab-bar/`) are the Pink app's renderings of those products'
+logos, shown as sample content; the marks belong to their owners. The rest (a
+few line glyphs in the same style, and the fictional model brand marks) are
+drawn for pink-ui.
 
 ## Fonts
 

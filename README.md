@@ -8,14 +8,14 @@
   <a href="https://crates.io/crates/gpui-pre"><img alt="GPUI: gpui-pre 0.3.9" src="https://img.shields.io/badge/GPUI-gpui--pre%200.3.9-7c3aed"></a>
   <img alt="Rust: stable" src="https://img.shields.io/badge/rust-stable-b7410e">
   <br>
-  <a href="#components"><img alt="components: 56" src="https://img.shields.io/badge/components-56-ec4899"></a>
+  <a href="#components"><img alt="components: 69" src="https://img.shields.io/badge/components-69-ec4899"></a>
   <a href="https://gpui.rs"><img alt="platforms: anywhere GPUI runs" src="https://img.shields.io/badge/platforms-anywhere%20GPUI%20runs-0f766e"></a>
   <a href="LICENSE"><img alt="license: MIT" src="https://img.shields.io/badge/license-MIT-2563eb"></a>
 </p>
 
 <p align="center">
   <b>Animated components for GPUI, written in Rust.</b><br>
-  56 components for Zed's GPU-accelerated UI framework, one file each, in the
+  69 components for Zed's GPU-accelerated UI framework, one file each, in the
   Pink app's design language. Build one, drop it into <code>.child(…)</code>, and
   it animates – on the desktop, and live in your browser through WebAssembly.
 </p>
@@ -32,7 +32,7 @@
 
 ![The live Pink UI showcase in light mode](docs/images/gallery-light.jpg)
 
-- **56 components** in the Pink app's design language: its runtime palette
+- **69 components** in the Pink app's design language: its runtime palette
   (Geist, neutral surfaces, the violet accent), its radius, spacing and type
   ladders, its controls, motion and loaders, in light and dark.
 - **Twins are exact copies.** Where the app has the component – the working
@@ -70,6 +70,7 @@ div().child(
 | Chat | [Comments Panel](https://novnski.github.io/pink-ui/#comments-panel) | A document's review comments in a side pane – flat note cards pinned to a line, slash-command notes that run as an edit and show the change as a diff with an Undo, resolving that folds a note away into Resolved, and a draft card where / opens command completion |
 | Chat | [Message Actions](https://novnski.github.io/pink-ui/#message-actions) | The hover lane under a chat message – its timestamp and quiet icon actions to branch into a side chat, fork from here, edit, rewind or copy, fading in while the message is hovered, with Copy turning into a check |
 | Chat | [Model Picker](https://novnski.github.io/pink-ui/#model-picker) | A composer's model chip and menu – provider tabs, a search row, compact model rows with ⌘ shortcuts and stars, and a tray whose Reasoning and option rows open nested choices |
+| Chat | [Markdown Message](https://novnski.github.io/pink-ui/#markdown-message) | An AI reply rendered from markdown the way Pink's transcript draws it – headings, accent list markers and task checkboxes, quotes, frameless tables and code fences with syntax colors, Fit and Copy, with streamed text dissolving in as it arrives |
 | Agents | [Agent Cursors](https://novnski.github.io/pink-ui/#agent-cursors) | Agents edit a shared document like teammates – tinted pointers glide to their spot, type suggestions letter by letter, resize a figure and fix a config, and every change waits in a margin note to accept or dismiss |
 | Agents | [Agent Inbox](https://novnski.github.io/pink-ui/#agent-inbox) | Every agent task in one triage list – what needs you, fresh results and live work in three quiet sections, each row gliding to its new place as its task changes |
 | Agents | [Agent Lanes](https://novnski.github.io/pink-ui/#agent-lanes) | Every agent's work as a board column of time – cards grow down into a now line, hand-offs step across lanes on a hairline rail, a 5, 15 or 30 minute switch rescales it all, and an approval waits on its card with Approve and Deny |
@@ -85,6 +86,10 @@ div().child(
 | Agents | [Permission Request](https://novnski.github.io/pink-ui/#permission-request) | An agent stops to ask before it acts – the composer becomes the request, with the exact command, where and why, numbered choices that each name their grant scope, room to type your own answer, and a quiet Question record once you answer |
 | Agents | [Tool Call Card](https://novnski.github.io/pink-ui/#tool-call-card) | An agent's tool calls folded into one quiet line that shimmers while the run is live – open it for one row per call on an activity rail, a spinner while it runs or a red Failed when it didn't, and each row folds open to its command and output with copy |
 | Agents | [Trace Waterfall](https://novnski.github.io/pink-ui/#trace-waterfall) | An agent run against time – its sub-agents, model calls and tool calls on an activity rail that folds, each with a duration bar and its time and cost on a shared axis, a live working line while it runs and a readout of the step under the pointer |
+| Agents | [Automation Editor](https://novnski.github.io/pink-ui/#automation-editor) | The form behind a scheduled prompt on a Pink settings card – a name and message, a schedule picked from five kinds with weekday chips and the cadence spelled out beside a clock, where each run goes, the model, folded extra options, and a host review that has to pass before Save |
+| Agents | [Subagent Cards](https://novnski.github.io/pink-ui/#subagent-cards) | The cards a chat's helper agents leave in its transcript – each names its model, wears a status dot with a ticking or settled timer and a one-line preview of the ask or the latest reply, and opens the helper's chat on its own or in a split, with its result posted below as a linked notice |
+| Code | [Diff Viewer](https://novnski.github.io/pink-ui/#diff-viewer) | A checkout's changes as Pink's diff pane – one folding section per file with its icon, path and +N −N, hunk bands over unified or side-by-side rows with the changed words washed, a sticky file header, scope and base pickers, and a + on any line to leave a review comment |
+| Code | [Commit History](https://novnski.github.io/pink-ui/#commit-history) | A repository's commits as Pink's History pane – a lane graph that traces every branch and merge, branch, remote and tag pills, author, date and SHA columns you can resize and reorder, and a toolbar to search, fetch and fold the list down to branch tips |
 | Cards | [Email Draft](https://novnski.github.io/pink-ui/#email-draft) | An agent-written email waiting for review – switch the recipient from a menu, pick a tone, edit the text in place or drop the attachment, then send or discard it into a one-line receipt with undo |
 | Cards | [Project Card](https://novnski.github.io/pink-ui/#project-card) | A project as a quiet ticket card – its status and due date beside a ring with one segment per subtask, linked by hover to its people and subtasks, that folds open into a status picker, a people filter and a checklist |
 | Cards | [Smart Recommendation](https://novnski.github.io/pink-ui/#smart-recommendation) | A suggested next step with its reason and a confidence signal – alternatives to switch to, the accent on the button that accepts it, and undo |
@@ -96,10 +101,14 @@ div().child(
 | Data display | [Experiment Card](https://novnski.github.io/pink-ui/#experiment-card) | An A/B test whose header folds open onto each variant's cumulative lift, value and confidence interval – switch the metric, point at a day for a readout, pick a winner and ship it |
 | Data display | [KPI Chart](https://novnski.github.io/pink-ui/#kpi-chart) | A period's headline total split into one row per series, over smoothed trend lines – point at a period for a guide, a readout and every series' value |
 | Data display | [Usage Meter](https://novnski.github.io/pink-ui/#usage-meter) | A plan's usage card – the share left over a capsule meter that turns amber, then red, the reset and even-pace reading, a strip that speaks up when the cycle runs ahead of its allowance, spend by category over a daily chart and the plan's other limits as compact meters |
+| Data display | [Image Lightbox](https://novnski.github.io/pink-ui/#image-lightbox) | A full-size image over a dim scrim – it rises in fitted to the window, zooms about the pointer with ⌃-scroll or a pinch, pans with a drag, names its file underneath and closes with Escape, a click or its glass close capsule |
 | Navigation | [Command Menu](https://novnski.github.io/pink-ui/#command-menu) | A ⌘K palette for running anything – one search field over app actions and grouped commands, typed words lit as you type, shortcuts on every row and a footer of key hints |
 | Navigation | [Integration Picker](https://novnski.github.io/pink-ui/#integration-picker) | A settings page of apps to connect – Connected and Available cards of rows with a status badge and small actions, a search in the title bar, and a review dialog that gives each permission its own switch, required ones locked on |
 | Navigation | [Profile Menu](https://novnski.github.io/pink-ui/#profile-menu) | The account menu above your name – who is signed in, the account actions on one highlight the pointer and arrow keys share, a New badge, Sign out set apart, and the profile setup count over a quiet meter with its next step |
 | Navigation | [Segmented Control](https://novnski.github.io/pink-ui/#segmented-control) | Switch between two to five options – a thumb that slides along a quiet track, accent chips or tabs on a hairline – with glyphs, counts, badges and arrow keys |
+| Navigation | [Sidebar](https://novnski.github.io/pink-ui/#sidebar) | The app's task sidebar – a project pill with live counts that opens a searchable picker, New thread and page rows, every task with its live status, time and hover actions in folding groups, and quiet Settled and Archived shelves underneath |
+| Navigation | [Tab Bar](https://novnski.github.io/pink-ui/#tab-bar) | A workspace's tab row – one strip of chat tabs per split group with live status glyphs, the focused group's tab in a quiet accent tint, tabs that drag to reorder as their neighbours slide aside, and a menu to close, split or reopen them |
+| Navigation | [File Tree](https://novnski.github.io/pink-ui/#file-tree) | A project's folders and files in a quiet sidebar tree – folders that fold, keyboard walking, file-type artwork, and a search field that finds files by name or lines inside them |
 | Buttons | [Button](https://novnski.github.io/pink-ui/#button) | Primary, secondary, ghost and danger push buttons in three sizes, with glyphs, icon-only squares and a busy spinner |
 | Buttons | [Reaction Bar](https://novnski.github.io/pink-ui/#reaction-bar) | Like, comment, repost and share as quiet icon actions under a post – each count in tabular figures beside its glyph, a taken action swapping to its filled glyph as the new count settles in |
 | Inputs | [Billing Schedule](https://novnski.github.io/pink-ui/#billing-schedule) | Build a billing plan from a start month, a term, line items on their own cadence, a discount and a monthly minimum, and read its invoices as a total, a grid of figures and a per-invoice cost chart |
@@ -111,11 +120,15 @@ div().child(
 | Inputs | [OTP Input](https://novnski.github.io/pink-ui/#otp-input) | A one-time code typed one character per cell – dialog-field plates under a gliding focus ring, paste that fills every cell, a plain red line when the code is refused and a resend countdown |
 | Inputs | [Prompt Library](https://novnski.github.io/pink-ui/#prompt-library) | Saved prompts in a menu above the composer – open one, type into the blanks of its sentence and use it once nothing is missing |
 | Inputs | [Stepper Form](https://novnski.github.io/pink-ui/#stepper-form) | A multi-step setup flow on one paged card – a step counter, captioned fields, numbered choices that move on by themselves, invites you can take back, a review with edit links and a Back / Next footer that says what's missing |
+| Inputs | [Find Bar](https://novnski.github.io/pink-ui/#find-bar) | A floating find bar over a conversation – type to wash every match in the transcript, step through them with Enter, Shift+Enter or the arrows, match case with Aa, and read where you are as "3 of 7" |
+| Inputs | [Settings Page](https://novnski.github.io/pink-ui/#settings-page) | Pink's settings window – sections in a sidebar with a search that jumps to any setting and marks it, and pages of titled cards whose rows hold switches, segmented tracks and pop-up menus, each with a reset back to its default |
 | Feedback | [Decision Inbox](https://novnski.github.io/pink-ui/#decision-inbox) | Decisions waiting on you under a Needs you heading – the current one opens in the question panel with two numbered answers, the rest wait as one-line cards, and answered ones settle into a record you can click to change |
 | Feedback | [Notification Stack](https://novnski.github.io/pink-ui/#notification-stack) | Notices piled up above the composer – plates tinted by their tone with a glyph, a label, a capsule action and the message, the ones behind peeking out below the front card until you dismiss it |
 | Feedback | [Progress Tracker](https://novnski.github.io/pink-ui/#progress-tracker) | Onboarding checklist card – a done/total summary over a quiet meter, and square checkboxes that tick steps off, one after another in auto play |
 | Feedback | [Setup Guide](https://novnski.github.io/pink-ui/#setup-guide) | An onboarding checklist on a quiet card – a progress ring and a 4/10 · Next line that fold the guide away, task groups that open one at a time, the selected task's hint and call to action, tasks that strike through as they're checked off, and a small button that brings a dismissed guide back |
 | Feedback | [Toaster](https://novnski.github.io/pink-ui/#toaster) | One quiet capsule of feedback above the composer – a status or error glyph and a single line that fade and rise into place, an optional action, and a notice that clears itself after a few seconds or on dismiss |
+| Feedback | [Welcome Screen](https://novnski.github.io/pink-ui/#welcome-screen) | The first thing a new workspace shows – a lit text-drawn moon that turns once under the pointer, above one question and the one button that starts a project |
+| Feedback | [Loaders](https://novnski.github.io/pink-ui/#loaders) | Every Pink loader on one settings card – the breathing orb, the shimmering working line, glyph and mono spinners, the gradient matrix, skeletons, the upload ring, the boot splash and the Pink mark – each shown where the app shows it, with its timing a click away |
 
 ## Running the gallery
 

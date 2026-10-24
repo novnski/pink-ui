@@ -13,6 +13,7 @@ pub mod agent_steering;
 pub mod agent_tree;
 pub mod ai_answer;
 pub mod approval_card;
+pub mod automation_editor;
 pub mod autonomy_dial;
 pub mod billing_schedule;
 pub mod breakdown_chart;
@@ -24,20 +25,27 @@ pub mod combobox;
 pub mod command_menu;
 pub mod comment_thread;
 pub mod comments_panel;
+pub mod commit_history;
 pub mod compact_breakdown;
 pub mod context_window;
 pub mod data_table;
 pub mod date_range_picker;
 pub mod decision_inbox;
 pub mod delegate_board;
+pub mod diff_viewer;
 pub mod dropzone;
 pub mod email_draft;
 pub mod experiment_card;
+pub mod file_tree;
 pub mod filter_menu;
+pub mod find_bar;
+pub mod image_lightbox;
 pub mod inline_diff;
 pub mod integration_picker;
 pub mod integration_settings;
 pub mod kpi_chart;
+pub mod loaders;
+pub mod markdown_message;
 pub mod memory_panel;
 pub mod message_actions;
 pub mod model_picker;
@@ -50,9 +58,13 @@ pub mod project_card;
 pub mod prompt_library;
 pub mod reaction_bar;
 pub mod segmented_control;
+pub mod settings_page;
 pub mod setup_guide;
+pub mod sidebar;
 pub mod smart_recommendation;
 pub mod stepper_form;
+pub mod subagent_cards;
+pub mod tab_bar;
 pub mod thinking_loader;
 pub mod thinking_state;
 pub mod tips_panel;
@@ -60,12 +72,14 @@ pub mod toaster;
 pub mod tool_call_card;
 pub mod trace_waterfall;
 pub mod usage_meter;
+pub mod welcome_screen;
 pub mod writing_assistant;
 
 /// Category order used in the gallery sidebar.
 pub const CATEGORIES: &[&str] = &[
     "Chat",
     "Agents",
+    "Code",
     "Cards",
     "Data display",
     "Navigation",
@@ -153,6 +167,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Chat",
         description: model_picker::DESCRIPTION,
         story: model_picker::story,
+    },
+    ComponentEntry {
+        slug: "markdown-message",
+        name: markdown_message::NAME,
+        category: "Chat",
+        description: markdown_message::DESCRIPTION,
+        story: markdown_message::story,
     },
     ComponentEntry {
         slug: "agent-cursors",
@@ -260,6 +281,20 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         story: trace_waterfall::story,
     },
     ComponentEntry {
+        slug: "automation-editor",
+        name: automation_editor::NAME,
+        category: "Agents",
+        description: automation_editor::DESCRIPTION,
+        story: automation_editor::story,
+    },
+    ComponentEntry {
+        slug: "subagent-cards",
+        name: subagent_cards::NAME,
+        category: "Agents",
+        description: subagent_cards::DESCRIPTION,
+        story: subagent_cards::story,
+    },
+    ComponentEntry {
         slug: "email-draft",
         name: email_draft::NAME,
         category: "Cards",
@@ -337,6 +372,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         story: usage_meter::story,
     },
     ComponentEntry {
+        slug: "image-lightbox",
+        name: image_lightbox::NAME,
+        category: "Data display",
+        description: image_lightbox::DESCRIPTION,
+        story: image_lightbox::story,
+    },
+    ComponentEntry {
         slug: "command-menu",
         name: command_menu::NAME,
         category: "Navigation",
@@ -363,6 +405,27 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Navigation",
         description: segmented_control::DESCRIPTION,
         story: segmented_control::story,
+    },
+    ComponentEntry {
+        slug: "sidebar",
+        name: sidebar::NAME,
+        category: "Navigation",
+        description: sidebar::DESCRIPTION,
+        story: sidebar::story,
+    },
+    ComponentEntry {
+        slug: "tab-bar",
+        name: tab_bar::NAME,
+        category: "Navigation",
+        description: tab_bar::DESCRIPTION,
+        story: tab_bar::story,
+    },
+    ComponentEntry {
+        slug: "file-tree",
+        name: file_tree::NAME,
+        category: "Navigation",
+        description: file_tree::DESCRIPTION,
+        story: file_tree::story,
     },
     ComponentEntry {
         slug: "button",
@@ -442,6 +505,20 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         story: stepper_form::story,
     },
     ComponentEntry {
+        slug: "find-bar",
+        name: find_bar::NAME,
+        category: "Inputs",
+        description: find_bar::DESCRIPTION,
+        story: find_bar::story,
+    },
+    ComponentEntry {
+        slug: "settings-page",
+        name: settings_page::NAME,
+        category: "Inputs",
+        description: settings_page::DESCRIPTION,
+        story: settings_page::story,
+    },
+    ComponentEntry {
         slug: "decision-inbox",
         name: decision_inbox::NAME,
         category: "Feedback",
@@ -475,6 +552,34 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Feedback",
         description: toaster::DESCRIPTION,
         story: toaster::story,
+    },
+    ComponentEntry {
+        slug: "welcome-screen",
+        name: welcome_screen::NAME,
+        category: "Feedback",
+        description: welcome_screen::DESCRIPTION,
+        story: welcome_screen::story,
+    },
+    ComponentEntry {
+        slug: "loaders",
+        name: loaders::NAME,
+        category: "Feedback",
+        description: loaders::DESCRIPTION,
+        story: loaders::story,
+    },
+    ComponentEntry {
+        slug: "diff-viewer",
+        name: diff_viewer::NAME,
+        category: "Code",
+        description: diff_viewer::DESCRIPTION,
+        story: diff_viewer::story,
+    },
+    ComponentEntry {
+        slug: "commit-history",
+        name: commit_history::NAME,
+        category: "Code",
+        description: commit_history::DESCRIPTION,
+        story: commit_history::story,
     },
 ];
 
