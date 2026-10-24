@@ -115,7 +115,7 @@ pub fn activity_header(
         .child(
             div()
                 .min_w_0()
-                .flex_shrink()
+                .flex_shrink(1.0)
                 .truncate()
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(style.foreground)
