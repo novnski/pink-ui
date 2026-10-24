@@ -104,6 +104,10 @@ const CARD_MAX_LINES: usize = 8;
 const DRAFT_CARD_HEIGHT: f32 = 116.0;
 const DRAFT_INPUT_HEIGHT: f32 = 46.0;
 const DRAFT_ACTIONS_HEIGHT: f32 = 28.0;
+/// Pink's composer input type, which its draft and search fields keep
+/// (composer.rs `INPUT_TEXT_SIZE`, `INPUT_LINE_HEIGHT`).
+const INPUT_TEXT_SIZE: f32 = 14.0;
+const INPUT_LINE_HEIGHT: f32 = 22.75;
 
 // Header menus (Pink: changes.rs `render_scope_menu`, `render_ref_menu`).
 const SCOPE_MENU_WIDTH: f32 = 180.0;
@@ -2438,7 +2442,9 @@ impl RenderOnce for DiffViewer {
         });
         for input in [draft_input, ref_input].into_iter().flatten() {
             input.update(cx, |input, _| {
-                input.set_colors(Some(t.placeholder), Some(t.caret), Some(t.selection))
+                // Pink's composer inputs outside the message composer use the faint
+                // tone for their placeholder.
+                input.set_colors(Some(t.text_faint), Some(t.caret), Some(t.selection))
             });
         }
 
@@ -3117,7 +3123,14 @@ fn ref_menu_card(
         .flex()
         .flex_col()
         .on_mouse_down_out(move |_, _, cx| close.update(cx, |s, cx| s.close_menu(Menu::Ref, cx)))
-        .child(pink::search_input_frame(t).child(view.input.clone()))
+        .child(
+            pink::search_input_frame(t).child(
+                div()
+                    .text_size(px(INPUT_TEXT_SIZE))
+                    .line_height(px(INPUT_LINE_HEIGHT))
+                    .child(view.input.clone()),
+            ),
+        )
         .child(list)
 }
 
@@ -4050,8 +4063,8 @@ fn draft_card(c: &Ctx, draft: &DraftView) -> AnyElement {
                         .h(px(DRAFT_INPUT_HEIGHT))
                         .flex_none()
                         .overflow_hidden()
-                        .text_size(px(12.))
-                        .line_height(px(CARD_LINE_HEIGHT))
+                        .text_size(px(INPUT_TEXT_SIZE))
+                        .line_height(px(INPUT_LINE_HEIGHT))
                         .text_color(t.text)
                         .child(draft.input.clone()),
                 )
