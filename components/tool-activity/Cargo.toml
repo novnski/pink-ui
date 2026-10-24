@@ -1,0 +1,13 @@
+[package]
+name = "pink-tool-activity"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Host-adapted tool activity disclosure for GPUI"
+
+# Independent boundary: the gallery uses gpui-pre, while native hosts may
+# patch gpui to their existing runtime. No second GPUI enters the host graph.
+[workspace]
+
+[dependencies]
+gpui = "=0.2.2"
