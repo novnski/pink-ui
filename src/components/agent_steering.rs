@@ -2527,7 +2527,7 @@ fn composer_pill(c: &Ctx, focused: bool) -> Stateful<Div> {
         .w_full()
         .flex()
         .flex_col()
-        .rounded(px(radius::COMPOSER))
+        .rounded(px(radius::COMPOSER_PILL))
         .border_1()
         .border_color(t.border)
         .bg(t.surface_bg())

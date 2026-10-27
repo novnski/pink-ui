@@ -1556,7 +1556,7 @@ fn tab_bar(
             let close_key = format!("{key}-tab-close-{}", tab.id);
             div()
                 .id(SharedString::from(close_key.clone()))
-                .size(px(chrome::CONTROL_S))
+                .size(px(chrome::MIN_HIT))
                 .flex_none()
                 .flex()
                 .items_center()
@@ -1584,7 +1584,7 @@ fn tab_bar(
         } else {
             // Pink keeps the slot (`invisible`) so labels never shift.
             div()
-                .size(px(chrome::CONTROL_S))
+                .size(px(chrome::MIN_HIT))
                 .flex_none()
                 .into_any_element()
         };

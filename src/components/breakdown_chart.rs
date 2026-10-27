@@ -33,7 +33,10 @@ use gpui::{
 
 use crate::{
     motion,
-    pink::{self, ControlSize, FillTier, Pink, Segment, TextStyle, TypeStyleExt, layout, radius},
+    pink::{
+        self, ControlSize, FillTier, Pink, Segment, TextStyle, TypeRole, TypeStyleExt, layout,
+        radius,
+    },
     story,
 };
 
@@ -494,8 +497,7 @@ impl RenderOnce for BreakdownChart {
                     .child(div().flex_none().size(px(8.0)).rounded_full().bg(tones[g]))
                     .child(
                         div()
-                            .text_size(px(12.0))
-                            .line_height(px(16.0))
+                            .type_role(TypeRole::Metadata)
                             .text_color(muted)
                             .child(name.clone()),
                     )
@@ -660,8 +662,7 @@ impl RenderOnce for BreakdownChart {
                     .items_center()
                     .border_t_1()
                     .border_color(t.border)
-                    .text_size(px(13.0))
-                    .line_height(px(18.0))
+                    .type_role(TypeRole::Chrome)
                     .on_hover(move |hovered, _, cx| set_hot(&row_state, sl, *hovered, cx))
                     .child(
                         div()

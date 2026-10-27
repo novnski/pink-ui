@@ -835,7 +835,8 @@ pub fn checkbox_box(checked: bool, t: &Pink) -> Div {
 /// A labelled checkbox row (Pink's "Don't show again"): an announced CheckBox
 /// with the box, gap 8, and the label in dialog body type (13/19
 /// `text_muted`). The row's 4 px inset is cancelled by its margin so the
-/// focus ring clears the box. Add `.on_click(..)`.
+/// focus ring clears the box; it is at least `chrome::MIN_HIT` tall, so the
+/// target is never under 24×24. Add `.on_click(..)`.
 pub fn checkbox(
     id: impl Into<SharedString>,
     label: impl Into<SharedString>,
@@ -858,6 +859,7 @@ pub fn checkbox(
         .rounded(px(6.0))
         .px(px(4.0))
         .mx(px(-4.0))
+        .min_h(px(super::chrome::MIN_HIT))
         .focus_visible(move |style| focus_ring(style, ring))
         .cursor_pointer()
         .on_key_down(swallow_activation_key)

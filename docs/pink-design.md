@@ -114,11 +114,38 @@ Code and terminal tokens are `code_text`, `diff_add`, `diff_del`, `diff_hunk_bg`
 | Focus | `let ring = t.focus_ring(); el.focus_visible(move \|s\| pink::focus_ring(s, ring))` | a border |
 | Label on Primary / Danger plate | `t.on_solid` / `t.on_danger()` | `on_accent` |
 
-`readable_*` take a dark-mode opacity, and light mode paints the full token. Both results are
-floored to 4.6:1 (text) or 3.1:1 (icons) over Pink's frosted reading surfaces. They are memoized, so call
-them on every frame. Fill tiers are tinted by the text hue, never pure white or black.
+`readable_*` take a dark-mode opacity. Dark paints the token at that opacity; light maps the
+opacity onto a contrast between the token's own and the 4.6:1 floor (1 keeps the token, 0.5 or less
+sits on the floor), so a quieter label stays visibly quieter instead of every request landing on
+one grey (Pink `Theme::light_tier`, UI rethink bug 18). Both are floored to 4.6:1 (text) or 3.1:1
+(icons) over Pink's frosted reading surfaces. They are memoized, so call them on every frame. Fill
+tiers are tinted by the text hue, never pure white or black.
+
+Text contrast tiers (Pink UI rethink D38): primary about 12:1 (`TEXT_CONTRAST_PRIMARY`), secondary
+about 6:1 (`TEXT_CONTRAST_SECONDARY`), tertiary on the 4.6 target (`TEXT_CONTRAST_TERTIARY`).
+Nothing that is text, placeholders and metadata included, goes below 4.5:1. On the light sidebar
+chrome the kit measures 12.0 for `text`, 6.5 for `readable_muted(0.85)` and 5.5 for
+`readable_faint(0.6)`.
 
 ## 3. Ladders
+
+Pink's UI rethink (milestone 0) names its foundation by role: type roles, spacing roles, radius
+roles, contrast tiers and hit sizes. New and migrated surfaces pick a role; the size names below
+stay for older call sites, as they do in Pink.
+
+### Type roles (`TypeRole`, apply with `.type_role(..)`; Pink `typography::TypeRole`)
+
+| Role | Size / line | Use |
+|---|---|---|
+| `Chrome` | 13 / 18 | titlebar, toolbar, menu and row titles |
+| `ToolActivity` | 14 / 20 | tool activity sentences in the transcript |
+| `ComposerInput` | 14 / 20 | the composer's input |
+| `Metadata` | 12 / 16 | timestamps, counts, secondary row lines |
+| `KeyHint` | 11 / 14 | keyboard shortcut hints only |
+| `Prose` | 15 / 24 | transcript prose |
+
+A role sets size and line height; weight stays with the caller. Hierarchy comes from size and
+colour tier together, never from size alone.
 
 ### Type (`TextStyle`, apply with `.type_style(..)`; `use crate::pink::TypeStyleExt`)
 
@@ -141,23 +168,33 @@ is no 16 px step. Code is `text::CODE` 12.5 in `pink::MONO` (Geist Mono; pink-ui
 
 ### Radius by role (`pink::radius`, px)
 
+Roles (Pink `theme::radius`, UI rethink D37): `CONTROL` 6 controls and rows, `CODE` 8 code blocks,
+notices and tooltips, `POPOVER` 12 popovers, menus and the content frame, `DIALOG` 16 dialogs and
+sheets, `COMPOSER` 20 the composer plate role. Pink's composer itself still draws its pill at 26
+(`composer::COMPOSER_RADIUS`), which the kit keeps as `COMPOSER_PILL` for the composer and the cards
+styled after it.
+
 | px | Const | Use |
 |---|---|---|
 | 4 | `XS`, `chrome::RADIUS_S` | checkboxes, status pills, 20 px row actions |
 | 5 | `KBD` | kbd hints, key caps |
-| 6 | `SM` = `CONTROL` | Sm controls, toolbar inputs, tool header plates, tab close |
+| 6 | `SM`, `CONTROL` | Sm controls, toolbar inputs, tool header plates, tab close |
 | 7 | `TILE` | 28 px identity tiles |
-| 8 | `MD`, `MENU_ITEM`, `TOOLTIP`, `PALETTE_ITEM` | Md/Lg controls, menu rows, fields, tooltips, message badges |
+| 8 | `MD`, `CODE`, `MENU_ITEM`, `TOOLTIP`, `PALETTE_ITEM` | Md/Lg controls, menu rows, fields, tooltips, message badges |
 | 10 | `LG` = `PANEL` | code surfaces, transcript notices, tool chips |
 | 12 | `POPOVER`, `SECTION_CARD`, `STRIP` | popovers, settings cards, strips, `card()` |
 | 14 / 18 / 20 | `STACK_NOTICE` `STACK_POPUP_ROW` / `STACK_TRAY` / `STACK_POPUP` | the stack above the composer |
 | 16 | `XL`, `DIALOG`, `PALETTE`, `BUBBLE` | dialogs, command palette, user bubble |
-| 26 | `COMPOSER` | composer pill |
+| 20 | `COMPOSER` | the composer plate role |
+| 26 | `COMPOSER_PILL` | the composer pill as Pink draws it, composer-styled cards |
 | full | `rounded_full()` | trigger chips, badges, switches, notice actions, toasts |
 
 Nested corners: `radius::inner(outer, inset)` = `max(outer − inset, 4)` (12 px card, 4 inset → 8).
 
 ### Spacing (`pink::space::S2..S32` = 2 4 6 8 10 12 16 20 24 32; `pink::layout`)
+
+Roles (Pink `theme::space`, UI rethink D33), a 4 pt structure with 2 pt optical nudges:
+`OPTICAL` 2, `ICON_LABEL` 6, `SIBLING` 8, `CONTROL_PAD` 10, `PANEL_INSET` 16, `SECTION` 24.
 
 | Context | Value |
 |---|---|
@@ -177,6 +214,9 @@ Nested corners: `radius::inner(outer, inset)` = `max(outer − inset, 4)` (12 px
 | `icon_size` | `XS 12` status glyphs by caption text · `SM 14` toolbars, chips, chevrons, tool rows · `MD 16` buttons, menu icons, tiles · `LG 20` titlebar, empty states |
 | `ControlSize` | `Sm` h24 r6 11/14 pad 8 glyph 12 gap 4 (toolbars, row actions, chips) · `Md` h28 r8 12/16 pad 10 glyph 14 gap 6 (settings column, panel headers) · `Lg` h32 r8 13/18 pad 12 glyph 16 gap 6 (dialogs, sidebar footer) |
 | `chrome` | controls `CONTROL_S/M/L` 20/28/32, icons 12/16/18, radii 4/6/8 |
+| Hit sizes | `chrome::MIN_HIT` 24: no clickable target is smaller, at any Interface size. `CONTROL_S` is a visual size; give the control a `MIN_HIT` box (Pink's per-project New thread button), and offset an absolutely placed one by `chrome::hit_outset(visual)`. Controls are 24, 28 or 32 tall, 28 by default |
+| Interface size | `pink::ui_scale(cx)` (Interface size over 16; the gallery's `--ui-size 12`, the player's `&ui=12`). `chrome::scaled_control(step, scale)` clamps to 24 to 32, `chrome::scaled_icon` to 12 to 18 |
+| Titlebar cluster | `layout::titlebar_control_size(scale)` (24 at size 12, 28 at 16, 32 at 20), `layout::cluster_buttons_width(scale)` (82 / 94 / 106), group gap 8, control gap 2, `TITLEBAR_IDENTITY_GAP` 12 before the title. The controls take Tab and show the focus ring |
 | Fixed heights | status pill 16 · key cap 22 · notice action 24 · message badge ≥ 24 · trigger chip 28 · toolbar input 28 · switch 34×20 · checkbox 16 · avatar 20 |
 
 ## 4. Recipes

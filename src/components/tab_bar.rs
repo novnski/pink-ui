@@ -37,7 +37,9 @@ use gpui::{
 use crate::{
     HoverFill,
     motion::{self, INSERT, MENU_OUT, TAB_SLIDE},
-    pink::{self, FillTier, Pink, TextStyle, TypeStyleExt, chrome, layout, loaders, radius},
+    pink::{
+        self, FillTier, Pink, TextStyle, TypeRole, TypeStyleExt, chrome, layout, loaders, radius,
+    },
     story,
 };
 
@@ -1280,7 +1282,7 @@ fn tab_chip(
             .id(eid(close_id.clone()))
             .role(Role::Button)
             .aria_label(format!("Close tab: {}", tab.title))
-            .size(px(chrome::CONTROL_S))
+            .size(px(chrome::MIN_HIT))
             .flex_none()
             .flex()
             .items_center()
@@ -2179,8 +2181,7 @@ fn canvas_column(group: &TabGroup, t: &Pink) -> AnyElement {
             )
             .child(
                 div()
-                    .text_size(px(12.0))
-                    .line_height(px(16.0))
+                    .type_role(TypeRole::Metadata)
                     .text_color(t.readable_muted(0.85))
                     .child(match tab.role {
                         TabRole::Side | TabRole::Child => heading,

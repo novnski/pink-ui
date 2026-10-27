@@ -1165,7 +1165,7 @@ fn menu_panel(
 
 /// The attachment as Pink's message badge (`badges::render`: 24 tall, `px 8`,
 /// r 8, `ink(0.06)`, 12 medium `text_muted`, a 12 px glyph) with a remove
-/// button in Pink's row-action size (`CONTROL_S` 20, `RADIUS_S`, a 12 px
+/// button on Pink's minimum hit area (`MIN_HIT` 24, `RADIUS_S`, a 12 px
 /// glyph on the quiet hover wash); once removed, a Ghost button adds it back.
 fn attachment(
     ctx: &Ctx,
@@ -1181,7 +1181,7 @@ fn attachment(
         let remove = div()
             .id("ed-remove")
             .flex_none()
-            .size(px(chrome::CONTROL_S))
+            .size(px(chrome::MIN_HIT))
             .flex()
             .items_center()
             .justify_center()

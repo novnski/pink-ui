@@ -3950,7 +3950,7 @@ fn comment_card(c: &Ctx, ix: usize, comment: &DiffComment) -> AnyElement {
     let edit_button = div()
         .id(SharedString::from(format!("{}-cmt-edit-{ix}", c.key)))
         .flex_none()
-        .size(px(16.))
+        .size(px(chrome::MIN_HIT))
         .flex()
         .items_center()
         .justify_center()

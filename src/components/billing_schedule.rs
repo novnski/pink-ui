@@ -38,7 +38,8 @@ use web_time::Instant;
 use crate::{
     motion,
     pink::{
-        self, ButtonKind, ControlSize, FillTier, Pink, TextStyle, Tone, TypeStyleExt as _, layout,
+        self, ButtonKind, ControlSize, FillTier, Pink, TextStyle, Tone, TypeRole,
+        TypeStyleExt as _, layout,
     },
     story,
 };
@@ -749,8 +750,7 @@ fn plan_card(
         .child(
             div()
                 .min_w_0()
-                .text_size(px(13.0))
-                .line_height(px(18.0))
+                .type_role(TypeRole::Chrome)
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(t.text)
                 .child(words),
@@ -1080,8 +1080,7 @@ fn line_row(
         .w(px(AMOUNT_W))
         .flex()
         .justify_end()
-        .text_size(px(13.0))
-        .line_height(px(18.0))
+        .type_role(TypeRole::Chrome)
         .font_weight(FontWeight::MEDIUM)
         .font_features(pink::tabular_figures())
         .text_color(t.text)

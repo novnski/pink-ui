@@ -4,6 +4,7 @@
 //! cargo run                                   # browse everything
 //! cargo run -- profile-menu --theme dark      # open one component
 //! cargo run -- profile-menu --stage-only --size 894x520
+//! cargo run -- sidebar --ui-size 20             # Pink's Interface size, 12 to 20
 //! ```
 //!
 //! `--stage-only` renders just the preview stage, which is what
@@ -28,6 +29,7 @@ struct Args {
     mode: ThemeMode,
     stage_only: bool,
     size: Option<(f32, f32)>,
+    ui_size: Option<f32>,
 }
 
 fn parse_args() -> Args {
@@ -36,6 +38,7 @@ fn parse_args() -> Args {
         mode: ThemeMode::Light,
         stage_only: false,
         size: None,
+        ui_size: None,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -54,6 +57,7 @@ fn parse_args() -> Args {
                     Some((w.parse().ok()?, h.parse().ok()?))
                 })
             }
+            "--ui-size" => args.ui_size = it.next().and_then(|s| s.parse().ok()),
             "--list" => {
                 for c in COMPONENTS {
                     println!("{:<22} {:<14} {}", c.slug, c.category, c.name);
@@ -415,6 +419,9 @@ fn main() {
         .run(move |cx: &mut App| {
             pink_ui::init(cx);
             Theme::set_mode(args.mode, cx);
+            if let Some(size) = args.ui_size {
+                Theme::set_ui_font_size(size, cx);
+            }
             cx.bind_keys([
                 KeyBinding::new("ctrl-down", Next, Some("Gallery")),
                 KeyBinding::new("ctrl-up", Previous, Some("Gallery")),

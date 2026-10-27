@@ -1,20 +1,21 @@
 // Hosts the pink-ui wasm module: one GPUI window drawn into a canvas that
 // fills this page. Opened on its own (play.html?c=button&theme=dark) it is a
-// full-page player; embedded by the site, it takes commands over postMessage
+// full-page player (`&ui=12` sets the Interface size); embedded by the site, it takes commands over postMessage
 // and reports progress, readiness and the demo's size back.
 //
 // Messages are objects with a `pinkui` field naming the kind:
-//   in:  show {slug}, theme {dark}, replay
+//   in:  show {slug}, theme {dark}, ui {size}, replay
 //   out: progress {loaded, total}, ready, resize {width, height},
 //        wheel {dx, dy}, error {message}
 
-import init, { start, show, set_theme, replay } from './pkg/pink_ui_web.js?v=__BUILD__';
+import init, { start, show, set_theme, set_ui_size, replay } from './pkg/pink_ui_web.js?v=__BUILD__';
 
 const params = new URLSearchParams(location.search);
 const embedded = window.parent !== window;
 const state = {
   slug: params.get('c') || 'button',
   dark: params.get('theme') === 'dark',
+  ui: Number(params.get('ui')) || 16,
 };
 let ready = false;
 // The demo's laid-out size, once it reports one (demos that fill the stage
@@ -36,6 +37,10 @@ function apply(message) {
       state.dark = !!message.dark;
       document.documentElement.classList.toggle('dark', state.dark);
       if (ready) set_theme(state.dark);
+      break;
+    case 'ui':
+      state.ui = Number(message.size) || 16;
+      if (ready) set_ui_size(state.ui);
       break;
     case 'replay':
       if (ready) replay();
@@ -110,6 +115,7 @@ try {
       // Catch up on anything that arrived while graphics were starting.
       if (state.slug !== initial.slug) show(state.slug);
       if (state.dark !== initial.dark) set_theme(state.dark);
+      if (state.ui !== 16) set_ui_size(state.ui);
       window.__pinkuiReady = true;
       tell('ready');
     }, 0);
@@ -126,6 +132,7 @@ try {
 window.pinkui = {
   show: (slug) => apply({ pinkui: 'show', slug }),
   theme: (dark) => apply({ pinkui: 'theme', dark }),
+  ui: (size) => apply({ pinkui: 'ui', size }),
   replay: () => apply({ pinkui: 'replay' }),
   size: () => size,
 };

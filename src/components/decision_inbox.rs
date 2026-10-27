@@ -627,7 +627,7 @@ fn decision_card(
 /// treatment's `shadow_lg`, as Pink's frosted pill does.
 fn composer_surface(t: &Pink) -> Div {
     div()
-        .rounded(px(radius::COMPOSER))
+        .rounded(px(radius::COMPOSER_PILL))
         .border_1()
         .border_color(t.border)
         .bg(t.surface_bg())

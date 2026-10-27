@@ -75,6 +75,14 @@ pub mod surfaces;
 pub use controls::*;
 pub use surfaces::*;
 
+/// Interface size over its 16 px baseline (Pink `Theme::ui_scale`), from
+/// the [`crate::Theme`] global. Geometry Pink scales with the Interface size
+/// (hit sizes through [`chrome::scaled_control`], the titlebar cluster,
+/// sidebar rows) multiplies by it; the rest of the kit is drawn at 16.
+pub fn ui_scale(cx: &App) -> f32 {
+    cx.theme().ui_scale()
+}
+
 /// Pink's interface font, `Theme::font_sans` (bundled under `assets/fonts`).
 pub const SANS: &str = "Geist";
 /// Pink's code and terminal font, `Theme::font_mono` / `font_terminal`.
@@ -92,6 +100,22 @@ pub const MONO_FALLBACK: &str = "Menlo";
 /// give a nested surface [`radius::inner`] of its container so corners stay
 /// concentric. The named radii below are the ones Pink's builders use.
 pub mod radius {
+    // Roles (Pink `theme::radius`, UI rethink D37). New and migrated
+    // surfaces pick one of these; the size names below stay for older
+    // call sites, as in Pink.
+    /// Controls and rows.
+    pub const CONTROL: f32 = 6.0;
+    /// Code blocks, notices and tooltips.
+    pub const CODE: f32 = 8.0;
+    /// Popovers, menus and the outer content frame (`popover::CARD_RADIUS`).
+    pub const POPOVER: f32 = 12.0;
+    /// Dialogs and sheets (`popover::dialog_card`).
+    pub const DIALOG: f32 = 16.0;
+    /// The composer plate role. Pink's composer itself still draws its pill
+    /// at [`COMPOSER_PILL`] (`composer::COMPOSER_RADIUS`); this is the role
+    /// new plates pick.
+    pub const COMPOSER: f32 = 20.0;
+
     /// Inline code, kbd hints, checkboxes, file wells, progress tracks.
     pub const XS: f32 = 4.0;
     /// Controls up to 24 pt, chips, icon buttons, tiles, badges
@@ -105,30 +129,27 @@ pub mod radius {
     /// (`Theme::BUBBLE_RADIUS`).
     pub const XL: f32 = 16.0;
 
-    /// `Theme::CONTROL_RADIUS`.
-    pub const CONTROL: f32 = SM;
     /// `Theme::PANEL_RADIUS`: code surfaces, transcript notices, tool cards.
     pub const PANEL: f32 = LG;
     /// `Theme::BUBBLE_RADIUS`: the user message bubble.
     pub const BUBBLE: f32 = XL;
-    /// Popover / menu card (`popover::CARD_RADIUS`).
-    pub const POPOVER: f32 = 12.0;
     /// Menu rows: concentric with the popover at its 4 pt inset
     /// (`popover::MENU_ITEM_RADIUS`).
     pub const MENU_ITEM: f32 = POPOVER - 4.0;
     /// Settings section cards (`settings::widgets::section_card`).
     pub const SECTION_CARD: f32 = 12.0;
-    /// Tooltips and rich hover cards (`popover::tooltip_card`).
-    pub const TOOLTIP: f32 = 8.0;
-    /// Dialogs (`popover::dialog_card`).
-    pub const DIALOG: f32 = 16.0;
+    /// Tooltips and rich hover cards (`popover::tooltip_card`): the
+    /// [`CODE`] role.
+    pub const TOOLTIP: f32 = CODE;
     /// The command palette.
     pub const PALETTE: f32 = 16.0;
     /// Palette rows, concentric with the palette at its 8 pt inset
     /// (`popover::PALETTE_ITEM_RADIUS`).
     pub const PALETTE_ITEM: f32 = PALETTE - 8.0;
-    /// The composer pill (`composer::COMPOSER_RADIUS`).
-    pub const COMPOSER: f32 = 26.0;
+    /// The composer pill as Pink's composer draws it
+    /// (`composer::COMPOSER_RADIUS`, 26; 22 docked). Composer-styled cards
+    /// that sit where the composer does use it too.
+    pub const COMPOSER_PILL: f32 = 26.0;
     /// Full-width popups stacked above the composer
     /// (`popover::STACK_POPUP_RADIUS`).
     pub const STACK_POPUP: f32 = 20.0;
@@ -175,6 +196,22 @@ pub mod space {
     pub const LG: f32 = 16.0;
     /// `Theme::TEXT_STACK_GAP`: between a title and the line under it.
     pub const TEXT_STACK_GAP: f32 = 1.0;
+
+    // Roles (Pink `theme::space`, UI rethink D33): a 4 pt structure with
+    // 2 pt optical adjustments, in pt at the 16 px default. Interface-scaled
+    // layout multiplies them by [`super::ui_scale`].
+    /// The only allowed off-grid nudge, for optical alignment.
+    pub const OPTICAL: f32 = S2;
+    /// Between an icon and its label.
+    pub const ICON_LABEL: f32 = S6;
+    /// Between sibling controls or rows in one group.
+    pub const SIBLING: f32 = S8;
+    /// Inside a control, from its edge to its content.
+    pub const CONTROL_PAD: f32 = S10;
+    /// From a panel's edge to its content.
+    pub const PANEL_INSET: f32 = S16;
+    /// Between sections of one surface.
+    pub const SECTION: f32 = S24;
 }
 
 /// Type sizes (Pink `typography::TextStyle`, audit DS-01). Prefer
@@ -273,13 +310,64 @@ impl TextStyle {
     }
 }
 
-/// `.type_style(TextStyle::Body)`: size, line height and weight together
+/// What a piece of interface text *is*, mapped to size and line height in pt
+/// at the 16 px default (Pink `typography::TypeRole`, UI rethink D34).
+/// Hierarchy comes from the role's size together with its colour tier
+/// ([`TEXT_CONTRAST_PRIMARY`] and below), never from size alone. New and
+/// migrated surfaces pick a role; [`TextStyle`] remains for older callers,
+/// as in Pink.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TypeRole {
+    /// 13/18: titlebar, toolbar, menu and row titles.
+    Chrome,
+    /// 14/20: tool activity sentences in the transcript.
+    ToolActivity,
+    /// 12/16: timestamps, counts and secondary row lines.
+    Metadata,
+    /// 11/14: keyboard shortcut hints only.
+    KeyHint,
+    /// 14/20: the composer's input.
+    ComposerInput,
+    /// 15/24: transcript prose.
+    Prose,
+}
+
+impl TypeRole {
+    /// (size, line height) in px at the 16 px default.
+    pub const fn metrics(self) -> (f32, f32) {
+        match self {
+            Self::Chrome => (13.0, 18.0),
+            Self::ToolActivity | Self::ComposerInput => (14.0, 20.0),
+            Self::Metadata => (12.0, 16.0),
+            Self::KeyHint => (11.0, 14.0),
+            Self::Prose => (15.0, 24.0),
+        }
+    }
+
+    pub const fn size(self) -> f32 {
+        self.metrics().0
+    }
+
+    pub const fn line_height(self) -> f32 {
+        self.metrics().1
+    }
+}
+
+/// `.type_style(TextStyle::Body)`: size, line height and weight together;
+/// `.type_role(TypeRole::Chrome)`: a role's size and line height
 /// (Pink `typography::TypeStyleExt`).
 pub trait TypeStyleExt: Styled + Sized {
     fn type_style(self, style: TextStyle) -> Self {
         self.text_size(px(style.size()))
             .line_height(px(style.line_height()))
             .font_weight(style.weight())
+    }
+
+    /// Apply a [`TypeRole`]'s size and line height. Weight stays with the
+    /// caller: a role names the text's job, not its emphasis.
+    fn type_role(self, role: TypeRole) -> Self {
+        self.text_size(px(role.size()))
+            .line_height(px(role.line_height()))
     }
 }
 
@@ -326,6 +414,32 @@ pub mod chrome {
     pub const EDGE_INSET: f32 = 8.0;
     /// Where every surface's content starts.
     pub const CONTENT_INSET: f32 = 12.0;
+    /// No clickable target is smaller than this, at any Interface size
+    /// (`surface_chrome::MIN_HIT`, UI rethink D36). [`CONTROL_S`] is a
+    /// visual size: give it this hit area.
+    pub const MIN_HIT: f32 = 24.0;
+
+    /// A control step scaled with the Interface size (`scale` is
+    /// [`super::ui_scale`]), kept on the ladder: never below the minimum hit
+    /// area, never above the large step (`surface_chrome::scaled_control`).
+    pub fn scaled_control(step: f32, scale: f32) -> f32 {
+        (step * scale).clamp(MIN_HIT, CONTROL_L)
+    }
+
+    /// A glyph scaled with its control, kept between the small and large
+    /// glyphs (`surface_chrome::scaled_icon`).
+    pub fn scaled_icon(step: f32, scale: f32) -> f32 {
+        (step * scale).clamp(ICON_S, ICON_L)
+    }
+
+    /// How far a [`MIN_HIT`] box reaches past a control drawn at `visual`
+    /// px on each side: shift an absolutely positioned control by it so its
+    /// visual stays put. In-flow controls take the [`MIN_HIT`] size itself,
+    /// as Pink's per-project New thread button does; negative margins in a
+    /// flex row measure as zero width in GPUI.
+    pub fn hit_outset(visual: f32) -> f32 {
+        ((MIN_HIT - visual) / 2.0).max(0.0)
+    }
 }
 
 /// Layout constants from Pink's `theme`, `popover`, `settings` and `shell`.
@@ -335,6 +449,32 @@ pub mod layout {
     /// `Theme::TITLEBAR_HEIGHT`, also the toolbar row height.
     pub const TITLEBAR_HEIGHT: f32 = 38.0;
     pub const TITLEBAR_TOP_PAD: f32 = 4.0;
+    /// Within-group rhythm for Back and Forward (`shell.rs`
+    /// `TITLEBAR_CONTROL_GAP`).
+    pub const TITLEBAR_CONTROL_GAP: f32 = 2.0;
+    /// Between titlebar groups: the sidebar toggle, then navigation
+    /// (`TITLEBAR_GROUP_GAP`, `Theme::SPACE_SM`).
+    pub const TITLEBAR_GROUP_GAP: f32 = 8.0;
+    /// From the control cluster to the title (`TITLEBAR_IDENTITY_GAP`,
+    /// `Theme::SPACE_MD`): the 12 pt kept before the title at every size.
+    pub const TITLEBAR_IDENTITY_GAP: f32 = 12.0;
+    /// The control row's own horizontal inset (`TITLEBAR_CLUSTER_PAD`).
+    pub const TITLEBAR_CLUSTER_PAD: f32 = 10.0;
+
+    /// Each top-left window control at Interface `scale` (`shell.rs`
+    /// `titlebar_control_size`): the medium step grown with the text beside
+    /// it, between the 24 pt minimum hit and the 32 pt step that still fits
+    /// the 38 pt band.
+    pub fn titlebar_control_size(scale: f32) -> f32 {
+        super::chrome::scaled_control(super::chrome::CONTROL_M, scale)
+    }
+
+    /// The width the sidebar toggle, Back and Forward draw at `scale`
+    /// (`shell.rs` `cluster_buttons_width`), computed from the same size the
+    /// buttons render with so the title's reservation can't drift from them.
+    pub fn cluster_buttons_width(scale: f32) -> f32 {
+        3.0 * titlebar_control_size(scale) + TITLEBAR_GROUP_GAP + TITLEBAR_CONTROL_GAP
+    }
     pub const STATUS_STRIP_HEIGHT: f32 = 24.0;
     /// The fade band at a scrolling edge (`TRANSCRIPT_FADE_BAND`).
     pub const FADE_BAND: f32 = 24.0;
@@ -403,6 +543,13 @@ pub const NON_TEXT_CONTRAST_MIN: f32 = 3.0;
 pub const TEXT_CONTRAST_TARGET: f32 = 4.6;
 /// What derived glyph and ring colors aim for (`NON_TEXT_CONTRAST_TARGET`).
 pub const NON_TEXT_CONTRAST_TARGET: f32 = 3.1;
+/// Text contrast tiers on the reading surfaces (Pink `theme.rs`, UI rethink
+/// D38): primary about 12:1, secondary about 6:1, tertiary on the target.
+/// Nothing that is text, metadata and placeholders included, goes below
+/// [`TEXT_CONTRAST_MIN`].
+pub const TEXT_CONTRAST_PRIMARY: f32 = 12.0;
+pub const TEXT_CONTRAST_SECONDARY: f32 = 6.0;
+pub const TEXT_CONTRAST_TERTIARY: f32 = TEXT_CONTRAST_TARGET;
 /// Light hairlines are 1.35× stronger than dark ones, capped at 0.5
 /// (`INK_HAIRLINE_SCALE`). Fills keep the same alpha (`INK_FILL_SCALE` 1.0).
 pub const INK_HAIRLINE_SCALE: f32 = 1.35;
@@ -1504,26 +1651,60 @@ impl Pink {
         })
     }
 
-    /// Secondary text: dark keeps the quieter opacity asked for, light the
-    /// authored token, both floored at the text target. `readable_muted(0.95)`
-    /// is the default glyph and ghost-label tone.
+    /// Secondary text (Pink `Theme::readable_muted`). Dark keeps the quieter
+    /// opacity asked for, floored at the text target; light gives the same
+    /// request its own step between the token and the floor
+    /// ([`Self::light_tier`]). `readable_muted(0.95)` is the default glyph
+    /// and ghost-label tone.
     pub fn readable_muted(&self, dark_opacity: f32) -> Hsla {
-        let base = if self.dark {
-            self.text_muted.opacity(dark_opacity)
-        } else {
-            self.text_muted
-        };
-        self.legible(base, TEXT_CONTRAST_TARGET)
+        if !self.dark {
+            return self.light_tier(self.text_muted, dark_opacity);
+        }
+        self.legible(self.text_muted.opacity(dark_opacity), TEXT_CONTRAST_TARGET)
     }
 
-    /// Faint text (hints, placeholders), still held to the text floor.
+    /// Faint text (hints, placeholders) is still text: held to the floor
+    /// (Pink `Theme::readable_faint`).
     pub fn readable_faint(&self, dark_opacity: f32) -> Hsla {
-        let base = if self.dark {
-            self.text_faint.opacity(dark_opacity)
-        } else {
-            self.text_faint
-        };
-        self.legible(base, TEXT_CONTRAST_TARGET)
+        if !self.dark {
+            return self.light_tier(self.text_faint, dark_opacity);
+        }
+        self.legible(self.text_faint.opacity(dark_opacity), TEXT_CONTRAST_TARGET)
+    }
+
+    /// Light appearance's answer to a dark-tuned opacity (Pink
+    /// `Theme::light_tier`, UI rethink bug 18). Thinning dark ink over a
+    /// light canvas drops below the floor almost at once, so the opacity
+    /// instead picks a contrast between the token's own and the floor: 1
+    /// keeps the token, 0.5 or less sits on the floor, and steps in between
+    /// stay distinct and ordered. Hue and saturation are kept.
+    fn light_tier(&self, token: Hsla, dark_opacity: f32) -> Hsla {
+        let token = self.legible(token, TEXT_CONTRAST_TARGET);
+        if dark_opacity >= 0.999 {
+            return token;
+        }
+        let position = ((dark_opacity - 0.5) / 0.5).clamp(0.0, 1.0);
+        let ceiling = self.worst_contrast(token).max(TEXT_CONTRAST_TARGET);
+        let target = TEXT_CONTRAST_TARGET + (ceiling - TEXT_CONTRAST_TARGET) * position;
+        // From the canvas side, the flooring walk darkens until it reads at
+        // `target`, landing on the lightest tone that does.
+        self.legible(
+            Hsla {
+                l: 0.98,
+                a: 1.0,
+                ..token
+            },
+            target,
+        )
+    }
+
+    /// The lowest contrast `color` reaches across [`Self::reading_surfaces`]
+    /// (Pink `Theme::worst_contrast`).
+    pub fn worst_contrast(&self, color: Hsla) -> f32 {
+        self.reading_surfaces()
+            .iter()
+            .map(|surface| painted_contrast(color, *surface))
+            .fold(f32::MAX, f32::min)
     }
 
     /// Semantic copy (status words, selected chip labels) in `tone`, floored
@@ -2013,6 +2194,73 @@ mod tests {
         }
     }
 
+    /// Text contrast tiers (Pink `theme.rs` D38, bug 18). Light gives a
+    /// quieter request its own step between the token and the floor instead
+    /// of one grey for every request; nothing that is text drops under
+    /// 4.5:1 anywhere; a quieter request never reads stronger; dark keeps
+    /// the opacity it asks for. On the sidebar chrome the tiers land where
+    /// Pink measured them: about 12, 6.5 and 5.5:1. Pink's lightness walk
+    /// takes 24 steps, so neighbouring requests can share a step.
+    #[test]
+    fn light_text_tiers_stay_distinct_and_legible() {
+        let l = Pink::light();
+        let chrome = l.reading_surfaces()[0];
+        let on_chrome = |c: Hsla| painted_contrast(c, chrome);
+        let quieter = [0.95, 0.85, 0.7, 0.6, 0.5, 0.3];
+        type Tier = fn(&Pink, f32) -> Hsla;
+        for (name, tier) in [
+            ("muted", Pink::readable_muted as Tier),
+            ("faint", Pink::readable_faint as Tier),
+        ] {
+            let ratios: Vec<f32> = quieter.iter().map(|o| on_chrome(tier(&l, *o))).collect();
+            for pair in ratios.windows(2) {
+                assert!(
+                    pair[0] >= pair[1],
+                    "{name} reads stronger when quieter: {ratios:?}"
+                );
+            }
+            for o in [1.0].iter().chain(&quieter) {
+                let worst = l.worst_contrast(tier(&l, *o));
+                assert!(worst >= TEXT_CONTRAST_MIN, "{name} {o}: {worst}");
+            }
+            // Secondary and tertiary requests are distinct steps.
+            assert!(ratios[0] - ratios[4] > 0.5, "{name} collapses: {ratios:?}");
+            // Hue survives, so tinted themes stay tinted.
+            assert!(
+                (tier(&l, 0.6).h - l.text_muted.h).abs() < 0.05,
+                "{name} hue"
+            );
+        }
+        let primary = on_chrome(l.text);
+        let secondary = on_chrome(l.readable_muted(0.85));
+        let tertiary = on_chrome(l.readable_faint(0.6));
+        assert!(primary >= TEXT_CONTRAST_PRIMARY - 0.5, "{primary}");
+        assert!(secondary >= TEXT_CONTRAST_SECONDARY, "{secondary}");
+        assert!(
+            (TEXT_CONTRAST_TERTIARY..TEXT_CONTRAST_SECONDARY).contains(&tertiary),
+            "{tertiary}"
+        );
+        // Dark is unchanged: the opacity it asks for, floored.
+        assert!(close(Pink::dark().readable_muted(0.95).a, 0.985));
+    }
+
+    /// Hit sizes and the titlebar cluster (Pink `surface_chrome.rs`,
+    /// `shell.rs`) at Interface sizes 12, 16 and 20.
+    #[test]
+    fn hit_sizes_scale_within_the_ladder() {
+        for (ui, control, icon, cluster) in [
+            (12.0, 24.0, 12.0, 82.0),
+            (16.0, 28.0, 16.0, 94.0),
+            (20.0, 32.0, 18.0, 106.0),
+        ] {
+            let scale = ui / 16.0;
+            assert_eq!(layout::titlebar_control_size(scale), control, "{ui}");
+            assert!(chrome::scaled_control(chrome::CONTROL_S, scale) >= chrome::MIN_HIT);
+            assert_eq!(chrome::scaled_icon(chrome::ICON_M, scale), icon, "{ui}");
+            assert_eq!(layout::cluster_buttons_width(scale), cluster, "{ui}");
+        }
+    }
+
     /// Paint-time derivations, against the port's frosted dump.
     #[test]
     fn derived_paint_matches_pink() {
@@ -2023,7 +2271,10 @@ mod tests {
         assert_eq!(rgb8(d.readable_muted(0.6)), 0xc9c9cc);
         assert!(close(d.readable_muted(0.6).a, 1.0));
         assert_eq!(rgb8(d.readable_faint(0.6)), 0xccccce);
-        assert_eq!(rgb8(l.readable_faint(0.6)), 0x4d586a);
+        // Light picks its own step for a quieter request (Pink bug 18):
+        // no longer the bare token #4d586a.
+        assert_eq!(rgb8(l.readable_faint(0.6)), 0x4f5b6d);
+        assert_eq!(rgb8(l.readable_faint(1.0)), rgb8(l.text_faint));
         assert_eq!(rgb8(d.on_danger()), 0x000000);
         assert_eq!(rgb8(l.on_danger()), 0xffffff);
         assert_eq!(rgb8(d.fill(FillTier::Tertiary)), 0xeaeaec);

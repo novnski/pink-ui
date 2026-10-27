@@ -14,8 +14,8 @@ use gpui::{
 };
 
 use super::{
-    FillTier, Pink, SANS, TextStyle, TypeStyleExt, controls::glyphs, controls::line_glyph, layout,
-    radius, shadow_lg,
+    FillTier, Pink, SANS, TextStyle, TypeRole, TypeStyleExt, controls::glyphs,
+    controls::line_glyph, layout, radius, shadow_lg,
 };
 use crate::HoverFill;
 
@@ -127,23 +127,22 @@ pub fn row_text(
         })
 }
 
-/// A row title: 13/18 medium `text`, wrapping.
+/// A row title: `TypeRole::Chrome` (13/18) medium `text`, wrapping.
 pub fn row_title(title: impl Into<SharedString>, t: &Pink) -> Div {
     div()
         .min_w_0()
-        .text_size(px(13.0))
-        .line_height(px(18.0))
+        .type_role(TypeRole::Chrome)
         .font_weight(FontWeight::MEDIUM)
         .text_color(t.text)
         .child(title.into())
 }
 
-/// A row description: 12/16 in `readable_muted(0.85)`, wrapping.
+/// A row description: `TypeRole::Metadata` (12/16) in `readable_muted(0.85)`,
+/// wrapping.
 pub fn row_description(copy: impl Into<SharedString>, t: &Pink) -> Div {
     div()
         .min_w_0()
-        .text_size(px(12.0))
-        .line_height(px(16.0))
+        .type_role(TypeRole::Metadata)
         .text_color(t.readable_muted(0.85))
         .child(copy.into())
 }
@@ -201,8 +200,7 @@ pub fn section_footer(copy: impl Into<SharedString>, t: &Pink) -> Div {
     div()
         .mt(px(8.0))
         .px(px(layout::ROW_PAD_X))
-        .text_size(px(12.0))
-        .line_height(px(16.0))
+        .type_role(TypeRole::Metadata)
         .text_color(t.readable_muted(0.8))
         .child(copy.into())
 }

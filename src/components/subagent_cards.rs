@@ -42,8 +42,8 @@ use gpui::{
 
 use crate::{
     pink::{
-        self, ButtonKind, ControlSize, FillTier, Pink, layout, loaders::TOOL_LABEL_SIZE, radius,
-        space,
+        self, ButtonKind, ControlSize, FillTier, Pink, TypeRole, TypeStyleExt, layout,
+        loaders::TOOL_LABEL_SIZE, radius, space,
     },
     story,
 };
@@ -531,8 +531,7 @@ fn render_card(
             div()
                 .min_w_0()
                 .truncate()
-                .text_size(px(13.0))
-                .line_height(px(18.0))
+                .type_role(TypeRole::Chrome)
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(t.text)
                 .child(card_title(card)),

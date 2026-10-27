@@ -24,7 +24,7 @@ use gpui::{
 };
 
 use crate::{
-    pink::{self, ControlSize, FillTier, Pink, Segment, TextStyle, TypeStyleExt, layout},
+    pink::{self, ControlSize, FillTier, Pink, Segment, TextStyle, TypeRole, TypeStyleExt, layout},
     story,
 };
 
@@ -383,8 +383,7 @@ impl RenderOnce for KpiChart {
                     .child(
                         pink::row_controls().child(
                             div()
-                                .text_size(px(13.0))
-                                .line_height(px(18.0))
+                                .type_role(TypeRole::Chrome)
                                 .font_weight(FontWeight::MEDIUM)
                                 .text_color(t.text)
                                 .child(format(sums[ix] as f32)),
