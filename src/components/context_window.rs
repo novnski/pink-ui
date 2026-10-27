@@ -2,7 +2,10 @@
 //!
 //! A Pink component. The chip is Pink's context-usage chip (Pink:
 //! context_usage.rs `render`): a 16 px ring and the occupied share, muted,
-//! warning from 75%, danger from 90% and accent while compacting. Resting
+//! warning from 75%, danger from 90% and accent while compacting. Before the
+//! provider reports usage the ring is empty and faint, with no share, and
+//! the chip is named "Context window: usage not reported yet" (PINK 0.30.6,
+//! novnski/pink#193). Resting
 //! the pointer on it shows Pink's details card (`UsageCard`) centered above
 //! the chip (Pink: popover.rs `tooltip_above`); clicking it opens the window
 //! card in the same place: the same details, a field of 100
@@ -214,6 +217,9 @@ struct Usage {
     turns: u32,
     summarized: bool,
     memory: u32,
+    /// The provider has reported usage; until it does the chip shows an
+    /// empty faint ring and no share (PINK 0.30.6).
+    reported: bool,
 }
 
 impl Usage {
@@ -318,6 +324,9 @@ fn with_separators(count: u32) -> String {
 
 /// The token lines (Pink: context_usage.rs `details`).
 fn details(usage: &Usage) -> String {
+    if !usage.reported {
+        return "Context usage not reported by this harness yet".into();
+    }
     let used = usage.used();
     format!(
         "{} of {} tokens\n{} tokens remaining",
@@ -338,6 +347,30 @@ fn tone(compacting: bool, fraction: f32, t: &Pink) -> Hsla {
         t.warning
     } else {
         t.text_muted
+    }
+}
+
+/// The chip's tone (Pink: context_usage.rs `tone`): with nothing reported
+/// yet, `text_faint`, unless the provider is compacting.
+fn chip_tone(compacting: bool, reported: bool, fraction: f32, t: &Pink) -> Hsla {
+    if reported || compacting {
+        tone(compacting, fraction, t)
+    } else {
+        t.text_faint
+    }
+}
+
+/// The chip's accessible name (Pink: context_usage.rs `render`, PINK
+/// 0.30.6): "Context window: 79% used", "Context window: compacting", and
+/// before the provider reports anything "Context window: usage not reported
+/// yet" rather than a dash placeholder.
+fn accessible_name(compacting: bool, reported: bool, text: &str) -> SharedString {
+    if compacting {
+        "Context window: compacting".into()
+    } else if !reported {
+        "Context window: usage not reported yet".into()
+    } else {
+        format!("Context window: {text} used").into()
     }
 }
 
@@ -591,6 +624,7 @@ impl ContextWindow {
                 turns: 0,
                 summarized: false,
                 memory: 0,
+                reported: true,
             },
             show_label: true,
             default_open: false,
@@ -648,6 +682,14 @@ impl ContextWindow {
 
     /// Whether the chip shows the share beside its ring (Pink gives it up
     /// when the composer row is tight; the card says it either way).
+    /// The provider hasn't reported usage yet: an empty faint ring, no
+    /// share, and the name "Context window: usage not reported yet" (PINK
+    /// 0.30.6, novnski/pink#193).
+    pub fn unreported(mut self, unreported: bool) -> Self {
+        self.usage.reported = !unreported;
+        self
+    }
+
     pub fn show_label(mut self, show: bool) -> Self {
         self.show_label = show;
         self
@@ -739,8 +781,12 @@ impl RenderOnce for ContextWindow {
             .then(|| motion::pulse_phase(&PINK_PULSE, window, cx));
 
         let s = state.read(cx);
-        let fraction = s.usage.fraction();
-        let tone = tone(compacting, fraction, &t);
+        let fraction = if s.usage.reported {
+            s.usage.fraction()
+        } else {
+            0.
+        };
+        let tone = chip_tone(compacting, s.usage.reported, fraction, &t);
         let chip = chip(&key, s, fraction, tone, self.show_label, &t, &state);
         // Pink: popover.rs `tooltip_above`, the details card centered 7 px
         // above the chip.
@@ -836,11 +882,8 @@ fn chip(
     let ring_color = t.readable_on_composer(tone, NON_TEXT_CONTRAST_TARGET);
     let track = t.text_faint.opacity(0.25);
     let text = label(compacting, fraction);
-    let accessible: SharedString = if compacting {
-        "Context window: compacting".into()
-    } else {
-        format!("Context window: {text} used").into()
-    };
+    let reported = s.usage.reported;
+    let accessible = accessible_name(compacting, reported, &text);
     let hover_key = format!("{key}-chip");
     let ring = t.focus_ring();
     let toggler = state.clone();
@@ -877,7 +920,8 @@ fn chip(
         })
         .on_click(move |_, window, cx| toggler.update(cx, |s, cx| s.toggle(window, cx)))
         .child(occupancy_ring(fraction, ring_color, track))
-        .when(show_label, |el| {
+        // Nothing reported yet: the ring alone, never a dash placeholder.
+        .when(show_label && (reported || compacting), |el| {
             el.font_features(pink::tabular_figures()).child(text)
         })
         .child(
@@ -1638,6 +1682,10 @@ fn story_states(t: &Pink) -> Div {
             chat("cw-tight", 46_000, 14).show_label(false),
             "Tight row",
         ))
+        .child(sample(
+            chat("cw-new", 0, 0).unreported(true),
+            "Not reported yet",
+        ))
 }
 
 /// A composer with the chip beside the model picker and its window card
@@ -1783,6 +1831,34 @@ mod tests {
         );
         assert_eq!(label(false, 0.786), "79%");
         assert_eq!(label(true, 0.786), "Compacting…");
+    }
+
+    /// PINK 0.30.6 (novnski/pink#193). Failure modes: an unreported window
+    /// announced as "— used" or "0% used"; its tone a share's muted or
+    /// warning; its card claiming a token count; compacting losing to it.
+    #[test]
+    fn unreported_usage_reads_as_words() {
+        assert_eq!(
+            accessible_name(false, false, "0%"),
+            "Context window: usage not reported yet"
+        );
+        assert_eq!(
+            accessible_name(false, true, "79%"),
+            "Context window: 79% used"
+        );
+        assert_eq!(
+            accessible_name(true, false, "Compacting…"),
+            "Context window: compacting"
+        );
+        let t = Pink::dark();
+        assert_eq!(chip_tone(false, false, 0.95, &t), t.text_faint);
+        assert_eq!(chip_tone(true, false, 0.0, &t), t.accent);
+        let mut unknown = usage();
+        unknown.reported = false;
+        assert_eq!(
+            details(&unknown),
+            "Context usage not reported by this harness yet"
+        );
     }
 
     #[test]

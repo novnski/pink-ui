@@ -61,6 +61,7 @@ pub mod progress_tracker;
 pub mod project_card;
 pub mod prompt_library;
 pub mod reaction_bar;
+pub mod recovery_card;
 pub mod segmented_control;
 pub mod settings_page;
 pub mod setup_guide;
@@ -277,6 +278,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Agents",
         description: tool_call_card::DESCRIPTION,
         story: tool_call_card::story,
+    },
+    ComponentEntry {
+        slug: "recovery-card",
+        name: recovery_card::NAME,
+        category: "Agents",
+        description: recovery_card::DESCRIPTION,
+        story: recovery_card::story,
     },
     ComponentEntry {
         slug: "trace-waterfall",
