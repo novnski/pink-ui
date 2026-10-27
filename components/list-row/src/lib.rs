@@ -49,6 +49,8 @@ pub enum Signal {
     Failed,
     /// A finished result nobody has read yet.
     Unread,
+    /// A message waiting to go out (Pink's send queue); never "needs you".
+    Queued,
 }
 
 impl Signal {
@@ -60,6 +62,7 @@ impl Signal {
             Self::NeedsApproval => "Waiting for your approval",
             Self::Failed => "Failed",
             Self::Unread => "Unread result",
+            Self::Queued => "Queued to send",
         }
     }
 
@@ -77,6 +80,7 @@ impl Signal {
             Self::WaitingForInput => Some("Reply"),
             Self::NeedsApproval => Some("Approve"),
             Self::Failed => Some("Failed"),
+            Self::Queued => Some("Queued"),
             Self::Running | Self::Unread => None,
         }
     }
@@ -120,40 +124,55 @@ pub fn status_indicator(
     compact: bool,
     style: &RowStyle,
 ) -> Div {
-    let s = style.scale;
     let tone = match signal {
         Signal::Running => style.running,
-        Signal::WaitingForInput | Signal::NeedsApproval => style.waiting,
+        Signal::WaitingForInput | Signal::NeedsApproval | Signal::Queued => style.waiting,
         Signal::Failed => style.failed,
         Signal::Unread => style.unread,
     };
+    status_indicator_toned(signal, glyph, compact, tone, tone, style)
+}
+
+/// [`status_indicator`] with the host's tones: `tone` fills the dot and the
+/// pill's backing, `text` colours the pill's word (Pink floors it for
+/// contrast against that backing, which differs between one- and two-line
+/// rows). Pink's geometry: a 16 pt pill with a 3 pt gap and a 6 pt dot,
+/// fixed; the word follows the Interface size.
+pub fn status_indicator_toned(
+    signal: Signal,
+    glyph: Option<AnyElement>,
+    compact: bool,
+    tone: Hsla,
+    text: Hsla,
+    style: &RowStyle,
+) -> Div {
+    let s = style.scale;
     let base = div().flex_none().flex().items_center();
     match signal.word() {
         None => base.child(glyph.unwrap_or_else(|| {
             div()
-                .size(px(6.0 * s))
-                .rounded(px(if signal == Signal::Running {
-                    1.5
-                } else {
-                    3.0 * s
-                }))
+                .size(px(6.0))
+                .flex_none()
+                .when(signal == Signal::Running, |dot| dot.rounded(px(1.5)))
+                .when(signal != Signal::Running, |dot| dot.rounded_full())
                 .bg(tone)
                 .into_any_element()
         })),
         Some(word) => base.child(
             div()
-                .h(px(16.0 * s))
+                .h(px(16.0))
+                .flex_none()
                 .flex()
                 .flex_row()
                 .items_center()
-                .gap(px(3.0 * s))
+                .gap(px(3.0))
                 .when(!compact, |pill| pill.px(px(5.0)))
                 .rounded(px(4.0))
                 .when(!compact, |pill| pill.bg(tone.opacity(style.pill_backing)))
                 .text_size(px(11.0 * s))
                 .line_height(px(14.0 * s))
                 .font_weight(FontWeight::MEDIUM)
-                .text_color(tone)
+                .text_color(text)
                 .children(glyph)
                 .child(word),
         ),
