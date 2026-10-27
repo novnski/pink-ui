@@ -496,7 +496,7 @@ fn showcase(window: &mut Window, cx: &mut App) -> Div {
     let session = pink::section_card(&t)
         .child(pink::section_header(
             "Session",
-            Some("Fix flaky login test · 14 turns".into()),
+            Some("Fix flaky login test, 14 turns".into()),
             &t,
         ))
         .child(row(
@@ -519,7 +519,7 @@ fn showcase(window: &mut Window, cx: &mut App) -> Div {
         ))
         .child(row(
             "Linked issue",
-            "#214 · Login test times out on CI",
+            "#214: Login test times out on CI",
             vec![
                 Button::new("session-open-issue")
                     .ghost()

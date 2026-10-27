@@ -37,7 +37,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Compact Breakdown";
-pub const DESCRIPTION: &str = "A total and its parts laid out like Pink's usage summary – the total in display type over a split bar, one row per part with its series dot, share and change, and a period switch that glides the rows into their new order";
+pub const DESCRIPTION: &str = "A total and its parts laid out like Pink's usage summary: the total in display type over a split bar, one row per part with its series dot, share and change, and a period switch that glides the rows into their new order";
 
 /// The card's width: Pink's settings column (720) inside its 32 px gutters.
 const WIDTH: f32 = layout::PAGE_MAX_WIDTH - 2. * 32.;
@@ -148,7 +148,7 @@ impl CompactBreakdown {
         }
     }
 
-    /// The caption under the title, e.g. "Production · all workspaces".
+    /// The caption under the title, e.g. "Production, all workspaces".
     pub fn subtitle(mut self, subtitle: impl Into<SharedString>) -> Self {
         self.subtitle = Some(subtitle.into());
         self
@@ -292,7 +292,7 @@ impl RenderOnce for CompactBreakdown {
             .filter(|p| *p > 0.);
         let readout: Option<String> = match hovered.filter(|i| order.contains(i)) {
             Some(i) => Some(format!(
-                "{} · {} · {}",
+                "{}: {}, {}",
                 self.parts[i].label,
                 (self.format)(value_of(i)),
                 usage_percent(share_of(i))
@@ -358,7 +358,7 @@ impl RenderOnce for CompactBreakdown {
             );
             let share = format!("{} of {}", usage_percent(share_of(i)), self.unit);
             let detail = match change_of(i) {
-                Some(g) => format!("{share} · {}", part_change(g)),
+                Some(g) => format!("{share}, {}", part_change(g)),
                 None => share,
             };
             part_row(part, tones[i], detail, (self.format)(value_of(i)), &t)
@@ -596,7 +596,7 @@ fn compact_number(value: f64) -> String {
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |_, _| {
         CompactBreakdown::new("compact-breakdown", "Tokens by workload")
-            .subtitle("Production · all workspaces")
+            .subtitle("Production, all workspaces")
             .unit("tokens")
             .part(BreakdownPart::new("reasoning", "Reasoning").icon(ICON_REASONING))
             .part(BreakdownPart::new("chat", "Chat").icon(ICON_CHAT))

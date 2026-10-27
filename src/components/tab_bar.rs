@@ -44,7 +44,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Tab Bar";
-pub const DESCRIPTION: &str = "A workspace's tab row – one strip of chat tabs per split group with live status glyphs, the focused group's tab in a quiet accent tint, tabs that drag to reorder as their neighbours slide aside, and a menu to close, split or reopen them";
+pub const DESCRIPTION: &str = "A workspace's tab row: one strip of chat tabs per split group with live status glyphs, the focused group's tab in a quiet accent tint, tabs that drag to reorder as their neighbours slide aside, and a menu to close, split or reopen them";
 
 const ICON_HOME: &str = "icons/tab-bar/home.svg";
 const ICON_BOT: &str = "icons/tab-bar/bot.svg";
@@ -219,7 +219,7 @@ impl Tab {
         match self.role {
             TabRole::Main => (
                 self.title.clone(),
-                "Main · this workbench's own chat. It stays open.".into(),
+                "This workbench's own chat. It stays open.".into(),
             ),
             TabRole::Side => (
                 format!("Side chat of {parent}").into(),
@@ -231,7 +231,7 @@ impl Tab {
             ),
             TabRole::Alongside => (
                 self.title.clone(),
-                "Alongside · your own chat, listed beside Main".into(),
+                "Your own chat, listed beside Main".into(),
             ),
         }
     }

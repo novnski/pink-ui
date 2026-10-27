@@ -438,7 +438,7 @@ pink_ui::init(cx);`;
       <div class="prose">${renderDocs(moduleDocs(source), c.name)}</div>
       <div class="prose"><h3>Setup</h3><p>Every component is a builder: build it and drop it into <code>.child(…)</code>. Root views call <code>motion::frame</code> and add <code>motion::driver()</code> so hovers and glides animate; see the <a href="${REPO}#using-it-in-an-app">README</a>.</p></div>
       ${codeBlock(setup)}
-      ${story ? `<div class="prose"><h3>This demo</h3></div>${codeBlock(story, { name: `${c.source} · story` })}` : ''}`;
+      ${story ? `<div class="prose"><h3>This demo</h3></div>${codeBlock(story, { name: `${c.source} story` })}` : ''}`;
     $('#source').innerHTML = `
       ${codeBlock(source, { name: c.source, numbered: true, extraClass: 'source' })}
       <p class="prose"><a href="${REPO}/blob/main/${c.source}">View ${escapeHtml(c.source)} on GitHub →</a></p>`;
@@ -469,7 +469,7 @@ pink_ui::init(cx);`;
     currentSlug = c.slug;
     $('#home').hidden = true;
     $('#page').hidden = false;
-    document.title = `${c.name} – pink-ui`;
+    document.title = `${c.name} in pink-ui`;
     $('#crumb').textContent = c.category;
     $('#name').textContent = c.name;
     $('#description').textContent = c.description;
@@ -503,7 +503,7 @@ pink_ui::init(cx);`;
 
   function showHome(anchor) {
     currentSlug = null;
-    document.title = 'pink-ui – animated components for GPUI';
+    document.title = 'pink-ui: animated components for GPUI';
     $('#page').hidden = true;
     $('#home').hidden = false;
     if (anchor) document.getElementById(anchor)?.scrollIntoView();

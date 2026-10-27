@@ -9,7 +9,7 @@
 //!   group per step with its activity on the activity rail (a finished step
 //!   folds to its header), every note that reached the agent as a user
 //!   bubble, and the working line (orb · status · timer, hover "Stop").
-//! - **Above the composer**: the checklist line ("2/6 · In progress: …"),
+//! - **Above the composer**: the checklist line ("2 of 6, In progress: …"),
 //!   which unfolds into a line per step, and the goal bar: the agent's
 //!   status, the task, the run clock and Pause / Resume.
 //! - **The queue tray** tucked behind the composer: notes typed while the
@@ -57,7 +57,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Agent Steering";
-pub const DESCRIPTION: &str = "A running agent's chat pane – notes typed while it works wait in a queue tray behind the composer, where you reorder or edit them, steer one into the running step or send it now to interrupt, under the goal bar, checklist and live activity of the run";
+pub const DESCRIPTION: &str = "A running agent's chat pane: notes typed while it works wait in a queue tray behind the composer, where you reorder or edit them, steer one into the running step or send it now to interrupt, under the goal bar, checklist and live activity of the run";
 
 const ICON_ARROW_UP: &str = "icons/agent-steering/arrow-up.svg";
 const ICON_CHEVRON_DOWN: &str = "icons/agent-steering/alt-arrow-down.svg";
@@ -878,14 +878,14 @@ impl SteerState {
                 if claim.action == Primary::SteerNow
                     && self.demo_t - claim.since >= STEER_ACCEPTED_AT =>
             {
-                format!("Steer accepted, pending · {text}").into()
+                format!("Steer accepted, pending: {text}").into()
             }
             Some(claim) if claim.action == Primary::SteerNow => {
-                format!("Requesting steer… · {text}").into()
+                format!("Requesting steer: {text}").into()
             }
-            Some(_) => format!("Sending… · {text}").into(),
+            Some(_) => format!("Sending: {text}").into(),
             None if note.follow_up == FollowUp::Steer && !self.steerable => {
-                format!("Steer unavailable · {text}").into()
+                format!("Steer unavailable: {text}").into()
             }
             None => text,
         }
@@ -1800,8 +1800,8 @@ fn working_line(c: &Ctx) -> Stateful<Div> {
 // -- Checklist line -------------------------------------------------------------
 
 /// The run's steps as Pink's provider checklist (`composer/checklist.rs`):
-/// one quiet "2/6 · In progress: …" line in 11.5 `text_muted` that unfolds
-/// into a "Status · step" line per step.
+/// one quiet "2 of 6, In progress: …" line in 11.5 `text_muted` that unfolds
+/// into a "Status: step" line per step.
 fn checklist(c: &Ctx) -> Div {
     let (s, t, key) = (c.s, c.t, c.key);
     let total = s.steps.len();
@@ -1815,7 +1815,7 @@ fn checklist(c: &Ctx) -> Div {
     } else {
         format!("In progress: {title}")
     };
-    let label = format!("{done}/{total} · {detail}");
+    let label = format!("{done} of {total}, {detail}");
     let open = s.checklist_open;
     let ring = t.focus_ring();
     let hover = t.element_hover;
@@ -1885,7 +1885,7 @@ fn checklist(c: &Ctx) -> Div {
                     .id(SharedString::from(format!("{key}-checklist-step-{ix}")))
                     .role(Role::ListItem)
                     .truncate()
-                    .child(format!("{status} · {}", step.title))
+                    .child(format!("{status}: {}", step.title))
             }))
     });
     div()
@@ -1946,13 +1946,6 @@ fn goal_bar(c: &Ctx, agent: &SharedString, task: &SharedString) -> Stateful<Div>
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(t.text)
                 .child(title),
-        )
-        .child(
-            div()
-                .flex_none()
-                .text_size(px(13.))
-                .text_color(t.readable_faint(0.8))
-                .child("·"),
         )
         .child(
             div()
@@ -2785,13 +2778,13 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
         .step(
             SteerStep::new("Reindex 2.4M products into the new cluster")
                 .activity("Streaming batch 1 of 48")
-                .activity("Streaming batch 12 of 48 · 610k documents")
+                .activity("Streaming batch 12 of 48, 610k documents")
                 .activity("Checking rejects after batch 31"),
         )
         .step(
             SteerStep::new("Compare results on saved queries")
                 .activity("Running both indexes side by side")
-                .activity("Comparing top-3 results · 94% overlap")
+                .activity("Comparing top-3 results, 94% overlap")
                 .activity("Collecting 12 queries that drifted"),
         )
         .step(
@@ -2801,7 +2794,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
         )
         .start_at(2)
         .elapsed(134.0)
-        .queued("Skip the archived catalogs – they get deleted on Friday")
+        .queued("Skip the archived catalogs, they get deleted on Friday")
         .rehearse_steer(0.8, "Keep the legacy stemmer for catalog_de")
         .rehearse(3.6, "Throttle the reindex to 2 batches at a time")
         .autoplay(true)

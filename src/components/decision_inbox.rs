@@ -8,7 +8,7 @@
 //! "1/3" counter, the question, two numbered option rows and a footer with
 //! "Answer later" and Send. Every other decision is a one-line card (Pink:
 //! transcript.rs `async_question_card`): an accent edge and "Open · click to
-//! answer" while it waits, a hairline and "Answered: … · click to change"
+//! answer" while it waits, a hairline and "Answered: …, click to change"
 //! once it has settled.
 //!
 //! Picking an option shows it picked for 220 ms, then sends it and opens the
@@ -20,7 +20,7 @@
 //! DecisionInbox::new("inbox", vec![
 //!     Decision::new("renewal", "Renew Figma for the design team?", "Renew", "Change seats")
 //!         .header("Renewal")
-//!         .detail("12 seats · $1,800 per year · renews in 5 days"),
+//!         .detail("12 seats for $1,800 per year, renews in 5 days"),
 //! ])
 //! .on_decide(|decision, answer, _, _| println!("{}: {answer:?}", decision.id))
 //! ```
@@ -45,7 +45,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Decision Inbox";
-pub const DESCRIPTION: &str = "Decisions waiting on you under a Needs you heading – the current one opens in the question panel with two numbered answers, the rest wait as one-line cards, and answered ones settle into a record you can click to change";
+pub const DESCRIPTION: &str = "Decisions waiting on you under a Needs you heading: the current one opens in the question panel with two numbered answers, the rest wait as one-line cards, and answered ones settle into a record you can click to change";
 
 const ICON_QUESTION: &str = "icons/decision-inbox/chat-round-line.svg";
 
@@ -532,10 +532,10 @@ fn decision_card(
 ) -> impl IntoElement {
     let answered = !answers.is_empty();
     let status: SharedString = match answers {
-        [] => "Open · click to answer".into(),
-        [only] => format!("Answered: {} · click to change", d.label(*only)).into(),
+        [] => "Open, click to answer".into(),
+        [only] => format!("Answered: {}, click to change", d.label(*only)).into(),
         [.., last] => format!(
-            "Answered {} times, latest: {} · click to change",
+            "Answered {} times, latest: {}, click to change",
             answers.len(),
             d.label(*last)
         )
@@ -548,7 +548,7 @@ fn decision_card(
         div()
             .id(eid(format!("{key}-card-{}", d.id)))
             .role(Role::Button)
-            .aria_label(format!("{} · {status}", d.title))
+            .aria_label(format!("{}, {status}", d.title))
             .tab_index(0)
             .focus_visible(move |style| pink::focus_ring(style, ring))
             .on_key_down(pink::swallow_activation_key)
@@ -919,7 +919,7 @@ pub fn demo_decisions() -> Vec<Decision> {
             "Change seats",
         )
         .header("Renewal")
-        .detail("12 seats · $1,800 per year · renews in 5 days"),
+        .detail("12 seats for $1,800 per year, renews in 5 days"),
         Decision::new(
             "offsite",
             "Book the Lisbon venue for the March offsite?",
@@ -927,7 +927,7 @@ pub fn demo_decisions() -> Vec<Decision> {
             "Keep looking",
         )
         .header("Offsite")
-        .detail("€4,200 for two nights · the hold expires Friday")
+        .detail("€4,200 for two nights, the hold expires Friday")
         .collapsed(true),
         Decision::new(
             "hiring",

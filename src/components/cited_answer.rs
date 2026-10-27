@@ -52,7 +52,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Cited Answer";
-pub const DESCRIPTION: &str = "An answer beside the sources it rests on – superscript citations that wash their sentence and light their source when pointed at, and source cards that fold open on the quoted passage with the backing words marked, ready to copy or open";
+pub const DESCRIPTION: &str = "An answer beside the sources it rests on: superscript citations that wash their sentence and light their source when pointed at, and source cards that fold open on the quoted passage with the backing words marked, ready to copy or open";
 
 const ICON_CHEVRON: &str = "icons/cited-answer/alt-arrow-right.svg";
 const ICON_COPY: &str = "icons/cited-answer/copy.svg";
@@ -131,7 +131,7 @@ impl CitedSource {
         if self.date.is_empty() {
             self.site.clone()
         } else {
-            format!("{} · {}", self.site, self.date).into()
+            format!("{}, {}", self.site, self.date).into()
         }
     }
 }
@@ -685,7 +685,7 @@ impl RenderOnce for CitedAnswer {
         let labels: Rc<Vec<SharedString>> = Rc::new(
             self.sources
                 .iter()
-                .map(|s| SharedString::from(format!("{} · {}", s.site, s.title)))
+                .map(|s| SharedString::from(format!("{}: {}", s.site, s.title)))
                 .collect(),
         );
         let mut first_sentence = 0;
@@ -741,7 +741,7 @@ impl RenderOnce for CitedAnswer {
                     .font_features(pink::tabular_figures())
                     .text_color(t.content_faint)
                     .child(format!(
-                        "{source_count} source{} · {backed} of {total} sentences cited",
+                        "{source_count} source{}, {backed} of {total} sentences cited",
                         if source_count == 1 { "" } else { "s" }
                     )),
             )
@@ -1208,7 +1208,7 @@ impl SourceCard<'_> {
         let live = self.is_open;
         let copy_state = state.clone();
         let quoted = SharedString::from(format!(
-            "“{}”\n— {}, {}",
+            "“{}”\n{}, {}",
             passage, self.source.title, self.source.site
         ));
         let copy = meta_action(

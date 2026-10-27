@@ -39,7 +39,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Approval Card";
-pub const DESCRIPTION: &str = "An agent's request to act, asked in the composer's place – the action and its context, numbered choices you can pick with 1–9, a countdown PINK answers for you unless you keep waiting, and a quiet one-line record in the transcript once it is answered";
+pub const DESCRIPTION: &str = "An agent's request to act, asked in the composer's place: the action and its context, numbered choices you can pick with 1 to 9, a countdown PINK answers for you unless you keep waiting, and a quiet one-line record in the transcript once it is answered";
 
 const ICON_QUESTION: &str = "icons/approval-card/chat-round-line.svg";
 
@@ -84,7 +84,7 @@ impl Decision {
 }
 
 /// One answer the request offers (Pink `ApprovalChoice`: label, scope and
-/// description, rendered as "scope · description" under the label).
+/// description, rendered as "scope: description" under the label).
 #[derive(Clone, Debug)]
 pub struct ApprovalOption {
     pub decision: Decision,
@@ -138,10 +138,10 @@ impl ApprovalOption {
         self
     }
 
-    /// The line under the label (Pink: `"{scope} · {description}"`).
+    /// The line under the label (Pink's scope and description, as `"{scope}: {description}"`).
     fn detail(&self) -> Option<SharedString> {
         match (&self.scope, &self.description) {
-            (Some(scope), Some(description)) => Some(format!("{scope} · {description}").into()),
+            (Some(scope), Some(description)) => Some(format!("{scope}: {description}").into()),
             (None, Some(description)) => Some(description.clone()),
             (Some(scope), None) => Some(scope.clone()),
             (None, None) => None,
@@ -241,7 +241,7 @@ impl ApprovalRequest {
 /// time, PINK picked …" when the auto answer fired.
 fn record_value(header: &str, label: &str, by_pink: bool) -> String {
     if by_pink {
-        format!("{header} · no reply in time, PINK picked {label}")
+        format!("{header}: no reply in time, PINK picked {label}")
     } else {
         header.to_string()
     }
@@ -937,7 +937,7 @@ fn migration() -> ApprovalRequest {
         "Approve command",
         "Claude wants to run the invoice tax migration on prod-eu-1. Target: lena-mbp.",
     )
-    .fact("Command / input", "npm run db:migrate -- --env production")
+    .fact("Command", "npm run db:migrate -- --env production") // joiners: allow a shell command's argument separator
     .fact("Working directory", "~/code/billing")
     .fact(
         "Reason",
@@ -1049,13 +1049,13 @@ mod tests {
         );
         assert_eq!(
             record_value("Approve command", "Deny", true),
-            "Approve command · no reply in time, PINK picked Deny"
+            "Approve command: no reply in time, PINK picked Deny"
         );
     }
 
     #[test]
     fn context_ends_with_the_expiry_row() {
-        let waits = ApprovalRequest::new("Approve command", "…").fact("Command / input", "ls");
+        let waits = ApprovalRequest::new("Approve command", "…").fact("Command", "ls");
         assert_eq!(waits.context_rows().last().unwrap().0, "Approval waits");
         let expires = waits.expires_at("14:32:05");
         assert_eq!(

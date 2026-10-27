@@ -24,7 +24,7 @@
 //!
 //! ```ignore
 //! MemoryPanel::new("memory", vec![MemoryCategory::new("Work", ICON_WORK)])
-//!     .memory(Memory::new("m1", "Leads the payments team", 0).source("From chat · Oct 9"))
+//!     .memory(Memory::new("m1", "Leads the payments team", 0).source("From chat, Oct 9"))
 //!     .on_change(|change, _, _| println!("{change:?}"))
 //! ```
 
@@ -46,7 +46,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Memory Panel";
-pub const DESCRIPTION: &str = "What the assistant remembers about you on a Pink settings card – filter by category, pin, edit in place or forget a memory with an Undo countdown, add your own, or pause memory with its switch";
+pub const DESCRIPTION: &str = "What the assistant remembers about you on a Pink settings card: filter by category, pin, edit in place or forget a memory with an Undo countdown, add your own, or pause memory with its switch";
 
 /// Pink `icons::PIN`, `icons::PEN` and `icons::TRASH_BIN_MINIMALISTIC`: the
 /// row's actions.
@@ -106,7 +106,7 @@ pub struct Memory {
     pub text: SharedString,
     /// Index into the panel's categories.
     pub category: usize,
-    /// Where it came from and when, e.g. "From chat · Oct 9".
+    /// Where it came from and when, e.g. "From chat, Oct 9".
     pub source: SharedString,
     pub pinned: bool,
 }
@@ -355,7 +355,7 @@ impl MemoryState {
         self.items.insert(
             0,
             Item {
-                memory: Memory::new(id.clone(), "", category).source("You added · just now"),
+                memory: Memory::new(id.clone(), "", category).source("You added just now"),
                 forgotten: false,
                 fresh: true,
             },
@@ -606,7 +606,7 @@ impl RenderOnce for MemoryPanel {
                                 .text_color(copy),
                         )
                         .child(div().flex_1().min_w_0().truncate().child(format!(
-                            "Paused – {} won't save or use memories.",
+                            "Paused. {} won't save or use memories.",
                             self.assistant
                         ))),
                 )
@@ -764,7 +764,7 @@ impl RenderOnce for MemoryPanel {
                         "memories"
                     },
                     if pinned > 0 {
-                        format!(" · {pinned} pinned")
+                        format!(", {pinned} pinned")
                     } else {
                         String::new()
                     }
@@ -1059,7 +1059,7 @@ fn rest_row(row: &RowParts, m: &Memory, t: &Pink) -> Stateful<gpui::Div> {
         })
         .child(div().flex_1().min_w_0().truncate().child(
             match category.filter(|_| row.name_category) {
-                Some(c) if !m.source.is_empty() => format!("{} · {}", c.name, m.source).into(),
+                Some(c) if !m.source.is_empty() => format!("{}, {}", c.name, m.source).into(),
                 Some(c) => c.name.clone(),
                 None => m.source.clone(),
             },
@@ -1167,50 +1167,46 @@ fn demo_categories() -> Vec<MemoryCategory> {
 fn demo_memories() -> Vec<Memory> {
     vec![
         Memory::new("m1", "Wants the answer first, then the reasoning", 2)
-            .source("You added · Sep 5")
+            .source("You added Sep 5")
             .pinned(true),
-        Memory::new("m2", "Vegetarian – leave meat out of recipe ideas", 0)
-            .source("You added · Sep 21")
+        Memory::new("m2", "Vegetarian, leave meat out of recipe ideas", 0)
+            .source("You added Sep 21")
             .pinned(true),
         Memory::new(
             "m3",
             "Writes Go services; reviews TypeScript on the side",
             1,
         )
-        .source("From chat · Oct 14"),
-        Memory::new("m4", "Uses metric units and 24-hour time", 2).source("From chat · Oct 11"),
+        .source("From chat, Oct 14"),
+        Memory::new("m4", "Uses metric units and 24-hour time", 2).source("From chat, Oct 11"),
         Memory::new("m5", "Leads the payments team at a 40-person fintech", 1)
-            .source("From chat · Oct 9"),
-        Memory::new("m6", "Based in Lisbon – schedule things in Lisbon time", 0)
-            .source("From chat · Oct 3"),
+            .source("From chat, Oct 9"),
+        Memory::new("m6", "Based in Lisbon, schedule things in Lisbon time", 0)
+            .source("From chat, Oct 3"),
         Memory::new("m7", "Weekly planning happens on Monday mornings", 1)
-            .source("From calendar · Oct 1"),
+            .source("From calendar, Oct 1"),
         Memory::new(
             "m8",
             "Prefers a short RFC with the decision up top over a long Slack thread",
             1,
         )
-        .source("You added · Sep 12"),
+        .source("You added Sep 12"),
     ]
 }
 
 fn paused_memories() -> Vec<Memory> {
     vec![
         Memory::new("p1", "Training for a half marathon in March", 0)
-            .source("From chat · Oct 12")
+            .source("From chat, Oct 12")
             .pinned(true),
-        Memory::new(
-            "p2",
-            "Keeps a focus block after lunch – no meetings then",
-            1,
-        )
-        .source("From calendar · Oct 2"),
+        Memory::new("p2", "Keeps a focus block after lunch, no meetings then", 1)
+            .source("From calendar, Oct 2"),
         Memory::new(
             "p3",
             "Likes replies in plain sentences, not bullet lists",
             2,
         )
-        .source("You added · Sep 28"),
+        .source("You added Sep 28"),
     ]
 }
 

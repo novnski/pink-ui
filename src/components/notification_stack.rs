@@ -47,7 +47,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Notification Stack";
-pub const DESCRIPTION: &str = "Notices piled up above the composer – plates tinted by their tone with a glyph, a label, a capsule action and the message, the ones behind peeking out below the front card until you dismiss it";
+pub const DESCRIPTION: &str = "Notices piled up above the composer: plates tinted by their tone with a glyph, a label, a capsule action and the message, the ones behind peeking out below the front card until you dismiss it";
 
 const ICON_INFO: &str = "icons/notification-stack/info-circle.svg";
 const ICON_DANGER: &str = "icons/notification-stack/danger-triangle.svg";
@@ -578,7 +578,7 @@ pub fn demo_notices() -> Vec<Notice> {
         Notice::new(
             "ticket-moved",
             "Ticket moved",
-            "PINK-42 → In progress · started a new chat",
+            "PINK-42 moved to In progress, started a new chat",
         )
         .action(NoticeAction::new("Open ticket")),
         Notice::new(

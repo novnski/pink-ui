@@ -4,10 +4,10 @@
 //! trailer under the last transcript row. No chip and no card: a bare row
 //! (`pt 16`, `gap 8`, top-aligned) of the breathing accent orb in a 16px line
 //! box, the status – a calm verb in `content_muted` under a slow shimmer, then
-//! its object in `text` – a tabular "· 12s" timer in `content_faint`, and a
+//! its object in `text` – a tabular "12s" timer in `content_faint`, and a
 //! "Stop" that only shows under the pointer. Each new status fades in with a
 //! 2px settle. While a message is still on its way the line reads "Sending"
-//! (no timer), "Setting up worktree · <command>" or, offline, "Queued — will
+//! (no timer), "Setting up worktree <command>" or, offline, "Queued, will
 //! send automatically"; a provider notice ("Reconnecting… 2/5") takes the
 //! status's place while it lasts. Pink has no done state: when the turn ends
 //! the trailer simply leaves, so stop rendering it.
@@ -46,7 +46,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Thinking Loader";
-pub const DESCRIPTION: &str = "The live line under an AI reply while it works – a breathing orb, a shimmering status that names what it is doing, a ticking timer and a quiet Stop on hover";
+pub const DESCRIPTION: &str = "The live line under an AI reply while it works: a breathing orb, a shimmering status that names what it is doing, a ticking timer and a quiet Stop on hover";
 
 /// The phases shown when none are given: Pink's calm fallback word – with
 /// nothing specific in flight it says "Thinking" rather than inventing
@@ -54,7 +54,7 @@ pub const DESCRIPTION: &str = "The live line under an AI reply while it works �
 pub const DEFAULT_PHASES: [&str; 1] = ["Thinking"];
 
 /// Pink: the queued line (`render_working_trailer`).
-const QUEUED_LABEL: &str = "Queued — will send automatically";
+const QUEUED_LABEL: &str = "Queued, will send automatically";
 /// Pink: the line while the host runs the worktree's setup command.
 const SETUP_LABEL: &str = "Setting up worktree";
 /// Pink: the send → turn bridge.
@@ -260,7 +260,7 @@ impl ThinkingLoader {
     }
 
     /// The host holds the message behind the worktree's setup command:
-    /// "Setting up worktree · <command>", timed from
+    /// "Setting up worktree <command>", timed from
     /// [`started_at`](Self::started_at), no Stop.
     pub fn setup(mut self, command: impl Into<SharedString>) -> Self {
         self.setup = Some(command.into());
@@ -332,7 +332,7 @@ impl RenderOnce for ThinkingLoader {
         } else if let Some(command) = &setup {
             (
                 SETUP_LABEL.into(),
-                Some(format!("· {}", status_object(command)).into()),
+                Some(status_object(command).into()),
                 t.content_muted,
             )
         } else if sending {
@@ -421,7 +421,7 @@ const TRANSCRIPT_LINE_HEIGHT: f32 = 22.;
 const DEMO_QUESTION: &str = "CI hangs on cargo test since this morning. Can you find out why?";
 const DEMO_REPLY: [&str; 2] = [
     "The hang is in the pool tests: one of them calls block_on inside the Tokio runtime and ends up waiting on itself.",
-    " Switching it to #[tokio::test] fixes it – the whole suite now passes locally in 41s.",
+    " Switching it to #[tokio::test] fixes it, and the whole suite now passes locally in 41s.",
 ];
 
 /// The steps of the demo turn, as Pink would name them.
@@ -429,6 +429,7 @@ fn demo_phases() -> [LoaderPhase; 5] {
     [
         LoaderPhase::new("Thinking"),
         LoaderPhase::new("Reading").object("ci.yml"),
+        // joiners: allow a shell command's argument separator
         LoaderPhase::new("Running").object("cargo test --workspace -- --test-threads=1"),
         LoaderPhase::new("Searching for").object("block_on"),
         LoaderPhase::new("Writing"),
@@ -610,7 +611,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             match beat {
                 Beat::Send => loader.sending(true),
                 Beat::Step(i) => loader.phase(i),
-                Beat::Notice(i) => loader.phase(i).notice("Reconnecting… 2/5"),
+                Beat::Notice(i) => loader.phase(i).notice("Reconnecting, attempt 2 of 5"),
                 Beat::Done => loader,
             }
         });
@@ -646,7 +647,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .child(ThinkingLoader::new("state-queued").queued(true))
             .child(
                 ThinkingLoader::new("state-warning")
-                    .notice("Context window almost full – older turns will be summarized")
+                    .notice("Context window almost full. Older turns will be summarized")
                     .started_at(warned_at)
                     .on_stop(|_, _, _| {}),
             );

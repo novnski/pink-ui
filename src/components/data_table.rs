@@ -51,7 +51,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Data Table";
-pub const DESCRIPTION: &str = "A spreadsheet in one of Pink's card tables – caption headers over hairline rows, ranges under a gliding focus ring, typed in-place edits, tab-separated copy and paste, undo, and columns you sort and resize";
+pub const DESCRIPTION: &str = "A spreadsheet in one of Pink's card tables: caption headers over hairline rows, ranges under a gliding focus ring, typed in-place edits, tab-separated copy and paste, undo, and columns you sort and resize";
 
 const ICON_UNDO: &str = "icons/data-table/undo.svg";
 const ICON_REDO: &str = "icons/data-table/redo.svg";
@@ -926,7 +926,7 @@ impl RenderOnce for DataTable {
         // controls on the title's line.
         let description = match sheet.sort {
             Some((c, desc)) => format!(
-                "{} · sorted by {}, {}",
+                "{}, sorted by {}, {}",
                 plural(sheet.rows.len(), "row"),
                 columns[c].name,
                 order_words(columns[c].kind, desc)
@@ -1394,10 +1394,10 @@ impl RenderOnce for DataTable {
             if totals.is_empty() {
                 plural(sheet.rows.len(), "row").into()
             } else {
-                format!("Totals · {}", totals.join(" · ")).into()
+                format!("Totals: {}", totals.join(", ")).into()
             }
         } else if r0 == r1 && c0 == c1 {
-            format!("{} · row {}", columns[c0].name, r0 + 1).into()
+            format!("{}, row {}", columns[c0].name, r0 + 1).into()
         } else {
             let cells = (r1 - r0 + 1) * (c1 - c0 + 1);
             let mut text = plural(cells, "cell");
@@ -1422,7 +1422,7 @@ impl RenderOnce for DataTable {
                         grouped(v.round() as i64)
                     }
                 };
-                text.push_str(&format!(" · Sum {} · Avg {}", fmt(sum), fmt(avg)));
+                text.push_str(&format!(", sum {}, average {}", fmt(sum), fmt(avg)));
             }
             text.into()
         };
@@ -1550,7 +1550,7 @@ impl RenderOnce for DataTable {
                         }
                         let mut msg = format!("Pasted {}", plural(written, "cell"));
                         if skipped > 0 {
-                            msg.push_str(&format!(" · skipped {skipped} that didn't fit"));
+                            msg.push_str(&format!(", skipped {skipped} that didn't fit"));
                         }
                         s.say(msg, skipped > 0 && written == 0, cx);
                     }

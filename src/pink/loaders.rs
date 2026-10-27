@@ -810,7 +810,7 @@ impl RenderOnce for ShimmerText {
 // Pink's thinking indicator is one row under the last transcript row:
 // `pt 16, gap 8, items_start`, holding [`orb_slot`], [`working_status`]
 // (verb + object, swapping in on [`motion::STATUS_SWAP`]), [`working_timer`]
-// ("· 12s") and a hover-only "Stop" (`ml 4, px 6, rounded 6`, 11/16
+// ("12s") and a hover-only "Stop" (`ml 4, px 6, rounded 6`, 11/16
 // `content_muted`, opacity 0 → 1 on group hover, `hover_wash`).
 
 /// Working-line verb and object size (Pink `WORKING_STATUS_SIZE`).
@@ -886,7 +886,7 @@ pub fn orb_slot(accent: Hsla) -> Div {
         .child(breathing_orb(accent))
 }
 
-/// The working line's timer (Pink `render_working_trailer`): `"· 12s"` at
+/// The working line's timer (Pink `render_working_trailer`): `"12s"` at
 /// 11/16 with tabular figures, `flex_none`, no wrap. Pink colors it
 /// `content_faint`.
 pub fn working_timer(elapsed_secs: i64, color: Hsla) -> Div {
@@ -897,10 +897,7 @@ pub fn working_timer(elapsed_secs: i64, color: Hsla) -> Div {
         .line_height(px(WORKING_STATUS_LINE_HEIGHT))
         .font_features(tabular_figures())
         .text_color(color)
-        .child(SharedString::from(format!(
-            "· {}",
-            format_elapsed(elapsed_secs)
-        )))
+        .child(SharedString::from(format_elapsed(elapsed_secs)))
 }
 
 /// The working line's status (Pink `render_working_trailer` status line):

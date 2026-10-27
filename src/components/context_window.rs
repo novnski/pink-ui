@@ -49,7 +49,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Context Window";
-pub const DESCRIPTION: &str = "A composer's context chip – a ring and the share in use, muted, then warning and danger as it fills, with the token count on hover – that opens a card mapping the window one cell per percent, with a breakdown that lights its cells, files to drop, and Compact and Clear context";
+pub const DESCRIPTION: &str = "A composer's context chip, a ring and the share in use that turns muted, then warning and danger as it fills and shows the token count on hover. It opens a card mapping the window one cell per percent, with a breakdown that lights its cells, files to drop, and Compact and Clear context";
 
 /// Pink: icons.rs `COLLAPSE_ARROWS`, `REFRESH`, `CLOSE`, `PAPERCLIP`, `ARROW_UP`.
 const ICON_COMPACT: &str = "icons/context-window/minimize.svg";
@@ -320,7 +320,7 @@ fn with_separators(count: u32) -> String {
 fn details(usage: &Usage) -> String {
     let used = usage.used();
     format!(
-        "{} / {} tokens\n{} tokens remaining",
+        "{} of {} tokens\n{} tokens remaining",
         with_separators(used),
         with_separators(usage.capacity),
         with_separators(usage.capacity.saturating_sub(used))
@@ -1565,7 +1565,7 @@ fn tray(
         .flex_col()
         .gap(px(2.))
         .child(caption(
-            format!("CONTEXT · {}", props.model.to_uppercase()).into(),
+            format!("{} CONTEXT", props.model.to_uppercase()).into(),
         ))
         .child(compact)
         .when_some(compact_reason, |d, reason| d.child(caption(reason.into())))
@@ -1779,7 +1779,7 @@ mod tests {
         assert_eq!(with_separators(1_048_576), "1,048,576");
         assert_eq!(
             details(&usage()),
-            "37,000 / 200,000 tokens\n163,000 tokens remaining"
+            "37,000 of 200,000 tokens\n163,000 tokens remaining"
         );
         assert_eq!(label(false, 0.786), "79%");
         assert_eq!(label(true, 0.786), "Compacting…");

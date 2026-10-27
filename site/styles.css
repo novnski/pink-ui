@@ -386,6 +386,7 @@ img { display: block; max-width: 100%; }
 .foot { border-top: 1px solid var(--border); padding: 28px 0 40px; color: var(--muted); font-size: 13.5px; }
 .foot .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
 .foot a { color: var(--text-2); }
+.foot .links { display: flex; gap: 16px; }
 .foot a:hover { color: var(--pink-text); }
 
 .toast {

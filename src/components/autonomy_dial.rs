@@ -37,7 +37,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Autonomy Dial";
-pub const DESCRIPTION: &str = "An agent's access card – a quiet level chip opens the Permission mode menu (Limited access, Approve for me, Full access) and the agent's actions glide between Unattended and Needs approval, with a lock for any action that must always ask";
+pub const DESCRIPTION: &str = "An agent's access card: a quiet level chip opens the Permission mode menu (Limited access, Approve for me, Full access) and the agent's actions glide between Unattended and Needs approval, with a lock for any action that must always ask";
 
 const ICON_LOCK: &str = "icons/autonomy-dial/lock-keyhole-minimalistic.svg";
 const ICON_UNLOCK: &str = "icons/autonomy-dial/lock-keyhole-minimalistic-unlocked.svg";
@@ -994,14 +994,14 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .gap(px(16.))
             .child(
                 AutonomyDial::new("autonomy-dial", "Repo agent", actions.clone())
-                    .detail("lumen-4 · acme/billing-api")
+                    .detail("lumen-4 in acme/billing-api")
                     .hue(205.)
                     .level(1)
                     .menu_open(true),
             )
             .child(
                 AutonomyDial::new("autonomy-dial-release", "Release bot", release.clone())
-                    .detail("lumen-4-mini · acme/billing-api")
+                    .detail("lumen-4-mini in acme/billing-api")
                     .hue(150.)
                     .level(2),
             )

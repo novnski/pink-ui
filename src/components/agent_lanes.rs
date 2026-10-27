@@ -37,7 +37,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Agent Lanes";
-pub const DESCRIPTION: &str = "Every agent's work as a board column of time – cards grow down into a now line, hand-offs step across lanes on a hairline rail, a 5, 15 or 30 minute switch rescales it all, and an approval waits on its card with Approve and Deny";
+pub const DESCRIPTION: &str = "Every agent's work as a board column of time: cards grow down into a now line, hand-offs step across lanes on a hairline rail, a 5, 15 or 30 minute switch rescales it all, and an approval waits on its card with Approve and Deny";
 
 const ICON_SHIELD: &str = "icons/agent-lanes/shield-warning.svg";
 const ICON_CHECK: &str = "icons/agent-lanes/check.svg";
@@ -644,7 +644,7 @@ impl RenderOnce for AgentLanes {
             (0, 0) => "Every agent is idle".to_string(),
             (w, 0) => format!("{w} working"),
             (0, n) => format!("{n} waiting on you"),
-            (w, n) => format!("{w} working · {n} waiting on you"),
+            (w, n) => format!("{w} working, {n} waiting on you"),
         };
         let switch = pink::segmented(
             format!("{key}-window"),
@@ -915,7 +915,7 @@ impl RenderOnce for AgentLanes {
                 }
                 if phase != Phase::Hidden {
                     meta.push(format!(
-                        "{} – {}",
+                        "{} to {}",
                         wall(live.start),
                         if matches!(phase, Phase::Running | Phase::Waiting) {
                             "now".to_string()
@@ -927,7 +927,7 @@ impl RenderOnce for AgentLanes {
                 pink::card_row(false, &t)
                     .child(motion::status_swap(
                         ElementId::Name(format!("{key}-detail-{ix}-{}", s.generation).into()),
-                        pink::row_text(live.block.title.clone(), Some(meta.join(" · ").into()), &t),
+                        pink::row_text(live.block.title.clone(), Some(meta.join(", ").into()), &t),
                     ))
                     .child(pink::row_controls().child(status_badge(
                         Status::of(phase),

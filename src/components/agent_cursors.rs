@@ -47,7 +47,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Agent Cursors";
-pub const DESCRIPTION: &str = "Agents edit a shared document like teammates – tinted pointers glide to their spot, type suggestions letter by letter, resize a figure and fix a config, and every change waits in a margin note to accept or dismiss";
+pub const DESCRIPTION: &str = "Agents edit a shared document like teammates: tinted pointers glide to their spot, type suggestions letter by letter, resize a figure and fix a config, and every change waits in a margin note to accept or dismiss";
 
 const ICON_CLOSE: &str = "icons/agent-cursors/close.svg";
 const ICON_FOLLOW: &str = "icons/agent-cursors/follow.svg";
@@ -1747,14 +1747,14 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .agent(CursorAgent::new("Fixer"))
             .agent(CursorAgent::new("Reviewer"))
             .block(DocBlock::Title("Checkout slowdown, October 14".into()))
-            .block(DocBlock::Meta("Postmortem · Payments · Draft".into()))
+            .block(DocBlock::Meta("Payments postmortem, draft".into()))
             .block(DocBlock::Paragraph(vec![
                 Run::text("From 14:05 to 14:52 card checkouts were slow for "),
                 Run::Edit(0),
                 Run::text(", and 3.1% of payments timed out before the gateway answered."),
             ]))
             .block(DocBlock::Figure {
-                caption: "Figure 1 · p95 checkout latency, 13:30 to 15:30".into(),
+                caption: "Figure 1: p95 checkout latency, 13:30 to 15:30".into(),
                 edit: Some(1),
                 width: 260.0,
             })

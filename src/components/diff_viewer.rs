@@ -54,7 +54,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Diff Viewer";
-pub const DESCRIPTION: &str = "A checkout's changes as Pink's diff pane – one folding section per file with its icon, path and +N −N, hunk bands over unified or side-by-side rows with the changed words washed, a sticky file header, scope and base pickers, and a + on any line to leave a review comment";
+pub const DESCRIPTION: &str = "A checkout's changes as Pink's diff pane: one folding section per file with its icon, path and +N −N, hunk bands over unified or side-by-side rows with the changed words washed, a sticky file header, scope and base pickers, and a + on any line to leave a review comment";
 
 const ICON_CHEVRON: &str = "icons/diff-viewer/alt-arrow-right.svg";
 const ICON_DOWN: &str = "icons/diff-viewer/alt-arrow-down.svg";
@@ -495,7 +495,7 @@ pub fn file_notices(file: &DiffFile) -> Vec<SharedString> {
         FileStatus::Modified => {}
     }
     if file.binary {
-        notices.push("Binary file — contents not shown".into());
+        notices.push("Binary file, contents not shown".into());
     }
     notices.extend(file.notices.iter().cloned());
     notices
@@ -1468,6 +1468,7 @@ fn row_paint(kind: LineKind, t: &Pink) -> RowPaint {
         LineKind::Add => tinted("+", t.diff_add),
         LineKind::Del => tinted("−", t.diff_del),
         _ => RowPaint {
+            // joiners: allow the context line's gutter marker, not a joiner
             marker: "·",
             marker_color: t.readable_faint(0.5),
             wash: None,
@@ -4589,7 +4590,7 @@ mod tests {
             file_notices(&files[5]),
             vec![
                 SharedString::from("New file"),
-                "Binary file — contents not shown".into()
+                "Binary file, contents not shown".into()
             ]
         );
     }

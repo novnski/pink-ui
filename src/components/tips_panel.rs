@@ -53,7 +53,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Tips Panel";
-pub const DESCRIPTION: &str = "Tips laid out like Pink's Board empty state – a heading with a done count over a wrapping grid of quiet tiles, each one action with its verb in the corner, and a taken tip settling into a green check and its done label";
+pub const DESCRIPTION: &str = "Tips laid out like Pink's Board empty state: a heading with a done count over a wrapping grid of quiet tiles, each one action with its verb in the corner, and a taken tip settling into a green check and its done label";
 
 const ICON_CHECK: &str = "icons/tips-panel/check.svg";
 const ICON_CLOSE: &str = "icons/tips-panel/close.svg";

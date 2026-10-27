@@ -33,7 +33,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Message Actions";
-pub const DESCRIPTION: &str = "The hover lane under a chat message – its timestamp and quiet icon actions to branch into a side chat, fork from here, edit, rewind or copy, fading in while the message is hovered, with Copy turning into a check";
+pub const DESCRIPTION: &str = "The hover lane under a chat message: its timestamp and quiet icon actions to branch into a side chat, fork from here, edit, rewind or copy, fading in while the message is hovered, with Copy turning into a check";
 
 const ICON_COPY: &str = "icons/message-actions/copy.svg";
 const ICON_COPY_CHECK: &str = "icons/message-actions/copy-check.svg";

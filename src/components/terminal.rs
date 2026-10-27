@@ -56,7 +56,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Terminal";
-pub const DESCRIPTION: &str = "A terminal drawer as Pink draws it – session tabs you can reorder, a monospace grid in Pink's sixteen ANSI colors with a translucent block cursor, drag, word and line selection, scrollback behind a quiet rail, and a Commands shelf for the project's saved tasks";
+pub const DESCRIPTION: &str = "A terminal drawer as Pink draws it: session tabs you can reorder, a monospace grid in Pink's sixteen ANSI colors with a translucent block cursor, drag, word and line selection, scrollback behind a quiet rail, and a Commands shelf for the project's saved tasks";
 
 const ICON_TERMINAL: &str = "icons/terminal/terminal.svg";
 const ICON_PLUS: &str = "icons/terminal/plus.svg";

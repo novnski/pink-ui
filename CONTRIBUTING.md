@@ -199,6 +199,13 @@ with `node scripts/site/thumbnails.mjs site/dist` and commit `site/thumbs/`.
 
 - Pink's source wins: if the app has the component, the pink-ui one matches it
   value for value, and its doc comments name the Pink code it follows.
+- Labels never join facts with `·`, ` -- `, an em or en dash, ` | `, ` / ` or
+  a fraction like `2/4`, in visible copy, tooltips, accessibility names,
+  descriptions or stories. Use hierarchy, a chip, an icon or a plain phrase
+  (`main in my-worktree`, `attempt 2 of 4`). `cargo test` runs
+  `tests/label_joiners.rs` over every string literal in `src/` and `web/src/`;
+  content that isn't a label (a shell command, a code sample) takes a
+  `// joiners: allow <reason>` comment on or above its line.
 - Run the review checklist in [`docs/pink-design.md`](docs/pink-design.md)
   over your component: no private palettes, no off-ladder sizes, no shadows on
   in-flow surfaces, no bounce, no saturated fills.

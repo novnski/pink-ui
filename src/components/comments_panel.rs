@@ -38,7 +38,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Comments Panel";
-pub const DESCRIPTION: &str = "A document's review comments in a side pane – flat note cards pinned to a line, slash-command notes that run as an edit and show the change as a diff with an Undo, resolving that folds a note away into Resolved, and a draft card where / opens command completion";
+pub const DESCRIPTION: &str = "A document's review comments in a side pane: flat note cards pinned to a line, slash-command notes that run as an edit and show the change as a diff with an Undo, resolving that folds a note away into Resolved, and a draft card where typing a slash opens command completion";
 
 /// Pink `icons::CHAT_ROUND_LINE`, the comment card's glyph.
 const ICON_COMMENT: &str = "icons/comments-panel/chat-round-line.svg";
@@ -248,6 +248,7 @@ struct State {
 impl State {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let input = cx
+            // joiners: allow the slash below is the key to type, not a joiner
             .new(|cx| TextInput::new(window, cx).placeholder("Comment, or type / for a command…"));
         let sub = cx.subscribe_in(&input, window, |this: &mut State, _, ev, window, cx| {
             let matches = this.matching().map_or(0, |m| m.len());
@@ -1545,8 +1546,8 @@ impl Demo {
                 .time("1h")
                 .line(12)
                 .edit(EditCommand::new(
-                    "Starter · Team · Enterprise",
-                    "Starter · Team · Unternehmen",
+                    "Starter, Team and Enterprise",
+                    "Starter, Team und Unternehmen",
                 )),
                 Comment::new(
                     "c4",

@@ -51,7 +51,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Markdown Message";
-pub const DESCRIPTION: &str = "An AI reply rendered from markdown the way Pink's transcript draws it – headings, accent list markers and task checkboxes, quotes, frameless tables and code fences with syntax colors, Fit and Copy, with streamed text dissolving in as it arrives";
+pub const DESCRIPTION: &str = "An AI reply rendered from markdown the way Pink's transcript draws it: headings, accent list markers and task checkboxes, quotes, frameless tables and code fences with syntax colors, Fit and Copy, with streamed text dissolving in as it arrives";
 
 // ---------------------------------------------------------------------------
 // Metrics (Pink: `markdown/render.rs`)
@@ -811,7 +811,9 @@ fn entity(s: &str) -> Option<(&'static str, usize)> {
         ("&quot;", "\""),
         ("&#39;", "'"),
         ("&nbsp;", "\u{a0}"),
+        // joiners: allow HTML entities decoded into the message's own text
         ("&mdash;", "—"),
+        // joiners: allow HTML entities decoded into the message's own text
         ("&ndash;", "–"),
         ("&hellip;", "…"),
     ] {
@@ -3461,6 +3463,7 @@ const DEMO_TASKS: [&str; 3] = [
 ];
 
 /// The demo reply up to its task list.
+// joiners: allow a sample markdown reply, rendered as prose
 const DEMO_REPLY: &str = r#"## Redact sensitive headers before logging
 
 The leak comes from `RequestLogger`, which prints the header map verbatim. Wrap it in a **redacting view** so `Authorization` and `Cookie` never reach the formatter – the rest stay readable. The [`tracing` field docs](https://docs.rs/tracing/latest/tracing/field/index.html) cover the same idea for spans.
@@ -3657,6 +3660,7 @@ mod tests {
     #[test]
     fn parses_the_blocks_pink_supports() {
         let blocks = parse(
+            // joiners: allow markdown table syntax under test
             "# Title\n\nSome *em* and **strong** text.\n\n- one\n- [x] two\n\n3. three\n4. four\n\n> quoted\n\n---\n\n```rust\nfn main() {}\n```\n\n| a | b |\n|:-|-:|\n| 1 | 2 |\n",
             false,
         );

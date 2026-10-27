@@ -35,7 +35,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Stepper Form";
-pub const DESCRIPTION: &str = "A multi-step setup flow on one paged card – a step counter, captioned fields, numbered choices that move on by themselves, invites you can take back, a review with edit links and a Back / Next footer that says what's missing";
+pub const DESCRIPTION: &str = "A multi-step setup flow on one paged card: a step counter, captioned fields, numbered choices that move on by themselves, invites you can take back, a review with edit links and a Back and Next footer that says what's missing";
 
 const ICON_CLOSE: &str = "icons/stepper-form/close.svg";
 
@@ -554,7 +554,7 @@ impl RenderOnce for StepperForm {
             (Phase::Done, _) => (
                 format!("{} is ready", project.name).into(),
                 format!(
-                    "{} invite{} sent · data in {}",
+                    "{} invite{} sent, data in {}",
                     project.invites.len(),
                     if project.invites.len() == 1 { "" } else { "s" },
                     project.region
@@ -865,7 +865,7 @@ fn step_region(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> AnyE
                 key,
                 ix,
                 city,
-                format!("{code} · {latency}").into(),
+                format!("{code}, {latency}").into(),
                 s.region == Some(ix),
                 state,
                 t,
@@ -978,8 +978,8 @@ fn step_review(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> AnyE
     let creating = s.phase == Phase::Creating;
     let region = s
         .region
-        .map(|r| format!("{} · {}", REGIONS[r].0, REGIONS[r].1))
-        .unwrap_or_else(|| "–".into());
+        .map(|r| format!("{} ({})", REGIONS[r].0, REGIONS[r].1))
+        .unwrap_or_else(|| "Not chosen".into());
     let invites = match project.invites.len() {
         0 => "Nobody yet".to_string(),
         1 => project.invites[0].to_string(),

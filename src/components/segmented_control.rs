@@ -45,7 +45,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Segmented Control";
-pub const DESCRIPTION: &str = "Switch between two to five options – a thumb that slides along a quiet track, accent chips or tabs on a hairline – with glyphs, counts, badges and arrow keys";
+pub const DESCRIPTION: &str = "Switch between two to five options: a thumb that slides along a quiet track, accent chips or tabs on a hairline, with glyphs, counts, badges and arrow keys";
 
 type ChangeHandler = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
 

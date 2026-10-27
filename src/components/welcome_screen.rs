@@ -33,7 +33,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Welcome Screen";
-pub const DESCRIPTION: &str = "The first thing a new workspace shows – a lit text-drawn moon that turns once under the pointer, above one question and the one button that starts a project";
+pub const DESCRIPTION: &str = "The first thing a new workspace shows: a lit text-drawn moon that turns once under the pointer, above one question and the one button that starts a project";
 
 /// Pink: empty_project_moon.rs – the text grid.
 const COLUMNS: usize = 72;

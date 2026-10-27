@@ -1171,7 +1171,7 @@ pub fn monogram(name: &str) -> SharedString {
     name.chars()
         .find(|ch| ch.is_alphanumeric())
         .map(|ch| ch.to_uppercase().collect::<String>())
-        .unwrap_or_else(|| "·".into())
+        .unwrap_or_else(|| "·".into()) // joiners: allow a lone placeholder glyph for a name with no letter
         .into()
 }
 

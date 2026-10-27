@@ -31,7 +31,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Change Summary";
-pub const DESCRIPTION: &str = "What moved since last time on a Pink section card – one metric per row, its name over what happened, beside a tinted tile whose arrow says which way and whose color says good or bad";
+pub const DESCRIPTION: &str = "What moved since last time on a Pink section card: one metric per row, its name over what happened, beside a tinted tile whose arrow says which way and whose color says good or bad";
 
 /// The card's widest: a compact data card (pink-ui's stage size for it).
 const MAX_WIDTH: f32 = 480.;

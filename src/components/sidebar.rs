@@ -51,7 +51,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Sidebar";
-pub const DESCRIPTION: &str = "The app's task sidebar – a project pill with live counts that opens a searchable picker, New thread and page rows, every task with its live status, time and hover actions in folding groups, and quiet Settled and Archived shelves underneath";
+pub const DESCRIPTION: &str = "The app's task sidebar: a project pill with live counts that opens a searchable picker, New thread and page rows, every task with its live status, time and hover actions in folding groups, and quiet Settled and Archived shelves underneath";
 
 const ICON_NEW_THREAD: &str = "icons/sidebar/pen-new-square.svg";
 const ICON_AUTOMATIONS: &str = "icons/sidebar/stopwatch-play.svg";
@@ -823,7 +823,7 @@ impl Counts {
         if self.working > 0 {
             parts.push(format!("{} running", self.working));
         }
-        parts.join(" · ")
+        parts.join(", ")
     }
 }
 
@@ -2175,7 +2175,7 @@ impl RowCx<'_> {
             project: self.s.project_name(&task.project),
             device: self.s.device_of(task),
             model: task.harness.map(|h| match &task.model {
-                Some(model) => format!("{} · {model}", h.provider()).into(),
+                Some(model) => format!("{model} on {}", h.provider()).into(),
                 None => h.provider().into(),
             }),
             branch: task.branch.clone(),
@@ -2540,7 +2540,7 @@ fn task_row(
                             color,
                         )
                         .tooltip(pink::text_tooltip(format!(
-                            "Pull request #{number} · {}",
+                            "Pull request #{number}, {}",
                             match state {
                                 PullRequestState::Open => "Open",
                                 PullRequestState::Merged => "Merged",
@@ -2576,9 +2576,6 @@ fn task_row(
                             fade_to,
                             c.clips,
                         ))
-                        .when(branch.is_some(), |el| {
-                            el.child(div().flex_none().child("·"))
-                        })
                     })
                     .when_some(branch, |el, branch| {
                         el.child(icon(ICON_BRANCH, 11.0, subline))
@@ -2819,7 +2816,6 @@ fn project_header(
             ..counts
         }
         .summary()
-        .replace(" · ", ", ")
     };
     let state = c.state.clone();
     let new_project = project.clone();
@@ -4681,14 +4677,14 @@ mod tests {
             working: 2,
             last: None,
         };
-        assert_eq!(counts.summary(), "4 open tasks · 1 needs you · 2 running");
+        assert_eq!(counts.summary(), "4 open tasks, 1 needs you, 2 running");
         let counts = Counts {
             active: 1,
             need: 2,
             working: 0,
             last: None,
         };
-        assert_eq!(counts.summary(), "1 open task · 2 need you");
+        assert_eq!(counts.summary(), "1 open task, 2 need you");
     }
 
     #[test]

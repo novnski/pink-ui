@@ -44,7 +44,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Prompt Library";
-pub const DESCRIPTION: &str = "Saved prompts in a menu above the composer – open one, type into the blanks of its sentence and use it once nothing is missing";
+pub const DESCRIPTION: &str = "Saved prompts in a menu above the composer: open one, type into the blanks of its sentence and use it once nothing is missing";
 
 const ICON_NOTEBOOK: &str = "icons/prompt-library/notebook.svg";
 

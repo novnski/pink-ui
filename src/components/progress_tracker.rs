@@ -1,5 +1,5 @@
 //! Progress Tracker – an onboarding checklist on a Pink card: a title over
-//! Pink's checklist summary ("1/5 · Next: …") and usage meter, then the steps
+//! Pink's checklist summary ("1 of 5 done, next: …") and usage meter, then the steps
 //! as square checkboxes.
 //!
 //! The header is Pink's usage limit row (`shell/usage.rs`): the title and a
@@ -40,7 +40,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Progress Tracker";
-pub const DESCRIPTION: &str = "Onboarding checklist card – a done/total summary over a quiet meter, and square checkboxes that tick steps off, one after another in auto play";
+pub const DESCRIPTION: &str = "Onboarding checklist card: a done/total summary over a quiet meter, and square checkboxes that tick steps off, one after another in auto play";
 
 /// The card's width: Pink's dialog width.
 const WIDTH: f32 = layout::DIALOG_WIDTH;
@@ -71,16 +71,16 @@ impl ProgressStep {
 }
 
 /// Pink: composer/checklist.rs `render_checklist` – the summary line,
-/// `"{done}/{total} · {detail}"`, naming the next open step.
+/// `"{done} of {total} done, {detail}"`, naming the next open step.
 fn summary(steps: &[(SharedString, bool)]) -> String {
     let done = steps.iter().filter(|(_, d)| *d).count();
     let total = steps.len();
     let detail = match steps.iter().find(|(_, d)| !*d) {
-        Some((label, _)) => format!("Next: {label}"),
-        None if total > 0 => "Checklist complete".into(),
-        None => "No active step".into(),
+        Some((label, _)) => format!("next: {label}"),
+        None if total > 0 => "checklist complete".into(),
+        None => "no active step".into(),
     };
-    format!("{done}/{total} · {detail}")
+    format!("{done} of {total} done, {detail}")
 }
 
 struct State {
@@ -602,13 +602,19 @@ mod tests {
 
     #[test]
     fn summary_names_the_next_open_step() {
-        assert_eq!(summary(&steps(&[true, false, false])), "1/3 · Next: Step 2");
-        assert_eq!(summary(&steps(&[false, true])), "1/2 · Next: Step 1");
+        assert_eq!(
+            summary(&steps(&[true, false, false])),
+            "1 of 3 done, next: Step 2"
+        );
+        assert_eq!(summary(&steps(&[false, true])), "1 of 2 done, next: Step 1");
     }
 
     #[test]
     fn summary_reads_complete_when_every_step_is_done() {
-        assert_eq!(summary(&steps(&[true, true])), "2/2 · Checklist complete");
-        assert_eq!(summary(&steps(&[])), "0/0 · No active step");
+        assert_eq!(
+            summary(&steps(&[true, true])),
+            "2 of 2 done, checklist complete"
+        );
+        assert_eq!(summary(&steps(&[])), "0 of 0 done, no active step");
     }
 }

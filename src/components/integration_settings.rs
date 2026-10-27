@@ -37,7 +37,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Integration Settings";
-pub const DESCRIPTION: &str = "A connected service on a Pink settings card – a switch that folds the card to its header when off, a token to show, copy and rotate, an address checked as you type, a sync cadence on a segmented track, a time-zone pop-up menu, and a footer that holds edits until you save";
+pub const DESCRIPTION: &str = "A connected service on a Pink settings card: a switch that folds the card to its header when off, a token to show, copy and rotate, an address checked as you type, a sync cadence on a segmented track, a time-zone pop-up menu, and a footer that holds edits until you save";
 
 const ICON_EYE: &str = "icons/integration-settings/eye.svg";
 const ICON_EYE_CLOSED: &str = "icons/integration-settings/eye-closed.svg";
@@ -70,12 +70,12 @@ const CADENCES: [(&str, &str); 3] = [
 
 /// Time zones offered by the menu: the offset, then the city.
 pub const ZONES: [&str; 6] = [
-    "UTC−08:00 · Los Angeles",
-    "UTC−05:00 · New York",
-    "UTC±00:00 · Lisbon",
-    "UTC+01:00 · Amsterdam",
-    "UTC+05:30 · Bengaluru",
-    "UTC+09:00 · Seoul",
+    "UTC−08:00 Los Angeles",
+    "UTC−05:00 New York",
+    "UTC±00:00 Lisbon",
+    "UTC+01:00 Amsterdam",
+    "UTC+05:30 Bengaluru",
+    "UTC+09:00 Seoul",
 ];
 
 type SaveHandler = Rc<dyn Fn(&SettingsValues, &mut Window, &mut App)>;
@@ -110,7 +110,7 @@ fn validate(subdomain: &str) -> Option<&'static str> {
         .chars()
         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
     {
-        Some("Use only a–z, 0–9 and dashes.")
+        Some("Use only lowercase letters, digits and dashes.")
     } else if subdomain.starts_with('-') || subdomain.ends_with('-') {
         Some("It can't start or end with a dash.")
     } else if len < 3 {
@@ -601,14 +601,10 @@ impl IntegrationSettings {
     }
 }
 
-/// The quiet line under a row title (Pink: settings/widgets.rs `meta_line`):
-/// 12 in `readable_muted(0.8)`, fragments split by a faint "·".
+/// The quiet line under a row title (Pink `settings/widgets.rs` `meta_line`):
+/// 12 px fragments in `readable_muted(0.8)`, 12 apart and never split by a
+/// glyph (UI rethink decision 31), so each fragment reads as its own fact.
 fn meta_line(fragments: Vec<AnyElement>, t: &Pink) -> Div {
-    let dot = if t.dark {
-        t.text_muted.opacity(0.3)
-    } else {
-        t.text_muted
-    };
     let mut line = div()
         .min_w_0()
         .mt(px(space::TEXT_STACK_GAP))
@@ -616,15 +612,12 @@ fn meta_line(fragments: Vec<AnyElement>, t: &Pink) -> Div {
         .flex_row()
         .flex_wrap()
         .items_center()
-        .gap_x(px(space::S8))
+        .gap_x(px(space::S12))
         .gap_y(px(space::S2))
         .text_size(px(12.))
         .line_height(px(16.))
         .text_color(t.readable_muted(0.8));
-    for (ix, fragment) in fragments.into_iter().enumerate() {
-        if ix > 0 {
-            line = line.child(div().text_color(dot).child("·"));
-        }
+    for fragment in fragments {
         line = line.child(div().min_w_0().flex_shrink(1.0).child(fragment));
     }
     line
@@ -870,7 +863,7 @@ fn zone_row(key: &str, state: &Entity<SettingsState>, t: &Pink, cx: &App) -> Div
             .enumerate()
             .map(|(ix, entry)| {
                 let active = ix == zone;
-                let (offset, city) = entry.split_once(" · ").unwrap_or((entry, ""));
+                let (offset, city) = entry.split_once(' ').unwrap_or((entry, ""));
                 let state = state.clone();
                 pink::menu_row(format!("{key}-zone-row-{ix}"), active, t)
                     .role(Role::Button)
@@ -1117,7 +1110,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .gap(px(layout::SECTION_GAP))
             .child(
                 IntegrationSettings::new("integration-settings", "Ledgerly", "LG")
-                    .summary("Last sync 4 min ago · 1,284 invoices mirrored")
+                    .summary("Last sync 4 min ago, 1,284 invoices mirrored")
                     .domain(".ledgerly.app")
                     .values(SettingsValues {
                         enabled: true,

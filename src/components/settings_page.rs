@@ -50,7 +50,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Settings Page";
-pub const DESCRIPTION: &str = "Pink's settings window – sections in a sidebar with a search that jumps to any setting and marks it, and pages of titled cards whose rows hold switches, segmented tracks and pop-up menus, each with a reset back to its default";
+pub const DESCRIPTION: &str = "Pink's settings window: sections in a sidebar with a search that jumps to any setting and marks it, and pages of titled cards whose rows hold switches, segmented tracks and pop-up menus, each with a reset back to its default";
 
 /// The navigation glyphs of Pink's built-in sections (Pink
 /// `SettingsSection::icon`), Solar Linear.
@@ -933,7 +933,7 @@ fn search_hits(
                     target: Target::Row(ci, ri),
                     title: row.title.clone(),
                     breadcrumb: format!("{} › {}", section.label, card.title).into(),
-                    detail: detail.join(" · ").into(),
+                    detail: detail.join(", ").into(),
                     condition: condition_for(row, card),
                     rank,
                 });
@@ -3067,7 +3067,7 @@ fn sections() -> Vec<SettingsSection> {
                             "Provider default",
                             "Opus",
                             "Sonnet",
-                            "Sonnet · 1M context",
+                            "Sonnet with 1M context",
                             "Haiku",
                         ],
                         2,
@@ -3216,7 +3216,7 @@ fn sections() -> Vec<SettingsSection> {
         .subtitle("Keep PINK current. Updates download in the background and apply on restart.")
         .card(
             SettingsCard::new("version", "PINK 0.42.3")
-                .description("Released October 21 · Checked 12 minutes ago.")
+                .description("Released October 21. Checked 12 minutes ago.")
                 .row(SettingRow::badge(
                     "update-status",
                     "Status",
@@ -3321,7 +3321,7 @@ mod tests {
         assert_eq!(first.title.as_ref(), "Prevent sleep while running");
         assert_eq!(first.breadcrumb.as_ref(), "General › Running tasks");
         // The story turned it on; its default is off.
-        assert_eq!(first.detail.as_ref(), "This device · Immediately · Changed");
+        assert_eq!(first.detail.as_ref(), "This device, Immediately, Changed");
         // Every word must match somewhere.
         assert!(search_hits("sleep banana", &sections, &values).is_empty());
         assert!(search_hits("   ", &sections, &values).is_empty());

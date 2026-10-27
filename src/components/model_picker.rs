@@ -40,7 +40,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Model Picker";
-pub const DESCRIPTION: &str = "A composer's model chip and menu – provider tabs, a search row, compact model rows with ⌘ shortcuts and stars, and a tray whose Reasoning and option rows open nested choices";
+pub const DESCRIPTION: &str = "A composer's model chip and menu: provider tabs, a search row, compact model rows with ⌘ shortcuts and stars, and a tray whose Reasoning and option rows open nested choices";
 
 const ICON_HELIX: &str = "icons/model-picker/helix.svg";
 const ICON_ORBIT: &str = "icons/model-picker/orbit.svg";
@@ -766,7 +766,7 @@ impl PickerState {
         })
     }
 
-    /// "High · 1M · Fast": the reasoning level and every setting's choice
+    /// "High, 1M, Fast": the reasoning level and every setting's choice
     /// (Pink: `traits_summary`).
     fn summary(&self) -> Option<SharedString> {
         let model = self.model();
@@ -779,7 +779,7 @@ impl PickerState {
                 parts.push(choice.clone());
             }
         }
-        (!parts.is_empty()).then(|| parts.join(" · ").into())
+        (!parts.is_empty()).then(|| parts.join(", ").into())
     }
 
     /// Runs a callback once the current update is done.
@@ -1563,7 +1563,7 @@ fn list(
         let note = if !s.query.trim().is_empty() {
             "No models found"
         } else {
-            "No starred models yet — hit a row's star"
+            "No starred models yet. Star a row to keep it here"
         };
         div()
             .id("model-list")
@@ -1681,8 +1681,7 @@ fn model_row(
                     )
                     .child(meta(provider.name.clone()))
                     .when_some(attribution, |el, attribution| {
-                        el.child(meta("·".into()))
-                            .child(meta(attribution).flex_initial().min_w_0().truncate())
+                        el.child(meta(attribution).flex_initial().min_w_0().truncate())
                     }),
             )
     };

@@ -68,7 +68,7 @@ use crate::{
 };
 
 pub const NAME: &str = "AI Answer";
-pub const DESCRIPTION: &str = "One assistant turn as Pink's transcript draws it – the question in a bubble, the searches and pages behind the reply folded into a tool group, an answer that fades in as it streams with citations that preview their source, and Retry and Copy on hover once it settles";
+pub const DESCRIPTION: &str = "One assistant turn as Pink's transcript draws it: the question in a bubble, the searches and pages behind the reply folded into a tool group, an answer that fades in as it streams with citations that preview their source, and Retry and Copy on hover once it settles";
 
 const ICON_COPY: &str = "icons/ai-answer/copy.svg";
 const ICON_COPY_CHECK: &str = "icons/ai-answer/copy-check.svg";
@@ -352,7 +352,7 @@ fn tool_group_summary(searches: usize, fetches: usize) -> String {
     if fetches > 0 {
         segments.push(format!("fetched {}", plural(fetches, "page", "pages")));
     }
-    let summary = segments.join(" · ");
+    let summary = segments.join(", ");
     let mut chars = summary.chars();
     match chars.next() {
         Some(first) => first.to_uppercase().chain(chars).collect(),
@@ -2325,10 +2325,7 @@ mod tests {
 
     #[test]
     fn summary_and_status_read_like_pink() {
-        assert_eq!(
-            tool_group_summary(1, 4),
-            "Searched 1 time · fetched 4 pages"
-        );
+        assert_eq!(tool_group_summary(1, 4), "Searched 1 time, fetched 4 pages");
         assert_eq!(tool_group_summary(0, 1), "Fetched 1 page");
         assert_eq!(
             url_host("https://datatracker.ietf.org/doc/html/rfc9700"),

@@ -43,7 +43,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Inline Diff";
-pub const DESCRIPTION: &str = "An agent's edits to a file as Pink's inline diff – old and new lines on red and green washes with the changed words marked, a review card under the edit in focus to keep or drop it with Y / N, and a footer that settles the rest and applies the review";
+pub const DESCRIPTION: &str = "An agent's edits to a file as Pink's inline diff: old and new lines on red and green washes with the changed words marked, a review card under the edit in focus to keep or drop it with Y or N, and a footer that settles the rest and applies the review";
 
 const ICON_NOTE: &str = "icons/inline-diff/chat-round-line.svg";
 const ICON_UNDO: &str = "icons/inline-diff/undo-left.svg";
@@ -1218,12 +1218,6 @@ impl RenderOnce for InlineDiff {
                     .when_some(self.intent.clone(), |row, intent| {
                         row.child(
                             div()
-                                .flex_none()
-                                .text_color(t.decorative_muted(0.3))
-                                .child("·"),
-                        )
-                        .child(
-                            div()
                                 .flex_1()
                                 .min_w_0()
                                 .truncate()
@@ -1278,7 +1272,7 @@ impl RenderOnce for InlineDiff {
                 .on_click(move |_, window, cx| act(Command::Apply, window, cx))
             };
             (
-                footer_note(format!("{kept} kept · {} dropped", n - kept), &t),
+                footer_note(format!("{kept} kept, {} dropped", n - kept), &t),
                 Some(apply.into_any_element()),
             )
         } else {
@@ -1444,6 +1438,7 @@ impl RowPaint<'_> {
             _ => t.readable_on(tone, wash, TEXT_CONTRAST_TARGET),
         };
         let marker = match row.kind {
+            // joiners: allow the context line's gutter marker, not a joiner
             RowKind::Context => "·",
             RowKind::Del => "−",
             RowKind::Add => "+",

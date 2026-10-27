@@ -49,7 +49,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Experiment Card";
-pub const DESCRIPTION: &str = "An A/B test whose header folds open onto each variant's cumulative lift, value and confidence interval – switch the metric, point at a day for a readout, pick a winner and ship it";
+pub const DESCRIPTION: &str = "An A/B test whose header folds open onto each variant's cumulative lift, value and confidence interval: switch the metric, point at a day for a readout, pick a winner and ship it";
 
 /// Solar `test-tube-minimalistic` (Pink's icon family; Pink has no test glyph).
 const ICON_TEST: &str = "icons/experiment-card/test-tube.svg";
@@ -410,14 +410,14 @@ impl RenderOnce for ExperimentCard {
             (Some(i), _) => (
                 None,
                 format!(
-                    "{} · {} serves all traffic",
+                    "{}: {} serves all traffic",
                     self.variants[i].key, self.variants[i].name
                 ),
             ),
             (None, ExperimentStatus::Running { day, of }) => {
-                let mut s = format!("Running · day {day} of {of}");
+                let mut s = format!("Running, day {day} of {of}");
                 if let Some(v) = self.visitors {
-                    s.push_str(&format!(" · {} visitors", grouped(v)));
+                    s.push_str(&format!(", {} visitors", grouped(v)));
                 }
                 // A live test breathes (Pink's working orb).
                 (Some(loaders::orb_slot(t.accent).into_any_element()), s)
@@ -425,7 +425,7 @@ impl RenderOnce for ExperimentCard {
             (None, ExperimentStatus::Paused) => {
                 let mut s = String::from("Paused");
                 if let Some(v) = self.visitors {
-                    s.push_str(&format!(" · {} visitors", grouped(v)));
+                    s.push_str(&format!(", {} visitors", grouped(v)));
                 }
                 // A waiting state wears its glyph (Pink: shape before color).
                 let pause = svg()
@@ -435,7 +435,7 @@ impl RenderOnce for ExperimentCard {
                     .text_color(t.readable_icon(t.text_muted));
                 (Some(pause.into_any_element()), s)
             }
-            (None, ExperimentStatus::Concluded) => (None, "Concluded · no variant shipped".into()),
+            (None, ExperimentStatus::Concluded) => (None, "Concluded, no variant shipped".into()),
         };
         let lead_badge = match (shipped, leader) {
             (Some(_), _) => Some(pink::badge("Shipped", Tone::Success, &t)),
@@ -638,12 +638,12 @@ fn trend_row(
             let mut s = format!("Day {}", d + 1);
             for i in 1..n {
                 if let Some(v) = metric.lift_at(i, d) {
-                    s.push_str(&format!(" · {} {}", card.variants[i].key, signed_pct(v)));
+                    s.push_str(&format!(", {} {}", card.variants[i].key, signed_pct(v)));
                 }
             }
             s.into()
         }
-        None => format!("Against {} · {}, by day", control.key, control.name).into(),
+        None => format!("Against {} ({}), by day", control.key, control.name).into(),
     };
     let switch = (card.metrics.len() > 1).then(|| {
         let segments = card
@@ -1075,7 +1075,7 @@ fn variant_row(
         let pick_state = state.clone();
         pink::menu_row(format!("{key}-variant-{i}"), picked, t)
             .role(Role::RadioButton)
-            .aria_label(format!("{} · {}", v.key, v.name))
+            .aria_label(format!("{}, {}", v.key, v.name))
             .aria_toggled(toggled(picked))
             .tab_index(0)
             .focus_visible(move |s| pink::focus_ring(s, ring))
@@ -1180,7 +1180,7 @@ fn footer_row(
                 let r = primary.result_of(i);
                 (
                     format!(
-                        "Ships {} to all traffic · {:.0}% chance to beat {control}",
+                        "Ships {} to all traffic, {:.0}% chance to beat {control}",
                         card.variants[i].name,
                         r.win_chance * 100.
                     ),
@@ -1224,7 +1224,7 @@ fn footer_row(
             (None, None) => (
                 match leader {
                     Some(i) => format!(
-                        "Pick a variant to ship · {} has a {:.0}% chance to beat {control}",
+                        "Pick a variant to ship: {} has a {:.0}% chance to beat {control}",
                         card.variants[i].key,
                         primary.result_of(i).win_chance * 100.
                     ),

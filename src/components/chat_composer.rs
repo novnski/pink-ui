@@ -40,7 +40,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Chat Composer";
-pub const DESCRIPTION: &str = "The composer's prompt pill – square attachment thumbnails over a field that grows as you type, quiet model, access and web search chips whose menus open upward, voice input, a project chip above, and a Send disc that turns into Queue or Stop while a turn runs";
+pub const DESCRIPTION: &str = "The composer's prompt pill: square attachment thumbnails over a field that grows as you type, quiet model, access and web search chips whose menus open upward, voice input, a project chip above, and a Send disc that turns into Queue or Stop while a turn runs";
 
 const ICON_PAPERCLIP: &str = "icons/chat-composer/paperclip.svg";
 const ICON_ARROW_UP: &str = "icons/chat-composer/arrow-up.svg";
@@ -147,7 +147,8 @@ pub fn default_models() -> Vec<ComposerModel> {
 #[derive(Clone)]
 pub struct Attachment {
     pub name: SharedString,
-    /// Kind and size ("PDF · 2.4 MB"), shown in the thumbnail's tooltip.
+    /// Kind and size ("PDF, 2.4 MB"), shown under the name in the
+    /// thumbnail's tooltip.
     pub detail: SharedString,
     pub image: bool,
     /// An image path or asset the thumbnail shows, cropped to fill.
@@ -622,7 +623,7 @@ fn attachment_strip(
                             .border_1()
                             .border_color(t.hairline(0.10))
                             .tooltip(pink::text_tooltip(format!(
-                                "{} · {}",
+                                "{}\n{}",
                                 file.name, file.detail
                             )))
                             .tooltip_show_delay(layout::TOOLTIP_DELAY)
@@ -1655,9 +1656,9 @@ struct Demo {
 
 fn demo_files() -> Vec<Attachment> {
     vec![
-        Attachment::image("launch-hero@2x.png", "PNG · 1.1 MB").preview(DEMO_HERO),
-        Attachment::file("Q4-roadmap.pdf", "PDF · 2.4 MB"),
-        Attachment::file("pricing-test.csv", "CSV · 88 KB"),
+        Attachment::image("launch-hero@2x.png", "PNG, 1.1 MB").preview(DEMO_HERO),
+        Attachment::file("Q4-roadmap.pdf", "PDF, 2.4 MB"),
+        Attachment::file("pricing-test.csv", "CSV, 88 KB"),
     ]
 }
 

@@ -44,7 +44,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Combobox";
-pub const DESCRIPTION: &str = "Pick one or many from a searchable picker card – grouped rows with monogram tiles, typed words lit, a check on every pick, picks as badges in the field and an invite row for what isn't listed";
+pub const DESCRIPTION: &str = "Pick one or many from a searchable picker card: grouped rows with monogram tiles, typed words lit, a check on every pick, picks as badges in the field and an invite row for what isn't listed";
 
 const ICON_CLOSE: &str = "icons/combobox/close.svg";
 const ICON_PLUS: &str = "icons/combobox/plus.svg";

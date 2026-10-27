@@ -37,7 +37,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Integration Picker";
-pub const DESCRIPTION: &str = "A settings page of apps to connect – Connected and Available cards of rows with a status badge and small actions, a search in the title bar, and a review dialog that gives each permission its own switch, required ones locked on";
+pub const DESCRIPTION: &str = "A settings page of apps to connect: Connected and Available cards of rows with a status badge and small actions, a search in the title bar, and a review dialog that gives each permission its own switch, required ones locked on";
 
 const ICON_SEARCH: &str = "icons/integration-picker/magnifer.svg";
 
@@ -870,15 +870,10 @@ fn service_tile(service: &Integration, t: &Pink) -> impl IntoElement {
         .child(service.monogram())
 }
 
-/// The quiet line under a row's title (Pink `widgets::meta_line`): 12 in
-/// `readable_muted(0.8)`, fragments 8 apart with a "·" between them that
-/// fades to 30% on dark.
+/// The quiet line under a row title (Pink `settings/widgets.rs` `meta_line`):
+/// 12 px fragments in `readable_muted(0.8)`, 12 apart and never split by a
+/// glyph (UI rethink decision 31), so each fragment reads as its own fact.
 fn meta_line(fragments: Vec<AnyElement>, t: &Pink) -> impl IntoElement {
-    let dot = if t.dark {
-        t.text_muted.opacity(0.3)
-    } else {
-        t.text_muted
-    };
     let mut line = div()
         .min_w_0()
         .mt(px(pink::space::TEXT_STACK_GAP))
@@ -886,15 +881,12 @@ fn meta_line(fragments: Vec<AnyElement>, t: &Pink) -> impl IntoElement {
         .flex_row()
         .flex_wrap()
         .items_center()
-        .gap_x(px(8.))
+        .gap_x(px(12.))
         .gap_y(px(2.))
         .text_size(px(12.))
         .line_height(px(16.))
         .text_color(t.readable_muted(0.8));
-    for (ix, fragment) in fragments.into_iter().enumerate() {
-        if ix > 0 {
-            line = line.child(div().text_color(dot).child("·"));
-        }
+    for fragment in fragments {
         line = line.child(div().min_w_0().flex_shrink(1.).child(fragment));
     }
     line
@@ -972,7 +964,7 @@ fn review_dialog(
                 .on_click(move |_, _, cx| flip.update(cx, |s, cx| s.toggle_grant(ix, cx)))
         };
         let description = if permission.required {
-            format!("{} · required", permission.detail)
+            format!("{}, required", permission.detail)
         } else {
             permission.detail.to_string()
         };

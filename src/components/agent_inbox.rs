@@ -41,7 +41,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Agent Inbox";
-pub const DESCRIPTION: &str = "Every agent task in one triage list – what needs you, fresh results and live work in three quiet sections, each row gliding to its new place as its task changes";
+pub const DESCRIPTION: &str = "Every agent task in one triage list: what needs you, fresh results and live work in three quiet sections, each row gliding to its new place as its task changes";
 
 const ICON_SHIELD: &str = "icons/agent-inbox/shield-warning.svg";
 const ICON_QUESTION: &str = "icons/agent-inbox/chat-round-question-mark.svg";
@@ -1013,21 +1013,20 @@ fn task_row(c: &RowCx, row: &Row) -> AnyElement {
             c.clips,
         ))
         .when_some(task.branch.clone(), |el, branch| {
-            el.child(div().flex_none().child("·"))
-                .child(
-                    svg()
-                        .path(ICON_BRANCH)
-                        .size(px(11.0))
-                        .flex_none()
-                        .text_color(subline),
-                )
-                .child(faded_label(
-                    format!("{row_id}-branch"),
-                    false,
-                    branch,
-                    fade_to,
-                    c.clips,
-                ))
+            el.child(
+                svg()
+                    .path(ICON_BRANCH)
+                    .size(px(11.0))
+                    .flex_none()
+                    .text_color(subline),
+            )
+            .child(faded_label(
+                format!("{row_id}-branch"),
+                false,
+                branch,
+                fade_to,
+                c.clips,
+            ))
         });
 
     let details = TaskDetails {

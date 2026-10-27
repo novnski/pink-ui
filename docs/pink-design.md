@@ -534,6 +534,7 @@ snap, the orb rests full, and shimmer becomes plain text. For any loop of your o
 | [ ] | Raw secondary text, hex literals, pure white/black washes | `readable_*`, tokens, `fill` / `ink` / `wash` / `hairline` |
 | [ ] | Private loops, GPUI `.hover()` | the pulse clock, `HoverFill`, reduced motion respected |
 | [ ] | Loose fonts and sizes | `pink::SANS` at the root, ladder sizes only, no 16 px text |
+| [ ] | Labels that join facts with `·`, ` -- `, an em or en dash, ` \| `, ` / ` or `2/4` (decision 31) | hierarchy (a title over a quieter line), chips, icons, `meta_line` spacing, or a plain phrase: `main in my-worktree`, `{model} on {provider}`, `2 of 2 turns active, 3 waiting`, `Pull request #12, Open`. `tests/label_joiners.rs` fails a new one |
 
 ## 8. Example: a runs list
 
