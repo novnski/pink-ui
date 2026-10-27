@@ -1,28 +1,39 @@
-//! Sidebar – Pink's app sidebar: the project pill, the navigation rows, the
-//! Threads list and the Settled and Archived shelves, one column on the
+//! Sidebar: Pink's app sidebar after UI rethink milestone 1 (novnski/pink#173,
+//! PRs #180, #181, #182 and #185): one slim scope row, the navigation rows,
+//! the thread list and the Inactive and Archived shelves, one column on the
 //! shell surface.
 //!
-//! The pill names the project the list shows (or All projects) over its live
-//! counts and opens a searchable project picker. Under it sit New thread and
-//! the sidebar's pages, then the Threads header with its view options and the
-//! Activity bell. A single project lists Pink's two-line task rows – the
-//! title over a quiet harness · branch line, the time-ago in the corner (pin,
-//! settle and archive under the pointer) and the status at the right edge: a
-//! spinner while it works, a dot when it is done, a pill naming the next
-//! step when it waits on you. All projects lists one folding group per
-//! project of one-line rows. Pins lead, sections page behind "Show N more",
-//! and finished work drops into the Settled and Archived shelves at the
-//! bottom. Holding ⌘ (Ctrl elsewhere) labels the first nine rows with their
-//! jump keys.
+//! The scope row names the project the list shows (or All projects, a bare
+//! folder glyph) and opens a searchable project picker; the list's view
+//! options and the Activity bell sit beside it, and its accessible name
+//! carries the counts ("All projects, 3 open threads"). Under it sit New
+//! thread and the sidebar's pages. A single project lists Pink's two-line
+//! thread rows: the title over a quiet harness and branch line, the
+//! time-ago in the corner (pin, Mark as inactive and archive under the
+//! pointer) and the status at the right edge: a spinner while it works, a
+//! dot when it is done, a pill naming the next step when it waits on you.
+//! All projects lists one folding group per project of one-line rows, with
+//! no indent: the header carries the grouping. Pins lead, sections page
+//! behind "Show N more", and finished work drops into the Inactive and
+//! Archived shelves at the bottom. Holding ⌘ (Ctrl elsewhere) labels the
+//! first nine rows with their jump keys.
+//!
+//! Every element draws on two shared columns, the title column 16 pt in from
+//! the column's edge and the time column 16 pt in from the other, at every
+//! Interface size (`pink::ui_scale`); `scripts/site/sidebar-columns.mjs`
+//! measures them. The host owns what Pink keeps in the app (restoring the
+//! open thread's scope, persisting folds, Command Shift J): set the scope
+//! with [`Sidebar::filter`], restore folds with [`Sidebar::folded`] and save
+//! them from [`SidebarCommand::Fold`].
 //!
 //! ```ignore
 //! Sidebar::new("sidebar")
 //!     .project(SidebarProject::new("billing", "billing-api").path("~/code/billing-api"))
-//!     .task(SidebarTask::new("coupons", "Retire expired coupon codes", "billing")
-//!         .status(TaskStatus::NeedsApproval)
+//!     .thread(SidebarThread::new("coupons", "Retire expired coupon codes", "billing")
+//!         .status(ThreadStatus::NeedsApproval)
 //!         .branch("coupons/retire"))
 //!     .filter("billing")
-//!     .on_select(|task, _, _| println!("open {task}"))
+//!     .on_select(|thread, _, _| println!("open {thread}"))
 //! ```
 
 use std::{
@@ -45,13 +56,13 @@ use gpui::{
 use crate::{
     HoverFill,
     motion::{self, COLLAPSE, MENU_OUT, MENU_RISE_DOWN, RESORT},
-    pink::{self, FillTier, Pink, chrome, layout, loaders, radius, space},
+    pink::{self, FillTier, Pink, TypeRole, chrome, layout, loaders, radius, space},
     primitives::{InputEvent, TextInput},
     story,
 };
 
 pub const NAME: &str = "Sidebar";
-pub const DESCRIPTION: &str = "The app's task sidebar: a project pill with live counts that opens a searchable picker, New thread and page rows, every task with its live status, time and hover actions in folding groups, and quiet Settled and Archived shelves underneath";
+pub const DESCRIPTION: &str = "The app's thread sidebar: one slim scope row that opens a searchable project picker beside the view options and Activity, New thread and page rows, every thread with its live status, time and hover actions in folding groups on one title column, and quiet Inactive and Archived shelves underneath";
 
 const ICON_NEW_THREAD: &str = "icons/sidebar/pen-new-square.svg";
 const ICON_AUTOMATIONS: &str = "icons/sidebar/stopwatch-play.svg";
@@ -84,6 +95,9 @@ const ICON_PULL_REQUEST: &str = "icons/sidebar/git-pull-request.svg";
 const ICON_BOT: &str = "icons/sidebar/bot.svg";
 const ICON_CLOSE_CIRCLE: &str = "icons/sidebar/close-circle.svg";
 const ICON_SETTINGS: &str = "icons/sidebar/settings.svg";
+const ICON_SETTINGS_GEAR: &str = "icons/sidebar/settings-gear.svg";
+const ICON_SMARTPHONE: &str = "icons/sidebar/smartphone.svg";
+const ICON_RESTART: &str = "icons/sidebar/restart.svg";
 const ICON_CLAUDE: &str = "icons/sidebar/claude-mark.svg";
 const ICON_OPENAI: &str = "icons/sidebar/openai-mark.svg";
 const ICON_OPENCODE: &str = "icons/sidebar/opencode-mark.svg";
@@ -122,8 +136,26 @@ const LABEL_FADE: f32 = 20.0;
 const LIST_FADE: f32 = 24.0;
 /// Pink: activity_center.rs `UNREAD_DOT`.
 const UNREAD_DOT: f32 = 6.0;
-/// Pink: spaces.rs `SIDEBAR_NAV_GAP`.
-const NAV_GAP: f32 = 10.0;
+/// Icon to label in a navigation row (Pink: spaces.rs `SIDEBAR_NAV_GAP`,
+/// UI rethink D48): the 16 pt icon on the 16 pt column puts labels on 40.
+const NAV_GAP: f32 = 8.0;
+/// The scope row and the navigation rows (Pink: spaces.rs `SCOPE_ROW`).
+const SCOPE_ROW: f32 = 32.0;
+/// The scope row's project tile (Pink: spaces.rs `SCOPE_TILE`).
+const SCOPE_TILE: f32 = 18.0;
+/// New thread and Automations glyphs, and the All projects folder above
+/// them (Pink: spaces.rs `SIDEBAR_NAV_ICON`).
+const NAV_ICON: f32 = 16.0;
+/// The disclosure chevron's empty space at a row's trailing edge, pulled
+/// back so the arrow ends on the time column (Pink: spaces.rs
+/// `CHEVRON_TRAILING_BEARING`).
+const CHEVRON_TRAILING_BEARING: f32 = 4.0;
+/// The footer's buttons and glyphs (Pink: shell.rs `SIDEBAR_FOOTER_BUTTON`,
+/// `SIDEBAR_FOOTER_ICON`) and the gear's own empty space before its first
+/// stroke (`SIDEBAR_FOOTER_BEARING`).
+const FOOTER_BUTTON: f32 = chrome::CONTROL_L;
+const FOOTER_ICON: f32 = chrome::ICON_L;
+const FOOTER_BEARING: f32 = 1.5;
 /// Pink: settings.rs `JUMP_SLOTS` – ⌘1 … ⌘9.
 const JUMP_SLOTS: usize = 9;
 /// Pink: project_picker.rs – the picker list's scroll budget.
@@ -143,7 +175,7 @@ const DEMO_LOOP: f32 = 26.0;
 /// Where a task stands (Pink proto `ChatIndicator` plus the send-truth
 /// override for a queued send).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TaskStatus {
+pub enum ThreadStatus {
     /// Nothing going on.
     Idle,
     Working,
@@ -227,7 +259,7 @@ impl SidebarProject {
 
 /// One task (Pink: a chat in the sidebar).
 #[derive(Clone, Debug)]
-pub struct SidebarTask {
+pub struct SidebarThread {
     pub id: SharedString,
     pub title: SharedString,
     /// The project id it belongs to.
@@ -237,11 +269,11 @@ pub struct SidebarTask {
     pub model: Option<SharedString>,
     /// The machine it runs on; `None` is this one.
     pub device: Option<SharedString>,
-    pub status: TaskStatus,
+    pub status: ThreadStatus,
     /// Its result (or failure) was already read.
     pub seen: bool,
     pub pinned: bool,
-    /// Settled by hand: it waits on the Settled shelf.
+    /// Marked inactive: it waits on the Inactive shelf.
     pub settled: bool,
     pub archived: bool,
     /// Seconds since its last message.
@@ -255,7 +287,7 @@ pub struct SidebarTask {
     pub pull_request: Option<(u32, PullRequestState)>,
 }
 
-impl SidebarTask {
+impl SidebarThread {
     pub fn new(
         id: impl Into<SharedString>,
         title: impl Into<SharedString>,
@@ -269,7 +301,7 @@ impl SidebarTask {
             harness: Some(Harness::ClaudeCode),
             model: None,
             device: None,
-            status: TaskStatus::Idle,
+            status: ThreadStatus::Idle,
             seen: false,
             pinned: false,
             settled: false,
@@ -303,7 +335,7 @@ impl SidebarTask {
         self
     }
 
-    pub fn status(mut self, status: TaskStatus) -> Self {
+    pub fn status(mut self, status: ThreadStatus) -> Self {
         self.status = status;
         self
     }
@@ -318,7 +350,7 @@ impl SidebarTask {
         self
     }
 
-    pub fn settled(mut self, settled: bool) -> Self {
+    pub fn inactive(mut self, settled: bool) -> Self {
         self.settled = settled;
         self
     }
@@ -413,11 +445,13 @@ impl SidebarNavItem {
 pub enum SidebarAction {
     Pin,
     Unpin,
-    /// Moved to the Settled shelf.
-    Settle,
+    /// "Mark as inactive": moved to the Inactive shelf.
+    MarkInactive,
+    /// "Mark as active": back from the Inactive shelf into the list.
+    MarkActive,
     Archive,
     Unarchive,
-    /// Its related-chats chip.
+    /// Its related-threads chip.
     OpenRelated,
 }
 
@@ -427,13 +461,24 @@ pub enum SidebarCommand {
     /// A navigation row (its key).
     Nav(SharedString),
     /// A project group's + button.
-    NewTask(SharedString),
+    NewThread(SharedString),
     /// The project filter changed (`None`: All projects).
     Filter(Option<SharedString>),
     NewProject,
     ManageProjects,
     /// The bell turned the Activity view on or off.
     Activity(bool),
+    /// The footer's Settings button.
+    OpenSettings,
+    /// The footer's Devices button.
+    OpenDevices,
+    /// A group folded or opened (`"pinned"`, `"project:<id>"` or
+    /// `"device:<name>"`), for the host to persist (Pink keeps folds in its
+    /// settings, #182).
+    Fold {
+        group: SharedString,
+        folded: bool,
+    },
 }
 
 /// The list's order (Pink `SidebarSort`).
@@ -500,7 +545,7 @@ impl Handlers {
 pub struct Sidebar {
     id: ElementId,
     projects: Vec<SidebarProject>,
-    tasks: Vec<SidebarTask>,
+    tasks: Vec<SidebarThread>,
     nav: Vec<SidebarNavItem>,
     filter: Option<SharedString>,
     selected: Option<SharedString>,
@@ -513,7 +558,8 @@ pub struct Sidebar {
     show_harness: bool,
     auto_settle: Option<u16>,
     local_device: SharedString,
-    events: Vec<(f32, SidebarTask)>,
+    events: Vec<(f32, SidebarThread)>,
+    folded: Vec<SharedString>,
     autoplay: bool,
     width: f32,
     height: f32,
@@ -543,6 +589,7 @@ impl Sidebar {
             auto_settle: Some(1),
             local_device: "This Mac".into(),
             events: Vec::new(),
+            folded: Vec::new(),
             autoplay: false,
             width: layout::SIDEBAR_DEFAULT,
             height: 720.0,
@@ -556,7 +603,7 @@ impl Sidebar {
         self
     }
 
-    pub fn task(mut self, task: SidebarTask) -> Self {
+    pub fn thread(mut self, task: SidebarThread) -> Self {
         self.tasks.push(task);
         self
     }
@@ -582,6 +629,13 @@ impl Sidebar {
     /// A page open when the sidebar first appears (its nav key).
     pub fn current_page(mut self, key: impl Into<SharedString>) -> Self {
         self.page = Some(key.into());
+        self
+    }
+
+    /// Groups that start folded, as the host saved them from
+    /// [`SidebarCommand::Fold`].
+    pub fn folded(mut self, groups: impl IntoIterator<Item = impl Into<SharedString>>) -> Self {
+        self.folded = groups.into_iter().map(Into::into).collect();
         self
     }
 
@@ -618,7 +672,7 @@ impl Sidebar {
 
     /// Idle tasks settle on their own after this many days (Pink's default
     /// is one); `None` keeps them in the list.
-    pub fn auto_settle(mut self, days: Option<u16>) -> Self {
+    pub fn auto_inactive(mut self, days: Option<u16>) -> Self {
         self.auto_settle = days;
         self
     }
@@ -631,7 +685,7 @@ impl Sidebar {
 
     /// During autoplay, replaces (or adds) the task with the same id `at`
     /// seconds in.
-    pub fn event(mut self, at: f32, task: SidebarTask) -> Self {
+    pub fn event(mut self, at: f32, task: SidebarThread) -> Self {
         self.events.push((at, task));
         self
     }
@@ -695,16 +749,16 @@ enum Indicator {
     Idle,
 }
 
-impl SidebarTask {
+impl SidebarThread {
     fn indicator(&self) -> Indicator {
         match self.status {
-            TaskStatus::Working => Indicator::Working,
-            TaskStatus::NeedsApproval => Indicator::Approval,
-            TaskStatus::NeedsInput => Indicator::Input,
-            TaskStatus::Failed => Indicator::Errored,
-            TaskStatus::Done if !self.seen => Indicator::Completed,
-            TaskStatus::Queued => Indicator::Queued,
-            TaskStatus::Done | TaskStatus::Idle => Indicator::Idle,
+            ThreadStatus::Working => Indicator::Working,
+            ThreadStatus::NeedsApproval => Indicator::Approval,
+            ThreadStatus::NeedsInput => Indicator::Input,
+            ThreadStatus::Failed => Indicator::Errored,
+            ThreadStatus::Done if !self.seen => Indicator::Completed,
+            ThreadStatus::Queued => Indicator::Queued,
+            ThreadStatus::Done | ThreadStatus::Idle => Indicator::Idle,
         }
     }
 
@@ -712,7 +766,7 @@ impl SidebarTask {
     fn needs_you(&self) -> bool {
         matches!(
             self.status,
-            TaskStatus::NeedsApproval | TaskStatus::NeedsInput | TaskStatus::Failed
+            ThreadStatus::NeedsApproval | ThreadStatus::NeedsInput | ThreadStatus::Failed
         )
     }
 
@@ -720,8 +774,8 @@ impl SidebarTask {
     fn wants_you(&self) -> bool {
         !self.archived
             && match self.status {
-                TaskStatus::NeedsApproval | TaskStatus::NeedsInput => true,
-                TaskStatus::Done | TaskStatus::Failed => !self.seen,
+                ThreadStatus::NeedsApproval | ThreadStatus::NeedsInput => true,
+                ThreadStatus::Done | ThreadStatus::Failed => !self.seen,
                 _ => false,
             }
     }
@@ -761,7 +815,7 @@ impl Section {
     }
 
     /// Pink: spaces.rs `activity_section`.
-    fn of(task: &SidebarTask) -> Option<Section> {
+    fn of(task: &SidebarThread) -> Option<Section> {
         match task.indicator() {
             Indicator::Errored if task.seen => None,
             Indicator::Approval | Indicator::Input | Indicator::Errored => Some(Section::NeedsYou),
@@ -795,7 +849,7 @@ fn more_row(total: usize, visible: usize, limit: usize) -> Option<MoreRow> {
 /// A project's live counts (Pink: sidebar_projects.rs `ProjectActivity`).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct Counts {
-    /// Tasks still in the list, running or not: open.
+    /// Threads still in the list, running or not: open.
     active: usize,
     /// Waiting on you.
     need: usize,
@@ -806,13 +860,14 @@ struct Counts {
 }
 
 impl Counts {
-    /// Pink `ProjectActivity::summary`: open tasks, then what needs you and
-    /// what runs, each only when there is some.
+    /// Pink `ProjectActivity::spoken`: open threads, then what needs you
+    /// and what runs, each only when there is some. The scope row speaks
+    /// it; the list shows the counts.
     fn summary(&self) -> String {
         if self.active == 0 {
-            return "No open tasks".into();
+            return "No open threads".into();
         }
-        let mut parts = vec![open_tasks(self.active)];
+        let mut parts = vec![open_threads(self.active)];
         if self.need > 0 {
             parts.push(format!(
                 "{} need{} you",
@@ -827,9 +882,11 @@ impl Counts {
     }
 }
 
-/// Pink: sidebar_projects.rs `open_tasks`.
-fn open_tasks(count: usize) -> String {
-    format!("{count} open task{}", if count == 1 { "" } else { "s" })
+/// "1 open thread", "3 open threads" (Pink: sidebar_projects.rs
+/// `open_threads`): the size of the active list, worded so it never reads
+/// as threads still running.
+fn open_threads(count: usize) -> String {
+    format!("{count} open thread{}", if count == 1 { "" } else { "s" })
 }
 
 /// Compact relative time, no "ago" (Pink: proto `format_time_ago`).
@@ -863,7 +920,7 @@ fn time_ago(seconds: f32) -> String {
 
 #[derive(Clone)]
 struct Row {
-    task: SidebarTask,
+    task: SidebarThread,
     /// The order it was given in (manual sort).
     order: usize,
     /// Clock time of its last message.
@@ -906,9 +963,9 @@ struct SidebarState {
     projects: Vec<SidebarProject>,
     nav: Vec<SidebarNavItem>,
     local_device: SharedString,
-    initial: Vec<SidebarTask>,
+    initial: Vec<SidebarThread>,
     initial_selected: Option<SharedString>,
-    events: Vec<(f32, SidebarTask)>,
+    events: Vec<(f32, SidebarThread)>,
     played: usize,
     autoplay: bool,
     clock: f32,
@@ -998,7 +1055,7 @@ impl SidebarState {
             activity: config.activity,
             hovered: None,
             shelf_hovered: None,
-            collapsed: HashSet::new(),
+            collapsed: config.folded.iter().map(|g| g.to_string()).collect(),
             settled_open: false,
             archived_open: false,
             pages: HashMap::new(),
@@ -1079,13 +1136,13 @@ impl SidebarState {
     }
 
     /// Replaces the task with the same id, or adds it.
-    fn apply(&mut self, task: SidebarTask) {
+    fn apply(&mut self, task: SidebarThread) {
         let updated = self.clock - task.age;
         let reading = self.selected.as_ref() == Some(&task.id);
         if let Some(row) = self.rows.iter_mut().find(|r| r.task.id == task.id) {
             // What arrives in the task being read is read as it arrives.
             let seen = task.seen || reading;
-            row.task = SidebarTask {
+            row.task = SidebarThread {
                 seen,
                 pinned: row.task.pinned,
                 ..task
@@ -1126,7 +1183,7 @@ impl SidebarState {
             .unwrap_or_else(|| "Unknown project".into())
     }
 
-    fn device_of(&self, task: &SidebarTask) -> SharedString {
+    fn device_of(&self, task: &SidebarThread) -> SharedString {
         task.device
             .clone()
             .unwrap_or_else(|| self.local_device.clone())
@@ -1221,7 +1278,7 @@ impl SidebarState {
             counts.active += 1;
             if row.task.needs_you() {
                 counts.need += 1;
-            } else if row.task.status == TaskStatus::Working {
+            } else if row.task.status == ThreadStatus::Working {
                 counts.working += 1;
             }
         }
@@ -1375,7 +1432,7 @@ impl SidebarState {
                     counts.active += 1;
                     if row.task.needs_you() {
                         counts.need += 1;
-                    } else if row.task.status == TaskStatus::Working {
+                    } else if row.task.status == ThreadStatus::Working {
                         counts.working += 1;
                     }
                 }
@@ -1499,9 +1556,13 @@ impl SidebarState {
         match action {
             SidebarAction::Pin => row.task.pinned = true,
             SidebarAction::Unpin => row.task.pinned = false,
-            SidebarAction::Settle => {
+            SidebarAction::MarkInactive => {
                 row.task.settled = true;
                 row.kept = false;
+            }
+            SidebarAction::MarkActive => {
+                row.task.settled = false;
+                row.kept = true;
             }
             SidebarAction::Archive => {
                 row.task.archived = true;
@@ -1514,7 +1575,7 @@ impl SidebarState {
             }
             SidebarAction::OpenRelated => {}
         }
-        if matches!(action, SidebarAction::Archive | SidebarAction::Settle)
+        if matches!(action, SidebarAction::Archive | SidebarAction::MarkInactive)
             && self.hovered.as_ref() == Some(id)
         {
             self.hovered = None;
@@ -1845,7 +1906,7 @@ impl ViewRow {
             ViewRow::ByDevice => Some("Organize"),
             ViewRow::LastUpdated => Some("Sort"),
             ViewRow::ShowBranch => Some("Show"),
-            ViewRow::SettleOff => Some("Auto-settle inactive tasks"),
+            ViewRow::SettleOff => Some("Move idle threads to Inactive"),
             _ => None,
         }
     }
@@ -1883,9 +1944,8 @@ struct Group {
 impl Group {
     fn body_height(&self) -> f32 {
         let row_h = if self.compact { COMPACT_ROW_H } else { ROW_H };
-        BODY_INSET
-            + row_h * self.rows.len() as f32
-            + if self.more.is_some() { MORE_ROW_H } else { 0.0 }
+        (BODY_INSET + row_h * self.rows.len() as f32) * scale()
+            + if self.more.is_some() { more_h() } else { 0.0 }
     }
 }
 
@@ -1923,19 +1983,21 @@ impl Item {
 
     fn height(&self) -> f32 {
         match self {
-            Item::Heading { first, .. } => HEADER_H + if *first { 0.0 } else { SECTION_GAP },
-            Item::Row { .. } => ROW_H,
+            Item::Heading { first, .. } => {
+                header_h() + if *first { 0.0 } else { SECTION_GAP * scale() }
+            }
+            Item::Row { .. } => ROW_H * scale(),
             Item::Group(group) => {
-                SECTION_GAP
-                    + HEADER_H
+                SECTION_GAP * scale()
+                    + header_h()
                     + if group.collapsed {
                         0.0
                     } else {
                         group.body_height()
                     }
             }
-            Item::Divider => DIVIDER_H,
-            Item::More { .. } => MORE_ROW_H,
+            Item::Divider => DIVIDER_H * scale(),
+            Item::More { .. } => more_h(),
         }
     }
 }
@@ -1944,12 +2006,40 @@ impl Item {
 // Rendering helpers
 // ---------------------------------------------------------------------------
 
+thread_local! {
+    /// The Interface size over 16 for the sidebar being drawn, set at the
+    /// top of its render (Pink: `Theme::ui_scale`, which its `ui_rems` and
+    /// row-height math read).
+    static SCALE: std::cell::Cell<f32> = const { std::cell::Cell::new(1.0) };
+}
+
+/// The Interface scale of the sidebar being drawn.
+fn scale() -> f32 {
+    SCALE.with(|s| s.get())
+}
+
+/// A size at the 16 px default, grown with the Interface size (Pink
+/// `typography::ui_rems`). Gutters, horizontal row padding, radii and the
+/// `MIN_HIT` and 28 pt chrome buttons stay in plain px, as in Pink.
+fn u(n: f32) -> gpui::Pixels {
+    px(n * scale())
+}
+
+/// A disclosure or shelf header's height (Pink spaces.rs
+/// `disclosure_header_height`): it scales with the text but never drops
+/// below the 24 pt minimum hit target.
+fn header_h() -> f32 {
+    (HEADER_H * scale()).max(chrome::MIN_HIT)
+}
+
+/// The Show N more row (Pink spaces.rs: `SIDEBAR_MORE_ROW_HEIGHT`, scaled,
+/// at least `MIN_HIT`).
+fn more_h() -> f32 {
+    (MORE_ROW_H * scale()).max(chrome::MIN_HIT)
+}
+
 fn icon(path: &'static str, size: f32, color: Hsla) -> Svg {
-    svg()
-        .path(path)
-        .size(px(size))
-        .flex_none()
-        .text_color(color)
+    svg().path(path).size(u(size)).flex_none().text_color(color)
 }
 
 fn eid(id: String) -> ElementId {
@@ -2049,23 +2139,32 @@ fn corner_action(
         .child(icon(glyph, chrome::ICON_S, tone))
 }
 
-/// Pink: sidebar_projects.rs `all_projects_tile` – the neutral tile that
-/// stands for every project at once.
-fn all_projects_tile(size: f32, t: &Pink) -> Div {
+/// What stands for every project at once (Pink: sidebar_projects.rs
+/// `all_projects_tile`, #185): a bare folder glyph drawn like the
+/// navigation icons, no tile behind it, in a box as wide as a project tile
+/// so the label beside it never moves when the scope changes. `glyph` is
+/// the folder's size; `leading` starts it on the box's leading edge (the
+/// title column) instead of centring it.
+fn all_projects_tile(size: f32, glyph: f32, leading: bool, t: &Pink) -> Div {
     div()
-        .size(px(size))
+        .size(u(size))
         .flex_none()
         .flex()
         .items_center()
-        .justify_center()
-        .rounded(px((size * 0.28).round()))
-        .bg(t.text.opacity(0.07))
-        .child(icon(ICON_ALL_PROJECTS, (size * 0.58).round(), t.text_muted))
+        .when(leading, |el| el.justify_start())
+        .when(!leading, |el| el.justify_center())
+        .child(icon(ICON_ALL_PROJECTS, glyph, t.text_muted))
 }
 
-/// A project's tile: its monogram on its hue (Pink `project_tile`).
+/// A project's tile: its monogram on its hue (Pink `project_tile`), grown
+/// with the Interface size.
 fn project_tile(index: Option<usize>, name: &str, size: f32, t: &Pink) -> Div {
-    pink::monogram_tile(pink::project_tint(index.unwrap_or(0)), name, size, t)
+    pink::monogram_tile(
+        pink::project_tint(index.unwrap_or(0)),
+        name,
+        size * scale(),
+        t,
+    )
 }
 
 /// One live count – a glyph and a tabular number in the tone's floor
@@ -2076,8 +2175,8 @@ fn count(tone: Hsla, glyph: AnyElement, n: usize, t: &Pink) -> Div {
         .flex()
         .flex_row()
         .items_center()
-        .gap(px(3.0))
-        .text_size(px(11.0))
+        .gap(u(3.0))
+        .text_size(u(11.0))
         .font_weight(FontWeight::MEDIUM)
         .font_features(pink::tabular_figures())
         .text_color(t.readable_tone(tone, 1.0))
@@ -2088,7 +2187,7 @@ fn count(tone: Hsla, glyph: AnyElement, n: usize, t: &Pink) -> Div {
 /// The running count's glyph: a small square, the loader at rest.
 fn working_square(t: &Pink) -> AnyElement {
     div()
-        .size(px(6.0))
+        .size(u(6.0))
         .rounded(px(1.5))
         .bg(t.busy)
         .into_any_element()
@@ -2114,31 +2213,31 @@ impl Render for TaskDetails {
             div()
                 .flex()
                 .items_center()
-                .gap(px(8.0))
+                .gap(u(8.0))
                 .min_w_0()
                 .child(icon(glyph, 13.0, t.text_muted))
                 .child(div().min_w_0().truncate().child(label))
         };
         div()
-            .w(px(244.0))
+            .w(u(244.0))
             .px(px(12.0))
-            .py(px(11.0))
+            .py(u(11.0))
             .flex()
             .flex_col()
-            .gap(px(7.0))
+            .gap(u(7.0))
             .rounded(px(9.0))
             .border_1()
             .border_color(t.border_strong)
             .bg(t.tooltip_surface())
             .shadow(t.tooltip_shadows())
             .font_family(pink::SANS)
-            .text_size(px(11.0))
+            .text_size(u(11.0))
             .text_color(t.text_muted)
             .child(
                 div()
                     .truncate()
                     .font_weight(FontWeight::MEDIUM)
-                    .text_size(px(12.0))
+                    .text_size(u(12.0))
                     .text_color(t.text)
                     .child(self.title.clone()),
             )
@@ -2235,17 +2334,17 @@ fn task_row(
         let tone = tone.opacity(1.0);
         let backing = tone.opacity(if compact { 0.0 } else { 0.12 });
         div()
-            .h(px(16.0))
+            .h(u(16.0))
             .flex_none()
             .flex()
             .flex_row()
             .items_center()
-            .gap(px(3.0))
+            .gap(u(3.0))
             .when(!compact, |pill| pill.px(px(5.0)))
             .rounded(px(radius::XS))
             .bg(backing)
-            .text_size(px(11.0))
-            .line_height(px(14.0))
+            .text_size(u(11.0))
+            .line_height(u(14.0))
             .font_weight(FontWeight::MEDIUM)
             .text_color(t.readable_on(tone, backing, pink::TEXT_CONTRAST_TARGET))
             .when_some(glyph, |pill, glyph| {
@@ -2265,7 +2364,7 @@ fn task_row(
         ),
         Indicator::Completed => Some(
             div()
-                .size(px(6.0))
+                .size(u(6.0))
                 .flex_none()
                 .rounded_full()
                 .bg(tone)
@@ -2313,7 +2412,7 @@ fn task_row(
     let corner_body = if let Some(slot) = slot.filter(|_| s.jump_hints) {
         let tone = t.text_muted;
         div()
-            .h(px(16.0))
+            .h(u(16.0))
             .flex_none()
             .flex()
             .flex_row()
@@ -2321,7 +2420,7 @@ fn task_row(
             .px(px(4.0))
             .rounded(px(radius::XS))
             .bg(tone.opacity(0.08))
-            .text_size(px(11.0))
+            .text_size(u(11.0))
             .font_weight(FontWeight::MEDIUM)
             .text_color(t.readable_tone(tone, 0.85))
             .font_family(pink::MONO)
@@ -2342,13 +2441,13 @@ fn task_row(
             .flex_row()
             .items_center()
             .justify_end()
-            .gap(px(2.0))
-            .h(px(18.0))
+            .gap(u(2.0))
+            .h(u(18.0))
             .when(!task.archived, |el| {
                 el.child(
                     corner_action(
                         format!("{row_id}-pin"),
-                        if pinned { "Unpin task" } else { "Pin task" },
+                        if pinned { "Unpin thread" } else { "Pin thread" },
                         ICON_PIN,
                         if pinned {
                             t.readable_icon(t.accent)
@@ -2371,18 +2470,18 @@ fn task_row(
                 el.child(
                     corner_action(
                         format!("{row_id}-settle"),
-                        "Settle task",
+                        "Mark as inactive",
                         ICON_CHECK,
                         t.text_muted,
                         t,
                     )
-                    .on_click(action(&task.id, SidebarAction::Settle)),
+                    .on_click(action(&task.id, SidebarAction::MarkInactive)),
                 )
             })
             .child(
                 corner_action(
                     format!("{row_id}-archive"),
-                    "Archive task",
+                    "Archive thread",
                     ICON_ARCHIVE,
                     t.text_muted,
                     t,
@@ -2393,10 +2492,10 @@ fn task_row(
     } else {
         // At rest the corner is the time alone.
         div()
-            .h(px(18.0))
+            .h(u(18.0))
             .flex()
             .items_center()
-            .text_size(px(11.0))
+            .text_size(u(11.0))
             .font_features(pink::tabular_figures())
             .child(time_ago(s.clock - row.updated))
             .into_any_element()
@@ -2404,43 +2503,39 @@ fn task_row(
     let corner = div()
         .id(eid(format!("{row_id}-corner")))
         .flex_none()
-        .h(px(18.0))
+        .h(u(18.0))
         .flex()
         .items_center()
         .justify_end()
         .child(corner_body);
 
-    // A chip that opens the chats this task started.
+    // A chip that opens the threads this one started. It draws 16 tall but
+    // takes a `MIN_HIT` target, reaching into the row's padding so the
+    // title line keeps its height.
     let related = (task.related > 0).then(|| {
         let tone = t.text_muted;
         let n = task.related;
         let label: SharedString =
-            format!("Open {n} related chat{}", if n == 1 { "" } else { "s" }).into();
+            format!("Open {n} related thread{}", if n == 1 { "" } else { "s" }).into();
         let chip_id = format!("{row_id}-related");
         let ring = t.focus_ring();
         let state = c.state.clone();
         let id = task.id.clone();
+        let outset = ((chrome::MIN_HIT - 16.0 * scale()) / 2.0).max(0.0);
         div()
             .id(eid(chip_id.clone()))
             .role(Role::Button)
             .aria_label(label.clone())
             .tab_index(0)
-            .h(px(16.0))
+            .h(px(chrome::MIN_HIT.max(16.0 * scale())))
+            .my(px(-outset))
             .flex_none()
             .flex()
-            .flex_row()
             .items_center()
-            .gap(px(3.0))
-            .px(px(4.0))
             .rounded(px(radius::XS))
-            .border_1()
-            .border_color(gpui::transparent_black())
-            .hover_fill(chip_id, tone.opacity(0.08), tone.opacity(0.16))
-            .text_size(px(11.0))
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(t.readable_tone(tone, 0.85))
             .cursor_pointer()
             .focus_visible(move |st| pink::focus_ring(st, ring))
+            .on_hover(motion::hover_listener(chip_id.clone()))
             .tooltip(pink::text_tooltip(label))
             .tooltip_show_delay(layout::TOOLTIP_DELAY)
             .on_click(move |_, window, cx| {
@@ -2450,8 +2545,28 @@ fn task_row(
                 });
             })
             .on_key_down(pink::swallow_activation_key)
-            .child(icon(ICON_CHAT, 10.0, t.readable_tone(tone, 0.7)))
-            .child(n.to_string())
+            .child(
+                div()
+                    .h(u(16.0))
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(u(3.0))
+                    .px(px(4.0))
+                    .rounded(px(radius::XS))
+                    .border_1()
+                    .border_color(gpui::transparent_black())
+                    .bg(motion::hover_blend(
+                        &chip_id,
+                        tone.opacity(0.08),
+                        tone.opacity(0.16),
+                    ))
+                    .text_size(u(11.0))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(t.readable_tone(tone, 0.85))
+                    .child(icon(ICON_CHAT, 10.0, t.readable_tone(tone, 0.7)))
+                    .child(n.to_string()),
+            )
     });
 
     // An open workbench tab.
@@ -2459,16 +2574,16 @@ fn task_row(
         let tone = t.accent;
         let backing = tone.opacity(0.10);
         div()
-            .h(px(16.0))
+            .h(u(16.0))
             .flex_none()
             .flex()
             .flex_row()
             .items_center()
-            .gap(px(3.0))
+            .gap(u(3.0))
             .px(px(4.0))
             .rounded(px(radius::XS))
             .bg(backing)
-            .text_size(px(11.0))
+            .text_size(u(11.0))
             .font_weight(FontWeight::MEDIUM)
             .text_color(t.readable_on(tone, backing, pink::TEXT_CONTRAST_TARGET))
             .child(icon(
@@ -2482,14 +2597,14 @@ fn task_row(
     // A pin names its project, a task elsewhere its machine (compact only).
     let device_chip = device_tag.filter(|_| compact).map(|tag| {
         div()
-            .h(px(16.0))
+            .h(u(16.0))
             .flex_none()
             .flex()
             .items_center()
             .px(px(4.0))
             .rounded(px(radius::XS))
             .bg(t.text.opacity(0.06))
-            .text_size(px(10.5))
+            .text_size(u(10.5))
             .text_color(subline)
             .child(tag)
     });
@@ -2522,14 +2637,14 @@ fn task_row(
                     let id = format!("{row_id}-pr");
                     div()
                         .id(eid(id.clone()))
-                        .h(px(16.0))
+                        .h(u(16.0))
                         .flex_none()
                         .flex()
                         .flex_row()
                         .items_center()
                         .px(px(4.0))
                         .rounded(px(radius::XS))
-                        .text_size(px(10.0))
+                        .text_size(u(10.0))
                         .font_weight(FontWeight::MEDIUM)
                         .cursor_pointer()
                         .hover_fill_fg(
@@ -2555,7 +2670,7 @@ fn task_row(
             .flex()
             .flex_row()
             .items_center()
-            .gap(px(6.0))
+            .gap(u(6.0))
             .child(
                 div()
                     .flex_1()
@@ -2563,9 +2678,9 @@ fn task_row(
                     .flex()
                     .flex_row()
                     .items_center()
-                    .gap(px(4.0))
-                    .text_size(px(11.0))
-                    .line_height(px(14.0))
+                    .gap(u(4.0))
+                    .text_size(u(11.0))
+                    .line_height(u(14.0))
                     .text_color(subline)
                     .children(harness)
                     .when(show_project, |el| {
@@ -2597,17 +2712,18 @@ fn task_row(
     let hover_id = task.id.clone();
     div()
         .id(eid(row_id.clone()))
-        .h(px(if compact { COMPACT_ROW_H } else { ROW_H }))
+        .h(u(if compact { COMPACT_ROW_H } else { ROW_H }))
         .flex()
         .flex_col()
         .justify_center()
-        .gap(px(2.0))
+        .gap(u(2.0))
         .rounded(px(radius::MD))
         .px(px(space::SM))
-        // A compact row sits under its project header: the title starts on
-        // the project tile's left edge.
-        .when(compact, |row| row.pl(px(23.0)))
-        .py(px(6.0))
+        // One title column in every scope (Pink #181, D48 revised): a row
+        // under a project header is not indented, so a selected row has the
+        // same text inset on both sides and switching scope never moves a
+        // title.
+        .py(u(6.0))
         .text_color(motion::mix(rest_text, text, hover))
         .bg(row_bg)
         // One listener drives both the wash blend and the corner's swap.
@@ -2646,13 +2762,13 @@ fn task_row(
                 .flex()
                 .flex_row()
                 .items_center()
-                .gap(px(MARK_GAP))
+                .gap(u(MARK_GAP))
                 .child(faded_label(
                     format!("{row_id}-title"),
                     true,
                     div()
-                        .text_size(px(13.0))
-                        .line_height(px(17.0))
+                        .text_size(u(13.0))
+                        .line_height(u(17.0))
                         .font_weight(FontWeight::MEDIUM)
                         .child(task.title.clone()),
                     fade_to,
@@ -2675,6 +2791,24 @@ fn chevron(reveal: f32, t: &Pink) -> Svg {
         .with_transformation(Transformation::rotate(radians(reveal * FRAC_PI_2)))
 }
 
+/// A chevron at a row's trailing edge (Pink: spaces.rs `trailing_chevron`,
+/// #185): the glyph's empty space is pulled back so the arrow ends on the
+/// time column above it.
+fn trailing_chevron(chevron: Svg) -> Div {
+    div()
+        .flex_none()
+        .mr(-u(CHEVRON_TRAILING_BEARING))
+        .child(chevron)
+}
+
+/// Empty space a leading glyph draws before its first stroke at its shelf
+/// size, measured from the rendered sidebar and pulled back so the stroke
+/// starts on the title column (Pink: spaces.rs `leading_bearing`). Glyphs
+/// that fill their box need none.
+fn leading_bearing(glyph: &str) -> f32 {
+    if glyph == ICON_CHECK { 2.5 } else { 0.0 }
+}
+
 /// A group of rows under a folding header (Pink: spaces.rs
 /// `render_active_rows` groups): Pinned and device groups wear the quiet
 /// disclosure header, project groups the project header.
@@ -2691,7 +2825,10 @@ fn group(c: &RowCx, group: &Group) -> AnyElement {
         move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
             run(&state, window, cx, |s, _| {
                 s.toggle_group(&key);
-                Vec::new()
+                vec![Effect::Command(SidebarCommand::Fold {
+                    group: key.clone().into(),
+                    folded: s.collapsed.contains(&key),
+                })]
             })
         }
     };
@@ -2705,7 +2842,21 @@ fn group(c: &RowCx, group: &Group) -> AnyElement {
             } else {
                 group.label.clone()
             };
-            disclosure_header(c, &header_id, label, reveal, !group.collapsed).on_click(toggle)
+            // A named button with its count and state (Pink #182):
+            // "Pinned, 1 thread".
+            let spoken = format!(
+                "{}, {} {}",
+                group.label,
+                group.total,
+                if group.total == 1 {
+                    "thread"
+                } else {
+                    "threads"
+                }
+            );
+            disclosure_header(c, &header_id, label, reveal, !group.collapsed)
+                .aria_label(spoken)
+                .on_click(toggle)
         }
     };
     let pinned = matches!(group.kind, GroupKind::Pinned);
@@ -2719,6 +2870,9 @@ fn group(c: &RowCx, group: &Group) -> AnyElement {
         };
         task_row(c, row, group.compact, tag, *slot)
     });
+    // A folded body at rest draws nothing, so its rows also leave the
+    // accessibility tree instead of being read while hidden (Pink #182).
+    let folded = group.collapsed && reveal < 0.001;
     let body = div()
         .w_full()
         .flex_none()
@@ -2727,20 +2881,22 @@ fn group(c: &RowCx, group: &Group) -> AnyElement {
         .opacity(0.35 + 0.65 * reveal)
         .relative()
         .top(px(-3.0 * (1.0 - reveal)))
-        .child(
-            div()
-                .w_full()
-                .flex()
-                .flex_col()
-                .pt(px(BODY_INSET))
-                .children(rows)
-                .children(group.more.map(|more| more_row_el(c, &group.key, more))),
-        );
+        .when(!folded, |body| {
+            body.child(
+                div()
+                    .w_full()
+                    .flex()
+                    .flex_col()
+                    .pt(u(BODY_INSET))
+                    .children(rows)
+                    .children(group.more.map(|more| more_row_el(c, &group.key, more))),
+            )
+        });
     div()
         .w_full()
         .flex()
         .flex_col()
-        .pt(px(SECTION_GAP))
+        .pt(u(SECTION_GAP))
         .child(header)
         .child(body)
         .into_any_element()
@@ -2765,8 +2921,8 @@ fn disclosure_header(
         .flex()
         .flex_row()
         .items_center()
-        .gap(px(8.0))
-        .h(px(HEADER_H))
+        .gap(u(8.0))
+        .h(px(header_h()))
         .px(px(space::SM))
         .rounded(px(radius::SM))
         .cursor_pointer()
@@ -2775,7 +2931,7 @@ fn disclosure_header(
             format!("{id}-label"),
             false,
             div()
-                .text_size(px(11.0))
+                .text_size(u(11.0))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(t.readable_faint(0.9))
                 .child(label),
@@ -2793,9 +2949,12 @@ fn disclosure_header(
 }
 
 /// An All projects group's header (Pink: sidebar_projects.rs
-/// `project_group_header`): the chevron, the project's tile and name, what
-/// needs you and what runs, the open count while folded, and a New task
-/// button under the pointer.
+/// `project_group_header`, #181 and #185): the project's tile and name on
+/// the rows' title column, what needs you and what runs, the open count
+/// while folded, a New thread button for that project under the pointer
+/// (a full `MIN_HIT` target), and the disclosure chevron at the trailing
+/// end, shown while folded or under the pointer. The rows under it are not
+/// indented: the header carries the grouping.
 fn project_header(
     c: &RowCx,
     id: &str,
@@ -2806,10 +2965,10 @@ fn project_header(
     let t = c.t;
     let counts = group.counts;
     let hover_group: SharedString = format!("{id}-hdr").into();
-    let new_id = format!("{id}-new-task");
-    let new_label: SharedString = format!("New task in {}", group.label).into();
+    let new_id = format!("{id}-new-thread");
+    let new_label: SharedString = format!("New thread in {}", group.label).into();
     let spoken = if counts.active == 0 {
-        "No open tasks".to_owned()
+        "No open threads".to_owned()
     } else {
         Counts {
             active: group.total,
@@ -2819,6 +2978,7 @@ fn project_header(
     };
     let state = c.state.clone();
     let new_project = project.clone();
+    let hover_group_chevron = hover_group.clone();
     div()
         .id(eid(id.to_owned()))
         .group(hover_group.clone())
@@ -2828,14 +2988,12 @@ fn project_header(
         .flex()
         .flex_row()
         .items_center()
-        .gap(px(7.0))
-        .h(px(HEADER_H))
-        .pl(px(4.0))
-        .pr(px(space::SM))
+        .gap(u(7.0))
+        .h(px(header_h()))
+        .px(px(space::SM))
         .rounded(px(radius::SM))
         .cursor_pointer()
         .hover_wash(id.to_owned(), t.fill(FillTier::Tertiary))
-        .child(chevron(reveal, t))
         .child(project_tile(
             c.s.project_index(project),
             &group.label,
@@ -2846,7 +3004,7 @@ fn project_header(
             format!("{id}-label"),
             false,
             div()
-                .text_size(px(12.5))
+                .text_size(u(12.5))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(t.text)
                 .child(group.label.clone()),
@@ -2869,7 +3027,7 @@ fn project_header(
             el.child(
                 div()
                     .flex_none()
-                    .text_size(px(11.0))
+                    .text_size(u(11.0))
                     .text_color(t.readable_faint(0.9))
                     .child(format!("{} open", group.total)),
             )
@@ -2894,16 +3052,30 @@ fn project_header(
                     cx.stop_propagation();
                     let project = new_project.clone();
                     run(&state, window, cx, |_, _| {
-                        vec![Effect::Command(SidebarCommand::NewTask(project))]
+                        vec![Effect::Command(SidebarCommand::NewThread(project))]
                     });
                 })
                 .child(icon(ICON_PLUS, chrome::ICON_S, t.text_muted)),
         )
+        // Trailing disclosure: always shown while folded so a folded group
+        // reads as folded, otherwise only under the pointer.
+        .child(
+            div()
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .size(u(16.0))
+                .opacity(if group.collapsed { 1.0 } else { 0.0 })
+                .group_hover(hover_group_chevron, |st| st.opacity(1.0))
+                .child(trailing_chevron(chevron(reveal, t))),
+        )
 }
 
-/// A section's trailing "Show N more" / "Show less" row (Pink: spaces.rs
-/// `render_sidebar_more_row`): the glyph in the mark slot so the label lands
-/// on the title column.
+/// A section's trailing "Show N more" or "Show less" row (Pink: spaces.rs
+/// `render_sidebar_more_row`, #185): the glyph starts on the title column at
+/// the leading edge of its mark slot, and the row is never shorter than the
+/// minimum hit target.
 fn more_row_el(c: &RowCx, section: &str, more: MoreRow) -> AnyElement {
     let t = c.t;
     let id = format!("{}-more-{section}", c.key);
@@ -2911,9 +3083,13 @@ fn more_row_el(c: &RowCx, section: &str, more: MoreRow) -> AnyElement {
         MoreRow::More(n) => (
             ICON_ARROW_DOWN,
             format!("Show {n} more").into(),
-            format!("Show {n} more tasks").into(),
+            format!("Show {n} more threads").into(),
         ),
-        MoreRow::Less => (ICON_ARROW_UP, "Show less".into(), "Show fewer tasks".into()),
+        MoreRow::Less => (
+            ICON_ARROW_UP,
+            "Show less".into(),
+            "Show fewer threads".into(),
+        ),
     };
     let rest = t.readable_muted(0.75);
     let state = c.state.clone();
@@ -2924,17 +3100,17 @@ fn more_row_el(c: &RowCx, section: &str, more: MoreRow) -> AnyElement {
         .role(Role::Button)
         .aria_label(aria)
         .tab_index(0)
-        .h(px(MORE_ROW_H))
+        .h(px(more_h()))
         .w_full()
         .flex_none()
         .px(px(space::SM))
         .flex()
         .flex_row()
         .items_center()
-        .gap(px(MARK_GAP))
+        .gap(u(MARK_GAP))
         .rounded(px(radius::SM))
         .cursor_pointer()
-        .text_size(px(12.0))
+        .text_size(u(12.0))
         .focus_visible(move |st| pink::focus_ring(st, ring))
         .hover_fill_fg(
             id.clone(),
@@ -2952,10 +3128,12 @@ fn more_row_el(c: &RowCx, section: &str, more: MoreRow) -> AnyElement {
         .on_key_down(pink::swallow_activation_key)
         .child(
             div()
-                .w(px(MARK_SLOT))
+                .w(u(MARK_SLOT))
                 .flex_none()
                 .flex()
-                .justify_center()
+                // The glyph starts on the title column, like the titles and
+                // project tiles above it.
+                .justify_start()
                 .child(icon(glyph, 12.0, motion::hover_blend(&id, rest, t.text))),
         )
         .child(label)
@@ -2967,30 +3145,30 @@ fn more_row_el(c: &RowCx, section: &str, more: MoreRow) -> AnyElement {
 /// never folds away.
 fn section_heading(c: &RowCx, section: Section, count: usize, first: bool) -> AnyElement {
     let t = c.t;
-    let tasks = if count == 1 { "task" } else { "tasks" };
+    let threads = if count == 1 { "thread" } else { "threads" };
     div()
         .w_full()
         .flex_none()
         .flex()
         .flex_col()
-        .pt(px(if first { 0.0 } else { SECTION_GAP }))
+        .pt(u(if first { 0.0 } else { SECTION_GAP }))
         .child(
             div()
                 .id(eid(format!("{}-section-{}", c.key, section.key())))
                 .role(Role::Heading)
-                .aria_label(format!("{}, {count} {tasks}", section.label()))
-                .h(px(HEADER_H))
+                .aria_label(format!("{}, {count} {threads}", section.label()))
+                .h(px(header_h()))
                 .px(px(space::SM))
                 .flex()
                 .flex_row()
                 .items_center()
-                .gap(px(8.0))
+                .gap(u(8.0))
                 .child(
                     div()
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_size(px(11.0))
+                        .text_size(u(11.0))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(t.readable_faint(0.9))
                         .child(section.label()),
@@ -2998,7 +3176,7 @@ fn section_heading(c: &RowCx, section: Section, count: usize, first: bool) -> An
                 .child(
                     div()
                         .flex_none()
-                        .text_size(px(11.0))
+                        .text_size(u(11.0))
                         .text_color(t.readable_faint(0.7))
                         .child(count.to_string()),
                 ),
@@ -3009,15 +3187,16 @@ fn section_heading(c: &RowCx, section: Section, count: usize, first: bool) -> An
 /// Pink: the quiet rule shared by sidebar groups (spaces.rs
 /// `sidebar_separator`): one pixel of `border @ 0.6`.
 fn separator(t: &Pink) -> Div {
-    div().h(px(1.0)).bg(t.border.opacity(0.6))
+    div().h(u(1.0)).bg(t.border.opacity(0.6))
 }
 
 // ---------------------------------------------------------------------------
 // Shelves
 // ---------------------------------------------------------------------------
 
-/// A shelf's disclosure row (Pink: spaces.rs `sidebar_shelf_header`): the
-/// glyph in the mark slot, a 12 medium label, the count and the chevron.
+/// A shelf's disclosure row (Pink: spaces.rs `sidebar_shelf_header`, #185):
+/// the glyph starting on the title column, a 12 medium label, the count and
+/// the chevron ending on the time column.
 fn shelf_header(
     c: &RowCx,
     key: &'static str,
@@ -3039,17 +3218,20 @@ fn shelf_header(
     div()
         .id(eid(id.clone()))
         .role(Role::Button)
-        .aria_label(format!("{label}, {total} tasks"))
+        .aria_label(format!(
+            "{label}, {total} {}",
+            if total == 1 { "thread" } else { "threads" }
+        ))
         .aria_expanded(open)
         .tab_index(0)
         .w_full()
         .flex_none()
-        .h(px(HEADER_H))
+        .h(px(header_h()))
         .px(px(space::SM))
         .flex()
         .flex_row()
         .items_center()
-        .gap(px(MARK_GAP))
+        .gap(u(MARK_GAP))
         .rounded(px(radius::SM))
         .cursor_pointer()
         .focus_visible(move |st| pink::focus_ring(st, ring))
@@ -3074,37 +3256,41 @@ fn shelf_header(
         })
         .child(
             div()
-                .w(px(MARK_SLOT))
+                .w(u(MARK_SLOT))
                 .flex_none()
                 .flex()
-                .justify_center()
-                .child(icon(
-                    glyph,
-                    13.0,
-                    t.readable_icon(motion::hover_blend(
-                        &id,
-                        t.readable_muted(0.5),
-                        t.text_muted,
-                    )),
-                )),
+                // The glyph's stroke starts on the title column.
+                .justify_start()
+                .child(
+                    icon(
+                        glyph,
+                        13.0,
+                        t.readable_icon(motion::hover_blend(
+                            &id,
+                            t.readable_muted(0.5),
+                            t.text_muted,
+                        )),
+                    )
+                    .ml(-u(leading_bearing(glyph))),
+                ),
         )
         .child(
             div()
                 .flex_1()
                 .min_w_0()
-                .text_size(px(12.0))
+                .text_size(u(12.0))
                 .font_weight(FontWeight::MEDIUM)
                 .child(label),
         )
         .child(
             div()
                 .flex_none()
-                .text_size(px(11.0))
+                .text_size(u(11.0))
                 .font_features(pink::tabular_figures())
                 .text_color(t.readable_faint(0.9))
                 .child(total.to_string()),
         )
-        .child(chevron(reveal, t))
+        .child(trailing_chevron(chevron(reveal, t)))
 }
 
 /// A shelf's folding body: its rows and its more row.
@@ -3121,9 +3307,8 @@ fn shelf_body(
         COLLAPSE,
     );
     // Pink: spaces.rs `shelf_body_height`.
-    let height = 2.0 * BODY_INSET
-        + rows.len() as f32 * SHELF_ROW_H
-        + if more.is_some() { MORE_ROW_H } else { 0.0 };
+    let height = (2.0 * BODY_INSET + rows.len() as f32 * SHELF_ROW_H) * scale()
+        + if more.is_some() { more_h() } else { 0.0 };
     div()
         .w_full()
         .flex_none()
@@ -3132,24 +3317,27 @@ fn shelf_body(
         .opacity(0.35 + 0.65 * reveal)
         .relative()
         .top(px(-3.0 * (1.0 - reveal)))
-        .child(
-            div()
-                .w_full()
-                .flex()
-                .flex_col()
-                .py(px(BODY_INSET))
-                .children(rows)
-                .children(more.map(|more| more_row_el(c, key, more))),
-        )
+        // Folded at rest, the rows leave the accessibility tree (Pink #182).
+        .when(open || reveal > 0.001, |body| {
+            body.child(
+                div()
+                    .w_full()
+                    .flex()
+                    .flex_col()
+                    .py(u(BODY_INSET))
+                    .children(rows)
+                    .children(more.map(|more| more_row_el(c, key, more))),
+            )
+        })
         .into_any_element()
 }
 
 /// The shared mark slot holding a task's harness mark (Pink: the settled
 /// and archived rows' leading column).
-fn shelf_mark(c: &RowCx, task: &SidebarTask, alpha: f32) -> Div {
+fn shelf_mark(c: &RowCx, task: &SidebarThread, alpha: f32) -> Div {
     let t = c.t;
     div()
-        .w(px(MARK_SLOT))
+        .w(u(MARK_SLOT))
         .flex_none()
         .flex()
         .justify_center()
@@ -3180,41 +3368,91 @@ fn settled_row(c: &RowCx, row: &Row) -> AnyElement {
         t.glass_hover()
     };
     let fade_to = pink::flatten(motion::hover_blend(&id, wash, hover), c.surface);
-    let details = c.details(row, Some("Settled"));
+    let details = c.details(row, Some("Inactive"));
     let state = c.state.clone();
     let open_id = task.id.clone();
+    let hovered = c.s.shelf_hovered.as_ref() == Some(&task.id);
+    // Under the pointer, Mark as active takes the time's place (Pink
+    // shell.rs: the restart glyph on an inactive thread).
+    let right = if hovered {
+        let state = c.state.clone();
+        let restore = task.id.clone();
+        let restore_id = format!("{id}-activate");
+        div()
+            .id(eid(restore_id.clone()))
+            .role(Role::Button)
+            .aria_label("Mark as active")
+            .flex()
+            .items_center()
+            .justify_center()
+            .size(px(chrome::MIN_HIT))
+            .rounded(px(chrome::RADIUS_S))
+            .hover_wash(restore_id, t.fill(FillTier::Tertiary))
+            .tooltip(pink::text_tooltip("Mark as active"))
+            .tooltip_show_delay(layout::TOOLTIP_DELAY)
+            .on_click(move |_, window, cx| {
+                cx.stop_propagation();
+                run(&state, window, cx, |s, _| {
+                    s.shelf_hovered = None;
+                    s.act(&restore, SidebarAction::MarkActive)
+                });
+            })
+            .child(icon(ICON_RESTART, 13.0, t.text_muted))
+            .into_any_element()
+    } else {
+        div()
+            .text_size(u(11.0))
+            .text_color(t.readable_muted(0.55))
+            .child(time_ago(c.s.clock - row.updated))
+            .into_any_element()
+    };
+    let hover_state = c.state.clone();
+    let hover_id = task.id.clone();
+    let fade_key = id.clone();
     div()
         .id(eid(id.clone()))
+        .on_hover({
+            let fade = motion::hover_listener(fade_key);
+            move |entered: &bool, window, cx| {
+                fade(entered, window, cx);
+                hover_state.update(cx, |s, cx| {
+                    if *entered {
+                        if s.shelf_hovered.as_ref() != Some(&hover_id) {
+                            s.shelf_hovered = Some(hover_id.clone());
+                            cx.notify();
+                        }
+                    } else if s.shelf_hovered.as_ref() == Some(&hover_id) {
+                        s.shelf_hovered = None;
+                        cx.notify();
+                    }
+                });
+            }
+        })
         .flex_none()
-        .h(px(SHELF_ROW_H))
+        .h(u(SHELF_ROW_H))
         .flex()
         .flex_row()
         .items_center()
-        .gap(px(MARK_GAP))
+        .gap(u(MARK_GAP))
         .px(px(space::SM))
         .rounded(px(radius::MD))
         .cursor_pointer()
         .tooltip(move |_, cx| cx.new(|_| details.clone()).into())
         .tooltip_show_delay(layout::TOOLTIP_DELAY)
-        .hover_fill(id.clone(), wash, hover)
+        .bg(motion::hover_blend(&id, wash, hover))
         .on_click(move |_, window, cx| run(&state, window, cx, |s, _| s.select(&open_id)))
         .child(shelf_mark(c, task, 0.7))
         .child(faded_label(
             format!("{id}-title"),
             true,
             div()
-                .text_size(px(13.0))
+                .text_size(u(13.0))
                 .text_color(t.text.opacity(0.86))
                 .child(task.title.clone()),
             fade_to,
             c.clips,
         ))
-        .child(
-            div()
-                .text_size(px(11.0))
-                .text_color(t.readable_muted(0.55))
-                .child(time_ago(c.s.clock - row.updated)),
-        )
+        .child(right)
         .into_any_element()
 }
 
@@ -3240,14 +3478,14 @@ fn archived_row(c: &RowCx, row: &Row) -> AnyElement {
         div()
             .id(eid(restore_id.clone()))
             .role(Role::Button)
-            .aria_label("Unarchive task")
+            .aria_label("Unarchive thread")
             .flex()
             .items_center()
             .justify_center()
             .size(px(chrome::MIN_HIT))
             .rounded(px(chrome::RADIUS_S))
             .hover_wash(restore_id, t.fill(FillTier::Tertiary))
-            .tooltip(pink::text_tooltip("Unarchive task"))
+            .tooltip(pink::text_tooltip("Unarchive thread"))
             .tooltip_show_delay(layout::TOOLTIP_DELAY)
             .on_click(move |_, window, cx| {
                 cx.stop_propagation();
@@ -3260,7 +3498,7 @@ fn archived_row(c: &RowCx, row: &Row) -> AnyElement {
             .into_any_element()
     } else {
         div()
-            .text_size(px(11.0))
+            .text_size(u(11.0))
             .text_color(if t.dark {
                 t.text_muted.opacity(0.55)
             } else {
@@ -3278,11 +3516,11 @@ fn archived_row(c: &RowCx, row: &Row) -> AnyElement {
     div()
         .id(eid(id.clone()))
         .flex_none()
-        .h(px(SHELF_ROW_H))
+        .h(u(SHELF_ROW_H))
         .flex()
         .flex_row()
         .items_center()
-        .gap(px(MARK_GAP))
+        .gap(u(MARK_GAP))
         .px(px(space::SM))
         .rounded(px(radius::MD))
         .cursor_pointer()
@@ -3316,7 +3554,7 @@ fn archived_row(c: &RowCx, row: &Row) -> AnyElement {
             format!("{id}-title"),
             true,
             div()
-                .text_size(px(13.0))
+                .text_size(u(13.0))
                 .text_color(if hovered || selected {
                     t.text
                 } else {
@@ -3365,18 +3603,18 @@ fn shelves(c: &RowCx) -> Option<AnyElement> {
             .flex_none()
             .flex()
             .flex_col()
-            .pb(px(BODY_INSET))
+            .pb(u(BODY_INSET))
             .child(
                 div()
                     .w_full()
-                    .pt(px(SECTION_GAP))
-                    .pb(px(BODY_INSET))
+                    .pt(u(SECTION_GAP))
+                    .pb(u(BODY_INSET))
                     .px(px(space::SM))
                     .child(separator(c.t)),
             )
             .children(shelf(
                 "settled",
-                "Settled",
+                "Inactive",
                 ICON_CHECK,
                 settled,
                 s.settled_open,
@@ -3428,7 +3666,7 @@ fn anchored_menu(
 ) -> impl IntoElement {
     let inner = div()
         .occlude()
-        .pt(px(layout::POPOVER_GAP))
+        .pt(u(layout::POPOVER_GAP))
         .child(div().relative().child(press_guard()).child(card));
     let layer = match exit {
         Some(p) => motion::menu_out(
@@ -3470,10 +3708,16 @@ fn exit_progress(popup: &Popup, cx: &App) -> Option<f32> {
     })
 }
 
-/// The project pill (Pink: spaces.rs `render_spaces_filter`): a bordered
-/// 40 pt pill – the project's tile, its name over its live counts, and a
-/// chevron – that opens the project picker beneath it.
-fn project_pill(c: &RowCx, width: f32, cx: &App) -> AnyElement {
+/// The scope row (Pink: spaces.rs `render_spaces_filter`, UI rethink D1,
+/// #180 and #185): one slim 32 pt row, scaled with the Interface size, that
+/// names the project the list shows (or All projects) and opens the
+/// project picker, then the list's view options and the Activity bell. No
+/// border or card: a hover wash and the `CONTROL` radius. The tile or the
+/// All projects folder starts on the title column and the name on the
+/// navigation labels' column; the bell's glyph ends on the time column.
+/// Its accessible name carries the scope's counts ("All projects, 3 open
+/// threads").
+fn scope_row(c: &RowCx, width: f32, cx: &App) -> AnyElement {
     let t = c.t;
     let s = c.s;
     let id = format!("{}-filter", c.key);
@@ -3481,100 +3725,89 @@ fn project_pill(c: &RowCx, width: f32, cx: &App) -> AnyElement {
     let (label, tile): (SharedString, Div) = match &s.filter {
         Some(project) => {
             let name = s.project_name(project);
-            let tile = project_tile(s.project_index(project), &name, 24.0, t);
+            let tile = project_tile(s.project_index(project), &name, SCOPE_TILE, t);
             (name, tile)
         }
-        None => ("All projects".into(), all_projects_tile(24.0, t)),
+        None => (
+            "All projects".into(),
+            all_projects_tile(SCOPE_TILE, NAV_ICON, true, t),
+        ),
     };
-    let summary = s.counts(s.filter.as_ref()).summary();
-    let pill_bg = if open {
+    let spoken = s.counts(s.filter.as_ref()).summary();
+    let trigger_bg = if open {
         t.glass_hover()
     } else {
-        motion::hover_blend(&id, t.text.opacity(0.035), t.glass_hover())
+        motion::hover_blend(&id, t.glass_hover().opacity(0.0), t.glass_hover())
     };
-    // The labels fade into the pill's painted plate.
-    let fade_to = pink::flatten(pill_bg, c.surface);
+    // The label fades into the row's painted wash.
+    let fade_to = pink::flatten(trigger_bg, c.surface);
+    let ring = t.focus_ring();
     let state = c.state.clone();
     let press_state = c.state.clone();
     let mut trigger = div()
         .id(eid(id.clone()))
         .role(Role::Button)
-        .aria_label(label.clone())
+        .aria_label(format!("{label}, {spoken}"))
         .aria_expanded(open)
+        .tab_index(0)
         .flex_1()
         .min_w_0()
-        .h(px(40.0))
+        .h(u(SCOPE_ROW))
         .flex()
         .flex_row()
         .items_center()
-        .gap(px(10.0))
-        // A bordered pill: the project is the sidebar's subject, not one
-        // more toolbar label.
-        .rounded(px(11.0))
-        .border_1()
-        .border_color(if open {
-            t.accent.opacity(0.45)
-        } else {
-            t.border.opacity(0.7)
-        })
-        .pl(px(7.0))
-        .pr(px(space::SM))
-        .text_size(px(13.0))
+        .gap(u(space::ICON_LABEL))
+        .rounded(px(radius::CONTROL))
+        .px(px(space::SM))
+        // `TypeRole::Chrome`, grown with the Interface size.
+        .text_size(u(TypeRole::Chrome.size()))
+        .line_height(u(TypeRole::Chrome.line_height()))
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(t.text)
-        .bg(pill_bg)
+        .bg(trigger_bg)
         .on_hover(motion::hover_listener(id.clone()))
+        .focus_visible(move |st| pink::focus_ring(st, ring))
         .cursor_pointer()
         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
             press_state.update(cx, |s, _| s.picker.pressed_while_open = s.picker.mounted());
         })
-        .on_click(move |_, window, cx| {
-            let was_open =
-                state.update(cx, |s, _| std::mem::take(&mut s.picker.pressed_while_open));
-            if was_open {
-                return;
-            }
+        .on_click(move |event: &ClickEvent, window, cx| {
+            // A press that found the picker open closes it; Return and
+            // Space arrive without a press note.
+            let close = state.update(cx, |s, _| {
+                if event.is_keyboard() {
+                    s.picker.open
+                } else {
+                    std::mem::take(&mut s.picker.pressed_while_open)
+                }
+            });
             run(&state, window, cx, |s, cx| {
-                s.open_picker(cx);
+                if close {
+                    s.begin_close(PopupKind::Picker, cx);
+                } else {
+                    s.open_picker(cx);
+                }
                 Vec::new()
             });
         })
+        .on_key_down(pink::swallow_activation_key)
         .child(tile)
         .child(
             div()
-                .flex_1()
                 .min_w_0()
                 .flex()
-                .flex_col()
-                .child(
-                    div()
-                        .flex()
-                        .flex_row()
-                        .items_center()
-                        .gap(px(6.0))
-                        .line_height(px(16.0))
-                        .child(faded_label(
-                            format!("{id}-label"),
-                            false,
-                            label,
-                            fade_to,
-                            c.clips,
-                        )),
-                )
+                .flex_row()
+                .items_center()
                 .child(faded_label(
-                    format!("{id}-summary"),
+                    format!("{id}-label"),
                     false,
-                    div()
-                        .text_size(px(11.0))
-                        .line_height(px(14.0))
-                        .font_weight(FontWeight::NORMAL)
-                        .text_color(t.readable_faint(0.9))
-                        .child(summary),
+                    label,
                     fade_to,
                     c.clips,
                 )),
         )
-        .child(icon(ICON_ARROW_DOWN, 14.0, t.readable_muted(0.6)));
+        .child(icon(ICON_ARROW_DOWN, 12.0, t.readable_muted(0.6)))
+        .child(div().flex_1());
     if s.picker.mounted() {
         trigger = trigger.relative().child(anchored_menu(
             format!("{id}-menu"),
@@ -3583,14 +3816,23 @@ fn project_pill(c: &RowCx, width: f32, cx: &App) -> AnyElement {
             picker_card(c, width),
         ));
     }
+    let (view, bell) = scope_controls(c, width, cx);
     div()
         .flex_none()
         .flex()
         .flex_row()
         .items_center()
-        .pt(px(8.0))
-        .pb(px(4.0))
+        .gap(u(2.0))
+        // The bell's glyph (centred in a fixed 28 pt button, growing with
+        // the text) ends on the rows' trailing column like their times.
+        .pr(px(
+            space::SM - (chrome::CONTROL_M - chrome::ICON_M * scale()) / 2.0
+        ))
+        .pt(u(8.0))
+        .pb(u(2.0))
         .child(trigger)
+        .children(view)
+        .child(bell)
         .into_any_element()
 }
 
@@ -3624,6 +3866,7 @@ fn picker_card(c: &RowCx, width: f32) -> AnyElement {
             window.focus(&focus, cx);
         }
     };
+    let set_size = rows.len();
     let list = rows.iter().enumerate().map(|(ix, row)| {
         let (tile, label, subtitle, mono, trailing): (
             Div,
@@ -3633,11 +3876,11 @@ fn picker_card(c: &RowCx, width: f32) -> AnyElement {
             Option<Div>,
         ) = match row {
             None => (
-                all_projects_tile(28.0, t),
+                all_projects_tile(28.0, 20.0, false, t),
                 "All projects".into(),
                 format!(
                     "{} across {} project{}",
-                    open_tasks(all.active),
+                    open_threads(all.active),
                     s.projects.len(),
                     if s.projects.len() == 1 { "" } else { "s" }
                 )
@@ -3657,8 +3900,8 @@ fn picker_card(c: &RowCx, width: f32) -> AnyElement {
                     .flex()
                     .flex_row()
                     .items_center()
-                    .gap(px(8.0))
-                    .text_size(px(11.0))
+                    .gap(u(8.0))
+                    .text_size(u(11.0))
                     .font_weight(FontWeight::MEDIUM)
                     .font_features(pink::tabular_figures())
                     .when(counts.need > 0, |el| {
@@ -3689,9 +3932,19 @@ fn picker_card(c: &RowCx, width: f32) -> AnyElement {
                 )
             }
         };
+        // Pink project_picker.rs (#180): a list option named with its counts,
+        // its selection and its place in the list.
+        let spoken: SharedString = match row {
+            Some(id) => format!("{label}, {}", s.counts(Some(id)).summary()).into(),
+            None => format!("{label}, {subtitle}").into(),
+        };
         pink::menu_row_nav(row == &s.filter, cursor == Some(ix), t)
             .id(eid(format!("{}-picker-row-{ix}", c.key)))
-            .role(Role::MenuItem)
+            .role(Role::ListBoxOption)
+            .aria_label(spoken)
+            .aria_selected(row == &s.filter)
+            .aria_position_in_set(ix + 1)
+            .aria_size_of_set(set_size)
             .on_mouse_move(hover(ix))
             .on_click(choose(ix))
             .child(tile)
@@ -3713,7 +3966,7 @@ fn picker_card(c: &RowCx, width: f32) -> AnyElement {
                             div()
                                 .min_w_0()
                                 .truncate()
-                                .text_size(px(11.0))
+                                .text_size(u(11.0))
                                 .font_weight(FontWeight::NORMAL)
                                 .when(mono, |el| el.font_family(pink::MONO))
                                 .text_color(t.readable_faint(0.9))
@@ -3726,7 +3979,8 @@ fn picker_card(c: &RowCx, width: f32) -> AnyElement {
     let footer = |ix: usize, glyph: &'static str, label: &'static str| {
         pink::menu_row_nav(false, cursor == Some(ix), t)
             .id(eid(format!("{}-picker-row-{ix}", c.key)))
-            .role(Role::MenuItem)
+            .role(Role::Button)
+            .aria_label(label)
             .on_mouse_move(hover(ix))
             .on_click(choose(ix))
             .child(icon(glyph, 12.0, t.text_muted))
@@ -3756,9 +4010,11 @@ fn picker_card(c: &RowCx, width: f32) -> AnyElement {
         .child(
             div()
                 .id(eid(format!("{}-picker-list", c.key)))
+                .role(Role::ListBox)
+                .aria_label("Projects")
                 .flex()
                 .flex_col()
-                .gap(px(2.0))
+                .gap(u(2.0))
                 .max_h(px(PICKER_LIST_MAX))
                 .overflow_y_scroll()
                 .children(list),
@@ -3767,8 +4023,8 @@ fn picker_card(c: &RowCx, width: f32) -> AnyElement {
             card.child(
                 div()
                     .px(px(8.0))
-                    .py(px(6.0))
-                    .text_size(px(12.0))
+                    .py(u(6.0))
+                    .text_size(u(12.0))
                     .text_color(t.readable_faint(0.9))
                     .child("No matching projects"),
             )
@@ -3776,9 +4032,9 @@ fn picker_card(c: &RowCx, width: f32) -> AnyElement {
         // Pinned under the list, full-bleed through the card's inset.
         .child(
             div()
-                .my(px(2.0))
+                .my(u(2.0))
                 .mx(px(-layout::CARD_INSET))
-                .h(px(1.0))
+                .h(u(1.0))
                 .flex_none()
                 .bg(t.border.opacity(0.6)),
         )
@@ -3787,8 +4043,10 @@ fn picker_card(c: &RowCx, width: f32) -> AnyElement {
         .into_any_element()
 }
 
-/// The navigation section (Pink: spaces.rs `render_sidebar_nav`): one 30 pt
-/// row per item, a page's row marked while its page is open, then a rule.
+/// The navigation section (Pink: spaces.rs `render_sidebar_nav`, #180 and
+/// #185): one 32 pt row per item, scaled with the Interface size, the
+/// 16 pt icon on the title column and the label 8 after it, a page's row
+/// marked while its page is open, then a rule.
 fn nav_rows(c: &RowCx) -> AnyElement {
     let t = c.t;
     let s = c.s;
@@ -3807,16 +4065,16 @@ fn nav_rows(c: &RowCx) -> AnyElement {
             .aria_selected(current)
             .tab_index(0)
             .w_full()
-            .h(px(30.0))
+            .h(u(SCOPE_ROW))
             .flex_none()
             .flex()
             .flex_row()
             .items_center()
-            .gap(px(NAV_GAP))
+            .gap(u(NAV_GAP))
             .px(px(space::SM))
             .rounded(px(radius::MD))
             .cursor_pointer()
-            .text_size(px(13.0))
+            .text_size(u(13.0))
             .font_weight(FontWeight::MEDIUM)
             .when(current, |row| {
                 row.bg(t.glass_selected_bg()).text_color(t.text)
@@ -3836,7 +4094,7 @@ fn nav_rows(c: &RowCx) -> AnyElement {
             .child(
                 svg()
                     .path(item.icon.clone())
-                    .size(px(16.0))
+                    .size(u(NAV_ICON))
                     .flex_none()
                     .text_color(if current { t.text } else { t.text_muted }),
             )
@@ -3854,7 +4112,7 @@ fn nav_rows(c: &RowCx) -> AnyElement {
                         .flex_none()
                         .opacity(0.0)
                         .group_hover(hover_group, |st| st.opacity(1.0))
-                        .text_size(px(11.0))
+                        .text_size(u(11.0))
                         .font_weight(FontWeight::NORMAL)
                         .font_family(pink::MONO)
                         .text_color(t.readable_faint(0.9))
@@ -3872,19 +4130,83 @@ fn nav_rows(c: &RowCx) -> AnyElement {
                 .flex()
                 .flex_col()
                 .gap(px(2.0))
-                .pt(px(6.0))
+                .pt(u(6.0))
                 .children(rows),
         )
         .child(
             div()
-                .pt(px(10.0))
+                .pt(u(10.0))
                 .child(div().px(px(space::SM)).child(separator(t))),
         )
         .into_any_element()
 }
 
+/// The footer (Pink: shell.rs `render_chat_sidebar` footer actions, #185):
+/// Settings and Devices, one 32 pt button recipe with an 18 pt glyph, both
+/// growing with the Interface size. It starts where the first glyph's
+/// stroke lands on the title column at every size
+/// (`sidebar_footer_leading`).
+fn footer(c: &RowCx) -> AnyElement {
+    let t = c.t;
+    let scale = scale();
+    // Pink: `2 × SIDEBAR_GUTTER − glyph_inset × scale`, from the sidebar's
+    // edge; here from inside the column's own gutter.
+    let glyph_inset = (FOOTER_BUTTON - FOOTER_ICON) / 2.0 + FOOTER_BEARING;
+    let leading = (2.0 * GUTTER - glyph_inset * scale).max(0.0) - GUTTER;
+    let ring = t.focus_ring();
+    let button =
+        |name: &'static str, glyph: &'static str, label: &'static str, command: SidebarCommand| {
+            let id = format!("{}-footer-{name}", c.key);
+            let state = c.state.clone();
+            div()
+                .id(eid(id.clone()))
+                .role(Role::Button)
+                .aria_label(label)
+                .tab_index(0)
+                .size(u(FOOTER_BUTTON))
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(chrome::RADIUS_L))
+                .cursor_pointer()
+                .hover_fill(id, t.glass_hover().opacity(0.0), t.glass_hover())
+                .focus_visible(move |st| pink::focus_ring(st, ring))
+                .tooltip(pink::text_tooltip(label))
+                .tooltip_show_delay(layout::TOOLTIP_DELAY)
+                .on_click(move |_, window, cx| {
+                    let command = command.clone();
+                    run(&state, window, cx, |_, _| vec![Effect::Command(command)])
+                })
+                .on_key_down(pink::swallow_activation_key)
+                .child(icon(glyph, FOOTER_ICON, t.text_muted))
+        };
+    div()
+        .flex_none()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(4.0))
+        .ml(px(leading))
+        .mt(px(4.0))
+        .child(button(
+            "settings",
+            ICON_SETTINGS_GEAR,
+            "Open settings",
+            SidebarCommand::OpenSettings,
+        ))
+        .child(button(
+            "devices",
+            ICON_SMARTPHONE,
+            "Open devices",
+            SidebarCommand::OpenDevices,
+        ))
+        .into_any_element()
+}
+
 /// The view options menu (Pink: spaces.rs `render_sidebar_view_menu`):
-/// Organize, Sort, Show and Auto-settle groups of checkable rows.
+/// Organize, Sort, Show and Move idle threads to Inactive groups of
+/// checkable rows.
 fn view_menu(c: &RowCx, width: f32) -> AnyElement {
     let t = c.t;
     let s = c.s;
@@ -3984,15 +4306,17 @@ fn view_menu(c: &RowCx, width: f32) -> AnyElement {
                 .overflow_y_scroll()
                 .flex()
                 .flex_col()
-                .gap(px(2.0))
+                .gap(u(2.0))
                 .children(rows),
         )
         .into_any_element()
 }
 
-/// The Threads header (Pink: spaces.rs `render_threads_header`): its label
-/// (Activity while that view is on), the view options and the Activity bell.
-fn threads_header(c: &RowCx, width: f32, cx: &App) -> AnyElement {
+/// The scope row's controls (Pink: spaces.rs `render_sidebar_view_trigger`
+/// and activity_center.rs `render_activity_action`): the view options,
+/// hidden while Activity is on since it has its own sections, and the
+/// Activity bell.
+fn scope_controls(c: &RowCx, width: f32, cx: &App) -> (Option<AnyElement>, AnyElement) {
     let t = c.t;
     let s = c.s;
     let activity = s.activity;
@@ -4122,73 +4446,59 @@ fn threads_header(c: &RowCx, width: f32, cx: &App) -> AnyElement {
             el.child(
                 div()
                     .absolute()
-                    .top(px(4.5))
+                    .top(u(4.5))
                     .right(px(5.5))
-                    .size(px(UNREAD_DOT))
+                    .size(u(UNREAD_DOT))
                     .rounded_full()
                     .bg(t.accent),
             )
         });
 
-    let label = div()
-        .flex_1()
-        .min_w_0()
-        .h(px(29.0))
-        .px(px(space::SM))
-        .flex()
-        .items_center()
-        .text_size(px(12.0))
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(if activity {
-            t.text
-        } else {
-            t.readable_faint(0.9)
-        })
-        .child(if activity { "Activity" } else { "Threads" });
-    div()
-        .flex_none()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(4.0))
-        .pt(px(4.0))
-        .child(label)
-        .when(!activity, |row| row.child(view_trigger))
-        .child(bell)
-        .into_any_element()
+    (
+        (!activity).then(|| view_trigger.into_any_element()),
+        bell.into_any_element(),
+    )
 }
 
 /// A centred empty list with the next step (Pink: shell.rs
-/// `render_chat_sidebar`, audit SH-24).
-fn empty_state(activity: bool, has_shelves: bool, t: &Pink) -> AnyElement {
+/// `render_chat_sidebar`, audit SH-24, #180). Truthful: with only inactive
+/// or archived threads it says where they are, and "No threads yet" is
+/// only for a scope with none at all. Announced as a status.
+fn empty_state(key: &str, activity: bool, has_shelves: bool, t: &Pink) -> AnyElement {
     let (title, hint) = if activity {
         (
             "Nothing needs attention",
-            "Running and waiting tasks appear here.",
+            "Running and waiting threads appear here.",
         )
     } else if has_shelves {
-        ("No open tasks", "Start one with ⌘N.")
+        (
+            "No open threads",
+            "Inactive and archived threads are listed below.",
+        )
     } else {
-        ("No tasks yet", "Start one with ⌘N.")
+        ("No threads yet", "Start one with ⌘N.")
     };
     div()
+        .id(eid(format!("{key}-empty-state")))
+        .role(Role::Status)
+        .aria_label(format!("{title}. {hint}"))
         .px(px(space::SM))
-        .py(px(space::LG))
+        .py(u(space::LG))
         .flex()
         .flex_col()
         .items_center()
-        .gap(px(2.0))
+        .gap(u(2.0))
         .text_center()
         .child(
             div()
-                .text_size(px(13.0))
+                .text_size(u(13.0))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(t.readable_muted(0.9))
                 .child(title),
         )
         .child(
             div()
-                .text_size(px(12.0))
+                .text_size(u(12.0))
                 .text_color(t.readable_faint(0.9))
                 .child(hint),
         )
@@ -4259,6 +4569,7 @@ fn on_key(state: &Entity<SidebarState>, event: &KeyDownEvent, window: &mut Windo
 impl RenderOnce for Sidebar {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Pink::get(cx);
+        SCALE.with(|s| s.set(pink::ui_scale(cx)));
         let key = self.id.to_string();
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "sidebar".into()),
@@ -4315,9 +4626,9 @@ impl RenderOnce for Sidebar {
             surface,
         };
         let menu_width = self.width - 2.0 * GUTTER;
-        let pill = project_pill(&c, menu_width, cx);
+        let scope = scope_row(&c, menu_width, cx);
         let nav = nav_rows(&c);
-        let header = threads_header(&c, menu_width, cx);
+        let footer = footer(&c);
         let shelves = (!s.activity).then(|| shelves(&c)).flatten();
         let has_shelves = shelves.is_some();
         let is_empty = items.is_empty();
@@ -4335,8 +4646,8 @@ impl RenderOnce for Sidebar {
                     Item::Group(g) => group(&c, g),
                     Item::Divider => div()
                         .w_full()
-                        .pt(px(space::SM))
-                        .pb(px(space::SM))
+                        .pt(u(space::SM))
+                        .pb(u(space::SM))
                         .px(px(space::SM))
                         .child(separator(&t))
                         .into_any_element(),
@@ -4387,9 +4698,9 @@ impl RenderOnce for Sidebar {
                     })
                     .flex()
                     .flex_col()
-                    .pt(px(4.0))
+                    .pt(u(4.0))
                     .when(is_empty, |el| {
-                        el.child(empty_state(s.activity, has_shelves, &t))
+                        el.child(empty_state(&key, s.activity, has_shelves, &t))
                     })
                     .children(list_items)
                     // A short list leaves the shelves on the bottom edge; a
@@ -4443,7 +4754,7 @@ impl RenderOnce for Sidebar {
             .flex()
             .flex_col()
             .px(px(GUTTER))
-            .pb(px(GUTTER))
+            .pb(u(GUTTER))
             .rounded(px(radius::PANEL))
             .overflow_hidden()
             .bg(surface)
@@ -4465,10 +4776,10 @@ impl RenderOnce for Sidebar {
                     }
                 });
             })
-            .child(pill)
+            .child(scope)
             .child(nav)
-            .child(header)
             .child(list)
+            .child(footer)
     }
 }
 
@@ -4476,171 +4787,184 @@ impl RenderOnce for Sidebar {
 // Story
 // ---------------------------------------------------------------------------
 
+/// Both scopes side by side: All projects groups every project under its
+/// header, a single project lists its two-line rows, and every title,
+/// glyph and time lands on the same two columns in each.
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
-    const H: f32 = 3600.0;
     story::view(cx, |_, _| {
-        Sidebar::new("sidebar")
-            .width(296.0)
-            .height(780.0)
+        div()
+            .flex()
+            .flex_row()
+            .gap(px(24.0))
+            .child(demo("sidebar-all"))
+            .child(demo("sidebar-project").filter("billing"))
+    })
+}
+
+fn demo(id: &'static str) -> Sidebar {
+    const H: f32 = 3600.0;
+    {
+        Sidebar::new(id)
+            .width(288.0)
+            .height(720.0)
             .project(SidebarProject::new("billing", "billing-api").path("~/code/billing-api"))
             .project(SidebarProject::new("web", "web-app").path("~/code/web-app"))
             .project(SidebarProject::new("reports", "reports-web").path("~/code/reports-web"))
             .project(SidebarProject::new("docs", "docs").path("~/code/docs"))
-            .filter("billing")
-            .task(
-                SidebarTask::new("ledger", "Reconcile the March ledger export", "billing")
+            .thread(
+                SidebarThread::new("ledger", "Reconcile the March ledger export", "billing")
                     .branch("ledger/march")
                     .model("Opus")
                     .pinned(true)
                     .age(2.0 * H),
             )
-            .task(
-                SidebarTask::new("invoices", "Backfill invoice PDFs", "billing")
+            .thread(
+                SidebarThread::new("invoices", "Backfill invoice PDFs", "billing")
                     .branch("invoices/backfill")
                     .model("Opus")
-                    .status(TaskStatus::Working)
+                    .status(ThreadStatus::Working)
                     .age(40.0),
             )
-            .task(
-                SidebarTask::new("coupons", "Retire expired coupon codes", "billing")
+            .thread(
+                SidebarThread::new("coupons", "Retire expired coupon codes", "billing")
                     .branch("coupons/retire")
-                    .status(TaskStatus::NeedsApproval)
+                    .status(ThreadStatus::NeedsApproval)
                     .pull_request(482, PullRequestState::Open)
                     .age(150.0),
             )
-            .task(
-                SidebarTask::new("tax", "Which VAT rate applies to Norway?", "billing")
+            .thread(
+                SidebarThread::new("tax", "Which VAT rate applies to Norway?", "billing")
                     .harness(Some(Harness::Codex))
                     .model("gpt-5")
-                    .status(TaskStatus::NeedsInput)
+                    .status(ThreadStatus::NeedsInput)
                     .age(420.0),
             )
-            .task(
-                SidebarTask::new("webhooks", "Retry failed Stripe webhooks", "billing")
+            .thread(
+                SidebarThread::new("webhooks", "Retry failed Stripe webhooks", "billing")
                     .branch("webhooks/retry")
-                    .status(TaskStatus::Done)
+                    .status(ThreadStatus::Done)
                     .related(2)
                     .age(900.0),
             )
-            .task(
-                SidebarTask::new("pg", "Upgrade the Postgres driver", "billing")
+            .thread(
+                SidebarThread::new("pg", "Upgrade the Postgres driver", "billing")
                     .branch("deps/pg")
                     .device("build-box")
                     .harness(Some(Harness::OpenCode))
-                    .status(TaskStatus::Failed)
+                    .status(ThreadStatus::Failed)
                     .age(1800.0),
             )
-            .task(
-                SidebarTask::new("refunds", "Partial refunds for annual plans", "billing")
+            .thread(
+                SidebarThread::new("refunds", "Partial refunds for annual plans", "billing")
                     .branch("refunds/partial")
                     .pull_request(479, PullRequestState::Merged)
                     .open_tab(true)
                     .seen(true)
-                    .status(TaskStatus::Done)
+                    .status(ThreadStatus::Done)
                     .age(2.5 * H),
             )
-            .task(
-                SidebarTask::new("dunning", "Draft dunning email copy", "billing")
+            .thread(
+                SidebarThread::new("dunning", "Draft dunning email copy", "billing")
                     .seen(true)
-                    .status(TaskStatus::Done)
+                    .status(ThreadStatus::Done)
                     .age(5.0 * H),
             )
-            .task(
-                SidebarTask::new("currency", "Add currency to usage exports", "billing")
+            .thread(
+                SidebarThread::new("currency", "Add currency to usage exports", "billing")
                     .branch("exports/currency")
                     .seen(true)
-                    .status(TaskStatus::Done)
+                    .status(ThreadStatus::Done)
                     .age(8.0 * H),
             )
-            .task(
-                SidebarTask::new("proration", "Explain proration on upgrades", "billing")
+            .thread(
+                SidebarThread::new("proration", "Explain proration on upgrades", "billing")
                     .harness(Some(Harness::Codex))
                     .age(30.0 * H),
             )
-            .task(
-                SidebarTask::new("audit", "Audit the refund permissions", "billing")
+            .thread(
+                SidebarThread::new("audit", "Audit the refund permissions", "billing")
                     .seen(true)
-                    .status(TaskStatus::Done)
-                    .settled(true)
+                    .status(ThreadStatus::Done)
+                    .inactive(true)
                     .age(26.0 * H),
             )
-            .task(
-                SidebarTask::new("seed", "Seed the staging database", "billing")
+            .thread(
+                SidebarThread::new("seed", "Seed the staging database", "billing")
                     .archived(true)
                     .age(6.0 * 24.0 * H),
             )
-            .task(
-                SidebarTask::new("spike", "Spike: usage-based pricing", "billing")
+            .thread(
+                SidebarThread::new("spike", "Spike: usage-based pricing", "billing")
                     .harness(Some(Harness::Codex))
                     .archived(true)
                     .age(12.0 * 24.0 * H),
             )
-            .task(
-                SidebarTask::new("flags", "Audit unused feature flags", "web")
+            .thread(
+                SidebarThread::new("flags", "Audit unused feature flags", "web")
                     .branch("chore/flag-audit")
-                    .status(TaskStatus::Working)
+                    .status(ThreadStatus::Working)
                     .age(90.0),
             )
-            .task(
-                SidebarTask::new("nav", "Tighten the mobile nav spacing", "web")
+            .thread(
+                SidebarThread::new("nav", "Tighten the mobile nav spacing", "web")
                     .branch("ui/mobile-nav")
                     .seen(true)
-                    .status(TaskStatus::Done)
+                    .status(ThreadStatus::Done)
                     .age(3.0 * H),
             )
-            .task(
-                SidebarTask::new("exports", "Pick a date format for exports", "reports")
-                    .status(TaskStatus::NeedsInput)
+            .thread(
+                SidebarThread::new("exports", "Pick a date format for exports", "reports")
+                    .status(ThreadStatus::NeedsInput)
                     .age(600.0),
             )
-            .task(
-                SidebarTask::new("notes", "Draft the 4.2 release notes", "docs")
+            .thread(
+                SidebarThread::new("notes", "Draft the 4.2 release notes", "docs")
                     .seen(true)
-                    .status(TaskStatus::Done)
+                    .status(ThreadStatus::Done)
                     .age(4.0 * H),
             )
             .selected("invoices")
             .event(
                 3.0,
-                SidebarTask::new("invoices", "Backfill invoice PDFs", "billing")
+                SidebarThread::new("invoices", "Backfill invoice PDFs", "billing")
                     .branch("invoices/backfill")
                     .model("Opus")
-                    .status(TaskStatus::NeedsApproval),
+                    .status(ThreadStatus::NeedsApproval),
             )
             .event(
                 6.5,
-                SidebarTask::new(
+                SidebarThread::new(
                     "chargebacks",
                     "Summarize this week's chargebacks",
                     "billing",
                 )
-                .status(TaskStatus::Working),
+                .status(ThreadStatus::Working),
             )
             .event(
                 10.0,
-                SidebarTask::new("coupons", "Retire expired coupon codes", "billing")
+                SidebarThread::new("coupons", "Retire expired coupon codes", "billing")
                     .branch("coupons/retire")
                     .pull_request(482, PullRequestState::Open)
-                    .status(TaskStatus::Working),
+                    .status(ThreadStatus::Working),
             )
             .event(
                 14.0,
-                SidebarTask::new(
+                SidebarThread::new(
                     "chargebacks",
                     "Summarize this week's chargebacks",
                     "billing",
                 )
-                .status(TaskStatus::Done),
+                .status(ThreadStatus::Done),
             )
             .event(
                 18.0,
-                SidebarTask::new("tax", "Which VAT rate applies to Norway?", "billing")
+                SidebarThread::new("tax", "Which VAT rate applies to Norway?", "billing")
                     .harness(Some(Harness::Codex))
                     .model("gpt-5")
-                    .status(TaskStatus::Working),
+                    .status(ThreadStatus::Working),
             )
             .autoplay(true)
-    })
+    }
 }
 
 #[cfg(test)]
@@ -4670,29 +4994,34 @@ mod tests {
 
     #[test]
     fn summary_names_open_then_needs_then_running() {
-        assert_eq!(Counts::default().summary(), "No open tasks");
+        assert_eq!(Counts::default().summary(), "No open threads");
         let counts = Counts {
             active: 4,
             need: 1,
             working: 2,
             last: None,
         };
-        assert_eq!(counts.summary(), "4 open tasks, 1 needs you, 2 running");
+        assert_eq!(counts.summary(), "4 open threads, 1 needs you, 2 running");
         let counts = Counts {
             active: 1,
             need: 2,
             working: 0,
             last: None,
         };
-        assert_eq!(counts.summary(), "1 open task, 2 need you");
+        assert_eq!(counts.summary(), "1 open thread, 2 need you");
     }
 
     #[test]
     fn only_quiet_finished_work_settles() {
-        let task = SidebarTask::new("a", "A", "p");
-        assert!(task.clone().status(TaskStatus::Done).can_settle());
-        assert!(!task.clone().status(TaskStatus::Working).can_settle());
-        assert!(!task.clone().status(TaskStatus::NeedsApproval).can_settle());
+        let task = SidebarThread::new("a", "A", "p");
+        assert!(task.clone().status(ThreadStatus::Done).can_settle());
+        assert!(!task.clone().status(ThreadStatus::Working).can_settle());
+        assert!(
+            !task
+                .clone()
+                .status(ThreadStatus::NeedsApproval)
+                .can_settle()
+        );
         assert!(!task.clone().pinned(true).can_settle());
         assert!(!task.archived(true).can_settle());
     }
