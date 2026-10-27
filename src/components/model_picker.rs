@@ -5,10 +5,12 @@
 //! `render_harness_model_popover`). The chip is a ghost pill: the
 //! provider's mark, the model name and the reasoning level as a muted
 //! second tone. Its menu is a flush 320 card: a strip of provider tabs led
-//! by a Favorites star, a search row, a band of compact model rows (⌘1–⌘9
-//! and a star each), and a pinned tray whose Reasoning and option rows open
-//! nested choice menus on hover. Picking a model keeps the card open, so
-//! the tray can be adjusted right after.
+//! by a Favorites star and, once a model has been picked, a Recent clock
+//! (the last five picks, newest first; PINK 0.31.0, novnski/pink#194), a
+//! search row, a band of compact model rows (⌘1–⌘9 and a star each), and a
+//! pinned tray whose Reasoning and option rows open nested choice menus on
+//! hover. Picking a model keeps the card open, so the tray can be adjusted
+//! right after.
 //!
 //! Keys: ↑/↓ move through the models and on into the tray, Enter picks a
 //! model or opens a tray row, → opens and ← closes a tray row's choices,
@@ -40,7 +42,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Model Picker";
-pub const DESCRIPTION: &str = "A composer's model chip and menu: provider tabs, a search row, compact model rows with ⌘ shortcuts and stars, and a tray whose Reasoning and option rows open nested choices";
+pub const DESCRIPTION: &str = "A composer's model chip and menu: Favorites, Recent and provider tabs, a search row, compact model rows with ⌘ shortcuts and stars, and a tray whose Reasoning and option rows open nested choices";
 
 const ICON_HELIX: &str = "icons/model-picker/helix.svg";
 const ICON_ORBIT: &str = "icons/model-picker/orbit.svg";
@@ -48,6 +50,8 @@ const ICON_RELAY: &str = "icons/model-picker/relay.svg";
 const ICON_MAGNIFER: &str = "icons/model-picker/magnifer.svg";
 const ICON_STAR: &str = "icons/model-picker/star.svg";
 const ICON_STAR_BOLD: &str = "icons/model-picker/star-bold.svg";
+/// Pink icons.rs `CLOCK_CIRCLE`, the Recent tab.
+const ICON_CLOCK: &str = "icons/model-picker/clock-circle.svg";
 const ICON_BOLT: &str = "icons/model-picker/bolt-fast.svg";
 const ICON_PAPERCLIP: &str = "icons/model-picker/paperclip.svg";
 const ICON_ARROW_UP: &str = "icons/model-picker/arrow-up.svg";
@@ -86,6 +90,7 @@ type ChangeHandler = Rc<dyn Fn(&ModelOption, &mut Window, &mut App)>;
 type ReasoningHandler = Rc<dyn Fn(ReasoningLevel, &mut Window, &mut App)>;
 type SettingHandler = Rc<dyn Fn(&SharedString, &SharedString, &mut Window, &mut App)>;
 type FavoriteHandler = Rc<dyn Fn(&SharedString, bool, &mut Window, &mut App)>;
+type RecentHandler = Rc<dyn Fn(&[SharedString], &mut Window, &mut App)>;
 
 /// How hard a model thinks before it answers (Pink: `ReasoningLevel`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -344,6 +349,8 @@ pub struct ModelPicker {
     on_reasoning_change: Option<ReasoningHandler>,
     on_setting_change: Option<SettingHandler>,
     on_favorite_change: Option<FavoriteHandler>,
+    recent: Vec<SharedString>,
+    on_recent_change: Option<RecentHandler>,
 }
 
 impl ModelPicker {
@@ -361,6 +368,8 @@ impl ModelPicker {
             on_reasoning_change: None,
             on_setting_change: None,
             on_favorite_change: None,
+            recent: Vec::new(),
+            on_recent_change: None,
         }
     }
 
@@ -374,6 +383,24 @@ impl ModelPicker {
     /// Favorites tab, as Pink's does.
     pub fn favorites(mut self, ids: impl IntoIterator<Item = impl Into<SharedString>>) -> Self {
         self.favorites = ids.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Models picked recently (by id, newest first), for the Recent tab. It
+    /// shows once there is one; at most [`RECENT_MODELS`] are kept.
+    pub fn recent(mut self, ids: impl IntoIterator<Item = impl Into<SharedString>>) -> Self {
+        self.recent = ids.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Called with the Recent tab's model ids, newest first, after each
+    /// explicit pick (a click, Enter or a ⌘ digit; never a hover or arrow
+    /// move), so the host can keep them (Pink saves `recent_models`).
+    pub fn on_recent_change(
+        mut self,
+        handler: impl Fn(&[SharedString], &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_recent_change = Some(Rc::new(handler));
         self
     }
 
@@ -445,13 +472,33 @@ struct Props {
     on_reasoning_change: Option<ReasoningHandler>,
     on_setting_change: Option<SettingHandler>,
     on_favorite_change: Option<FavoriteHandler>,
+    on_recent_change: Option<RecentHandler>,
 }
 
 /// The viewed tab (Pink: `ModelRail`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Rail {
     Favorites,
+    /// Models picked explicitly, newest first (Pink `ModelRail::Recent`,
+    /// UI rethink D60).
+    Recent,
     Provider(usize),
+}
+
+/// How many explicit picks the Recent tab keeps (Pink settings/composer.rs
+/// `RECENT_MODELS`).
+pub const RECENT_MODELS: usize = 5;
+
+/// Put an explicit pick at the front of the Recent tab, without duplicates,
+/// keeping at most [`RECENT_MODELS`] (Pink settings/composer.rs
+/// `remember_recent`). Picks are keyed by provider and model.
+fn remember_recent(
+    recent: &mut Vec<(SharedString, SharedString)>,
+    pick: (SharedString, SharedString),
+) {
+    recent.retain(|r| *r != pick);
+    recent.insert(0, pick);
+    recent.truncate(RECENT_MODELS);
 }
 
 /// A visible model row: provider and model index.
@@ -506,15 +553,18 @@ fn match_rank(query: &str, label: &str) -> Option<usize> {
 /// The rows one tab shows (Pink: `scoped_model_rows`). A query never leaves
 /// the viewed tab: it ranks label prefix, then substring, then attribution
 /// hits, stars and input order breaking ties. Without one, a provider tab
-/// lists its stars first and the Favorites tab every star.
+/// lists its stars first, the Favorites tab every star and the Recent tab
+/// every recent pick by `recent_rank`, newest first.
 fn scoped_rows(
     providers: &[ModelProvider],
     rail: Rail,
     query: &str,
     starred: impl Fn(usize, usize) -> bool,
+    recent_rank: impl Fn(usize, usize) -> Option<usize>,
 ) -> Vec<Row> {
     let in_scope = |p: usize, m: usize| match rail {
         Rail::Favorites => starred(p, m),
+        Rail::Recent => recent_rank(p, m).is_some(),
         Rail::Provider(viewed) => p == viewed,
     };
     let query = query.trim().to_lowercase();
@@ -549,6 +599,16 @@ fn scoped_rows(
             .flat_map(|(p, provider)| (0..provider.models.len()).map(move |m| Row { p, m }))
             .filter(|row| starred(row.p, row.m))
             .collect(),
+        Rail::Recent => {
+            let mut rows: Vec<(usize, Row)> = providers
+                .iter()
+                .enumerate()
+                .flat_map(|(p, provider)| (0..provider.models.len()).map(move |m| Row { p, m }))
+                .filter_map(|row| recent_rank(row.p, row.m).map(|rank| (rank, row)))
+                .collect();
+            rows.sort_by_key(|(rank, _)| *rank);
+            rows.into_iter().map(|(_, row)| row).collect()
+        }
         Rail::Provider(viewed) => {
             let Some(provider) = providers.get(viewed) else {
                 return Vec::new();
@@ -608,6 +668,8 @@ struct PickerState {
     /// Setting picks per model, keyed by provider, model and setting id.
     picks: HashMap<SharedString, usize>,
     favorites: Vec<(SharedString, SharedString)>,
+    /// Explicit picks, newest first (the Recent tab).
+    recent: Vec<(SharedString, SharedString)>,
     scroll: ScrollHandle,
     trigger: Bounds<Pixels>,
     /// The tray row whose choices are open, with their cursor and bounds.
@@ -630,6 +692,15 @@ impl PickerState {
         &self.provider().models[self.selected.1]
     }
 
+    /// Where model `m` of provider `p` sits in the Recent tab, newest first.
+    fn recent_rank(&self, p: usize, m: usize) -> Option<usize> {
+        let provider = &self.props.providers[p];
+        let model = &provider.models[m];
+        self.recent
+            .iter()
+            .position(|(pid, mid)| *pid == provider.id && *mid == model.id)
+    }
+
     fn starred(&self, p: usize, m: usize) -> bool {
         let provider = &self.props.providers[p];
         let model = &provider.models[m];
@@ -639,9 +710,13 @@ impl PickerState {
     }
 
     fn rows(&self) -> Vec<Row> {
-        scoped_rows(&self.props.providers, self.rail, &self.query, |p, m| {
-            self.starred(p, m)
-        })
+        scoped_rows(
+            &self.props.providers,
+            self.rail,
+            &self.query,
+            |p, m| self.starred(p, m),
+            |p, m| self.recent_rank(p, m),
+        )
     }
 
     /// Where the selected model sits in the visible rows (Pink:
@@ -923,10 +998,22 @@ impl PickerState {
         };
         self.close_setting();
         self.selected = (row.p, row.m);
-        self.active = ix;
+        // An explicit choice (never a hover or arrow move) joins the Recent
+        // tab (Pink `pick_model`). The tab keeps its rows' order while it is
+        // viewed, so the highlight stays on the row just picked.
+        let provider = &self.props.providers[row.p];
+        remember_recent(
+            &mut self.recent,
+            (provider.id.clone(), provider.models[row.m].id.clone()),
+        );
+        self.active = if self.rail == Rail::Recent { 0 } else { ix };
+        let recent: Vec<SharedString> = self.recent.iter().map(|(_, m)| m.clone()).collect();
         self.emit(window, cx, move |props, window, cx| {
             if let Some(f) = props.on_change.as_ref() {
                 f(&props.providers[row.p].models[row.m], window, cx);
+            }
+            if let Some(f) = props.on_recent_change.as_ref() {
+                f(&recent, window, cx);
             }
         });
         cx.notify();
@@ -1136,12 +1223,27 @@ impl RenderOnce for ModelPicker {
                 })
             })
             .collect();
+        let mut recent: Vec<(SharedString, SharedString)> = Vec::new();
+        for id in &self.recent {
+            if let Some(pick) = self.providers.iter().find_map(|provider| {
+                provider
+                    .models
+                    .iter()
+                    .any(|m| &m.id == id)
+                    .then(|| (provider.id.clone(), id.clone()))
+            }) && !recent.contains(&pick)
+            {
+                recent.push(pick);
+            }
+        }
+        recent.truncate(RECENT_MODELS);
         let props = Rc::new(Props {
             providers: self.providers,
             on_change: self.on_change,
             on_reasoning_change: self.on_reasoning_change,
             on_setting_change: self.on_setting_change,
             on_favorite_change: self.on_favorite_change,
+            on_recent_change: self.on_recent_change,
         });
         let (default_open, autofocus, reasoning) =
             (self.default_open, self.autofocus, self.reasoning);
@@ -1176,6 +1278,7 @@ impl RenderOnce for ModelPicker {
                         reasoning,
                         picks: HashMap::new(),
                         favorites,
+                        recent,
                         scroll: ScrollHandle::new(),
                         trigger: Bounds::default(),
                         setting_menu: None,
@@ -1487,6 +1590,25 @@ fn tabs(key: &str, s: &PickerState, t: &Pink, state: &Entity<PickerState>) -> St
                 .text_color(if favorites { t.text } else { t.text_muted }),
         )
         .when(favorites, |el| el.child(tab_indicator(t)));
+    // Recent (Pink `model-tab-recent`, UI rethink D60): the models picked
+    // explicitly, newest first, behind a 15 pt clock. Shown once there is
+    // one.
+    let recent_view = s.rail == Rail::Recent;
+    let recent = (!s.recent.is_empty()).then(|| {
+        let viewer = state.clone();
+        tab("tab-recent", "Recent".into(), recent_view, t)
+            .when(!recent_view, |el| {
+                el.hover_wash(format!("{key}-tab-recent"), t.fill(FillTier::Tertiary))
+            })
+            .on_click(move |_, _, cx| viewer.update(cx, |s, cx| s.view(Rail::Recent, cx)))
+            .child(
+                svg()
+                    .path(ICON_CLOCK)
+                    .size(px(15.))
+                    .text_color(if recent_view { t.text } else { t.text_muted }),
+            )
+            .when(recent_view, |el| el.child(tab_indicator(t)))
+    });
     let providers = s.props.providers.iter().enumerate().map(|(ix, provider)| {
         let viewed = s.rail == Rail::Provider(ix);
         let viewer = state.clone();
@@ -1518,6 +1640,7 @@ fn tabs(key: &str, s: &PickerState, t: &Pink, state: &Entity<PickerState>) -> St
         .items_center()
         .gap(px(2.))
         .child(star)
+        .children(recent)
         .children(providers)
 }
 
@@ -1563,7 +1686,7 @@ fn list(
         let note = if !s.query.trim().is_empty() {
             "No models found"
         } else {
-            "No starred models yet. Star a row to keep it here"
+            "No starred models yet. Star a model to keep it here."
         };
         div()
             .id("model-list")
@@ -2209,6 +2332,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                                 div().flex().items_center().gap(px(2.)).child(attach).child(
                                     ModelPicker::new("model-picker", default_providers())
                                         .selected("helix-4-pro")
+                                        .recent(["helix-4-pro", "orbit-6-coder", "lumen-3"])
                                         .default_open(true)
                                         .autofocus(true),
                                 ),
@@ -2239,26 +2363,83 @@ mod tests {
     fn rows_stay_in_the_viewed_tab() {
         let providers = default_providers();
         let none = |_: usize, _: usize| false;
-        let helix = scoped_rows(&providers, Rail::Provider(0), "", none);
+        let no_rank = |_: usize, _: usize| None;
+        let helix = scoped_rows(&providers, Rail::Provider(0), "", none, no_rank);
         assert_eq!(helix.len(), providers[0].models.len());
         // Stars lead a provider tab.
         let star = |p: usize, m: usize| p == 0 && m == 3;
         assert_eq!(
-            scoped_rows(&providers, Rail::Provider(0), "", star)[0],
+            scoped_rows(&providers, Rail::Provider(0), "", star, no_rank)[0],
             Row { p: 0, m: 3 }
         );
         assert_eq!(
-            scoped_rows(&providers, Rail::Favorites, "", star),
+            scoped_rows(&providers, Rail::Favorites, "", star, no_rank),
             vec![Row { p: 0, m: 3 }]
         );
         // A query ranks prefix hits first and never leaves the tab.
-        let flash = scoped_rows(&providers, Rail::Provider(0), "flash", none);
+        let flash = scoped_rows(&providers, Rail::Provider(0), "flash", none, no_rank);
         assert_eq!(flash.len(), 2);
-        assert!(scoped_rows(&providers, Rail::Provider(1), "flash", none).is_empty());
+        assert!(scoped_rows(&providers, Rail::Provider(1), "flash", none, no_rank).is_empty());
         // Attribution is searchable too.
         assert_eq!(
-            scoped_rows(&providers, Rail::Provider(2), "north", none),
+            scoped_rows(&providers, Rail::Provider(2), "north", none, no_rank),
             vec![Row { p: 2, m: 0 }]
+        );
+    }
+
+    /// Failure modes: a re-pick kept twice, the oldest pick first, more than
+    /// five kept, another provider's model with the same id treated as the
+    /// same pick.
+    #[test]
+    fn recent_picks_are_newest_first_unique_and_capped() {
+        let key = |p: &str, m: &str| {
+            (
+                SharedString::from(p.to_string()),
+                SharedString::from(m.to_string()),
+            )
+        };
+        let mut recent = Vec::new();
+        for m in ["a", "b", "c", "b"] {
+            remember_recent(&mut recent, key("helix", m));
+        }
+        assert_eq!(
+            recent,
+            vec![key("helix", "b"), key("helix", "c"), key("helix", "a")]
+        );
+        remember_recent(&mut recent, key("orbit", "a"));
+        assert_eq!(recent[0], key("orbit", "a"));
+        assert!(recent.contains(&key("helix", "a")));
+        for m in ["d", "e", "f", "g"] {
+            remember_recent(&mut recent, key("helix", m));
+        }
+        assert_eq!(recent.len(), RECENT_MODELS);
+        assert_eq!(recent[0], key("helix", "g"));
+    }
+
+    /// Failure modes: Recent ordered by the catalog instead of by pick; a
+    /// search on Recent reaching models never picked.
+    #[test]
+    fn the_recent_tab_lists_picks_in_pick_order() {
+        let providers = default_providers();
+        let none = |_: usize, _: usize| false;
+        let rank = |p: usize, m: usize| match (p, m) {
+            (1, 0) => Some(0),
+            (0, 2) => Some(1),
+            _ => None,
+        };
+        assert_eq!(
+            scoped_rows(&providers, Rail::Recent, "", none, rank),
+            vec![Row { p: 1, m: 0 }, Row { p: 0, m: 2 }]
+        );
+        let other = providers[0].models[0].name.to_lowercase();
+        assert!(
+            !scoped_rows(&providers, Rail::Recent, &other, none, rank)
+                .contains(&Row { p: 0, m: 0 })
+        );
+        // Other tabs ignore the Recent ranks.
+        assert_eq!(
+            scoped_rows(&providers, Rail::Provider(0), "", none, rank).len(),
+            providers[0].models.len()
         );
     }
 
