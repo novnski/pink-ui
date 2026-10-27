@@ -1,0 +1,6 @@
+/Users/iulian/pink-ui/components/list-row/target/debug/deps/mime-07a07d8ff68c10c7.d: /Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mime-0.3.17/src/lib.rs /Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mime-0.3.17/src/parse.rs
+
+/Users/iulian/pink-ui/components/list-row/target/debug/deps/libmime-07a07d8ff68c10c7.rmeta: /Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mime-0.3.17/src/lib.rs /Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mime-0.3.17/src/parse.rs
+
+/Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mime-0.3.17/src/lib.rs:
+/Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mime-0.3.17/src/parse.rs:

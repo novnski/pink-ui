@@ -177,6 +177,7 @@ fn rows(scope: &'static str, two_lines: bool, t: &Pink, scale: f32) -> Vec<AnyEl
                 actions: Some(actions(t, scale)),
                 selected: ix == 0,
                 hovered: ix == 2,
+                ..ListRow::new(sample.title)
             };
             let id = format!("{scope}-row-{ix}");
             // The host's semantics: a selectable button named with its

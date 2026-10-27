@@ -180,6 +180,25 @@ pub struct ListRow {
     pub selected: bool,
     /// Under the pointer: the host tracks hover and passes it in.
     pub hovered: bool,
+    /// Host-built title, in place of the plain truncated text: Pink fades
+    /// a long title at its edge and highlights search matches, which needs
+    /// its runtime. `title` still names the row.
+    pub title_element: Option<AnyElement>,
+    /// Chips after the status on the title line (a device tag).
+    pub after_status: Vec<AnyElement>,
+    /// Host-built trailing corner, in place of the time and hover actions
+    /// (Pink's corner holds pin, archive and inactive controls with their
+    /// own hover rules). It keeps its own fixed width.
+    pub corner: Option<AnyElement>,
+    /// Items after the secondary text on the second line (PR badges).
+    pub secondary_trailing: Vec<AnyElement>,
+    /// Host-resolved wash and text colour, overriding the style's rest,
+    /// hover and selected values (Pink blends them over its hover fade).
+    pub wash: Option<Hsla>,
+    pub text: Option<Hsla>,
+    /// Applied to the title line before it is placed, so a host can attach
+    /// measurement (Pink's fixture probes record its children's bounds).
+    pub decorate_title_line: Option<Box<dyn FnOnce(Div) -> Div>>,
 }
 
 impl ListRow {
@@ -195,6 +214,13 @@ impl ListRow {
             actions: None,
             selected: false,
             hovered: false,
+            title_element: None,
+            after_status: Vec::new(),
+            corner: None,
+            secondary_trailing: Vec::new(),
+            wash: None,
+            text: None,
+            decorate_title_line: None,
         }
     }
 
@@ -248,20 +274,65 @@ pub fn list_row(id: impl Into<SharedString>, row: ListRow, style: &RowStyle) -> 
     } else {
         (None, status)
     };
-    let corner = div()
-        .debug_selector(move || corner_selector)
-        .flex_none()
-        .w(px(style.corner_width))
-        .h(px(18.0 * s))
+    let corner: AnyElement = match row.corner {
+        Some(corner) => corner,
+        None => div()
+            .debug_selector(move || corner_selector)
+            .flex_none()
+            .w(px(style.corner_width))
+            .h(px(18.0 * s))
+            .flex()
+            .items_center()
+            .justify_end()
+            .text_size(px(11.0 * s))
+            .text_color(style.meta)
+            .map(|corner| match (row.hovered, row.actions) {
+                (true, Some(actions)) => corner.child(actions),
+                _ => corner.children(row.time),
+            })
+            .into_any_element(),
+    };
+    let title: AnyElement = match row.title_element {
+        Some(title) => title,
+        None => div()
+            .debug_selector(move || title_selector)
+            .flex_1()
+            .min_w_0()
+            .truncate()
+            .text_size(px(13.0 * s))
+            .line_height(px(17.0 * s))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(title_color)
+            .child(row.title)
+            .into_any_element(),
+    };
+    let title_line = div()
+        .w_full()
         .flex()
+        .flex_row()
         .items_center()
-        .justify_end()
-        .text_size(px(11.0 * s))
-        .text_color(style.meta)
-        .map(|corner| match (row.hovered, row.actions) {
-            (true, Some(actions)) => corner.child(actions),
-            _ => corner.children(row.time),
-        });
+        .gap(px(MARK_GAP * s))
+        .when_some(row.leading, |line, mark| {
+            line.child(
+                div()
+                    .w(px(MARK_SLOT * s))
+                    .flex_none()
+                    .flex()
+                    .justify_start()
+                    .child(mark),
+            )
+        })
+        .child(title)
+        .children(row.chips)
+        .children(line_status)
+        .children(row.after_status)
+        .child(corner);
+    let title_line = match row.decorate_title_line {
+        Some(decorate) => decorate(title_line),
+        None => title_line,
+    };
+    // Pink's row: the two lines 2 pt apart and 6 pt of vertical padding,
+    // both fixed (shell.rs `render_chat_row`).
     div()
         .id(id)
         .w_full()
@@ -270,44 +341,14 @@ pub fn list_row(id: impl Into<SharedString>, row: ListRow, style: &RowStyle) -> 
         .flex()
         .flex_col()
         .justify_center()
-        .gap(px(2.0 * s))
+        .gap(px(2.0))
         .px(px(ROW_INSET))
+        .py(px(6.0))
         .rounded(px(style.radius))
-        .bg(bg)
+        .text_color(row.text.unwrap_or(title_color))
+        .bg(row.wash.unwrap_or(bg))
         .cursor_pointer()
-        .child(
-            div()
-                .w_full()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(MARK_GAP * s))
-                .when_some(row.leading, |line, mark| {
-                    line.child(
-                        div()
-                            .w(px(MARK_SLOT * s))
-                            .flex_none()
-                            .flex()
-                            .justify_start()
-                            .child(mark),
-                    )
-                })
-                .child(
-                    div()
-                        .debug_selector(move || title_selector)
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .text_size(px(13.0 * s))
-                        .line_height(px(17.0 * s))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(title_color)
-                        .child(row.title),
-                )
-                .children(row.chips)
-                .children(line_status)
-                .child(corner),
-        )
+        .child(title_line)
         .when_some(row.secondary, |el, secondary| {
             el.child(
                 div()
@@ -315,7 +356,7 @@ pub fn list_row(id: impl Into<SharedString>, row: ListRow, style: &RowStyle) -> 
                     .flex()
                     .flex_row()
                     .items_center()
-                    .gap(px(6.0 * s))
+                    .gap(px(6.0))
                     .child(
                         div()
                             .flex_1()
@@ -325,6 +366,7 @@ pub fn list_row(id: impl Into<SharedString>, row: ListRow, style: &RowStyle) -> 
                             .text_color(style.secondary)
                             .child(secondary),
                     )
+                    .children(row.secondary_trailing)
                     .children(meta_status),
             )
         })
