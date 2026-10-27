@@ -50,7 +50,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Tool Call Card";
-pub const DESCRIPTION: &str = "An agent's tool calls folded into one quiet line that shimmers while the run is live – open it for one row per call on an activity rail, a spinner while it runs or a red Failed when it didn't, and each row folds open to its command and output with copy";
+pub const DESCRIPTION: &str = "An agent's tool calls folded into one quiet line that shimmers while the run is live: open it for one row per call on an activity rail, a spinner while it runs or a red Failed when it didn't, and each row folds open to its command and output with copy";
 
 // ---------------------------------------------------------------------------
 // Geometry (Pink `transcript.rs` tool row constants)
@@ -1925,7 +1925,7 @@ fn group_summary(label: Option<&str>, count: usize, failed: usize) -> String {
         None => format!("Called {}", plural(count, "tool", "tools")),
     };
     if failed > 0 {
-        summary.push_str(&format!(" · {failed} failed"));
+        summary.push_str(&format!(", {failed} failed"));
     }
     summary
 }
@@ -2293,13 +2293,14 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out
 error: test failed, to rerun pass `-p cart --lib`",
 ];
 
+// joiners: allow a shell command's path separator
 const LOG: &str = "git log -3 --format='%h %an %s' -- src/cart/total.rs";
 const LOG_OUT: &str = "a41c9e2 Mara Lindqvist Apply tax before coupons in checkout_total
 7d02b5f Jonas Weber Round line totals to the cent
 19e6a3c Mara Lindqvist Split cart totals into their own module";
 
 const ASK: &str = "The checkout total test is failing on main. Can you find out why?";
-const REPLY: &str = "It broke in a41c9e2, which moved add_tax ahead of apply_discount. The $10 coupon now comes off the taxed total, so the test's $100 cart checks out at $98.00 instead of $97.20. Putting the coupon back before tax fixes it – want me to make that change?";
+const REPLY: &str = "It broke in a41c9e2, which moved add_tax ahead of apply_discount. The $10 coupon now comes off the taxed total, so the test's $100 cart checks out at $98.00 instead of $97.20. Putting the coupon back before tax fixes it. Want me to make that change?";
 
 struct Demo {
     step: usize,
@@ -2375,7 +2376,7 @@ fn demo_summary(commands: usize, reads: usize, searches: usize) -> String {
     if searches > 0 {
         segments.push(format!("searched {}", plural(searches, "time", "times")));
     }
-    let mut summary = segments.join(" · ");
+    let mut summary = segments.join(", ");
     if let Some(first) = summary.get(0..1) {
         let upper = first.to_uppercase();
         summary.replace_range(0..1, &upper);
@@ -2603,14 +2604,14 @@ mod tests {
     #[test]
     fn summary_follows_pink() {
         assert_eq!(group_summary(None, 3, 0), "Called 3 tools");
-        assert_eq!(group_summary(None, 1, 1), "Called 1 tool · 1 failed");
+        assert_eq!(group_summary(None, 1, 1), "Called 1 tool, 1 failed");
         assert_eq!(
             group_summary(Some("Ran 2 commands"), 2, 1),
-            "Ran 2 commands · 1 failed"
+            "Ran 2 commands, 1 failed"
         );
         assert_eq!(
             demo_summary(2, 1, 1),
-            "Ran 2 commands · read 1 file · searched 1 time"
+            "Ran 2 commands, read 1 file, searched 1 time"
         );
         assert_eq!(single_line("a\n  b\tc"), "a b c");
         assert_eq!(file_name("src/cart/total.rs"), "total.rs");

@@ -45,7 +45,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Command Menu";
-pub const DESCRIPTION: &str = "A ⌘K palette for running anything – one search field over app actions and grouped commands, typed words lit as you type, shortcuts on every row and a footer of key hints";
+pub const DESCRIPTION: &str = "A ⌘K palette for running anything: one search field over app actions and grouped commands, typed words lit as you type, shortcuts on every row and a footer of key hints";
 
 const ICON_SEARCH: &str = "icons/command-menu/palette-search.svg";
 /// Pink: `contributions::icon_for`'s fallback for a command without a glyph.
@@ -270,15 +270,15 @@ pub fn default_commands(dark: bool) -> Vec<Command> {
             .keywords(["sign out"]),
         Command::new("q3-notes", "Q3 planning notes")
             .icon(ICON_DOCUMENT)
-            .detail("Document · Product · Edited 2h ago")
+            .detail("Product document, edited 2h ago")
             .group("Recent documents"),
         Command::new("launch", "Launch checklist")
             .icon(ICON_DOCUMENT)
-            .detail("Document · Marketing · Edited yesterday")
+            .detail("Marketing document, edited yesterday")
             .group("Recent documents"),
         Command::new("hiring", "Hiring plan 2027")
             .icon(ICON_DOCUMENT)
-            .detail("Document · People · Edited Oct 12")
+            .detail("People document, edited Oct 12")
             .group("Recent documents"),
     ]
 }

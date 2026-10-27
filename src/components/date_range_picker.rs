@@ -47,7 +47,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Date Range Picker";
-pub const DESCRIPTION: &str = "Pick a reporting window from a pop-up button – period presets on a segmented track, two months whose range band follows the pointer, an optional comparison period and Cancel / Apply, by pointer or keyboard";
+pub const DESCRIPTION: &str = "Pick a reporting window from a pop-up button: period presets on a segmented track, two months whose range band follows the pointer, an optional comparison period and Cancel and Apply, by pointer or keyboard";
 
 /// Pink's `calendar`, `alt-arrow-left` and `alt-arrow-right` glyphs.
 const ICON_CALENDAR: &str = "icons/date-range-picker/calendar.svg";
@@ -214,9 +214,9 @@ impl DateRange {
         if self.start == self.end {
             self.start.long()
         } else if self.start.year == self.end.year {
-            format!("{} – {}", self.start.short(), self.end.long())
+            format!("{} to {}", self.start.short(), self.end.long())
         } else {
-            format!("{} – {}", self.start.long(), self.end.long())
+            format!("{} to {}", self.start.long(), self.end.long())
         }
     }
 
@@ -850,7 +850,7 @@ fn card(
     // description as a `meta_line`).
     let (range_text, meta) = if picking {
         (
-            format!("{} – …", draft.start.long()),
+            format!("{} to …", draft.start.long()),
             vec![div().child("Pick the last day").into_any_element()],
         )
     } else {
@@ -1077,25 +1077,18 @@ fn card(
         .child(footer)
 }
 
-/// The quiet line under the range (Pink `settings/widgets.rs` `meta_line`):
-/// 12 px fragments in `readable_muted(0.8)`, 8 apart, split by faint dots.
+/// The quiet line under a row title (Pink `settings/widgets.rs` `meta_line`):
+/// 12 px fragments in `readable_muted(0.8)`, 12 apart and never split by a
+/// glyph (UI rethink decision 31), so each fragment reads as its own fact.
 fn meta_line(fragments: Vec<AnyElement>, t: &Pink) -> gpui::Div {
-    let dot = if t.dark {
-        t.text_muted.opacity(0.3)
-    } else {
-        t.text_muted
-    };
     let mut line = div()
         .min_w_0()
         .flex()
         .items_center()
-        .gap(px(space::S8))
+        .gap(px(space::S12))
         .type_style(TextStyle::Footnote)
         .text_color(t.readable_muted(0.8));
-    for (ix, fragment) in fragments.into_iter().enumerate() {
-        if ix > 0 {
-            line = line.child(div().flex_none().text_color(dot).child("·"));
-        }
+    for fragment in fragments {
         line = line.child(div().flex_none().child(fragment));
     }
     line

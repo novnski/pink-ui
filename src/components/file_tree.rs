@@ -43,7 +43,7 @@ use crate::{
 };
 
 pub const NAME: &str = "File Tree";
-pub const DESCRIPTION: &str = "A project's folders and files in a quiet sidebar tree – folders that fold, keyboard walking, file-type artwork, and a search field that finds files by name or lines inside them";
+pub const DESCRIPTION: &str = "A project's folders and files in a quiet sidebar tree: folders that fold, keyboard walking, file-type artwork, and a search field that finds files by name or lines inside them";
 
 const ICON_CHEVRON: &str = "icons/file-tree/alt-arrow-right.svg";
 const ICON_CHEVRON_DOWN: &str = "icons/file-tree/alt-arrow-down.svg";
@@ -1918,7 +1918,7 @@ fn status_row(c: &Ctx, row: &Row, ix: usize) -> AnyElement {
                         .min_w_0()
                         .truncate()
                         .text_color(t.readable_tone(t.danger, 0.82))
-                        .child(format!("{message} — Retry")),
+                        .child(format!("{message}. Retry")),
                 )
                 .into_any_element()
         }
@@ -2736,6 +2736,7 @@ const TAX_TS: &str = r#"export function taxFor(country: string, amount: number) 
 }
 "#;
 
+// joiners: allow sample source code, not a label
 const MONEY_TS: &str = r#"export function formatMoney(cents: number, currency = "EUR") {
   return new Intl.NumberFormat("en", { style: "currency", currency }).format(cents / 100);
 }

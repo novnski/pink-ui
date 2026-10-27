@@ -48,7 +48,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Agent Tree";
-pub const DESCRIPTION: &str = "A multi-agent run as a nested agents list – status, model, spend and runtime on every row, sub-agents on a rail that folds away, and an inspector with the selected agent's usage and Stop / Retry";
+pub const DESCRIPTION: &str = "A multi-agent run as a nested agents list: status, model, spend and runtime on every row, sub-agents on a rail that folds away, and an inspector with the selected agent's usage, Stop and Retry";
 
 const ICON_BOT: &str = "icons/agent-tree/bot.svg";
 const ICON_CHEVRON: &str = "icons/agent-tree/alt-arrow-right.svg";
@@ -734,9 +734,9 @@ fn header(root: &AgentNode, title: &SharedString, key: &str, t: &Pink) -> Div {
     let agents = 1 + root.descendants();
     let done = root.count(AgentStatus::Done);
     let failed = root.count(AgentStatus::Failed);
-    let mut counts = format!("{} · {done} done", agents_label(agents));
+    let mut counts = format!("{}, {done} done", agents_label(agents));
     if failed > 0 {
-        counts.push_str(&format!(" · {failed} failed"));
+        counts.push_str(&format!(", {failed} failed"));
     }
     let mut parts = vec![
         counts,
@@ -746,7 +746,7 @@ fn header(root: &AgentNode, title: &SharedString, key: &str, t: &Pink) -> Div {
     if root.elapsed > 0 {
         parts.push(duration_label(root.elapsed));
     }
-    pink::section_header(title.clone(), Some(parts.join(" · ").into()), t)
+    pink::section_header(title.clone(), Some(parts.join(", ").into()), t)
         // Text starts on the rows' dot column.
         .px(px(space::SM + ROW_PAD_X))
         .child(pink::row_controls().child(run_status(root, key, t)))
@@ -961,7 +961,7 @@ fn row(node: &AgentNode, depth: usize, reveal: f32, c: &Ctx) -> impl IntoElement
         ))
         .child(fold_tile);
 
-    // The activity, then "model · spend · elapsed" in the trailing column
+    // The activity, then "model, spend, elapsed" in the trailing column
     // Pink's chip rows share (one right-aligned edge, not trailing the text
     // at a varying x): the activity alone gives way when the line runs out.
     let mut activity = if node.task.is_empty() {
@@ -970,7 +970,7 @@ fn row(node: &AgentNode, depth: usize, reveal: f32, c: &Ctx) -> impl IntoElement
         node.task.to_string()
     };
     if folded {
-        activity = format!("+{} · {activity}", agents_label(node.descendants()));
+        activity = format!("+{}, {activity}", agents_label(node.descendants()));
     }
     let mut figures: Vec<String> = Vec::new();
     if !node.model.is_empty() {
@@ -994,7 +994,7 @@ fn row(node: &AgentNode, depth: usize, reveal: f32, c: &Ctx) -> impl IntoElement
                 div()
                     .flex_none()
                     .font_features(pink::tabular_figures())
-                    .child(figures.join(" · ")),
+                    .child(figures.join(", ")),
             )
         });
 
@@ -1350,7 +1350,9 @@ fn inspector(
     handlers: Handlers,
 ) -> impl IntoElement {
     let failed = node.status == AgentStatus::Failed;
-    let separator = || div().flex_none().text_color(t.content_faint).child("·");
+    // Facts sit apart on the row's gap, twice over (Pink `meta_line`'s 12):
+    // no separator glyph between them.
+    let separator = || div().flex_none();
     let mut status = div()
         .min_w_0()
         .flex()
@@ -1492,7 +1494,7 @@ fn inspector(
                 if subs == 1 { "" } else { "s" }
             );
             if running_subs > 0 {
-                note.push_str(&format!(" · {running_subs} running"));
+                note.push_str(&format!(", {running_subs} running"));
             }
             block.child(
                 div()

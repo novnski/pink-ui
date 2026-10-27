@@ -46,7 +46,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Agent Plan";
-pub const DESCRIPTION: &str = "An agent's plan stacked on the composer – reorder, rename, drop or add steps in a tray tucked behind the pill, then follow the run as a quiet 2/5 · In progress line that unfolds into one status per step, with a notice to retry or skip a step that fails";
+pub const DESCRIPTION: &str = "An agent's plan stacked on the composer: reorder, rename, drop or add steps in a tray tucked behind the pill, then follow the run as a quiet 2 of 5 line that unfolds into one status per step, with a notice to retry or skip a step that fails";
 
 const ICON_ARROW_DOWN: &str = "icons/agent-plan/alt-arrow-down.svg";
 const ICON_ARROW_RIGHT: &str = "icons/agent-plan/alt-arrow-right.svg";
@@ -752,7 +752,7 @@ fn checklist(key: &str, s: &PlanState, state: &Entity<PlanState>, t: &Pink) -> S
     } else {
         ("Plan finished".into(), false)
     };
-    let prefix = format!("{done}/{total} · ");
+    let prefix = format!("{done} of {total}, ");
     let red = failed.then(|| prefix.len()..prefix.len() + "Failed".len());
     let label = format!("{prefix}{detail}");
     let expanded = s.expanded;
@@ -868,7 +868,7 @@ fn checklist(key: &str, s: &PlanState, state: &Entity<PlanState>, t: &Pink) -> S
     }
     let lines = s.steps.iter().enumerate().map(|(index, step)| {
         let word = step.status.word();
-        let line = format!("{word} · {}", step.plan.title);
+        let line = format!("{word}: {}", step.plan.title);
         let red = (step.status == StepStatus::Failed).then(|| 0..word.len());
         div()
             .id(format!("{key}-checklist-step-{index}"))
@@ -878,15 +878,15 @@ fn checklist(key: &str, s: &PlanState, state: &Entity<PlanState>, t: &Pink) -> S
     });
     let note = match s.phase {
         Phase::Failed => format!(
-            "Agent plan · paused at step {} of {total}",
+            "Agent plan paused at step {} of {total}",
             s.failed_ix().map_or(0, |ix| ix + 1)
         ),
         Phase::Done => format!(
-            "Agent plan · finished in {}",
+            "Agent plan finished in {}",
             format_elapsed(s.run_elapsed().round() as i64)
         ),
         _ => format!(
-            "Agent plan · running for {}",
+            "Agent plan running for {}",
             format_elapsed(s.run_elapsed().floor() as i64)
         ),
     };
@@ -1227,7 +1227,7 @@ fn step_row(
                     .line_height(px(13.))
                     .text_color(t.text_muted)
                     .child(format!(
-                        "{} · ~{}",
+                        "{}, about {}",
                         step.plan.tool,
                         format_elapsed(step.plan.estimate.round() as i64)
                     )),
@@ -1375,12 +1375,8 @@ fn tray_header(
     let count = s.steps.len();
     let estimate: f32 = s.steps.iter().map(|st| st.plan.estimate).sum();
     let steps = format!("{count} {}", if count == 1 { "step" } else { "steps" });
-    let dot = || {
-        div()
-            .flex_none()
-            .text_color(t.readable_faint(0.8))
-            .child("·")
-    };
+    // Facts sit apart on the row's gap, twice over: no separator glyph.
+    let dot = || div().flex_none();
     let summary = div()
         .id(format!("{key}-summary"))
         .role(Role::Status)
@@ -1431,7 +1427,7 @@ fn tray_header(
                 .text_color(t.readable_muted(0.75))
                 .child(steps)
                 .child(dot())
-                .child(format!("~{}", format_elapsed(estimate.round() as i64))),
+                .child(format!("about {}", format_elapsed(estimate.round() as i64))),
         );
     let run = pink::button_enabled(
         format!("{key}-run"),

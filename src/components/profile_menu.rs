@@ -40,7 +40,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Profile Menu";
-pub const DESCRIPTION: &str = "The account menu above your name – who is signed in, the account actions on one highlight the pointer and arrow keys share, a New badge, Sign out set apart, and the profile setup count over a quiet meter with its next step";
+pub const DESCRIPTION: &str = "The account menu above your name: who is signed in, the account actions on one highlight the pointer and arrow keys share, a New badge, Sign out set apart, and the profile setup count over a quiet meter with its next step";
 
 // Solar Linear glyphs, as Pink ships them (`crates/ui/assets/icons`).
 const ICON_SETTINGS: &str = "icons/profile-menu/settings.svg";

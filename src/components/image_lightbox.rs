@@ -40,7 +40,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Image Lightbox";
-pub const DESCRIPTION: &str = "A full-size image over a dim scrim – it rises in fitted to the window, zooms about the pointer with ⌃-scroll or a pinch, pans with a drag, names its file underneath and closes with Escape, a click or its glass close capsule";
+pub const DESCRIPTION: &str = "A full-size image over a dim scrim: it rises in fitted to the window, zooms about the pointer with ⌃-scroll or a pinch, pans with a drag, names its file underneath and closes with Escape, a click or its glass close capsule";
 
 /// Pink: `icons::CLOSE`.
 const ICON_CLOSE: &str = "icons/image-lightbox/close.svg";

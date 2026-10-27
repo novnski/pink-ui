@@ -1,7 +1,7 @@
 //! Git Actions – the Git card Pink opens at the top of its changes pane
 //! (Pink: changes/git_actions.rs `render_git_card`).
 //!
-//! The card reads like Pink's: `Branch · Remote` with Refresh, the one next
+//! The card reads like Pink's: the branch on its remote with Refresh, the one next
 //! step it recommends and why (git_actions/next_action.rs `resolve`), the
 //! pull request's status with its badge (change_requests.rs
 //! `pull_request_badge`), the PR panel – details and checks, or a draft PR
@@ -43,7 +43,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Git Actions";
-pub const DESCRIPTION: &str = "The Git card from Pink's changes pane – branch and remote, the one next step it recommends with that button lit, the pull request's state, checks and draft form, file checkpoints, staged files to pick for a commit, and Commit and Push that say when they run, land or fail";
+pub const DESCRIPTION: &str = "The Git card from Pink's changes pane: branch and remote, the one next step it recommends with that button lit, the pull request's state, checks and draft form, file checkpoints, staged files to pick for a commit, and Commit and Push that say when they run, land or fail";
 
 const ICON_PULL_REQUEST: &str = "icons/git-actions/git-pull-request.svg";
 
@@ -1444,7 +1444,7 @@ impl RenderOnce for GitActions {
                     .gap(px(8.))
                     .text_size(px(11.))
                     .text_color(t.text_dim)
-                    .child(format!("Branch: {}  ·  Remote: {remote}", preview.branch))
+                    .child(format!("Branch {} on {remote}", preview.branch))
                     .child(
                         c.step_button("git-refresh", "Refresh")
                             .on_click(sender.on(GitRequest::Refresh)),
@@ -1739,7 +1739,7 @@ fn pr_badge(c: &Card, pr: &PullRequest) -> impl IntoElement {
         .id(SharedString::from(format!("{}-pr-badge", c.key)))
         .role(Role::Link)
         .aria_label(SharedString::from(format!(
-            "PR #{} · {}",
+            "Pull request #{}, {}",
             pr.number,
             pr.state.label()
         )))
@@ -1805,7 +1805,11 @@ impl gpui::Render for PrTooltip {
                     .text_size(px(11.))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(self.state.tone(&t))
-                    .child(format!("PR #{} · {}", self.number, self.state.label())),
+                    .child(format!(
+                        "Pull request #{}, {}",
+                        self.number,
+                        self.state.label()
+                    )),
             )
             .child(
                 div()
@@ -1890,14 +1894,14 @@ fn pr_panel(
             let summary = &details.summary;
             body = body
                 .child(div().text_size(px(12.)).text_color(t.text).child(format!(
-                    "#{} · {}{}",
+                    "#{}: {}{}",
                     summary.number,
-                    if details.is_draft { "Draft · " } else { "" },
+                    if details.is_draft { "Draft, " } else { "" },
                     summary.title
                 )))
                 .child(small(
                     format!(
-                        "{} → {} · {}",
+                        "{} into {}, {}",
                         summary.head_ref,
                         summary.base_ref,
                         summary.state.label()
@@ -1920,7 +1924,7 @@ fn pr_panel(
                 .child(small(if details.checks.is_empty() {
                     "No checks reported".into()
                 } else {
-                    format!("Checks · {} reported", details.checks.len()).into()
+                    format!("{} checks reported", details.checks.len()).into()
                 }));
             for (ix, check) in details.checks.iter().enumerate() {
                 let tone = match check_outcome(&check.status) {
@@ -1965,7 +1969,7 @@ fn pr_panel(
             let head_commit: String = draft.head_commit.chars().take(8).collect();
             body = body
                 .child(small(draft.repository.clone()))
-                .child(small(format!("{} · {head_commit}", draft.cwd).into()));
+                .child(small(format!("{} at {head_commit}", draft.cwd).into()));
             if let Some(fields) = &fields {
                 for ((label, height), input) in [
                     ("Title", 32.0),
@@ -2102,7 +2106,7 @@ fn checkpoint_section(
                     .gap(px(6.))
                     .text_size(px(11.))
                     .text_color(t.text_dim)
-                    .child(format!("{} · {outcome}", row.started))
+                    .child(format!("{}, {outcome}", row.started))
                     .when(row.before_available && row.after_available, |line| {
                         line.child(
                             git_button(c.key, &format!("checkpoint-diff-{turn}"), "Diff", t)
@@ -2144,7 +2148,7 @@ fn checkpoint_section(
                 .flex_col()
                 .gap(px(4.))
                 .child(dim(format!(
-                    "{} changed paths · observed checkout changes",
+                    "{} changed paths, observed checkout changes",
                     diff.paths
                 )
                 .into()))
@@ -2436,7 +2440,7 @@ impl Demo {
             .body("Retries now double from the policy's base delay up to its cap, with up to 20% jitter so clients that failed together spread out.")
             .check(PrCheck::new("test", "SUCCESS"))
             .check(PrCheck::new("lint", "SUCCESS"))
-            .check(PrCheck::new("e2e / sync-offline", if self.checks_settled { "SUCCESS" } else { "IN_PROGRESS" }))
+            .check(PrCheck::new("e2e sync-offline", if self.checks_settled { "SUCCESS" } else { "IN_PROGRESS" }))
     }
 
     fn request(&mut self, request: &GitRequest, cx: &mut Context<Self>) {

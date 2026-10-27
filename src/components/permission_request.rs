@@ -37,7 +37,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Permission Request";
-pub const DESCRIPTION: &str = "An agent stops to ask before it acts – the composer becomes the request, with the exact command, where and why, numbered choices that each name their grant scope, room to type your own answer, and a quiet Question record once you answer";
+pub const DESCRIPTION: &str = "An agent stops to ask before it acts: the composer becomes the request, with the exact command, where and why, numbered choices that each name their grant scope, room to type your own answer, and a quiet Question record once you answer";
 
 const ICON_QUESTION: &str = "icons/permission-request/chat-round-line.svg";
 
@@ -316,7 +316,7 @@ impl PermissionRequest {
         let mut rows: Vec<(SharedString, SharedString)> = Vec::new();
         if !self.commands.is_empty() {
             let commands: Vec<&str> = self.commands.iter().map(|c| c.as_ref()).collect();
-            rows.push(("Command / input".into(), commands.join("\n").into()));
+            rows.push(("Command".into(), commands.join("\n").into()));
         }
         for (label, value) in [
             ("Working directory", &self.cwd),
@@ -693,7 +693,7 @@ fn number_shortcut(key: &str, modified: bool, reply_focused: bool) -> Option<usi
 
 /// One answer row (Pink: composer.rs `render_wizard` "wizard-option"): r12
 /// on an ink wash that deepens on hover, a deeper wash and a faint ink edge
-/// when picked, the 13.5 label over its "scope · description" line, and a
+/// when picked, the 13.5 label over its "scope: description" line, and a
 /// 22 px number chip. Keyboard focus recolors the resting transparent edge
 /// in the accent, as Pink does for these rows.
 fn option_row(
@@ -759,7 +759,7 @@ fn option_row(
                         .font_weight(FontWeight::NORMAL)
                         .text_color(t.readable_muted(0.65))
                         .child(SharedString::from(format!(
-                            "{} · {}",
+                            "{}: {}",
                             choice.scope, choice.description
                         ))),
                 ),

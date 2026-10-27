@@ -38,7 +38,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Writing Assistant";
-pub const DESCRIPTION: &str = "Rewrite a selection in place – pick a direction, type or dictate what to change, watch the new version fade in under a live working line, page through versions and replace the selection";
+pub const DESCRIPTION: &str = "Rewrite a selection in place: pick a direction, type or dictate what to change, watch the new version fade in under a live working line, page through versions and replace the selection";
 
 const ICON_SEND: &str = "icons/writing-assistant/arrow-up.svg";
 const ICON_MIC: &str = "icons/writing-assistant/microphone.svg";
@@ -623,7 +623,7 @@ impl RenderOnce for WritingAssistant {
             .gap(px(4.))
             .child(context_label(
                 match &self.context {
-                    Some(c) => format!("Selected text · {c}"),
+                    Some(c) => format!("Selected text in {c}"),
                     None => "Selected text".into(),
                 },
                 &t,
@@ -1326,7 +1326,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
         let (on_req, on_apply, on_listen, on_close) =
             (demo.clone(), demo.clone(), demo.clone(), demo.clone());
         WritingAssistant::new("writing-assistant", d.selection.clone())
-            .context("Release announcement · #general draft")
+            .context("Release announcement draft for #general")
             .suggestions(SUGGESTIONS.iter().map(|s| SharedString::from(*s)).collect())
             .versions(versions)
             .listening(d.transcript())

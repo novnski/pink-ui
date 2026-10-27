@@ -42,7 +42,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Setup Guide";
-pub const DESCRIPTION: &str = "An onboarding checklist on a quiet card – a progress ring and a 4/10 · Next line that fold the guide away, task groups that open one at a time, the selected task's hint and call to action, tasks that strike through as they're checked off, and a small button that brings a dismissed guide back";
+pub const DESCRIPTION: &str = "An onboarding checklist on a quiet card: a progress ring and a 4 of 10 done line with the next task that fold the guide away, task groups that open one at a time, the selected task's hint and call to action, tasks that strike through as they're checked off, and a small button that brings a dismissed guide back";
 
 const ICON_ARROW_DOWN: &str = "icons/setup-guide/alt-arrow-down.svg";
 const ICON_ARROW_RIGHT: &str = "icons/setup-guide/alt-arrow-right.svg";
@@ -407,13 +407,14 @@ impl SetupGuide {
                 .into_any_element();
         }
 
-        // Pink: composer/checklist.rs – "{done}/{total} · {detail}".
+        // Pink: composer/checklist.rs, the count and the next step, without
+        // a joiner (UI rethink decision 31).
         let detail: SharedString = match next {
-            Some(title) => format!("Next: {title}").into(),
-            None if complete => "Checklist complete".into(),
-            None => "No active step".into(),
+            Some(title) => format!("next: {title}").into(),
+            None if complete => "checklist complete".into(),
+            None => "no active step".into(),
         };
-        let summary: SharedString = format!("{done_count}/{total} · {detail}").into();
+        let summary: SharedString = format!("{done_count} of {total} done, {detail}").into();
         let minimized = state.read(cx).minimized;
 
         let header = summary_row(
@@ -477,7 +478,7 @@ impl SetupGuide {
 
 /// The guide's header (Pink: composer/checklist.rs `render_checklist`'s
 /// summary row): one button that folds the guide – here holding Pink's
-/// upload ring, the title and the checklist's "done/total · Next: …" line,
+/// upload ring, the title and the checklist's "4 of 10 done, next: …" line,
 /// with the chevron – and the 24 px dismiss cross, gap 4. Both wash in
 /// `element_hover` on hover, as Pink's do.
 #[allow(clippy::too_many_arguments)]

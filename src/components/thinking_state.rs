@@ -50,7 +50,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Thinking State";
-pub const DESCRIPTION: &str = "An assistant's reasoning as it works – thoughts and the tool calls between them arriving one by one on a drawn rail under a summary that shimmers while live, a streaming thought open to its text, the current step and a timer on the working line, folding to one quiet line when the work is done";
+pub const DESCRIPTION: &str = "An assistant's reasoning as it works: thoughts and the tool calls between them arriving one by one on a drawn rail under a summary that shimmers while live, a streaming thought open to its text, the current step and a timer on the working line, folding to one quiet line when the work is done";
 
 const ICON_BRAIN: &str = "icons/thinking-state/brain.svg";
 const ICON_LAYERS: &str = "icons/thinking-state/layers-minimalistic.svg";
@@ -471,7 +471,7 @@ fn tools_summary(tools: &[&ThinkingStep]) -> String {
     if failed > 0 {
         segments.push(format!("{failed} failed"));
     }
-    let mut summary = segments.join(" · ");
+    let mut summary = segments.join(", ");
     if let Some(first) = summary.get(0..1) {
         let upper = first.to_uppercase();
         summary.replace_range(0..1, &upper);
@@ -497,8 +497,8 @@ fn group_summary(steps: &[&ThinkingStep]) -> String {
         (_, 0) => base,
         (true, 1) => "Thought process".into(),
         (true, n) => format!("Thought {n} times"),
-        (false, 1) => format!("Thought · {base}"),
-        (false, n) => format!("Thought {n} times · {base}"),
+        (false, 1) => format!("Thought, {base}"),
+        (false, n) => format!("Thought {n} times, {base}"),
     }
 }
 

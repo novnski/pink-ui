@@ -41,7 +41,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Delegate Board";
-pub const DESCRIPTION: &str = "Hand work to agents by dragging tasks from the Backlog onto their columns – each column previews the agent's new free-at time before you let go, and Auto-assign gives new work to whoever frees up first";
+pub const DESCRIPTION: &str = "Hand work to agents by dragging tasks from the Backlog onto their columns: each column previews the agent's new free-at time before you let go, and Auto-assign gives new work to whoever frees up first";
 
 const ICON_TICKET: &str = "icons/delegate-board/ticket.svg";
 const ICON_QUEUED: &str = "icons/delegate-board/clock-circle.svg";
@@ -1191,7 +1191,7 @@ fn page_header(
                         .font_features(tabular_figures())
                         .text_color(t.readable_muted(0.8))
                         .child(format!(
-                            "Now {} · meters show the next {} minutes",
+                            "Now {}, meters show the next {} minutes",
                             clock_label(clock),
                             HORIZON as u32
                         )),

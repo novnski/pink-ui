@@ -5,7 +5,7 @@
 //! `transcript/child_notices.rs` `display_entry`, the result notice the child
 //! posts back. A card follows the Settings row anatomy: the provider mark in
 //! a 28px tile, centred against two lines – the title with a quiet
-//! "Side chat · fresh" type badge, then a status dot and status, the live or
+//! "Fresh side chat" type badge, then a status dot and status, the live or
 //! settled elapsed time, model · reasoning and a one-line preview of the
 //! prompt or of the helper's latest message – and its actions in one trailing
 //! column: Show in split beside Open chat. At narrow widths the actions wrap
@@ -49,7 +49,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Subagent Cards";
-pub const DESCRIPTION: &str = "The cards a chat's helper agents leave in its transcript – each names its model, wears a status dot with a ticking or settled timer and a one-line preview of the ask or the latest reply, and opens the helper's chat on its own or in a split, with its result posted below as a linked notice";
+pub const DESCRIPTION: &str = "The cards a chat's helper agents leave in its transcript: each names its model, wears a status dot with a ticking or settled timer and a one-line preview of the ask or the latest reply, and opens the helper's chat on its own or in a split, with its result posted below as a linked notice";
 
 /// Pink: `icons::SPLIT_COLUMNS` (Show in split).
 const ICON_SPLIT: &str = "icons/subagent-cards/columns-2.svg";
@@ -62,7 +62,7 @@ const ICON_RELAY: &str = "icons/subagent-cards/relay.svg";
 
 /// Pink: `agent_cards.rs` `NEW_THREAD` – a child-created record is always a
 /// fresh side chat with no inherited context.
-pub const NEW_THREAD: &str = "Side chat · fresh";
+pub const NEW_THREAD: &str = "Fresh side chat";
 /// Pink: the title a child chat without one shows.
 const UNTITLED: &str = "Agent task";
 /// Pink: `child_notices.rs`, the heading of a result whose chat is unknown.
@@ -542,13 +542,14 @@ fn render_card(
     // tints them), the live or frozen time, model · reasoning and the
     // preview, which alone gives way when the line runs out.
     let faint = t.content_faint;
-    let separator = move || div().flex_none().text_color(faint).child("·");
+    // Facts sit apart on the row's gap, twice over: no separator glyph.
+    let separator = move || div().flex_none().text_color(faint);
     let detail = [card.model.clone(), card.reasoning.clone()]
         .into_iter()
         .flatten()
         .map(|part| part.to_string())
         .collect::<Vec<_>>();
-    let detail = (!detail.is_empty()).then(|| detail.join(" · "));
+    let detail = (!detail.is_empty()).then(|| detail.join(", "));
     let failed = card.status == AgentStatus::Failed;
     let meta = div()
         .min_w_0()
@@ -657,7 +658,7 @@ fn render_card(
 }
 
 /// Pink: `child_notices.rs` `display_entry` – the helper's result as the
-/// chat's own markdown: "[Title](its chat) · Completed", then the result.
+/// chat's own markdown: "[Title](its chat), Completed", then the result.
 /// The title links only when the helper's card is known.
 fn render_result(
     key: &str,
@@ -711,11 +712,11 @@ fn render_result(
         .into_any_element()
 }
 
-/// "Title · Completed" and the title's byte range.
+/// "Title, Completed" and the title's byte range.
 fn heading_text(title: &str, outcome: ResultOutcome) -> (String, Range<usize>) {
     let title = single_line(title);
     let link = 0..title.len();
-    (format!("{title} · {}", outcome.label()), link)
+    (format!("{title}, {}", outcome.label()), link)
 }
 
 /// Blank-line separated paragraphs, each folded onto one wrapping line.
@@ -956,7 +957,7 @@ mod tests {
     #[test]
     fn result_heading_links_the_title() {
         let (text, link) = heading_text("Draft\nmigration", ResultOutcome::Completed);
-        assert_eq!(text, "Draft migration · Completed");
+        assert_eq!(text, "Draft migration, Completed");
         assert_eq!(&text[link], "Draft migration");
         assert_eq!(
             paragraphs("One\nline.\n\n\nTwo."),

@@ -41,7 +41,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Breakdown Chart";
-pub const DESCRIPTION: &str = "A measure split two ways on Pink's usage page – Show, Group by and Split by rows on segmented tracks, the total with its parts' series dots, stacked columns in the usage chart's frame with hover readouts, and a Breakdown table whose columns and rows glide into order";
+pub const DESCRIPTION: &str = "A measure split two ways on Pink's usage page: Show, Group by and Split by rows on segmented tracks, the total with its parts' series dots, stacked columns in the usage chart's frame with hover readouts, and a Breakdown table whose columns and rows glide into order";
 
 /// Pink `icons::CHART`, the Usage page's empty-state tile.
 const ICON_CHART: &str = "icons/breakdown-chart/chart.svg";
@@ -521,19 +521,19 @@ impl RenderOnce for BreakdownChart {
                 .map(|g| format!("{} {}", parts[g], measure.fmt(matrix[sl][g])))
                 .collect();
             if values.is_empty() {
-                format!("{} · No activity", slices[sl])
+                format!("{}: No activity", slices[sl])
             } else {
                 format!(
-                    "{} · {} · Total {}",
+                    "{}: {}, Total {}",
                     slices[sl],
-                    values.join(" · "),
+                    values.join(", "),
                     measure.fmt(totals[sl])
                 )
             }
         });
         let hover_readout = hot
             .filter(|sl| *sl < slices.len())
-            .map(|sl| format!("{} · Total {}", slices[sl], measure.fmt(totals[sl])));
+            .map(|sl| format!("{}: Total {}", slices[sl], measure.fmt(totals[sl])));
         let chart = self.chart(
             &t,
             &key,
@@ -1148,7 +1148,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     // series tones), largest team first.
     story::view(cx, |_, _| {
         BreakdownChart::new("breakdown-chart", "Cloud spend", demo_cube())
-            .subtitle("Q3 2026 · all accounts · list prices")
+            .subtitle("Q3 2026 for all accounts, at list prices")
             .measure(0)
             .slice(0)
             .segment(1)

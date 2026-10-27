@@ -52,7 +52,7 @@ use crate::{
 };
 
 pub const NAME: &str = "OTP Input";
-pub const DESCRIPTION: &str = "A one-time code typed one character per cell – dialog-field plates under a gliding focus ring, paste that fills every cell, a plain red line when the code is refused and a resend countdown";
+pub const DESCRIPTION: &str = "A one-time code typed one character per cell: dialog-field plates under a gliding focus ring, paste that fills every cell, a plain red line when the code is refused and a resend countdown";
 
 type Handler = Rc<dyn Fn(&mut Window, &mut App)>;
 type CodeHandler = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;

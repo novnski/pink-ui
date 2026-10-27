@@ -1356,7 +1356,7 @@ impl Pink {
         self.text_muted.opacity(0.35)
     }
 
-    /// Purely decorative ink (the "·" between meta fragments): never for a
+    /// Purely decorative ink (rules, gutter marks): never for a
     /// label a user must read.
     pub fn decorative_muted(&self, dark_opacity: f32) -> Hsla {
         if self.dark {

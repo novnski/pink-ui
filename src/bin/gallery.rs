@@ -137,7 +137,7 @@ impl Gallery {
     fn select(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.selected = ix;
         self.story = (COMPONENTS[ix].story)(window, cx);
-        window.set_window_title(&format!("{} · pink-ui", COMPONENTS[ix].name));
+        window.set_window_title(&format!("{} in pink-ui", COMPONENTS[ix].name));
         cx.notify();
     }
 
@@ -273,7 +273,7 @@ impl Gallery {
                         div()
                             .text_size(px(12.5))
                             .text_color(chrome.muted)
-                            .child(format!("{} components · Rust + GPUI", COMPONENTS.len())),
+                            .child(format!("{} components in Rust and GPUI", COMPONENTS.len())),
                     ),
             )
             .child(list)
@@ -449,7 +449,7 @@ fn main() {
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     titlebar: Some(TitlebarOptions {
-                        title: Some(format!("{} · pink-ui", COMPONENTS[selected].name).into()),
+                        title: Some(format!("{} in pink-ui", COMPONENTS[selected].name).into()),
                         ..Default::default()
                     }),
                     app_id: Some("pink-ui-gallery".into()),

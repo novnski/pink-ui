@@ -36,7 +36,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Toaster";
-pub const DESCRIPTION: &str = "One quiet capsule of feedback above the composer – a status or error glyph and a single line that fade and rise into place, an optional action, and a notice that clears itself after a few seconds or on dismiss";
+pub const DESCRIPTION: &str = "One quiet capsule of feedback above the composer: a status or error glyph and a single line that fade and rise into place, an optional action, and a notice that clears itself after a few seconds or on dismiss";
 
 /// Pink: icons.rs `INFO_CIRCLE` (Solar Linear), the status glyph.
 const ICON_STATUS: &str = "icons/toaster/info-circle.svg";

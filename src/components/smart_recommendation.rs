@@ -47,7 +47,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Smart Recommendation";
-pub const DESCRIPTION: &str = "A suggested next step with its reason and a confidence signal – alternatives to switch to, the accent on the button that accepts it, and undo";
+pub const DESCRIPTION: &str = "A suggested next step with its reason and a confidence signal: alternatives to switch to, the accent on the button that accepts it, and undo";
 
 /// The header strip: Pink's file-header height (`surface_chrome::HEADER_HEIGHT`,
 /// the 38 pt titlebar).

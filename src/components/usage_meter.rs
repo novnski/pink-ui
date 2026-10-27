@@ -38,7 +38,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Usage Meter";
-pub const DESCRIPTION: &str = "A plan's usage card – the share left over a capsule meter that turns amber, then red, the reset and even-pace reading, a strip that speaks up when the cycle runs ahead of its allowance, spend by category over a daily chart and the plan's other limits as compact meters";
+pub const DESCRIPTION: &str = "A plan's usage card: the share left over a capsule meter that turns amber, then red, the reset and even-pace reading, a strip that speaks up when the cycle runs ahead of its allowance, spend by category over a daily chart and the plan's other limits as compact meters";
 
 /// The chart's plot height, value-axis gutter and gutter gap (Pink: usage.rs
 /// `CHART_HEIGHT`, `CHART_AXIS_WIDTH`, `CHART_AXIS_GAP`).
@@ -344,7 +344,7 @@ impl RenderOnce for UsageMeter {
 
         // --- Header: workspace, plan badge, cycle switch, plan action ----
         let period = match (cycle.days.first(), cycle.days.last()) {
-            (Some(a), Some(b)) => format!("{a} – {b} · "),
+            (Some(a), Some(b)) => format!("{a} to {b}, "),
             _ => String::new(),
         };
         let progress = if closed {
@@ -447,7 +447,7 @@ impl RenderOnce for UsageMeter {
         let left = (100. - used_percent.clamp(0., 100.)).round();
         let status: SharedString = if closed {
             format!(
-                "Closed at {:.0}% · {} {} unused",
+                "Closed at {:.0}%, {} {} unused",
                 used_percent,
                 count((allowance - o.used).max(0.)),
                 self.unit
@@ -456,7 +456,7 @@ impl RenderOnce for UsageMeter {
         } else if o.used > allowance {
             // Pink's `quota_pace` has no reading past the limit.
             format!(
-                "Resets in {remaining_days}d · {} {} over",
+                "Resets in {remaining_days}d, {} {} over",
                 count(o.used - allowance),
                 self.unit
             )
@@ -466,7 +466,7 @@ impl RenderOnce for UsageMeter {
             let elapsed_percent = o.elapsed * 100.;
             let delta = used_percent - elapsed_percent;
             format!(
-                "Resets in {remaining_days}d · Even pace: {:.0}% of cycle elapsed · used {:.0} points {}",
+                "Resets in {remaining_days}d. Even pace: {:.0}% of cycle elapsed, used {:.0} points {}",
                 elapsed_percent,
                 delta.abs(),
                 if delta > 0. { "above" } else { "below" }
@@ -510,14 +510,14 @@ impl RenderOnce for UsageMeter {
                 .unwrap_or_default();
             Some((
                 true,
-                format!("Allowance used up{on} · overage billing applies until the cycle resets")
+                format!("Allowance used up{on}. Overage billing applies until the cycle resets")
                     .into(),
             ))
         } else if let Some(i) = o.runs_out {
             Some((
                 false,
                 format!(
-                    "On pace to run out on {} · projected {} {} by {last_day}",
+                    "On pace to run out on {}, projected {} {} by {last_day}",
                     cycle.days[i],
                     count(o.projected),
                     self.unit
@@ -528,7 +528,7 @@ impl RenderOnce for UsageMeter {
             Some((
                 false,
                 format!(
-                    "{:.0}% used with {remaining_days}d to go · projected {} {} by {last_day}",
+                    "{:.0}% used with {remaining_days}d to go, projected {} {} by {last_day}",
                     used_percent,
                     count(o.projected),
                     self.unit
@@ -580,7 +580,7 @@ impl RenderOnce for UsageMeter {
                                 )
                                 .child(pink::row_description(
                                     format!(
-                                        "{} of {} · {} a day",
+                                        "{} of {}, {} a day",
                                         usage_percent(of_used),
                                         self.unit,
                                         count(amount / days_counted)
@@ -615,19 +615,16 @@ impl RenderOnce for UsageMeter {
                 .map(|(i, v)| format!("{} {}", names[i], count(*v)))
                 .collect();
             let detail = if parts.is_empty() {
-                format!("{} · No activity", cycle.days[d])
+                format!("{}: No activity", cycle.days[d])
             } else {
                 format!(
-                    "{} · {} · Total {}",
+                    "{}: {}, Total {}",
                     cycle.days[d],
-                    parts.join(" · "),
+                    parts.join(", "),
                     count(total)
                 )
             };
-            (
-                format!("{} · Total {}", cycle.days[d], count(total)),
-                detail,
-            )
+            (format!("{}: Total {}", cycle.days[d], count(total)), detail)
         });
         let (readout, detail) = match hover {
             Some((readout, detail)) => (Some(readout), detail),
@@ -856,7 +853,7 @@ fn limit_line(l: &UsageLimit, t: &Pink) -> gpui::Div {
                 .whitespace_nowrap()
                 .text_align(TextAlign::Right)
                 .child(format!(
-                    "{} / {}{unit}",
+                    "{} of {}{unit}",
                     trim_num(l.used),
                     trim_num(l.limit)
                 )),

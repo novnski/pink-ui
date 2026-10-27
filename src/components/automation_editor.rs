@@ -48,7 +48,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Automation Editor";
-pub const DESCRIPTION: &str = "The form behind a scheduled prompt on a Pink settings card – a name and message, a schedule picked from five kinds with weekday chips and the cadence spelled out beside a clock, where each run goes, the model, folded extra options, and a host review that has to pass before Save";
+pub const DESCRIPTION: &str = "The form behind a scheduled prompt on a Pink settings card: a name and message, a schedule picked from five kinds with weekday chips and the cadence spelled out beside a clock, where each run goes, the model, folded extra options, and a host review that has to pass before Save";
 
 const ICON_CLOCK: &str = "icons/automation-editor/clock-circle.svg";
 const ICON_FOLDER: &str = "icons/automation-editor/folder.svg";
@@ -257,13 +257,13 @@ impl ModelChoice {
         self
     }
 
-    /// "Claude Code · Opus 4.1 · High" (Pink `execution_label`).
+    /// "Opus 4.1 on Claude Code, High" (Pink `execution_label`).
     pub fn label(&self) -> String {
-        let mut parts = vec![self.harness.to_string(), self.model.to_string()];
+        let mut label = format!("{} on {}", self.model, self.harness);
         if let Some(level) = &self.reasoning {
-            parts.push(level.to_string());
+            label.push_str(&format!(", {level}"));
         }
-        parts.join(" · ")
+        label
     }
 }
 
@@ -431,7 +431,7 @@ impl AutomationDraft {
 pub struct AutomationReview {
     /// The schedule as the host reads it.
     pub description: SharedString,
-    /// The next few runs, already formatted ("09:00 · in 3 h").
+    /// The next few runs, already formatted ("09:00, in 3 h").
     pub next_runs: Vec<SharedString>,
     /// The device the runs happen on.
     pub host: SharedString,
@@ -698,7 +698,7 @@ pub fn schedule_words(draft: &AutomationDraft) -> Result<String, String> {
                 minutes if minutes % 60 == 0 => format!("Every {} hours", minutes / 60),
                 minutes => format!("Every {minutes} minutes"),
             };
-            format!("{words} · {zone}")
+            format!("{words} in {zone}")
         }
         ScheduleKind::Calendar => {
             let (hour, minute) = parse_clock(&draft.time)?;
@@ -735,7 +735,7 @@ pub fn schedule_words(draft: &AutomationDraft) -> Result<String, String> {
                 parse_clock(&draft.time)?;
             }
             let words = describe_rule(rule).unwrap_or_else(|| format!("Custom rule {rule}"));
-            format!("{words} · {zone}")
+            format!("{words} in {zone}")
         }
         ScheduleKind::PullRequest => {
             let repository = draft.repository.trim();
@@ -1289,7 +1289,7 @@ impl EditorState {
                     (
                         ix.to_string().into(),
                         match &m.reasoning {
-                            Some(level) => format!("{} · {level}", m.model).into(),
+                            Some(level) => format!("{}, {level}", m.model).into(),
                             None => m.model.clone(),
                         },
                         Some(m.harness.clone()),
@@ -1770,12 +1770,18 @@ fn schedule_group(ctx: &Ctx, draft: &AutomationDraft, cx: &App) -> Stateful<Div>
                 row()
                     .child(field(
                         ctx,
-                        "Check every (1–1440 min)",
+                        "Check every (1 to 1440 min)",
                         Field::Poll,
                         120.,
                         cx,
                     ))
-                    .child(field(ctx, "Wake budget (1–100)", Field::Budget, 120., cx)),
+                    .child(field(
+                        ctx,
+                        "Wake budget (1 to 100)",
+                        Field::Budget,
+                        120.,
+                        cx,
+                    )),
             )
             .child(pink::row_description(
                 "Wakes only on meaningful changes. PINK never posts GitHub comments.",
@@ -2066,7 +2072,7 @@ fn options_group(
                         .w(px(LATENESS_W))
                         .child(input_frame(ctx, Field::Lateness, cx)),
                 )
-                .child(pink::row_description("minutes (0–1440)", t)),
+                .child(pink::row_description("minutes (0 to 1440)", t)),
             t,
         ));
     } else {
@@ -2081,7 +2087,7 @@ fn options_group(
                 "keeps run chats".into()
             });
         }
-        options = options.child(note(summary.join(" · "), t.readable_muted(0.85), t));
+        options = options.child(note(summary.join(", "), t.readable_muted(0.85), t));
     }
     options
 }
@@ -2598,7 +2604,7 @@ fn add_days(mut date: (i32, u32, u32), days: u32) -> (i32, u32, u32) {
 }
 
 /// A run time as Pink's `when_brief` writes it: the clock alone today,
-/// else the date too; the zone when it isn't the device's; "· in 3 h"
+/// else the date too; the zone when it isn't the device's; ", in 3 h"
 /// within a day.
 fn when_brief(day_offset: u32, minute_of_day: u32, zone: &str) -> String {
     let (y, m, d) = add_days((NOW.0, NOW.1, NOW.2), day_offset);
@@ -2614,9 +2620,9 @@ fn when_brief(day_offset: u32, minute_of_day: u32, zone: &str) -> String {
     let ahead = (day_offset * 1440 + minute_of_day) as i64 - NOW.3 as i64;
     if (0..1440).contains(&ahead) {
         text.push_str(&match ahead {
-            0 => " · in under a minute".to_string(),
-            1..=59 => format!(" · in {ahead} min"),
-            _ => format!(" · in {} h", ahead / 60),
+            0 => ", in under a minute".to_string(),
+            1..=59 => format!(", in {ahead} min"),
+            _ => format!(", in {} h", ahead / 60),
         });
     }
     text
@@ -2819,7 +2825,7 @@ mod tests {
         );
         assert_eq!(
             schedule_words(&base.clone().interval(120)).unwrap(),
-            "Every 2 hours · Europe/Lisbon"
+            "Every 2 hours in Europe/Lisbon"
         );
         assert_eq!(
             schedule_words(
@@ -2828,7 +2834,7 @@ mod tests {
                     .custom("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE;BYHOUR=9;BYMINUTE=30")
             )
             .unwrap(),
-            "Every 2 weeks on Mon, Wed at 09:30 · Europe/Lisbon"
+            "Every 2 weeks on Mon, Wed at 09:30 in Europe/Lisbon"
         );
         assert_eq!(
             schedule_words(&base.clone().custom("BYHOUR=9")),
@@ -2883,7 +2889,7 @@ mod tests {
     fn demo_clock_and_menu_cursor() {
         assert_eq!(weekday(2026, 10, 24), 5, "a Saturday");
         assert_eq!(add_days((2026, 12, 31), 1), (2027, 1, 1));
-        assert_eq!(when_brief(0, 13 * 60 + 12, DEVICE_ZONE), "13:12 · in 3 h");
+        assert_eq!(when_brief(0, 13 * 60 + 12, DEVICE_ZONE), "13:12, in 3 h");
         assert_eq!(when_brief(2, 9 * 60, DEVICE_ZONE), "2026-10-26 09:00");
         assert_eq!(menu_step(None, 3, 1), Some(0));
         assert_eq!(menu_step(None, 3, -1), Some(2));

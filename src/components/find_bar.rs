@@ -45,7 +45,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Find Bar";
-pub const DESCRIPTION: &str = "A floating find bar over a conversation – type to wash every match in the transcript, step through them with Enter, Shift+Enter or the arrows, match case with Aa, and read where you are as \"3 of 7\"";
+pub const DESCRIPTION: &str = "A floating find bar over a conversation: type to wash every match in the transcript, step through them with Enter, Shift+Enter or the arrows, match case with Aa, and read where you are as \"3 of 7\"";
 
 /// Pink `FIND_BAR_WIDTH`.
 const FIND_BAR_WIDTH: f32 = 420.;
@@ -223,7 +223,7 @@ fn status_text(
     } else if !complete {
         count.map_or_else(
             || "Partial history".to_string(),
-            |count| format!("{count} · Partial history"),
+            |count| format!("{count}, partial history"),
         )
     } else {
         count.unwrap_or_else(|| "No results".to_string())
@@ -503,7 +503,7 @@ impl FindBar {
     }
 
     /// Only part of the history has arrived, so a count is not final:
-    /// "Partial history" or "3 of 7 · Partial history".
+    /// "Partial history" or "3 of 7, partial history".
     pub fn partial_history(mut self, partial: bool) -> Self {
         self.partial = partial;
         self
@@ -1097,7 +1097,7 @@ mod tests {
         assert_eq!(status_text(true, 7, Some(2), true, true), "3 of 7…");
         assert_eq!(
             status_text(true, 7, Some(2), false, false),
-            "3 of 7 · Partial history"
+            "3 of 7, partial history"
         );
         assert_eq!(status_text(true, 0, None, false, false), "Partial history");
     }

@@ -45,7 +45,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Comment Thread";
-pub const DESCRIPTION: &str = "An inline review thread pinned to a line – replies with their authors, an assistant whose summary folds open onto the activity rail, a shimmering working line while it answers @mentions, and Pink's draft card to reply";
+pub const DESCRIPTION: &str = "An inline review thread pinned to a line: replies with their authors, an assistant whose summary folds open onto the activity rail, a shimmering working line while it answers @mentions, and Pink's draft card to reply";
 
 /// The glyph an assistant without an avatar image wears (Pink `icons::BOT`).
 pub const ASSISTANT_MARK: &str = "icons/comment-thread/bot.svg";
@@ -1366,7 +1366,7 @@ const SOFIA: &str = "icons/comment-thread/sofia.svg";
 
 /// What Atlas answers when it is asked, in turn.
 const REPLIES: [&str; 3] = [
-    "Done – I also updated the meta description.",
+    "Done. I also updated the meta description.",
     "Good catch. I'll leave a note for the copy review.",
     "On it. You'll see the change in a minute.",
 ];
@@ -1456,6 +1456,10 @@ mod tests {
         assert!(matches!(w[0], Word::Command("/edit")));
         assert!(matches!(w[2], Word::Mention("@atlas", ",")));
         assert!(matches!(w[4], Word::Plain("/edit")));
-        assert!(words("a / b").iter().all(|w| matches!(w, Word::Plain(_))));
+        assert!(
+            words("a / b") // joiners: allow parser input, not a label
+                .iter()
+                .all(|w| matches!(w, Word::Plain(_)))
+        );
     }
 }

@@ -38,7 +38,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Appearance Picker";
-pub const DESCRIPTION: &str = "Pink's Appearance settings – System, Light and Dark as miniature windows of the themes you pick, a menu each for the light and dark theme, accent swatches that re-tint the page, frosted or opaque glass, the interface font and size, and a conversation width slider";
+pub const DESCRIPTION: &str = "Pink's Appearance settings: System, Light and Dark as miniature windows of the themes you pick, a menu each for the light and dark theme, accent swatches that re-tint the page, frosted or opaque glass, the interface font and size, and a conversation width slider";
 
 const ICON_SYSTEM: &str = "icons/appearance-picker/monitor.svg";
 const ICON_LIGHT: &str = "icons/appearance-picker/sun.svg";
@@ -290,9 +290,9 @@ impl AccentChoice {
     /// Pink `accent_helper`.
     fn helper(self) -> String {
         match self {
-            Self::ThemeDefault => "Theme default · Uses the palette's intended color.".into(),
+            Self::ThemeDefault => "Theme default. Uses the palette's intended color.".into(),
             preset => format!(
-                "{} · Controls, glyphs, selections, code, and activity.",
+                "{}. Controls, glyphs, selections, code, and activity.",
                 preset.label()
             ),
         }

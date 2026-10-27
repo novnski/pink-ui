@@ -2,7 +2,7 @@
 //! `shell/board/filters.rs` `render_filters_select` + `page.rs`
 //! `render_menu_card`).
 //!
-//! A Secondary pop-up button reads "Filters", or "Filters · N" while N
+//! A Secondary pop-up button reads "Filters", or "Filters, N" while N
 //! filters are set, and drops a 240 pt menu card below itself. The card lists
 //! each group under an uppercase heading after a full-bleed hairline: a
 //! single-choice group starts with its "Any …" row, a multiple group lists
@@ -95,7 +95,7 @@ pub struct FilterGroup {
     pub multiple: bool,
     /// The single-choice group's first row; "Any <label>" when unset.
     pub any_label: Option<SharedString>,
-    /// Whether this group adds to the trigger's "Filters · N" (Pink leaves
+    /// Whether this group adds to the trigger's "Filters, N" (Pink leaves
     /// out Attention, which has its own toolbar chip).
     pub counted: bool,
 }
@@ -514,7 +514,7 @@ impl RenderOnce for FilterMenu {
         let label: SharedString = if active == 0 {
             self.title.clone()
         } else {
-            format!("{} · {active}", self.title).into()
+            format!("{}, {active}", self.title).into()
         };
         let aria: SharedString = if active == 0 {
             self.title.clone()

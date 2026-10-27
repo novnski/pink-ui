@@ -29,7 +29,7 @@ use crate::{
 };
 
 pub const NAME: &str = "KPI Chart";
-pub const DESCRIPTION: &str = "A period's headline total split into one row per series, over smoothed trend lines – point at a period for a guide, a readout and every series' value";
+pub const DESCRIPTION: &str = "A period's headline total split into one row per series, over smoothed trend lines: point at a period for a guide, a readout and every series' value";
 
 /// The plot height, value-axis gutter and gutter gap (Pink `usage.rs`
 /// `CHART_HEIGHT` / `CHART_AXIS_WIDTH` / `CHART_AXIS_GAP`).
@@ -347,7 +347,7 @@ impl RenderOnce for KpiChart {
             }
             let share = if total == 0. { 0. } else { sums[ix] / total };
             let description = match &series.detail {
-                Some(detail) => format!("{detail} · {} of total", percent(share)),
+                Some(detail) => format!("{detail}, {} of total", percent(share)),
                 None => format!("{} of total", percent(share)),
             };
             summary = summary.child(
@@ -403,18 +403,18 @@ impl RenderOnce for KpiChart {
                 .map(|(ix, s)| format!("{} {}", s.name, format(range.value(ix, h))))
                 .collect();
             if parts.is_empty() {
-                format!("{} · No activity", range.long(h))
+                format!("{}: No activity", range.long(h))
             } else {
                 format!(
-                    "{} · {} · Total {}",
+                    "{}: {}, Total {}",
                     range.long(h),
-                    parts.join(" · "),
+                    parts.join(", "),
                     format(range.total_at(h))
                 )
             }
         });
         let hover_readout =
-            hover.map(|h| format!("{} · Total {}", range.short(h), format(range.total_at(h))));
+            hover.map(|h| format!("{}: Total {}", range.short(h), format(range.total_at(h))));
         let description: SharedString = match hover_detail {
             Some(detail) => detail.into(),
             None => range
@@ -1020,7 +1020,7 @@ fn demo_chart() -> KpiChart {
         .map(|h| {
             let day = if *h < 24 { 21 } else { 22 };
             format!(
-                "Oct {day}, {}–{}",
+                "Oct {day}, {} to {}",
                 hour_minutes(h % 24),
                 hour_minutes(h + 1)
             )
@@ -1047,7 +1047,7 @@ fn demo_chart() -> KpiChart {
     });
 
     KpiChart::new("kpi-chart", "Gross revenue")
-        .subtitle("Paid orders across every channel · before refunds and tax")
+        .subtitle("Paid orders across every channel, before refunds and tax")
         .format(money)
         .axis_format(|v| format!("${}", compact(v)))
         .range(demo_range(

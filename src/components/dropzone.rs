@@ -40,7 +40,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Dropzone";
-pub const DESCRIPTION: &str = "An attachments card that takes files dropped from the desktop – a Drop to attach veil while they hover, thumbnails that pulse while read, upload under a radial ring and offer Retry when a transfer stops, an Add files button, and a red strip naming any file over the size limit";
+pub const DESCRIPTION: &str = "An attachments card that takes files dropped from the desktop: a Drop to attach veil while they hover, thumbnails that pulse while read, upload under a radial ring and offer Retry when a transfer stops, an Add files button, and a red strip naming any file over the size limit";
 
 pub const MB: u64 = 1024 * 1024;
 
@@ -552,15 +552,15 @@ fn summary(uploads: &[Upload]) -> String {
     } else if !live.is_empty() {
         let eta = live.iter().map(|u| u.eta).fold(0., f64::max);
         format!(
-            "{done} of {total} uploaded · about {} left",
+            "{done} of {total} uploaded, about {} left",
             loaders::format_elapsed(eta.ceil().max(1.) as i64)
         )
     } else if failed > 0 {
-        format!("{done} uploaded · {failed} failed")
+        format!("{done} uploaded, {failed} failed")
     } else {
         let bytes: u64 = uploads.iter().map(|u| u.file.size).sum();
         format!(
-            "{total} file{} · {}",
+            "{total} file{}, {}",
             if total == 1 { "" } else { "s" },
             format_size(bytes)
         )

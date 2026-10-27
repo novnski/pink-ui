@@ -50,7 +50,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Trace Waterfall";
-pub const DESCRIPTION: &str = "An agent run against time – its sub-agents, model calls and tool calls on an activity rail that folds, each with a duration bar and its time and cost on a shared axis, a live working line while it runs and a readout of the step under the pointer";
+pub const DESCRIPTION: &str = "An agent run against time: its sub-agents, model calls and tool calls on an activity rail that folds, each with a duration bar and its time and cost on a shared axis, a live working line while it runs and a readout of the step under the pointer";
 
 const ICON_BOT: &str = "icons/trace-waterfall/bot.svg";
 const ICON_BRAIN: &str = "icons/trace-waterfall/brain.svg";
@@ -690,7 +690,7 @@ impl RenderOnce for TraceWaterfall {
                 let mut text = fmt_secs(span.end.min(now) - span.start);
                 let (_, _, cost) = totals(&spans, ix, now);
                 if cost > 0. {
-                    text.push_str(" · ");
+                    text.push_str(", ");
                     text.push_str(&fmt_cost(cost));
                 }
                 let mut width = measure(&text, FontWeight::NORMAL, window);
@@ -760,7 +760,6 @@ impl RenderOnce for TraceWaterfall {
                         .bg(t.readable_tone(t.success, 1.)),
                 )
                 .child("Done")
-                .child(div().text_color(t.content_faint).child("·"))
                 .child(
                     div()
                         .font_features(pink::tabular_figures())
@@ -824,7 +823,7 @@ impl RenderOnce for TraceWaterfall {
                 if run_cost > 0. {
                     fmt_cost(run_cost)
                 } else {
-                    "—".into()
+                    "None".into()
                 },
                 &t,
             ))
@@ -833,7 +832,7 @@ impl RenderOnce for TraceWaterfall {
                 if run_tokens > 0. {
                     fmt_tokens(run_tokens)
                 } else {
-                    "—".into()
+                    "None".into()
                 },
                 &t,
             ))
@@ -1220,10 +1219,10 @@ impl Frame<'_> {
         let mut summary = span.name.to_string();
         if !steps.is_empty() {
             let plural = if steps.len() == 1 { "" } else { "s" };
-            summary.push_str(&format!(" · {} step{plural}", steps.len()));
+            summary.push_str(&format!(", {} step{plural}", steps.len()));
         }
         if failed > 0 {
-            summary.push_str(&format!(" · {failed} failed"));
+            summary.push_str(&format!(", {failed} failed"));
         }
         let title =
             loaders::shimmer_text(summary, TOOL_LABEL_SIZE, TOOL_LABEL_LINE_HEIGHT, fg, t.text)
@@ -1326,7 +1325,7 @@ impl Frame<'_> {
         // A folded sub-agent says what it holds, like Pink's group summary.
         let detail: Option<SharedString> = match (folded, span.detail.clone()) {
             (0, detail) => detail,
-            (n, Some(detail)) => Some(format!("{n} steps · {detail}").into()),
+            (n, Some(detail)) => Some(format!("{n} steps, {detail}").into()),
             (n, None) => Some(format!("{n} steps").into()),
         };
         let cell = div()
@@ -1794,7 +1793,8 @@ fn readout(
         .filter(|d| spans[**d].start <= now)
         .count();
     let end = span.end.min(now);
-    let separator = || div().flex_none().text_color(t.content_faint).child("·");
+    // Facts sit apart on the row's gap, twice over: no separator glyph.
+    let separator = || div().flex_none();
     let field = |label: &'static str, value: String| {
         div()
             .flex_none()
@@ -1885,7 +1885,7 @@ fn readout(
             if tin + tout > 0. {
                 format!("{} → {}", fmt_tokens(tin), fmt_tokens(tout))
             } else {
-                "—".into()
+                "None".into()
             },
         ))
         .child(field(
@@ -1893,7 +1893,7 @@ fn readout(
             if cost > 0. {
                 fmt_cost(cost)
             } else {
-                "—".into()
+                "None".into()
             },
         ))
         .child(div().flex_1())
@@ -2028,7 +2028,7 @@ fn demo_spans() -> Vec<TraceSpan> {
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |_, _| {
         TraceWaterfall::new("trace-waterfall", "Incident triage run")
-            .subtitle("INC-4821 · checkout p99 latency spike")
+            .subtitle("INC-4821: checkout p99 latency spike")
             .spans(demo_spans())
             .playback(1.6)
     })

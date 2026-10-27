@@ -35,7 +35,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Project Card";
-pub const DESCRIPTION: &str = "A project as a quiet ticket card – its status and due date beside a ring with one segment per subtask, linked by hover to its people and subtasks, that folds open into a status picker, a people filter and a checklist";
+pub const DESCRIPTION: &str = "A project as a quiet ticket card: its status and due date beside a ring with one segment per subtask, linked by hover to its people and subtasks, that folds open into a status picker, a people filter and a checklist";
 
 const ICON_CALENDAR: &str = "icons/project-card/calendar.svg";
 const ICON_CHECK: &str = "icons/project-card/check.svg";
@@ -811,7 +811,7 @@ impl RenderOnce for ProjectCard {
                     (Some(due), false) => format!("due {due}"),
                     (None, false) => "open".into(),
                 });
-                parts.join(" · ").into()
+                parts.join(", ").into()
             }
             (None, Some(p)) => {
                 let left = tasks
@@ -821,14 +821,14 @@ impl RenderOnce for ProjectCard {
                     .count();
                 let who = people.get(p).map(|p| p.first_name()).unwrap_or_default();
                 match first_open(Some(p)) {
-                    Some(next) => format!("{who} · {left} left · next: {next}").into(),
-                    None => format!("{who} · all done").into(),
+                    Some(next) => format!("{who}, {left} left, next: {next}").into(),
+                    None => format!("{who}, all done").into(),
                 }
             }
             (None, None) => match (n, first_open(None)) {
                 (0, _) => "No subtasks yet".into(),
                 (_, None) => "Every subtask is done".into(),
-                (_, Some(next)) => format!("{} left · next: {next}", n - done_count).into(),
+                (_, Some(next)) => format!("{} left, next: {next}", n - done_count).into(),
             },
         };
         // The corner swaps content with the fold (Pink's sidebar corner):

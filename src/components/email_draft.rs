@@ -39,7 +39,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Email Draft";
-pub const DESCRIPTION: &str = "An agent-written email waiting for review – switch the recipient from a menu, pick a tone, edit the text in place or drop the attachment, then send or discard it into a one-line receipt with undo";
+pub const DESCRIPTION: &str = "An agent-written email waiting for review: switch the recipient from a menu, pick a tone, edit the text in place or drop the attachment, then send or discard it into a one-line receipt with undo";
 
 /// The card's width.
 const CARD_W: f32 = 480.;
@@ -784,12 +784,6 @@ impl EmailDraft {
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(t.text.opacity(0.9))
                     .child(self.agent.clone()),
-            )
-            .child(
-                div()
-                    .flex_none()
-                    .text_color(t.decorative_muted(0.3))
-                    .child("·"),
             )
             .child(status_line);
 
@@ -1536,8 +1530,8 @@ mod tests {
         let lena = DraftContact::new("Lena Hart", "lena@northwind.io");
         // The first-name branch wins at "Jonas Weber", like the regex alternation
         assert_eq!(
-            follow_name("Hi Jonas, Jonas Weber – Jonasson", &jonas, &lena),
-            "Hi Lena, Lena Weber – Jonasson"
+            follow_name("Hi Jonas, Jonas Weber and Jonasson", &jonas, &lena),
+            "Hi Lena, Lena Weber and Jonasson"
         );
         let finance = DraftContact::new("Finance", "billing@northwind.io");
         assert_eq!(

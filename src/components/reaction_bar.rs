@@ -36,7 +36,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Reaction Bar";
-pub const DESCRIPTION: &str = "Like, comment, repost and share as quiet icon actions under a post – each count in tabular figures beside its glyph, a taken action swapping to its filled glyph as the new count settles in";
+pub const DESCRIPTION: &str = "Like, comment, repost and share as quiet icon actions under a post: each count in tabular figures beside its glyph, a taken action swapping to its filled glyph as the new count settles in";
 
 /// One action's height, and its width with nothing to count (Pink:
 /// transcript.rs `meta_action`).

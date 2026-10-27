@@ -728,7 +728,7 @@ fn plan_card(
         format!("One invoice, on {}", plan.date_label(0))
     } else {
         format!(
-            "Monthly on the 1st, {} to {} · {term} invoices",
+            "Monthly on the 1st, {} to {}, {term} invoices",
             plan.month_label(0),
             plan.month_label(term - 1)
         )
@@ -1020,7 +1020,7 @@ fn line_row(
         Some(unit) => format!("{} {unit}", money(line.price)),
         None => money(line.price),
     };
-    let description = format!("{unit} · {} of the term", percent(share));
+    let description = format!("{unit}, {} of the term", percent(share));
 
     let cadence = {
         let toggle = state.clone();
@@ -1291,15 +1291,15 @@ fn schedule_card(key: &str, state: &Entity<PlanState>, s: &PlanState, t: &Pink) 
     let hovered = s.hovered.filter(|m| *m < term);
 
     let mut caption = format!(
-        "{term} invoices · {} to {}",
+        "{term} invoices, {} to {}",
         plan.month_label(0),
         plan.month_label(term - 1)
     );
     if let Some(pct) = plan.discount {
-        caption.push_str(&format!(" · {pct}% off"));
+        caption.push_str(&format!(", {pct}% off"));
     }
     if lifted > 0 {
-        caption.push_str(&format!(" · {lifted} topped up"));
+        caption.push_str(&format!(", {lifted} topped up"));
     }
 
     // Totals: four figures, two to a line in this column.
@@ -1325,7 +1325,7 @@ fn schedule_card(key: &str, state: &Entity<PlanState>, s: &PlanState, t: &Pink) 
     // breakdown.
     let readout = hovered.map(|m| {
         format!(
-            "Invoice {} · {} · {}",
+            "Invoice {} for {}, {}",
             m + 1,
             plan.month_label(m),
             money(invoices[m])
@@ -1374,7 +1374,7 @@ fn invoice_parts(plan: &BillingPlan, m: usize) -> Vec<String> {
         .sum();
     let discounted = plan.discounted(raw);
     let billed = discounted.max(plan.minimum.unwrap_or(0));
-    let mut parts = vec![format!("Invoice {} · {}", m + 1, plan.date_label(m))];
+    let mut parts = vec![format!("Invoice {} on {}", m + 1, plan.date_label(m))];
     parts.extend(
         plan.lines
             .iter()
@@ -1696,7 +1696,7 @@ impl Render for ChartTooltip {
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |_, _| {
         BillingSchedule::new("billing-schedule", "Northwind Ops")
-            .caption("Enterprise pilot · prepared for Mara Lindqvist")
+            .caption("Enterprise pilot, prepared for Mara Lindqvist")
             .start(2026, 11)
             .term(12)
             .line(

@@ -46,7 +46,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Loaders";
-pub const DESCRIPTION: &str = "Every Pink loader on one settings card – the breathing orb, the shimmering working line, glyph and mono spinners, the gradient matrix, skeletons, the upload ring, the boot splash and the Pink mark – each shown where the app shows it, with its timing a click away";
+pub const DESCRIPTION: &str = "Every Pink loader on one settings card: the breathing orb, the shimmering working line, glyph and mono spinners, the gradient matrix, skeletons, the upload ring, the boot splash and the Pink mark, each shown where the app shows it, with its timing a click away";
 
 /// The card: Pink's settings column is 720 less its gutters; four previews
 /// a row want a little more room than a settings page gives them.
@@ -757,7 +757,7 @@ fn sending_strip(t: &Pink) -> Div {
 }
 
 /// The working line (Pink transcript.rs `render_working_trailer`): the orb
-/// in its 16 line box, the status, and "· 12s", gap 8, top-aligned.
+/// in its 16 line box, the status, and "12s", gap 8, top-aligned.
 fn working_line(working: &WorkingSample, t: &Pink) -> Div {
     let mut status = loaders::working_status(working.verb.clone(), t.content_muted, t.text);
     if let Some(object) = &working.object {

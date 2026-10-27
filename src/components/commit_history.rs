@@ -58,7 +58,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Commit History";
-pub const DESCRIPTION: &str = "A repository's commits as Pink's History pane – a lane graph that traces every branch and merge, branch, remote and tag pills, author, date and SHA columns you can resize and reorder, and a toolbar to search, fetch and fold the list down to branch tips";
+pub const DESCRIPTION: &str = "A repository's commits as Pink's History pane: a lane graph that traces every branch and merge, branch, remote and tag pills, author, date and SHA columns you can resize and reorder, and a toolbar to search, fetch and fold the list down to branch tips";
 
 const ICON_BRANCH: &str = "icons/commit-history/git-branch.svg";
 const ICON_CLOUD: &str = "icons/commit-history/cloud.svg";
@@ -1166,7 +1166,7 @@ fn format_date(value: &str) -> String {
         }
         _ => None,
     };
-    parsed.unwrap_or_else(|| "—".to_string())
+    parsed.unwrap_or_else(|| "—".to_string()) // joiners: allow a lone dash for an unknown date
 }
 
 // ---------------------------------------------------------------------------
@@ -2317,14 +2317,6 @@ fn toolbar(
                                     format!("{} ahead", c.ahead),
                                     t.readable_tone(t.accent, 0.88),
                                 ))
-                            })
-                            .when(c.ahead > 0 && c.behind > 0, |el| {
-                                el.child(
-                                    div()
-                                        .text_size(px(11.0))
-                                        .text_color(t.text_faint)
-                                        .child("·"),
-                                )
                             })
                             .when(c.behind > 0, |el| {
                                 el.child(word(
@@ -4407,7 +4399,7 @@ mod tests {
     fn dates_and_initials_follow_pink() {
         assert_eq!(format_date("2026-10-22"), "Oct 22, 2026");
         assert_eq!(format_date("2026-03-05T09:12:00Z"), "Mar 5, 2026");
-        assert_eq!(format_date("soon"), "—");
+        assert_eq!(format_date("soon"), "—"); // joiners: allow the unknown-date dash
         assert_eq!(author_initial("  josé"), SharedString::from("J"));
         assert_eq!(author_initial("   "), SharedString::from("?"));
         assert_eq!(author_name(""), SharedString::from("Unknown"));
