@@ -9,7 +9,9 @@
 //! notices are the quiet neutral notice (Pink: composer.rs
 //! `composer-recover-unsent`). Actions are Pink's 24 px capsules
 //! (`notice_action`); the 20 px button in the copy button's slot dismisses the
-//! card, with the board notice's close glyph (Pink: board/page.rs).
+//! card, with the board notice's close glyph (Pink: board/page.rs). The
+//! front card's message is one alert named "{title}: {message}", so
+//! VoiceOver reads the title, then the message, once (PINK 0.31.0).
 //!
 //! PINK has no deck of notices, so the stacking borrows its one tucked-behind
 //! pattern, the queue tray behind the composer (Pink: composer.rs
@@ -533,7 +535,21 @@ fn card(props: CardProps) -> impl IntoElement {
         .text_color(c.copy)
         .child(measure)
         .child(title_row)
-        .child(div().min_w_0().w_full().child(notice.text.clone()));
+        // Announced as one alert, title then message (Pink notice.rs
+        // `notice_chip`, PINK 0.31.0); only the front card speaks.
+        .child(
+            div()
+                .id("message")
+                .when(interactive, |d| {
+                    d.role(Role::Alert).aria_label(SharedString::from(format!(
+                        "{}: {}",
+                        notice.title, notice.text
+                    )))
+                })
+                .min_w_0()
+                .w_full()
+                .child(notice.text.clone()),
+        );
 
     div()
         .id(ElementId::Name(format!("card-{}", notice.id).into()))
@@ -550,11 +566,7 @@ fn card(props: CardProps) -> impl IntoElement {
         .border_color(c.edge)
         .bg(c.plate)
         .opacity(place.opacity)
-        .when(interactive, |d| {
-            d.occlude()
-                .role(Role::Status)
-                .aria_label(notice.title.clone())
-        })
+        .when(interactive, |d| d.occlude())
         .child(body.opacity(place.content))
 }
 
@@ -572,9 +584,15 @@ pub fn demo_notices() -> Vec<Notice> {
         Notice::new(
             "connection",
             "Connection",
-            "Engine not connected. Messages send once it's back.",
+            "Offline. Messages will send when you're back online.",
         )
         .tone(NoticeTone::Warning),
+        Notice::new(
+            "cant-attach",
+            "Can't attach",
+            "notes.pdf isn't an image. Only images can be attached for now.",
+        )
+        .tone(NoticeTone::Danger),
         Notice::new(
             "ticket-moved",
             "Ticket moved",

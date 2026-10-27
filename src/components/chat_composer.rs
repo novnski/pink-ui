@@ -26,7 +26,10 @@
 //! menu opens upward from its chip and works from the keyboard. Voice input
 //! keeps the field's place with a breathing orb, the words heard so far and
 //! a timer; they land in the field for editing. Enter sends, Shift+Enter
-//! adds a line.
+//! adds a line. A notice above the pill (PINK 0.31.0) says what went wrong
+//! without touching the draft: a file that isn't an image ("Can't attach"),
+//! a refused action naming its cause first, or the connection. It is one
+//! alert, title then message, with a named Copy message button.
 //!
 //! ```ignore
 //! ChatComposer::new("composer")
@@ -61,7 +64,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Chat Composer";
-pub const DESCRIPTION: &str = "The composer's prompt pill: square attachment thumbnails over a field that grows as you type, quiet model, access and web search chips that name the model's effort and the access mode in words until the row runs out of room, with menus that open upward, voice input, a branch-first checkout chip beside every pull request (in the controls row of a thread, above the pill of a new one), and a submit button named Send, Queue for after this turn or Steer this turn, with a separate Stop while a run is live";
+pub const DESCRIPTION: &str = "The composer's prompt pill: square attachment thumbnails over a field that grows as you type, quiet model, access and web search chips that name the model's effort and the access mode in words until the row runs out of room, with menus that open upward, voice input, a branch-first checkout chip beside every pull request (in the controls row of a thread, above the pill of a new one), and a submit button named Send, Queue for after this turn or Steer this turn, with a separate Stop while a run is live, and a notice above the pill that says why a file or an action was refused";
 
 const ICON_PAPERCLIP: &str = "icons/chat-composer/paperclip.svg";
 const ICON_ARROW_UP: &str = "icons/chat-composer/arrow-up.svg";
@@ -73,6 +76,8 @@ const ICON_PULL_REQUEST: &str = "icons/chat-composer/git-pull-request.svg";
 const ICON_CLOSE: &str = "icons/chat-composer/close.svg";
 const ICON_GLOBE: &str = "icons/chat-composer/globe.svg";
 const ICON_SHIELD_CHECK: &str = "icons/chat-composer/shield-check.svg";
+const ICON_DANGER: &str = "icons/chat-composer/danger-triangle.svg";
+const ICON_COPY: &str = "icons/chat-composer/copy.svg";
 const ICON_UNLOCKED: &str = "icons/chat-composer/lock-keyhole-unlocked.svg";
 const ICON_MIC: &str = "icons/chat-composer/mic.svg";
 const ICON_FILE: &str = "icons/chat-composer/file-text.svg";
@@ -357,6 +362,94 @@ pub fn placeholder_for(in_thread: bool, custom: Option<SharedString>) -> SharedS
             "Do anything…".into()
         }
     })
+}
+
+/// Why a file wasn't attached (Pink composer.rs `ONLY_IMAGES`).
+const ONLY_IMAGES: &str = "Only images can be attached for now.";
+
+/// Whether PINK can attach a file by its name: the image formats of Pink
+/// attachments.rs `format_by_extension` (PNG, JPEG, GIF, WebP, SVG, BMP,
+/// TIFF), in any letter case.
+pub fn attachable_image(name: &str) -> bool {
+    let Some((_, ext)) = name.rsplit_once('.') else {
+        return false;
+    };
+    matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" | "tif" | "tiff"
+    )
+}
+
+/// A refused action's message (Pink task_commands.rs `failure_message`,
+/// PINK 0.30.3): the cause first, then the next step, joined as two
+/// sentences; either alone when only one is known, else `fallback`.
+pub fn failure_message(cause: Option<&str>, next: Option<&str>, fallback: &str) -> String {
+    let cause = cause.map(str::trim).filter(|cause| !cause.is_empty());
+    let next = next.map(str::trim).filter(|next| !next.is_empty());
+    match (cause, next) {
+        (Some(cause), Some(next)) => {
+            let stop = if cause.ends_with(['.', '!', '?']) {
+                ""
+            } else {
+                "."
+            };
+            format!("{cause}{stop} {next}")
+        }
+        (Some(cause), None) => cause.to_string(),
+        (None, Some(next)) => next.to_string(),
+        (None, None) => fallback.to_string(),
+    }
+}
+
+/// A notice above the pill (Pink composer.rs failure notice, drawn by
+/// notice.rs `notice_chip`): a title, the message under it, a Dismiss
+/// capsule and a Copy message button. Warning notices (the connection) wear
+/// the warning tone, the rest danger.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ComposerNotice {
+    pub title: SharedString,
+    pub message: SharedString,
+    pub warning: bool,
+}
+
+impl ComposerNotice {
+    pub fn new(title: impl Into<SharedString>, message: impl Into<SharedString>) -> Self {
+        Self {
+            title: title.into(),
+            message: message.into(),
+            warning: false,
+        }
+    }
+
+    pub fn warning(mut self, warning: bool) -> Self {
+        self.warning = warning;
+        self
+    }
+
+    /// Files that aren't images were pasted, dropped or picked (PINK 0.31.0,
+    /// UI rethink #174): never skipped silently. "notes.pdf isn't an image.
+    /// Only images can be attached for now." The draft is kept.
+    pub fn cant_attach(names: &[impl AsRef<str>]) -> Self {
+        let message = match names {
+            [one] => format!("{} isn't an image. {ONLY_IMAGES}", one.as_ref()),
+            many => format!("{} files aren't images. {ONLY_IMAGES}", many.len()),
+        };
+        Self::new("Can't attach", message)
+    }
+
+    /// A refused action, its cause first ([`failure_message`]).
+    pub fn action_failed(cause: Option<&str>, next: Option<&str>, fallback: &str) -> Self {
+        Self::new("Action failed", failure_message(cause, next, fallback))
+    }
+
+    /// The engine is offline; messages wait for it (PINK 0.31.0 wording).
+    pub fn offline() -> Self {
+        Self::new(
+            "Connection",
+            "Offline. Messages will send when you're back online.",
+        )
+        .warning(true)
+    }
 }
 
 /// How a message left the composer.
@@ -855,6 +948,8 @@ pub struct ChatComposer {
     placeholder: Option<SharedString>,
     draft: Option<SharedString>,
     access: Option<AccessMode>,
+    notice: Option<ComposerNotice>,
+    on_dismiss_notice: Option<Handler>,
     listening: Option<SharedString>,
     running: bool,
     follow_up: FollowUp,
@@ -882,6 +977,8 @@ impl ChatComposer {
             placeholder: None,
             draft: None,
             access: None,
+            notice: None,
+            on_dismiss_notice: None,
             listening: None,
             running: false,
             follow_up: FollowUp::Queue,
@@ -937,6 +1034,19 @@ impl ChatComposer {
     /// me by default); the chip's menu changes it from there.
     pub fn access(mut self, access: AccessMode) -> Self {
         self.access = Some(access);
+        self
+    }
+
+    /// A notice above the pill: a file it can't attach, a refused action,
+    /// the connection. The draft stays as it is.
+    pub fn notice(mut self, notice: impl Into<Option<ComposerNotice>>) -> Self {
+        self.notice = notice.into();
+        self
+    }
+
+    /// The notice's Dismiss capsule.
+    pub fn on_dismiss_notice(mut self, f: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_dismiss_notice = Some(Rc::new(f));
         self
     }
 
@@ -2647,8 +2757,129 @@ impl RenderOnce for ChatComposer {
             .gap(px(COLUMN_GAP))
             .font_family(pink::SANS)
             .children(context_row)
+            .children(self.notice.map(|notice| {
+                notice_chip(&key, &notice, self.on_dismiss_notice.clone(), &t)
+                    .mx(px(4.))
+                    .mt(px(6.))
+            }))
             .child(pill)
     }
+}
+
+/// The composer's notice (Pink notice.rs `notice_chip`, PINK 0.31.0): an
+/// opaque plate on the stack ladder's notice step, the tone at 0.08
+/// flattened over the canvas with a `tone@0.22` edge, `px 10 py 8`, 12/16
+/// copy in the muted tone. The title row holds a 14 pt triangle, the medium
+/// title, the Dismiss capsule and a 20 pt Copy message button; the message
+/// follows on its own line. The message is one alert named "{title}:
+/// {message}", so VoiceOver reads the title, then the message, once.
+fn notice_chip(
+    key: &str,
+    notice: &ComposerNotice,
+    on_dismiss: Option<Handler>,
+    t: &Pink,
+) -> Stateful<Div> {
+    let (accent, muted) = if notice.warning {
+        (t.warning, t.warning_muted)
+    } else {
+        (t.danger, t.danger_muted)
+    };
+    let ink = t.readable_tone(muted, 0.9);
+    let copy_key = format!("{key}-notice-copy");
+    let copy_selector = copy_key.clone();
+    let message_selector = format!("{key}-notice-message");
+    let notice_selector = format!("{key}-notice");
+    let copied = notice.message.clone();
+    let ring = t.focus_ring();
+    let dismiss = pink::notice_action(format!("{key}-notice-dismiss"), t)
+        .aria_label("Dismiss message")
+        .child("Dismiss")
+        .when_some(on_dismiss, |el, f| {
+            el.on_click(move |_, window, cx| f(window, cx))
+        });
+    div()
+        .id(SharedString::from(notice_selector.clone()))
+        .debug_selector(move || notice_selector)
+        .flex()
+        .flex_col()
+        .gap(px(6.))
+        .rounded(px(radius::STACK_NOTICE))
+        .border_1()
+        .border_color(accent.opacity(0.22))
+        .bg(pink::flatten(accent.opacity(0.08), t.canvas()))
+        .px(px(10.))
+        .py(px(8.))
+        .text_size(px(12.))
+        .line_height(px(16.))
+        .text_color(ink)
+        .child(
+            div()
+                .flex()
+                // A narrow pane or a large Interface size wraps the actions
+                // under the title instead of pushing them past the plate.
+                .flex_wrap()
+                .items_center()
+                .gap(px(8.))
+                .child(
+                    svg()
+                        .path(ICON_DANGER)
+                        .size(px(14.))
+                        .flex_none()
+                        .text_color(ink),
+                )
+                .child(
+                    div()
+                        .font_weight(FontWeight::MEDIUM)
+                        .child(notice.title.clone()),
+                )
+                .child(div().flex_1())
+                .child(dismiss)
+                .child(
+                    div()
+                        .id(SharedString::from(copy_key.clone()))
+                        .debug_selector(move || copy_selector)
+                        .role(Role::Button)
+                        .aria_label("Copy message")
+                        .tab_index(0)
+                        .focus_visible(move |s| pink::focus_ring(s, ring))
+                        .on_key_down(pink::swallow_activation_key)
+                        .flex_none()
+                        .size(px(20.))
+                        .rounded(px(6.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .cursor_pointer()
+                        .hover_fill(copy_key, accent.opacity(0.0), accent.opacity(0.12))
+                        .tooltip(pink::text_tooltip("Copy message"))
+                        .tooltip_show_delay(layout::TOOLTIP_DELAY)
+                        .on_click(move |_, _, cx| {
+                            cx.stop_propagation();
+                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                copied.to_string(),
+                            ));
+                        })
+                        .child(
+                            svg()
+                                .path(ICON_COPY)
+                                .size(px(12.))
+                                .text_color(t.readable_tone(muted, 0.8)),
+                        ),
+                ),
+        )
+        .child(
+            div()
+                .id(SharedString::from(message_selector.clone()))
+                .debug_selector(move || message_selector)
+                .role(Role::Alert)
+                .aria_label(SharedString::from(format!(
+                    "{}: {}",
+                    notice.title, notice.message
+                )))
+                .min_w_0()
+                .w_full()
+                .child(notice.message.clone()),
+        )
 }
 
 /// The web search switch. Off it is a ghost trigger chip (Pink
@@ -2815,7 +3046,8 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                                     .worktree("storefront-2")
                                     .path(DEMO_WORKTREE),
                             )
-                            .attachments(demo_files()[..2].to_vec()),
+                            .attachments(demo_files()[..2].to_vec())
+                            .notice(ComposerNotice::cant_attach(&["notes.pdf"])),
                         &t,
                     ))
                     .child(state_cell(
@@ -2839,6 +3071,11 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                             .running(true)
                             .follow_up(FollowUp::Steer)
                             .steer_available(false)
+                            .notice(ComposerNotice::action_failed(
+                                Some("The worktree has uncommitted changes"),
+                                Some("Commit or stash them, then retry."),
+                                "Review the current task state and retry.",
+                            ))
                             .draft("Also check the refund rate for the annual cohort"),
                         &t,
                     ))
