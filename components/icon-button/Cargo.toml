@@ -1,0 +1,14 @@
+[package]
+name = "pink-icon-button"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Host-adapted icon button (PINK's titlebar controls) for GPUI"
+
+# Independent boundary, like pink-tool-activity and pink-list-row: the
+# gallery uses gpui-pre, while native hosts patch gpui to their existing
+# runtime. No second GPUI enters the host graph.
+[workspace]
+
+[dependencies]
+gpui = "=0.2.2"

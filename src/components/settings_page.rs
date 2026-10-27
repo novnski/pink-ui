@@ -1603,28 +1603,20 @@ fn chrome_button(
     t: &Pink,
 ) -> Stateful<Div> {
     let ring = t.focus_ring();
-    let button = div()
-        .id(SharedString::from(id.clone()))
-        .role(Role::Button)
-        .aria_label(label)
-        .size(px(layout::titlebar_control_size(scale)))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(pink::chrome::RADIUS_M))
-        .tooltip(shortcut_tooltip(label, keys))
-        .tooltip_show_delay(layout::TOOLTIP_DELAY)
-        .child(
-            svg()
-                .path(glyph)
-                .size(px(pink::chrome::scaled_icon(pink::chrome::ICON_M, scale)))
-                .text_color(if enabled {
-                    t.text_muted
-                } else {
-                    t.disabled_glyph()
-                }),
-        );
+    // Drawn by the `pink-icon-button` package, as in PINK; the kit adds the
+    // semantics, tooltip, focus and hover wash.
+    let button = crate::components::icon_button::titlebar_button(
+        id.clone(),
+        glyph,
+        false,
+        enabled,
+        scale,
+        t,
+    )
+    .role(Role::Button)
+    .aria_label(label)
+    .tooltip(shortcut_tooltip(label, keys))
+    .tooltip_show_delay(layout::TOOLTIP_DELAY);
     if enabled {
         button
             .tab_index(0)
