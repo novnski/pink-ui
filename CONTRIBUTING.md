@@ -187,7 +187,9 @@ Geometry that Pink scales with its Interface size (hit sizes, the titlebar
 cluster, sidebar rows) is checked at sizes 12 and 20: `cargo run -- <slug>
 --ui-size 12`, or `play.html?c=<slug>&theme=dark&ui=20` in the browser build.
 The story host routes Tab and Shift Tab like Pink's shell, so every tab stop
-a component declares is reachable from the keyboard.
+a component declares is reachable from the keyboard. The Sidebar's shared
+columns are measured by `node scripts/site/sidebar-columns.mjs site/dist`
+(Playwright), which writes screenshots, measurements and a SHA-256 manifest.
 
 A new component shows up on the showcase site by itself: add it to
 `components::COMPONENTS` and the catalog, the player and the site pick it up.
