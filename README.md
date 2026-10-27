@@ -15,7 +15,7 @@
 
 <p align="center">
   <b>Animated components for GPUI, written in Rust.</b><br>
-  72 components for Zed's GPU-accelerated UI framework, one file each, in the
+  73 components for Zed's GPU-accelerated UI framework, one file each, in the
   Pink app's design language. Build one, drop it into <code>.child(…)</code>, and
   it animates – on the desktop, and live in your browser through WebAssembly.
 </p>
@@ -32,7 +32,7 @@
 
 ![The live Pink UI showcase in light mode](docs/images/gallery-light.jpg)
 
-- **72 components** in the Pink app's design language: its runtime palette
+- **73 components** in the Pink app's design language: its runtime palette
   (Geist, neutral surfaces, the violet accent), its radius, spacing and type
   ladders, its controls, motion and loaders, in light and dark.
 - **Twins are exact copies.** Where the app has the component – the working

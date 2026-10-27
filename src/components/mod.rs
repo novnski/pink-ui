@@ -46,6 +46,7 @@ pub mod inline_diff;
 pub mod integration_picker;
 pub mod integration_settings;
 pub mod kpi_chart;
+pub mod list_row;
 pub mod loaders;
 pub mod markdown_message;
 pub mod memory_panel;
@@ -415,6 +416,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Navigation",
         description: sidebar::DESCRIPTION,
         story: sidebar::story,
+    },
+    ComponentEntry {
+        slug: "list-row",
+        name: list_row::NAME,
+        category: "Navigation",
+        description: list_row::DESCRIPTION,
+        story: list_row::story,
     },
     ComponentEntry {
         slug: "tab-bar",
