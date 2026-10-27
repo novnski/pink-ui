@@ -1,12 +1,17 @@
 //! Chat Composer – a Pink component (Pink: `composer.rs` `Composer`).
 //!
-//! PINK's prompt pill: a 26 pt rounded plate with a hairline edge. Staged
-//! attachments sit above the text as 56 pt square thumbnails, the field
-//! grows from one line to 260 pt, and a 46 pt controls row holds the
-//! paperclip, ghost picker chips (model, access, web search) and the
-//! Send disc, which is recessed while the draft is empty, solid once there
-//! is something to send, and turns into Queue or Stop while a turn is
-//! running. A project chip sits in the checkout row above the pill. Every
+//! PINK's prompt pill after UI rethink milestone 2 slices 1 and 2
+//! (novnski/pink#174, PRs #183 and #184): a 26 pt rounded plate with a
+//! hairline edge. Staged attachments sit above the text as 56 pt square
+//! thumbnails, the field grows from one line to 260 pt, and a 46 pt
+//! controls row holds the paperclip, ghost picker chips (model, access, web
+//! search) and the submit disc, named for what it does: Send with no live
+//! run; while one is live, a separate Stop sits beside Queue for after this
+//! turn, or Steer this turn when the follow-up preference is Steer and the
+//! provider steers natively. With an empty draft Stop shows alone, and the
+//! row keeps its width. The checkout row above the pill names the branch
+//! first ("main", "main in storefront-2", "main on Studio Mac") beside every
+//! pull request recorded for the thread, each with its own state. Every
 //! menu opens upward from its chip and works from the keyboard. Voice input
 //! keeps the field's place with a breathing orb, the words heard so far and
 //! a timer; they land in the field for editing. Enter sends, Shift+Enter
@@ -16,6 +21,10 @@
 //! ChatComposer::new("composer")
 //!     .attachments(files)
 //!     .running(agent_busy)
+//!     .follow_up(FollowUp::Steer)
+//!     .steer_available(provider_steers)
+//!     .checkout(Checkout::branch("main").worktree("storefront-2"))
+//!     .pull_requests(prs)
 //!     .on_attach(|_, cx| { /* open a file picker */ })
 //!     .on_send(|message, _, cx| println!("{} via {}", message.text, message.model))
 //!     .on_stop(|_, cx| { /* interrupt the turn */ })
@@ -27,8 +36,7 @@ use web_time::{Duration, Instant};
 use gpui::{
     Anchor, AnyElement, AnyView, App, Context, Div, ElementId, Entity, FocusHandle, FontWeight,
     IntoElement, KeyDownEvent, MouseButton, ObjectFit, Role, SharedString, Stateful, Subscription,
-    Task, Toggled, Window, anchored, canvas, deferred, div, img, point, prelude::*, px, relative,
-    svg,
+    Toggled, Window, anchored, canvas, deferred, div, img, point, prelude::*, px, svg,
 };
 
 use crate::{
@@ -40,13 +48,16 @@ use crate::{
 };
 
 pub const NAME: &str = "Chat Composer";
-pub const DESCRIPTION: &str = "The composer's prompt pill: square attachment thumbnails over a field that grows as you type, quiet model, access and web search chips whose menus open upward, voice input, a project chip above, and a Send disc that turns into Queue or Stop while a turn runs";
+pub const DESCRIPTION: &str = "The composer's prompt pill: square attachment thumbnails over a field that grows as you type, quiet model, access and web search chips whose menus open upward, voice input, a branch-first checkout chip beside every pull request above, and a submit button named Send, Queue for after this turn or Steer this turn, with a separate Stop while a run is live";
 
 const ICON_PAPERCLIP: &str = "icons/chat-composer/paperclip.svg";
 const ICON_ARROW_UP: &str = "icons/chat-composer/arrow-up.svg";
 const ICON_QUEUE_SEND: &str = "icons/chat-composer/queue-send.svg";
+const ICON_ARROW_UP_RIGHT: &str = "icons/chat-composer/arrow-right-up.svg";
+const ICON_BRANCH: &str = "icons/chat-composer/git-branch.svg";
+const ICON_MONITOR: &str = "icons/chat-composer/monitor.svg";
+const ICON_PULL_REQUEST: &str = "icons/chat-composer/git-pull-request.svg";
 const ICON_CLOSE: &str = "icons/chat-composer/close.svg";
-const ICON_FOLDER: &str = "icons/chat-composer/folder.svg";
 const ICON_GLOBE: &str = "icons/chat-composer/globe.svg";
 const ICON_LOCK: &str = "icons/chat-composer/lock-keyhole.svg";
 const ICON_UNLOCKED: &str = "icons/chat-composer/lock-keyhole-unlocked.svg";
@@ -80,6 +91,11 @@ const ACTION_UTILITY_GAP: f32 = 2.0;
 const ACTION_PRIMARY_GAP: f32 = 8.0;
 const CHIP_GAP: f32 = 4.0;
 const ROW_BUTTON: f32 = layout::COMPOSER_CONTROL;
+/// The separate Stop never drops below this, at any Interface size (Pink
+/// composer.rs `STOP_MIN`, UI rethink D36).
+const STOP_MIN: f32 = 28.0;
+/// Between Stop and the submit disc (Pink `STOP_GAP`, `space::ICON_LABEL`).
+const STOP_GAP: f32 = pink::space::ICON_LABEL;
 /// `STRIP_THUMB`, `STRIP_GAP`, `STRIP_PAD_TOP`, `STRIP_PAD_X`.
 const STRIP_THUMB: f32 = 56.0;
 const STRIP_GAP: f32 = 8.0;
@@ -111,6 +127,8 @@ type SendHandler = Rc<dyn Fn(&Message, &mut Window, &mut App)>;
 type Handler = Rc<dyn Fn(&mut Window, &mut App)>;
 type IndexHandler = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 type ToggleHandler = Rc<dyn Fn(bool, &mut Window, &mut App)>;
+type NameHandler = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
+type PullRequestHandler = Rc<dyn Fn(&PullRequest, &mut Window, &mut App)>;
 
 /// A model in the menu.
 #[derive(Clone)]
@@ -179,41 +197,234 @@ impl Attachment {
     }
 }
 
+/// What a follow-up typed during a live run does (Pink's follow-up
+/// preference).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FollowUp {
+    /// Delivered after the running turn ends.
+    #[default]
+    Queue,
+    /// Delivered into the running turn, when the provider steers natively.
+    Steer,
+}
+
+/// How a message left the composer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Delivery {
+    /// No run was live.
+    Send,
+    /// Waits for the running turn to end.
+    Queue,
+    /// Steers the running turn.
+    Steer,
+}
+
+/// The checkout the thread works in, for the chip above the pill (Pink
+/// pickers.rs `render_context_row`, UI rethink D62). Branch first: the
+/// worktree folder and another machine follow as plain phrases ("main",
+/// "main in pink-ui-2", "main on Studio Mac"), never a prefix or a dot.
+#[derive(Clone, Debug)]
+pub struct Checkout {
+    pub branch: Option<SharedString>,
+    /// The worktree's folder, when the checkout is not the project's own.
+    pub worktree: Option<SharedString>,
+    /// Another machine the thread runs on; `None` is this one.
+    pub machine: Option<SharedString>,
+}
+
+impl Checkout {
+    pub fn branch(branch: impl Into<SharedString>) -> Self {
+        Self {
+            branch: Some(branch.into()),
+            worktree: None,
+            machine: None,
+        }
+    }
+
+    /// A thread on another machine with no branch to show.
+    pub fn machine_only(machine: impl Into<SharedString>) -> Self {
+        Self {
+            branch: None,
+            worktree: None,
+            machine: Some(machine.into()),
+        }
+    }
+
+    pub fn worktree(mut self, folder: impl Into<SharedString>) -> Self {
+        self.worktree = Some(folder.into());
+        self
+    }
+
+    pub fn machine(mut self, machine: impl Into<SharedString>) -> Self {
+        self.machine = Some(machine.into());
+        self
+    }
+
+    /// The chip's label: "main", "main in pink-ui-2", "main on Studio Mac".
+    pub fn label(&self) -> SharedString {
+        let label = self.branch.as_ref().map(|branch| match &self.worktree {
+            Some(folder) => format!("{branch} in {folder}"),
+            None => branch.to_string(),
+        });
+        match (label, &self.machine) {
+            (Some(label), Some(machine)) => format!("{label} on {machine}").into(),
+            (Some(label), None) => label.into(),
+            (None, Some(machine)) => machine.clone(),
+            (None, None) => SharedString::default(),
+        }
+    }
+
+    /// What the chip is, for its accessible name (Pink `TargetChip::noun`).
+    fn noun(&self) -> &'static str {
+        match (&self.branch, &self.worktree) {
+            (Some(_), Some(_)) => "Worktree",
+            (Some(_), None) => "Branch",
+            (None, _) => "Machine",
+        }
+    }
+
+    fn glyph(&self) -> &'static str {
+        if self.branch.is_some() {
+            ICON_BRANCH
+        } else {
+            ICON_MONITOR
+        }
+    }
+}
+
+/// A pull request's state; an open draft says Draft (Pink
+/// change_requests.rs `association_state`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PullRequestState {
+    Open,
+    Draft,
+    Merged,
+    Closed,
+}
+
+impl PullRequestState {
+    fn word(self) -> &'static str {
+        match self {
+            Self::Open => "Open",
+            Self::Draft => "Draft",
+            Self::Merged => "Merged",
+            Self::Closed => "Closed",
+        }
+    }
+
+    /// Pink `ChangeRequestBadgeTone::color`.
+    fn tone(self, t: &Pink) -> gpui::Hsla {
+        match self {
+            Self::Open => t.success,
+            Self::Draft => t.text_muted,
+            Self::Merged => t.code_text,
+            Self::Closed => t.danger,
+        }
+    }
+}
+
+/// One pull request recorded for the thread and its checkout.
+#[derive(Clone, Debug)]
+pub struct PullRequest {
+    /// `owner/repo`.
+    pub repository: SharedString,
+    pub number: u32,
+    pub title: SharedString,
+    pub state: PullRequestState,
+}
+
+impl PullRequest {
+    pub fn new(
+        repository: impl Into<SharedString>,
+        number: u32,
+        title: impl Into<SharedString>,
+        state: PullRequestState,
+    ) -> Self {
+        Self {
+            repository: repository.into(),
+            number,
+            title: title.into(),
+            state,
+        }
+    }
+
+    /// Its accessible name (Pink `composer_task_pull_request_chip`):
+    /// "Pull request owner/repo#101, Draft: Fix the flaky login test".
+    pub fn spoken(&self) -> SharedString {
+        format!(
+            "Pull request {}#{}, {}: {}",
+            self.repository,
+            self.number,
+            self.state.word(),
+            self.title.replace(['\r', '\n'], " ")
+        )
+        .into()
+    }
+}
+
 /// What `on_send` receives.
 #[derive(Clone)]
 pub struct Message {
     pub text: SharedString,
     pub attachments: Vec<Attachment>,
     pub model: SharedString,
-    pub project: Option<SharedString>,
+    /// The branch the chip names when it was sent.
+    pub branch: Option<SharedString>,
     pub web_search: bool,
     pub ask_first: bool,
-    /// Sent while a turn was running: it waits for that turn to end.
+    /// Sent while a turn was running: it waits for that turn to end, or
+    /// steers it (`delivery`).
     pub queued: bool,
+    pub delivery: Delivery,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Menu {
     Model,
     Access,
-    Project,
+    Branch,
 }
 
-/// The Send disc's job (Pink `SendButtonMode`).
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// The primary button's job (Pink `SendButtonMode`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SendMode {
+    /// No live run: plain send.
     Send,
+    /// Live run, a draft typed, delivered after the current turn.
     Queue,
+    /// Live run, a draft typed, delivered into the running turn: the
+    /// follow-up preference is Steer and the provider steers natively now.
+    Steer,
+    /// Live run, nothing typed: the stop square alone.
     Stop,
 }
 
-/// Pink `send_button_mode`.
-fn send_mode(running: bool, has_content: bool) -> SendMode {
+/// Pink `send_button_mode`: the button is named for the delivery that
+/// actually happens. `steers` is whether a follow-up sent now would steer
+/// the running turn (preference and provider both allow it).
+fn send_mode(running: bool, has_content: bool, steers: bool) -> SendMode {
     match (running, has_content) {
         (false, _) => SendMode::Send,
+        (true, true) if steers => SendMode::Steer,
         (true, true) => SendMode::Queue,
         (true, false) => SendMode::Stop,
     }
+}
+
+/// Room the separate Stop takes in the controls row while a run is live
+/// (Pink `stop_reserve`, UI rethink D70: Stop stays reachable while a draft
+/// is typed).
+fn stop_reserve(running: bool, scale: f32) -> f32 {
+    if running {
+        stop_size(scale) + STOP_GAP * scale
+    } else {
+        0.0
+    }
+}
+
+/// Stop's size: it scales with the interface but never drops below 28 pt.
+fn stop_size(scale: f32) -> f32 {
+    (ROW_BUTTON * scale).max(STOP_MIN)
 }
 
 struct State {
@@ -221,7 +432,7 @@ struct State {
     menu_focus: FocusHandle,
     has_text: bool,
     model: usize,
-    project: usize,
+    branch: usize,
     web: bool,
     ask_first: bool,
     menu: Option<Menu>,
@@ -233,6 +444,10 @@ struct State {
     listen_started: Option<Instant>,
     placeholder: SharedString,
     running: bool,
+    /// A follow-up sent now steers the running turn.
+    steers: bool,
+    /// The draft the host asked for, applied once.
+    draft_applied: bool,
     /// The pill's natural content height, measured after layout; the pill
     /// eases toward it (Pink's committed-height morph).
     natural: Rc<Cell<Option<f32>>>,
@@ -262,7 +477,7 @@ impl State {
             menu_focus: cx.focus_handle(),
             has_text: false,
             model: 1,
-            project: 0,
+            branch: 0,
             web: false,
             ask_first: true,
             menu: None,
@@ -271,6 +486,8 @@ impl State {
             listen_started: None,
             placeholder: SharedString::default(),
             running: false,
+            steers: false,
+            draft_applied: false,
             natural: Rc::default(),
             snapshot: None,
             on_send: None,
@@ -282,7 +499,7 @@ impl State {
     /// nothing; a running turn queues the message.
     fn send(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let text: SharedString = self.input.read(cx).text().trim().to_string().into();
-        let Some((attachments, model, project)) = self.snapshot.clone() else {
+        let Some((attachments, model, branch)) = self.snapshot.clone() else {
             return;
         };
         if self.listen_started.is_some() || (text.is_empty() && attachments.is_empty()) {
@@ -294,10 +511,15 @@ impl State {
             text,
             attachments,
             model,
-            project,
+            branch,
             web_search: self.web,
             ask_first: self.ask_first,
             queued: self.running,
+            delivery: match (self.running, self.steers) {
+                (false, _) => Delivery::Send,
+                (true, true) => Delivery::Steer,
+                (true, false) => Delivery::Queue,
+            },
         };
         if let Some(f) = self.on_send.clone() {
             f(&message, window, cx);
@@ -315,7 +537,7 @@ impl State {
         match menu {
             Menu::Model => self.model,
             Menu::Access => usize::from(!self.ask_first),
-            Menu::Project => self.project,
+            Menu::Branch => self.branch,
         }
     }
 
@@ -335,17 +557,24 @@ impl State {
 pub struct ChatComposer {
     id: ElementId,
     models: Vec<ComposerModel>,
-    projects: Vec<SharedString>,
+    checkout: Option<Checkout>,
+    branches: Vec<SharedString>,
+    pull_requests: Vec<PullRequest>,
     attachments: Vec<Attachment>,
     placeholder: SharedString,
+    draft: Option<SharedString>,
     listening: Option<SharedString>,
     running: bool,
+    follow_up: FollowUp,
+    steer_available: bool,
     width: f32,
     on_send: Option<SendHandler>,
     on_stop: Option<Handler>,
     on_attach: Option<Handler>,
     on_remove: Option<IndexHandler>,
     on_listen: Option<ToggleHandler>,
+    on_branch: Option<NameHandler>,
+    on_pull_request: Option<PullRequestHandler>,
 }
 
 impl ChatComposer {
@@ -353,17 +582,24 @@ impl ChatComposer {
         Self {
             id: id.into(),
             models: default_models(),
-            projects: Vec::new(),
+            checkout: None,
+            branches: Vec::new(),
+            pull_requests: Vec::new(),
             attachments: Vec::new(),
             placeholder: "Do anything…".into(),
+            draft: None,
             listening: None,
             running: false,
+            follow_up: FollowUp::Queue,
+            steer_available: false,
             width: DEFAULT_WIDTH,
             on_send: None,
             on_stop: None,
             on_attach: None,
             on_remove: None,
             on_listen: None,
+            on_branch: None,
+            on_pull_request: None,
         }
     }
 
@@ -372,9 +608,30 @@ impl ChatComposer {
         self
     }
 
-    /// Projects for the chip above the pill; the row hides without them.
-    pub fn projects(mut self, projects: Vec<SharedString>) -> Self {
-        self.projects = projects;
+    /// The thread's checkout, named by the chip above the pill; the row
+    /// hides without one (or without `branches`).
+    pub fn checkout(mut self, checkout: Checkout) -> Self {
+        self.checkout = Some(checkout);
+        self
+    }
+
+    /// Branches the checkout chip's menu offers; picking one renames the
+    /// chip and calls `on_branch`.
+    pub fn branches(mut self, branches: Vec<SharedString>) -> Self {
+        self.branches = branches;
+        self
+    }
+
+    /// Every pull request recorded for the thread and its checkout, each a
+    /// chip with its own state beside the checkout chip.
+    pub fn pull_requests(mut self, pull_requests: Vec<PullRequest>) -> Self {
+        self.pull_requests = pull_requests;
+        self
+    }
+
+    /// Text placed in the field when the composer first appears.
+    pub fn draft(mut self, text: impl Into<SharedString>) -> Self {
+        self.draft = Some(text.into());
         self
     }
 
@@ -395,9 +652,23 @@ impl ChatComposer {
         self
     }
 
-    /// A turn is running: Send queues a draft, and an empty draft offers Stop.
+    /// A run is live: a separate Stop sits beside the submit button, which
+    /// queues or steers a draft; with an empty draft Stop shows alone.
     pub fn running(mut self, running: bool) -> Self {
         self.running = running;
+        self
+    }
+
+    /// The follow-up preference for a draft sent during a live run.
+    pub fn follow_up(mut self, follow_up: FollowUp) -> Self {
+        self.follow_up = follow_up;
+        self
+    }
+
+    /// The provider steers the running turn natively right now. Only then
+    /// does the Steer preference name the button Steer this turn.
+    pub fn steer_available(mut self, available: bool) -> Self {
+        self.steer_available = available;
         self
     }
 
@@ -411,7 +682,7 @@ impl ChatComposer {
         self
     }
 
-    /// The Stop disc of a running turn.
+    /// Stop, beside the submit button or alone. Stopping keeps the draft.
     pub fn on_stop(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_stop = Some(Rc::new(handler));
         self
@@ -434,6 +705,24 @@ impl ChatComposer {
     /// placed in the field).
     pub fn on_listen(mut self, handler: impl Fn(bool, &mut Window, &mut App) + 'static) -> Self {
         self.on_listen = Some(Rc::new(handler));
+        self
+    }
+
+    /// A branch picked from the checkout chip's menu.
+    pub fn on_branch(
+        mut self,
+        handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_branch = Some(Rc::new(handler));
+        self
+    }
+
+    /// A pull request chip was clicked: open it (Pink opens its URL).
+    pub fn on_pull_request(
+        mut self,
+        handler: impl Fn(&PullRequest, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_pull_request = Some(Rc::new(handler));
         self
     }
 }
@@ -490,12 +779,14 @@ fn row_button(
         )
 }
 
-/// The Send / Queue / Stop disc (Pink `Composer::render_send_button`): one
-/// stable 28 pt circle. Solid `text` with a `bg` glyph when it can act
-/// (hover 0.88, press 0.76); recessed `ink(0.08)` with the glyph at 35%
-/// while there is nothing to send, the arrow taking the accent when the
-/// field is focused and empty. Only the glyph changes between modes,
-/// fading in over `GLYPH_SWAP`.
+/// The submit disc (Pink `Composer::render_send_button`): one stable 28 pt
+/// circle named for what it does. Send (arrow up) with no live run; Queue
+/// for after this turn (queue glyph) or Steer this turn (arrow up-right)
+/// while one is; Stop (the square) when a live run has an empty draft.
+/// Solid `text` with a `bg` glyph when it can act (hover 0.88, press 0.76);
+/// recessed `ink(0.08)` with the glyph at 35% while there is nothing to
+/// send, the arrow taking the accent when the field is focused and empty.
+/// Only the glyph changes between modes, fading in over `GLYPH_SWAP`.
 fn send_disc(key: &str, mode: SendMode, recessed: bool, focused: bool, t: &Pink) -> Stateful<Div> {
     let ready = recessed && focused;
     let glyph_color = if ready {
@@ -508,13 +799,15 @@ fn send_disc(key: &str, mode: SendMode, recessed: bool, focused: bool, t: &Pink)
     let state_key = match (mode, recessed) {
         (SendMode::Stop, _) => "stop",
         (SendMode::Queue, false) => "queue",
+        (SendMode::Steer, false) => "steer",
         (_, false) => "send",
         (_, true) if ready => "ready",
         (_, true) => "rest",
     };
     let label = match mode {
         SendMode::Stop => "Stop",
-        SendMode::Queue => "Queue (⏎)",
+        SendMode::Queue => "Queue for after this turn (⏎)",
+        SendMode::Steer => "Steer this turn (⏎)",
         SendMode::Send => "Send (⏎)",
     };
     let glyph: AnyElement = match mode {
@@ -525,6 +818,11 @@ fn send_disc(key: &str, mode: SendMode, recessed: bool, focused: bool, t: &Pink)
             .into_any_element(),
         SendMode::Queue => svg()
             .path(ICON_QUEUE_SEND)
+            .size(px(14.))
+            .text_color(glyph_color)
+            .into_any_element(),
+        SendMode::Steer => svg()
+            .path(ICON_ARROW_UP_RIGHT)
             .size(px(14.))
             .text_color(glyph_color)
             .into_any_element(),
@@ -546,8 +844,10 @@ fn send_disc(key: &str, mode: SendMode, recessed: bool, focused: bool, t: &Pink)
         );
     let fade = format!("{key}-send");
     let ring = t.focus_ring();
+    let selector = fade.clone();
     let disc = div()
         .id(SharedString::from(fade.clone()))
+        .debug_selector(move || selector)
         .role(Role::Button)
         .aria_label(label)
         .tab_index(0)
@@ -570,6 +870,38 @@ fn send_disc(key: &str, mode: SendMode, recessed: bool, focused: bool, t: &Pink)
             .on_hover(motion::hover_listener(fade))
             .active(|s| s.opacity(0.76))
     }
+}
+
+/// The separate Stop shown beside Queue or Steer while a run is live (Pink
+/// `Composer::render_stop_button`, UI rethink D70): the secondary action, a
+/// quiet `ink(0.08)` fill easing to 0.14 with the 11 pt stop square in
+/// `text`; at least 28 pt at every Interface size, named, and reachable by
+/// Tab and Return or Space. Stopping keeps the draft.
+fn stop_button(key: &str, scale: f32, t: &Pink) -> Stateful<Div> {
+    let fade = format!("{key}-stop");
+    let ring = t.focus_ring();
+    let selector = fade.clone();
+    div()
+        .id(SharedString::from(fade.clone()))
+        .debug_selector(move || selector)
+        .role(Role::Button)
+        .aria_label("Stop")
+        .tab_index(0)
+        .focus_visible(move |s| pink::focus_ring(s, ring))
+        .on_key_down(pink::swallow_activation_key)
+        .size(px(stop_size(scale)))
+        .flex_none()
+        .rounded_full()
+        .flex()
+        .items_center()
+        .justify_center()
+        .cursor_pointer()
+        .bg(motion::hover_blend(&fade, t.ink(0.08), t.ink(0.14)))
+        .on_hover(motion::hover_listener(fade))
+        .active(|s| s.opacity(0.76))
+        .tooltip(pink::text_tooltip("Stop"))
+        .tooltip_show_delay(layout::TOOLTIP_DELAY)
+        .child(div().size(px(11.)).rounded(px(3.)).bg(t.text))
 }
 
 /// The staged-attachment strip (Pink `Composer::render_attachment_strip`):
@@ -716,10 +1048,12 @@ fn file_plate(file: &Attachment, t: &Pink) -> Div {
 /// A chip in the checkout row above the pill (Pink `Pickers::target_chip`):
 /// 22 pt, `px 6`, radius 6, a 12 pt glyph and 11.5 pt label in
 /// `readable_muted(0.7)` brightening to `text@0.85`, the Tertiary wash on
-/// hover or while open, and a 10 pt chevron.
+/// hover or while open, and a 10 pt chevron. Named "{noun}: {label}"
+/// ("Branch: main", "Worktree: main in pink-ui-2"), up to 360 wide.
 fn target_chip(
     id: impl Into<SharedString>,
     glyph: &'static str,
+    noun: &'static str,
     label: SharedString,
     open: bool,
     t: &Pink,
@@ -738,43 +1072,123 @@ fn target_chip(
     div()
         .id(id)
         .role(Role::Button)
-        .aria_label(SharedString::from(format!("Project: {label}")))
+        .aria_label(SharedString::from(format!("{noun}: {label}")))
         .aria_expanded(open)
         .tab_index(0)
         .focus_visible(move |s| pink::focus_ring(s, ring))
         .on_key_down(pink::swallow_activation_key)
         .relative()
-        .h(px(TARGET_CHIP_HEIGHT))
+        // Drawn 22 tall, it takes a `MIN_HIT` target reaching into the row.
+        .h(px(pink::chrome::MIN_HIT))
+        .my(px(-(pink::chrome::MIN_HIT - TARGET_CHIP_HEIGHT) / 2.))
         .min_w_0()
-        .max_w(px(180.))
+        .max_w(px(360.))
         .flex()
-        .flex_row()
         .items_center()
-        .gap(px(TARGET_CHIP_GAP))
-        .px(px(TARGET_CHIP_PAD_X))
         .rounded(px(TARGET_CHIP_RADIUS))
-        .text_size(px(TARGET_CHIP_TEXT))
-        .text_color(ink)
         .cursor_pointer()
-        .bg(if open {
-            wash
-        } else {
-            motion::hover_blend(&key, wash.opacity(0.), wash)
-        })
-        .on_hover(motion::hover_listener(key))
+        .on_hover(motion::hover_listener(key.clone()))
         .child(
-            svg()
-                .path(glyph)
-                .size(px(TARGET_CHIP_GLYPH))
-                .flex_none()
-                .text_color(ink),
+            div()
+                .h(px(TARGET_CHIP_HEIGHT))
+                .min_w_0()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(TARGET_CHIP_GAP))
+                .px(px(TARGET_CHIP_PAD_X))
+                .rounded(px(TARGET_CHIP_RADIUS))
+                .text_size(px(TARGET_CHIP_TEXT))
+                .text_color(ink)
+                .bg(if open {
+                    wash
+                } else {
+                    motion::hover_blend(&key, wash.opacity(0.), wash)
+                })
+                .child(
+                    svg()
+                        .path(glyph)
+                        .size(px(TARGET_CHIP_GLYPH))
+                        .flex_none()
+                        .text_color(ink),
+                )
+                .child(div().min_w_0().truncate().child(label))
+                .child(pink::line_glyph(
+                    pink::glyphs::ALT_ARROW_DOWN,
+                    TARGET_CHIP_CHEVRON,
+                    t.readable_muted(0.5),
+                )),
         )
-        .child(div().min_w_0().truncate().child(label))
-        .child(pink::line_glyph(
-            pink::glyphs::ALT_ARROW_DOWN,
-            TARGET_CHIP_CHEVRON,
-            t.readable_muted(0.5),
-        ))
+}
+
+/// One pull request of the thread's collection (Pink change_requests.rs
+/// `composer_task_pull_request_chip`): a 20 pt chip, `px 7`, radius 6, an
+/// 11 pt pull request glyph and the number in mono, and the word Draft for
+/// an open draft, in its state's tone (Open green, Draft muted, Merged the
+/// code tone, Closed red) washed 0.08, 0.16 on hover. A named link:
+/// "Pull request owner/repo#101, Draft: Fix the flaky login test". It draws
+/// 20 tall but takes a 24 pt target, reaching into the row's height.
+fn pull_request_chip(key: &str, pr: &PullRequest, t: &Pink) -> Stateful<Div> {
+    let id = format!("{key}-pr-{}", pr.number);
+    let tone = pr.state.tone(t);
+    let ink = t.readable_tone(tone, 0.85);
+    div()
+        .id(SharedString::from(id.clone()))
+        .role(Role::Link)
+        .aria_label(pr.spoken())
+        .tab_index(0)
+        .focus_visible({
+            let ring = t.focus_ring();
+            move |s| pink::focus_ring(s, ring)
+        })
+        .on_key_down(pink::swallow_activation_key)
+        .h(px(pink::chrome::MIN_HIT))
+        .my(px(-(pink::chrome::MIN_HIT - 20.) / 2.))
+        .flex_none()
+        .flex()
+        .items_center()
+        .rounded(px(6.))
+        .cursor_pointer()
+        .on_hover(motion::hover_listener(id.clone()))
+        .tooltip(pink::text_tooltip(format!(
+            "{}#{}, {}\n{}",
+            pr.repository,
+            pr.number,
+            pr.state.word(),
+            pr.title
+        )))
+        .tooltip_show_delay(layout::TOOLTIP_DELAY)
+        .child(
+            div()
+                .h(px(20.))
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(5.))
+                .px(px(7.))
+                .rounded(px(6.))
+                .bg(motion::hover_blend(
+                    &id,
+                    tone.opacity(0.08),
+                    tone.opacity(0.16),
+                ))
+                .text_size(px(11.))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(ink)
+                .child(
+                    svg()
+                        .path(ICON_PULL_REQUEST)
+                        .size(px(11.))
+                        .flex_none()
+                        .text_color(ink),
+                )
+                .child(
+                    div()
+                        .font_family(pink::MONO)
+                        .child(format!("#{}", pr.number)),
+                )
+                .when(pr.state == PullRequestState::Draft, |el| el.child("Draft")),
+        )
 }
 
 /// A menu floating above its chip, from the chip's leading edge (Pink
@@ -1060,7 +1474,7 @@ fn choose(state: &Entity<State>, kind: Menu, ix: usize, window: &mut Window, cx:
         match kind {
             Menu::Model => s.model = ix,
             Menu::Access => s.ask_first = ix == 0,
-            Menu::Project => s.project = ix,
+            Menu::Branch => s.branch = ix,
         }
         s.close_menu();
         cx.notify();
@@ -1101,27 +1515,39 @@ impl RenderOnce for ChatComposer {
 
         let listening = self.listening.is_some();
         let model_count = self.models.len().max(1);
-        let project_count = self.projects.len();
+        let branch_count = self.branches.len();
         let colors = (t.placeholder, t.caret, t.selection);
         let attachments = self.attachments.clone();
         let models = self.models.clone();
-        let projects = self.projects.clone();
+        let branches = self.branches.clone();
+        let checkout_branch = self.checkout.as_ref().and_then(|c| c.branch.clone());
         let on_send = self.on_send.clone();
         let placeholder = self.placeholder.clone();
         let running = self.running;
+        // A follow-up steers only when the preference is Steer and the
+        // provider steers the running turn natively.
+        let steers = self.follow_up == FollowUp::Steer && self.steer_available;
+        let draft = self.draft.clone();
         state.update(cx, |s, cx| {
             s.model = s.model.min(model_count - 1);
-            s.project = s.project.min(project_count.saturating_sub(1));
+            s.branch = s.branch.min(branch_count.saturating_sub(1));
             s.snapshot = Some((
                 attachments,
                 models
                     .get(s.model)
                     .map(|m| m.name.clone())
                     .unwrap_or_default(),
-                projects.get(s.project).cloned(),
+                branches.get(s.branch).cloned().or(checkout_branch),
             ));
             s.on_send = on_send;
             s.running = running;
+            s.steers = steers;
+            if let Some(draft) = draft.filter(|_| !s.draft_applied) {
+                s.draft_applied = true;
+                s.has_text = !draft.trim().is_empty();
+                s.input
+                    .update(cx, |i, cx| i.set_text(draft.to_string(), cx));
+            }
             match (listening, s.listen_started) {
                 (true, None) => s.listen_started = Some(Instant::now()),
                 (false, Some(_)) => s.listen_started = None,
@@ -1138,20 +1564,20 @@ impl RenderOnce for ChatComposer {
         });
         let s = state.read(cx);
         let input = s.input.clone();
-        let (model_ix, project_ix, web, ask_first, menu, highlight) =
-            (s.model, s.project, s.web, s.ask_first, s.menu, s.highlight);
+        let (model_ix, branch_ix, web, ask_first, menu, highlight) =
+            (s.model, s.branch, s.web, s.ask_first, s.menu, s.highlight);
         let mounted = |kind| s.mounted(kind);
-        let (model_menu, access_menu, project_menu) = (
+        let (model_menu, access_menu, branch_menu) = (
             mounted(Menu::Model),
             mounted(Menu::Access),
-            mounted(Menu::Project),
+            mounted(Menu::Branch),
         );
         let has_content = s.has_text || !self.attachments.is_empty();
         let listen_started = s.listen_started;
         let natural = s.natural.clone();
         let menu_focus = s.menu_focus.clone();
         let focused = input.read(cx).is_focused(window);
-        if [model_menu, access_menu, project_menu]
+        if [model_menu, access_menu, branch_menu]
             .iter()
             .any(|m| matches!(m, Some(Some(_))))
         {
@@ -1392,12 +1818,13 @@ impl RenderOnce for ChatComposer {
             }
         });
 
-        let mode = send_mode(running, has_content);
+        let mode = send_mode(running, has_content, steers);
         let recessed = mode != SendMode::Stop && (!has_content || listening);
         let on_stop = self.on_stop.clone();
-        let send =
+        let submit =
             send_disc(&key, mode, recessed, focused && !has_content, &t).when(!recessed, |d| {
                 let state = state.clone();
+                let on_stop = on_stop.clone();
                 d.on_click(move |_, window, cx| match mode {
                     SendMode::Stop => {
                         if let Some(f) = &on_stop {
@@ -1407,6 +1834,34 @@ impl RenderOnce for ChatComposer {
                     _ => state.update(cx, |s, cx| s.send(window, cx)),
                 })
             });
+        // A typed draft never hides Stop (Pink `Composer::render`): while a
+        // run is live, the submit button (Queue or Steer) sits beside a
+        // separate Stop, `STOP_GAP` apart. With an empty draft Stop shows
+        // alone, and the row still reserves the separate Stop's width so
+        // nothing moves when typing starts (`stop_reserve`).
+        let scale = pink::ui_scale(cx);
+        let send = match mode {
+            SendMode::Queue | SendMode::Steer => div()
+                .flex_none()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(STOP_GAP * scale))
+                .child(stop_button(&key, scale, &t).on_click(move |_, window, cx| {
+                    if let Some(f) = &on_stop {
+                        f(window, cx)
+                    }
+                }))
+                .child(submit),
+            SendMode::Stop => div()
+                .flex_none()
+                .flex()
+                .flex_row()
+                .items_center()
+                .child(div().flex_none().w(px(stop_reserve(running, scale))))
+                .child(submit),
+            SendMode::Send => div().flex_none().child(submit),
+        };
 
         let controls = div()
             .flex_none()
@@ -1499,24 +1954,36 @@ impl RenderOnce for ChatComposer {
                 None => pill.child(body),
             });
 
-        // ---- the checkout row above the pill ------------------------------------
-        let context = (!self.projects.is_empty()).then(|| {
-            let label = self.projects[project_ix].clone();
+        // ---- the checkout row above the pill (Pink `render_context_row`) ------
+        let checkout = match (&self.checkout, self.branches.get(branch_ix)) {
+            (Some(checkout), Some(branch)) => Some(Checkout {
+                branch: Some(branch.clone()),
+                ..checkout.clone()
+            }),
+            (Some(checkout), None) => Some(checkout.clone()),
+            (None, Some(branch)) => Some(Checkout::branch(branch.clone())),
+            (None, None) => None,
+        }
+        .filter(|checkout| !checkout.label().is_empty());
+        let context = checkout.map(|checkout| {
             let chip = target_chip(
-                format!("{key}-project"),
-                ICON_FOLDER,
-                label,
-                menu == Some(Menu::Project),
+                format!("{key}-checkout"),
+                checkout.glyph(),
+                checkout.noun(),
+                checkout.label(),
+                menu == Some(Menu::Branch),
                 &t,
             )
-            .on_click({
-                let state = state.clone();
-                move |_, window, cx| toggle_menu(&state, Menu::Project, window, cx)
+            .when(!self.branches.is_empty(), |chip| {
+                chip.on_click({
+                    let state = state.clone();
+                    move |_, window, cx| toggle_menu(&state, Menu::Branch, window, cx)
+                })
             })
-            .when_some(project_menu, |d, exit| {
+            .when_some(branch_menu, |d, exit| {
                 let card = menu_card(
-                    Menu::Project,
-                    self.projects.len(),
+                    Menu::Branch,
+                    self.branches.len(),
                     layout::MENU_W_M,
                     exit.is_none(),
                     &menu_focus,
@@ -1525,25 +1992,46 @@ impl RenderOnce for ChatComposer {
                 )
                 .child(
                     div()
-                        .id("cc-project-list")
+                        .id("cc-branch-list")
                         .flex()
                         .flex_col()
                         .gap(px(layout::MENU_GAP))
                         .max_h(px(224.))
                         .overflow_y_scroll()
-                        .children(self.projects.iter().enumerate().map(|(ix, name)| {
+                        .children(self.branches.iter().enumerate().map(|(ix, name)| {
                             let hover = state.clone();
                             let pick = state.clone();
-                            pink::menu_row_nav(ix == project_ix, ix == highlight, &t)
-                                .id(ElementId::NamedInteger("cc-project-row".into(), ix as u64))
+                            let on_branch = self.on_branch.clone();
+                            let picked = name.clone();
+                            pink::menu_row_nav(ix == branch_ix, ix == highlight, &t)
+                                .id(ElementId::NamedInteger("cc-branch-row".into(), ix as u64))
                                 .on_mouse_move(move |_, _, cx| set_highlight(&hover, ix, cx))
                                 .on_click(move |_, window, cx| {
-                                    choose(&pick, Menu::Project, ix, window, cx)
+                                    choose(&pick, Menu::Branch, ix, window, cx);
+                                    if let Some(f) = &on_branch {
+                                        f(&picked, window, cx)
+                                    }
                                 })
+                                .child(
+                                    svg()
+                                        .path(ICON_BRANCH)
+                                        .size(px(12.))
+                                        .flex_none()
+                                        .text_color(t.text_muted),
+                                )
                                 .child(div().flex_1().min_w_0().truncate().child(name.clone()))
                         })),
                 );
-                d.child(menu_above("cc-project-menu", card.into_any_element(), exit))
+                d.child(menu_above("cc-branch-menu", card.into_any_element(), exit))
+            });
+            let prs = self.pull_requests.iter().map(|pr| {
+                let on_pull_request = self.on_pull_request.clone();
+                let opened = pr.clone();
+                pull_request_chip(&key, pr, &t).on_click(move |_, window, cx| {
+                    if let Some(f) = &on_pull_request {
+                        f(&opened, window, cx)
+                    }
+                })
             });
             div()
                 .w_full()
@@ -1554,7 +2042,9 @@ impl RenderOnce for ChatComposer {
                 .flex()
                 .flex_row()
                 .items_center()
+                .gap(px(2.))
                 .child(chip)
+                .children(prs)
         });
 
         div()
@@ -1627,32 +2117,10 @@ fn search_chip(id: String, on: bool, t: &Pink) -> Stateful<Div> {
 }
 
 // ---------------------------------------------------------------------------
-// Story: a product manager's chat, with each turn running before it replies.
+// Story: the four states of the primary controls (Pink UI rethink milestone
+// 2, novnski/pink#174): idle, a live run with an empty draft, and a live
+// run with a draft that queues or steers.
 // ---------------------------------------------------------------------------
-
-const DICTATION: &str = "and pull out the three riskiest dependencies for the leadership sync";
-/// How long a demo turn runs before it answers.
-const TURN: Duration = Duration::from_millis(5200);
-
-const REPLIES: [&str; 3] = [
-    "The roadmap's riskiest items are the payments migration, the new onboarding flow and the EU data residency work. All three depend on the platform team, which is already at capacity through November.",
-    "Draft is ready: three highlights for customers, two fixes worth calling out, and a short note on the pricing page changes. I kept it under 200 words.",
-    "Stop the checkout copy test and the referral banner: neither moved conversion after three weeks. Keep annual billing running one more week; its sample is still small.",
-];
-
-struct Turn {
-    message: Message,
-    reply: Option<&'static str>,
-}
-
-struct Demo {
-    attachments: Vec<Attachment>,
-    next_file: usize,
-    turns: Vec<Turn>,
-    run_started: Option<Instant>,
-    listening: Option<Instant>,
-    _ticker: Task<()>,
-}
 
 fn demo_files() -> Vec<Attachment> {
     vec![
@@ -1662,244 +2130,119 @@ fn demo_files() -> Vec<Attachment> {
     ]
 }
 
-impl Demo {
-    fn new(cx: &mut Context<Self>) -> Self {
-        let ticker = cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(100))
-                    .await;
-                let alive = this.update(cx, |demo, cx| {
-                    if demo.run_started.is_some_and(|at| at.elapsed() >= TURN) {
-                        demo.finish(true);
-                        cx.notify();
-                    } else if demo.listening.is_some() || demo.run_started.is_some() {
-                        cx.notify();
-                    }
-                });
-                if alive.is_err() {
-                    break;
-                }
-            }
-        });
-        let files = demo_files();
-        Demo {
-            attachments: vec![files[0].clone(), files[1].clone()],
-            next_file: 2,
-            turns: vec![Turn {
-                message: Message {
-                    text: "Where did the annual billing test land last week?".into(),
-                    attachments: Vec::new(),
-                    model: "Balanced".into(),
-                    project: Some("Storefront".into()),
-                    web_search: false,
-                    ask_first: true,
-                    queued: false,
-                },
-                reply: Some(
-                    "Annual billing at $96 converted 4.1% better than monthly, with no change in refunds. The cohort is still small (1,240 checkouts), so I'd let it run one more week before calling it.",
-                ),
-            }],
-            run_started: None,
-            listening: None,
-            _ticker: ticker,
-        }
-    }
-
-    /// Ends the running turn, answering it unless it was stopped.
-    fn finish(&mut self, answer: bool) {
-        self.run_started = None;
-        let ix = self.turns.len();
-        if let Some(turn) = self.turns.last_mut()
-            && turn.reply.is_none()
-        {
-            turn.reply = Some(if answer {
-                REPLIES[ix % REPLIES.len()]
-            } else {
-                "Stopped."
-            });
-        }
-    }
-
-    fn transcript(&self) -> Option<SharedString> {
-        self.listening.map(|at| {
-            let n = (at.elapsed().as_secs_f32() / 0.26) as usize;
-            DICTATION
-                .split(' ')
-                .take(n)
-                .collect::<Vec<_>>()
-                .join(" ")
-                .into()
-        })
-    }
+fn demo_pull_requests() -> Vec<PullRequest> {
+    vec![
+        PullRequest::new(
+            "acme/storefront",
+            101,
+            "Retire the checkout copy test",
+            PullRequestState::Draft,
+        ),
+        PullRequest::new(
+            "acme/storefront",
+            98,
+            "Annual billing toggle",
+            PullRequestState::Open,
+        ),
+        PullRequest::new(
+            "acme/storefront",
+            94,
+            "Referral banner experiment",
+            PullRequestState::Merged,
+        ),
+        PullRequest::new(
+            "acme/billing",
+            37,
+            "Prorate seat upgrades",
+            PullRequestState::Closed,
+        ),
+    ]
 }
 
-/// A sent message (Pink `transcript.rs` user bubble): right-aligned, at most
-/// 80% wide, the bubble wash, radius 16, `px 16 py 10`, 14/22; its files ride
-/// above it as message badges.
-fn user_bubble(ix: usize, message: &Message, t: &Pink) -> impl IntoElement {
-    let edge = t.user_bubble_edge();
-    let badge_tone = t.readable_muted(0.7);
-    motion::rise_in(
-        ElementId::NamedInteger("cc-sent".into(), ix as u64),
-        motion::TOOL_ROW_REVEAL,
-        4.,
-        div()
-            .w_full()
-            .flex()
-            .flex_col()
-            .items_end()
-            .when(!message.attachments.is_empty(), |d| {
-                d.child(
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .justify_end()
-                        .gap(px(6.))
-                        .pb(px(6.))
-                        .children(message.attachments.iter().map(|a| {
-                            pink::message_badge(t)
-                                .child(
-                                    svg()
-                                        .path(if a.image { ICON_FILE_IMAGE } else { ICON_FILE })
-                                        .size(px(12.))
-                                        .text_color(badge_tone),
-                                )
-                                .child(a.name.clone())
-                        })),
-                )
-            })
-            .when(!message.text.is_empty(), |d| {
-                d.child(
-                    div()
-                        .max_w(relative(0.8))
-                        .px(px(16.))
-                        .py(px(10.))
-                        .rounded(px(radius::BUBBLE))
-                        .bg(t.user_bubble_bg())
-                        .when_some(edge, |d, edge| d.border_1().border_color(edge))
-                        .text_size(px(14.))
-                        .line_height(px(22.))
-                        .text_color(t.text)
-                        .child(message.text.clone()),
-                )
-            }),
-    )
+/// One state of the story: its caption over a live composer.
+fn state_cell(caption: &'static str, composer: ChatComposer, t: &Pink) -> Div {
+    div()
+        .w(px(STATE_W))
+        .flex()
+        .flex_col()
+        .gap(px(6.))
+        .child(
+            div()
+                .px(px(6.))
+                .type_style(TextStyle::Footnote)
+                .text_color(t.readable_muted(0.8))
+                .child(caption),
+        )
+        .child(composer.width(STATE_W))
 }
 
-/// The assistant's answer: bare prose on the canvas.
-fn reply(ix: usize, text: &'static str, t: &Pink) -> impl IntoElement {
-    motion::rise_in(
-        ElementId::NamedInteger("cc-reply".into(), ix as u64),
-        motion::TOOL_ROW_REVEAL,
-        4.,
-        div()
-            .text_size(px(14.))
-            .line_height(px(22.))
-            .text_color(t.text)
-            .child(text),
-    )
-}
+const STATE_W: f32 = 420.;
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
-    story::view(cx, |window, cx| {
+    story::view(cx, |_, cx| {
         let t = Pink::get(cx);
-        let demo = window.use_keyed_state("chat-composer-demo", cx, |_, cx| Demo::new(cx));
-        let d = demo.read(cx);
-        let first = d.turns.len().saturating_sub(2);
-        let mut transcript: Vec<AnyElement> = Vec::new();
-        for (ix, turn) in d.turns.iter().enumerate().skip(first) {
-            transcript.push(user_bubble(ix, &turn.message, &t).into_any_element());
-            if let Some(text) = turn.reply {
-                transcript.push(reply(ix, text, &t).into_any_element());
-            }
-        }
-        let running = d.run_started;
-        let (on_send, on_stop, on_attach, on_remove, on_listen) = (
-            demo.clone(),
-            demo.clone(),
-            demo.clone(),
-            demo.clone(),
-            demo.clone(),
-        );
+        let branches: Vec<SharedString> = vec![
+            "main".into(),
+            "checkout-copy".into(),
+            "annual-billing".into(),
+        ];
+        let base = |id: &'static str| {
+            ChatComposer::new(id)
+                .branches(branches.clone())
+                .on_attach(|_, _| {})
+                .on_stop(|_, _| {})
+        };
         div()
-            .w(px(DEFAULT_WIDTH))
             .flex()
             .flex_col()
-            .gap(px(16.))
-            .children(transcript)
-            .when_some(running, |col, at| {
-                // Pink's working trailer while the turn runs.
-                col.child(
-                    div()
-                        .flex()
-                        .flex_row()
-                        .items_start()
-                        .gap(px(8.))
-                        .child(loaders::orb_slot(t.accent))
-                        .child(loaders::working_status("Thinking", t.content_muted, t.text))
-                        .child(loaders::working_timer(
-                            at.elapsed().as_secs() as i64,
-                            t.content_faint,
-                        )),
-                )
-            })
+            .gap(px(20.))
             .child(
-                div().pt(px(8.)).child(
-                    ChatComposer::new("chat-composer")
-                        .attachments(d.attachments.clone())
-                        .projects(vec![
-                            "Storefront".into(),
-                            "Billing service".into(),
-                            "Personal notes".into(),
-                        ])
-                        .listening(d.transcript())
-                        .running(running.is_some())
-                        .on_send(move |message, _, cx| {
-                            let message = message.clone();
-                            on_send.update(cx, |d, cx| {
-                                d.finish(true);
-                                d.turns.push(Turn {
-                                    message,
-                                    reply: None,
-                                });
-                                d.attachments.clear();
-                                d.run_started = Some(Instant::now());
-                                cx.notify();
-                            })
-                        })
-                        .on_stop(move |_, cx| {
-                            on_stop.update(cx, |d, cx| {
-                                d.finish(false);
-                                cx.notify();
-                            })
-                        })
-                        .on_attach(move |_, cx| {
-                            on_attach.update(cx, |d, cx| {
-                                let files = demo_files();
-                                let file = files[d.next_file % files.len()].clone();
-                                d.next_file += 1;
-                                if !d.attachments.iter().any(|a| a.name == file.name) {
-                                    d.attachments.push(file);
-                                }
-                                cx.notify();
-                            })
-                        })
-                        .on_remove_attachment(move |ix, _, cx| {
-                            on_remove.update(cx, |d, cx| {
-                                if ix < d.attachments.len() {
-                                    d.attachments.remove(ix);
-                                }
-                                cx.notify();
-                            })
-                        })
-                        .on_listen(move |on, _, cx| {
-                            on_listen.update(cx, |d, cx| {
-                                d.listening = on.then(Instant::now);
-                                cx.notify();
-                            })
-                        }),
-                ),
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap(px(24.))
+                    .child(state_cell(
+                        "Idle: Send",
+                        base("cc-idle")
+                            .checkout(Checkout::branch("main").worktree("storefront-2"))
+                            .pull_requests(demo_pull_requests())
+                            .attachments(demo_files()[..2].to_vec()),
+                        &t,
+                    ))
+                    .child(state_cell(
+                        "Running, empty draft: Stop alone",
+                        base("cc-stop")
+                            .checkout(Checkout::branch("main"))
+                            .pull_requests(demo_pull_requests()[..2].to_vec())
+                            .running(true),
+                        &t,
+                    )),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap(px(24.))
+                    .child(state_cell(
+                        "Running, draft: Stop and Queue for after this turn",
+                        base("cc-queue")
+                            .checkout(Checkout::branch("main").machine("Studio Mac"))
+                            .running(true)
+                            .follow_up(FollowUp::Steer)
+                            .steer_available(false)
+                            .draft("Also check the refund rate for the annual cohort"),
+                        &t,
+                    ))
+                    .child(state_cell(
+                        "Running, draft: Stop and Steer this turn",
+                        base("cc-steer")
+                            .checkout(Checkout::branch("annual-billing").worktree("storefront-3"))
+                            .running(true)
+                            .follow_up(FollowUp::Steer)
+                            .steer_available(true)
+                            .draft("Skip the EU cohort, its sample is too small"),
+                        &t,
+                    )),
             )
     })
 }
