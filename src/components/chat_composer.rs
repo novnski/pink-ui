@@ -636,18 +636,16 @@ fn attachment_strip(
                             .tab_index(0)
                             .on_key_down(pink::swallow_activation_key)
                             .absolute()
-                            .top(px(-7.))
-                            .right(px(-7.))
-                            .size(px(20.))
+                            // A 20 px disc 7 px over the corner, in a
+                            // `MIN_HIT` box so the target is never under 24.
+                            .top(px(-7. - pink::chrome::hit_outset(20.)))
+                            .right(px(-7. - pink::chrome::hit_outset(20.)))
+                            .size(px(pink::chrome::MIN_HIT))
                             .rounded_full()
-                            .bg(t.surface_raised)
-                            .border_1()
-                            .border_color(t.border_strong)
                             .flex()
                             .items_center()
                             .justify_center()
                             .cursor_pointer()
-                            .shadow(pink::shadow_sm())
                             .opacity(0.)
                             .group_hover(group, |s| s.opacity(1.))
                             .focus_visible(move |s| pink::focus_ring(s.opacity(1.), ring))
@@ -659,7 +657,19 @@ fn attachment_strip(
                                     f(ix, window, cx)
                                 }
                             })
-                            .child(svg().path(ICON_CLOSE).size(px(10.)).text_color(t.text)),
+                            .child(
+                                div()
+                                    .size(px(20.))
+                                    .rounded_full()
+                                    .bg(t.surface_raised)
+                                    .border_1()
+                                    .border_color(t.border_strong)
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .shadow(pink::shadow_sm())
+                                    .child(svg().path(ICON_CLOSE).size(px(10.)).text_color(t.text)),
+                            ),
                     )
             })),
     )
@@ -1468,7 +1478,7 @@ impl RenderOnce for ChatComposer {
             .relative()
             .w_full()
             .flex_none()
-            .rounded(px(radius::COMPOSER))
+            .rounded(px(radius::COMPOSER_PILL))
             .border_1()
             .border_color(t.border)
             .bg(t.surface_bg())

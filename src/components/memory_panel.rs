@@ -899,7 +899,7 @@ fn row_action(
         .tab_index(0)
         .focus_visible(move |s| pink::focus_ring(s, ring))
         .on_key_down(pink::swallow_activation_key)
-        .size(px(chrome::CONTROL_S))
+        .size(px(chrome::MIN_HIT))
         .flex_none()
         .flex()
         .items_center()

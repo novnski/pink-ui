@@ -41,7 +41,10 @@ use gpui::{
 use crate::{
     HoverFill,
     motion::{self, MENU_OUT, MENU_RISE_DOWN, RESIZE},
-    pink::{self, ButtonKind, ControlSize, Pink, Segment, TextStyle, Tone, TypeStyleExt, layout},
+    pink::{
+        self, ButtonKind, ControlSize, Pink, Segment, TextStyle, Tone, TypeRole, TypeStyleExt,
+        layout,
+    },
     primitives::{InputEvent, TextInput},
     story,
 };
@@ -99,13 +102,11 @@ const CANVAS_INSET: f32 = 8.0;
 const CANVAS_RADIUS: f32 = 14.0;
 const VIEWPORT_INSET: f32 = 6.0;
 
-/// The titlebar's control cluster (Pink shell.rs): where it starts with the
-/// traffic lights hidden (`titlebar_cluster_start(true)`), the row's own
-/// inset, and its group and control rhythm.
+/// Where the titlebar's control cluster starts with the traffic lights
+/// hidden (Pink shell.rs `titlebar_cluster_start(true)`). Its inset, rhythm
+/// and Interface-scaled sizes are the kit's (`layout::TITLEBAR_*`,
+/// `layout::titlebar_control_size`).
 const CLUSTER_START: f32 = 12.0;
-const CLUSTER_PAD: f32 = 10.0;
-const TITLEBAR_GROUP_GAP: f32 = 8.0;
-const TITLEBAR_CONTROL_GAP: f32 = 2.0;
 
 /// The page column (Pink `widgets::page_column`, `page_subtitle`).
 const PAGE_PAD_X: f32 = 32.0;
@@ -1302,6 +1303,8 @@ struct Frame<'a> {
     plate_focus: FocusHandle,
     on_action: Option<KeyHandler>,
     reduced: bool,
+    /// The Interface size over 16 (`pink::ui_scale`).
+    scale: f32,
 }
 
 impl Frame<'_> {
@@ -1380,6 +1383,7 @@ impl RenderOnce for SettingsPage {
             plate_focus,
             on_action: self.handlers.on_action.clone(),
             reduced: motion::reduced_motion(cx),
+            scale: pink::ui_scale(cx),
         };
 
         // Pink `sidebar_now`: the navigation's width glides on RESIZE when
@@ -1584,15 +1588,18 @@ fn shortcut_tooltip(
 }
 
 /// A titlebar button (Pink shell.rs `window_control_button` /
-/// `nav_history_button`): 28 square, radius 6, the `glass_hover` wash
-/// fading in, a 16 glyph in `text_muted`; disabled it keeps its name but
-/// takes no pointer and dims its glyph.
+/// `nav_history_button`): square at `titlebar_control_size` (28 at the
+/// default Interface size, 24 to 32 as it scales), radius 6, the
+/// `glass_hover` wash fading in, a `scaled_icon` glyph (16 by default) in
+/// `text_muted`. Tab reaches it and the focus ring shows (UI rethink D58);
+/// disabled it keeps its name but takes no pointer and dims its glyph.
 fn chrome_button(
     id: String,
     glyph: &'static str,
     label: &'static str,
     keys: &'static str,
     enabled: bool,
+    scale: f32,
     t: &Pink,
 ) -> Stateful<Div> {
     let ring = t.focus_ring();
@@ -1600,7 +1607,7 @@ fn chrome_button(
         .id(SharedString::from(id.clone()))
         .role(Role::Button)
         .aria_label(label)
-        .size(px(pink::chrome::CONTROL_M))
+        .size(px(layout::titlebar_control_size(scale)))
         .flex_none()
         .flex()
         .items_center()
@@ -1611,7 +1618,7 @@ fn chrome_button(
         .child(
             svg()
                 .path(glyph)
-                .size(px(pink::chrome::ICON_M))
+                .size(px(pink::chrome::scaled_icon(pink::chrome::ICON_M, scale)))
                 .text_color(if enabled {
                     t.text_muted
                 } else {
@@ -1647,6 +1654,7 @@ fn render_titlebar(f: &Frame, collapsed: bool, can_back: bool, can_forward: bool
             },
             "⌘B",
             true,
+            f.scale,
             t,
         )
         .on_click(move |_, _, cx| {
@@ -1664,6 +1672,7 @@ fn render_titlebar(f: &Frame, collapsed: bool, can_back: bool, can_forward: bool
             "Back",
             "⌘[",
             can_back,
+            f.scale,
             t,
         )
         .when(can_back, |el| {
@@ -1684,6 +1693,7 @@ fn render_titlebar(f: &Frame, collapsed: bool, can_back: bool, can_forward: bool
             "Forward",
             "⌘]",
             can_forward,
+            f.scale,
             t,
         )
         .when(can_forward, |el| {
@@ -1705,21 +1715,21 @@ fn render_titlebar(f: &Frame, collapsed: bool, can_back: bool, can_forward: bool
         .flex_row()
         .items_center()
         .pt(px(layout::TITLEBAR_TOP_PAD))
-        .px(px(CLUSTER_PAD))
+        .px(px(layout::TITLEBAR_CLUSTER_PAD))
         .child(
             div()
                 .flex_none()
                 .h_full()
-                .w(px(CLUSTER_START - CLUSTER_PAD)),
+                .w(px(CLUSTER_START - layout::TITLEBAR_CLUSTER_PAD)),
         )
         .child(toggle)
         .child(
             div()
-                .ml(px(TITLEBAR_GROUP_GAP))
+                .ml(px(layout::TITLEBAR_GROUP_GAP))
                 .flex()
                 .flex_row()
                 .items_center()
-                .gap(px(TITLEBAR_CONTROL_GAP))
+                .gap(px(layout::TITLEBAR_CONTROL_GAP))
                 .child(back)
                 .child(forward),
         )
@@ -1759,8 +1769,7 @@ fn nav_row(
         .rounded(px(8.0))
         .px(px(8.0))
         .py(px(5.0))
-        .text_size(px(13.0))
-        .line_height(px(18.0))
+        .type_role(TypeRole::Chrome)
         .font_weight(if selected {
             gpui::FontWeight::MEDIUM
         } else {

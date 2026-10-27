@@ -879,7 +879,7 @@ fn lock_button(
         .aria_label(SharedString::from(format!("{label}: {}", action.label)))
         .tab_index(0)
         .flex_none()
-        .size(px(chrome::CONTROL_S))
+        .size(px(chrome::MIN_HIT))
         .flex()
         .items_center()
         .justify_center()

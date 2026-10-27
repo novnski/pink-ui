@@ -752,7 +752,7 @@ fn corner_action(
         .id(ElementId::Name(id.clone().into()))
         .role(Role::Button)
         .aria_label(label)
-        .size(px(chrome::CONTROL_S))
+        .size(px(chrome::MIN_HIT))
         .flex_none()
         .flex()
         .items_center()

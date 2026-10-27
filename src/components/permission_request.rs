@@ -455,7 +455,7 @@ impl PermState {
 /// `composer_surface`, on the frosted composer plate).
 fn composer_surface(t: &Pink) -> Div {
     div()
-        .rounded(px(radius::COMPOSER))
+        .rounded(px(radius::COMPOSER_PILL))
         .border_1()
         .border_color(t.border)
         .bg(t.surface_bg())

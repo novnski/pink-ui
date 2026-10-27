@@ -783,7 +783,7 @@ fn pick_badge(
             // small CLOSE glyph that brightens).
             div()
                 .id(SharedString::from(format!("unpick-{}", option.id)))
-                .size(px(16.))
+                .size(px(pink::chrome::MIN_HIT))
                 .flex_none()
                 .flex()
                 .items_center()

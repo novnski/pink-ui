@@ -188,6 +188,12 @@ pub fn set_theme(dark: bool) {
     with_app(|cx| Theme::set_mode(mode(dark), cx));
 }
 
+/// Sets Pink's Interface size in px (12 to 20, 16 by default).
+#[wasm_bindgen]
+pub fn set_ui_size(size: f32) {
+    with_app(|cx| Theme::set_ui_font_size(size, cx));
+}
+
 /// Every component's slug, name, category, description and source
 /// file, as JSON.
 #[wasm_bindgen]

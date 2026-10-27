@@ -1361,7 +1361,7 @@ fn file_row(
         .tab_index(0)
         .focus_visible(move |style| pink::focus_ring(style, ring).opacity(1.).bg(plate))
         .flex_none()
-        .size(px(chrome::CONTROL_S))
+        .size(px(chrome::MIN_HIT))
         .flex()
         .items_center()
         .justify_center()
@@ -1618,7 +1618,7 @@ fn story_states(t: &Pink) -> Div {
             )
     };
     div()
-        .rounded(px(radius::COMPOSER))
+        .rounded(px(radius::COMPOSER_PILL))
         .border_1()
         .border_color(t.border)
         .bg(t.surface_bg())
@@ -1690,7 +1690,7 @@ fn story_composer(t: &Pink) -> Div {
         .child(svg().path(ICON_ARROW_UP).size(px(14.)).text_color(t.bg));
     div()
         .flex_none()
-        .rounded(px(radius::COMPOSER))
+        .rounded(px(radius::COMPOSER_PILL))
         .border_1()
         .border_color(t.border)
         .bg(t.surface_bg())

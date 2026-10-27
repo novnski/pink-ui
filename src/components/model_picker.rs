@@ -2183,7 +2183,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .child(
                 div()
                     .w_full()
-                    .rounded(px(radius::COMPOSER))
+                    .rounded(px(radius::COMPOSER_PILL))
                     .border_1()
                     .border_color(t.border)
                     .bg(t.surface_bg())
