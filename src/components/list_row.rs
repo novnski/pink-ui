@@ -163,7 +163,7 @@ fn rows(scope: &'static str, two_lines: bool, t: &Pink, scale: f32) -> Vec<AnyEl
                 Signal::NeedsApproval => Some(glyph(ICON_SHIELD, 11.0 * scale, style.waiting)),
                 Signal::WaitingForInput => Some(glyph(ICON_QUESTION, 11.0 * scale, style.waiting)),
                 Signal::Failed => Some(glyph(ICON_DANGER, 11.0 * scale, style.failed)),
-                Signal::Unread => None,
+                Signal::Unread | Signal::Queued => None,
             });
             // Row 0 is selected and row 2 hovered, so both styles show.
             let row = ListRow {
