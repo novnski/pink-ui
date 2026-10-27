@@ -1,0 +1,5 @@
+/Users/iulian/pink-ui/components/icon-button/target/debug/deps/piper-f763e39c85d6c6e9.d: /Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/piper-0.2.5/src/lib.rs
+
+/Users/iulian/pink-ui/components/icon-button/target/debug/deps/libpiper-f763e39c85d6c6e9.rmeta: /Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/piper-0.2.5/src/lib.rs
+
+/Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/piper-0.2.5/src/lib.rs:

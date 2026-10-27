@@ -41,6 +41,7 @@ pub mod file_tree;
 pub mod filter_menu;
 pub mod find_bar;
 pub mod git_actions;
+pub mod icon_button;
 pub mod image_lightbox;
 pub mod inline_diff;
 pub mod integration_picker;
@@ -416,6 +417,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Navigation",
         description: sidebar::DESCRIPTION,
         story: sidebar::story,
+    },
+    ComponentEntry {
+        slug: "icon-button",
+        name: icon_button::NAME,
+        category: "Navigation",
+        description: icon_button::DESCRIPTION,
+        story: icon_button::story,
     },
     ComponentEntry {
         slug: "list-row",

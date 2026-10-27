@@ -1,0 +1,5 @@
+/Users/iulian/pink-ui/components/icon-button/target/debug/deps/fnv-287fcb7543f9bbc9.d: /Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/fnv-1.0.7/lib.rs
+
+/Users/iulian/pink-ui/components/icon-button/target/debug/deps/libfnv-287fcb7543f9bbc9.rmeta: /Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/fnv-1.0.7/lib.rs
+
+/Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/fnv-1.0.7/lib.rs:
