@@ -9,9 +9,14 @@
 //! run; while one is live, a separate Stop sits beside Queue for after this
 //! turn, or Steer this turn when the follow-up preference is Steer and the
 //! provider steers natively. With an empty draft Stop shows alone, and the
-//! row keeps its width. The checkout row above the pill names the branch
-//! first ("main", "main in storefront-2", "main on Studio Mac") beside every
-//! pull request recorded for the thread, each with its own state. Every
+//! row keeps its width. The checkout chip names the branch first ("main",
+//! "main in storefront-2", "main on Studio Mac") beside every pull request
+//! recorded for the thread, each with its own state. In an existing thread
+//! they ride the controls row (PINK 0.30.3, novnski/pink#186): the branch
+//! keeps its natural width up to its share and the pull requests get their
+//! own, so listing every one never cuts the branch short; a new thread keeps
+//! its checkout in a row above the pill. The branch menu ticks the checkout
+//! the thread actually runs in, even when two are on the same branch. Every
 //! menu opens upward from its chip and works from the keyboard. Voice input
 //! keeps the field's place with a breathing orb, the words heard so far and
 //! a timer; they land in the field for editing. Enter sends, Shift+Enter
@@ -23,7 +28,9 @@
 //!     .running(agent_busy)
 //!     .follow_up(FollowUp::Steer)
 //!     .steer_available(provider_steers)
-//!     .checkout(Checkout::branch("main").worktree("storefront-2"))
+//!     .in_thread(true)
+//!     .checkout(Checkout::branch("main").worktree("storefront-2").path(root))
+//!     .branches([BranchRef::new("main").current(project), BranchRef::new("main").worktree(root)])
 //!     .pull_requests(prs)
 //!     .on_attach(|_, cx| { /* open a file picker */ })
 //!     .on_send(|message, _, cx| println!("{} via {}", message.text, message.model))
@@ -48,7 +55,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Chat Composer";
-pub const DESCRIPTION: &str = "The composer's prompt pill: square attachment thumbnails over a field that grows as you type, quiet model, access and web search chips whose menus open upward, voice input, a branch-first checkout chip beside every pull request above, and a submit button named Send, Queue for after this turn or Steer this turn, with a separate Stop while a run is live";
+pub const DESCRIPTION: &str = "The composer's prompt pill: square attachment thumbnails over a field that grows as you type, quiet model, access and web search chips whose menus open upward, voice input, a branch-first checkout chip beside every pull request (in the controls row of a thread, above the pill of a new one), and a submit button named Send, Queue for after this turn or Steer this turn, with a separate Stop while a run is live";
 
 const ICON_PAPERCLIP: &str = "icons/chat-composer/paperclip.svg";
 const ICON_ARROW_UP: &str = "icons/chat-composer/arrow-up.svg";
@@ -105,6 +112,14 @@ const STRIP_PAD_X: f32 = 16.0;
 const CONTEXT_ROW_HEIGHT: f32 = 24.0;
 /// Column gap between the checkout row and the pill (`Theme::SPACE_SM`).
 const COLUMN_GAP: f32 = 8.0;
+/// Pink `PILL_BORDER_V`: the pill's hairline, both sides.
+const PILL_BORDER: f32 = 2.0;
+/// Pink pickers.rs `CHIP_TEXT_SIZE`: the controls row measures chip text at
+/// 12 px medium.
+const CHIP_TEXT: f32 = 12.0;
+/// The checkout row's chips draw at the kit's 16 pt baseline; only Stop
+/// scales with the Interface size (see the module docs of `crate::pink`).
+const CHIP_SCALE: f32 = 1.0;
 /// Pink `pickers.rs` `TARGET_CHIP_*` / `FOOTER_CHIP_RADIUS`.
 const TARGET_CHIP_HEIGHT: f32 = 22.0;
 const TARGET_CHIP_PAD_X: f32 = 6.0;
@@ -230,6 +245,9 @@ pub struct Checkout {
     pub worktree: Option<SharedString>,
     /// Another machine the thread runs on; `None` is this one.
     pub machine: Option<SharedString>,
+    /// The checkout's root folder, which the branch menu ticks (Pink
+    /// `source_context.repo_root`).
+    pub path: Option<SharedString>,
 }
 
 impl Checkout {
@@ -238,6 +256,7 @@ impl Checkout {
             branch: Some(branch.into()),
             worktree: None,
             machine: None,
+            path: None,
         }
     }
 
@@ -247,6 +266,7 @@ impl Checkout {
             branch: None,
             worktree: None,
             machine: Some(machine.into()),
+            path: None,
         }
     }
 
@@ -257,6 +277,13 @@ impl Checkout {
 
     pub fn machine(mut self, machine: impl Into<SharedString>) -> Self {
         self.machine = Some(machine.into());
+        self
+    }
+
+    /// The folder the thread runs in; the branch menu ticks the row whose
+    /// checkout this is.
+    pub fn path(mut self, path: impl Into<SharedString>) -> Self {
+        self.path = Some(path.into());
         self
     }
 
@@ -288,6 +315,121 @@ impl Checkout {
             ICON_BRANCH
         } else {
             ICON_MONITOR
+        }
+    }
+}
+
+/// A row of the checkout chip's branch menu (Pink `pickers.rs` branch menu
+/// rows): a branch, and the folder it is checked out in when it is checked
+/// out at all. Two rows can share a name: the project folder and a worktree
+/// both on `main`.
+#[derive(Clone, Debug)]
+pub struct BranchRef {
+    pub name: SharedString,
+    /// The folder this branch is checked out in.
+    pub path: Option<SharedString>,
+    /// Checked out in the project's own folder (tagged `current`); otherwise
+    /// a path makes it a worktree (tagged `worktree`).
+    pub current: bool,
+}
+
+impl BranchRef {
+    pub fn new(name: impl Into<SharedString>) -> Self {
+        Self {
+            name: name.into(),
+            path: None,
+            current: false,
+        }
+    }
+
+    /// Checked out in the project's own folder, at `path`.
+    pub fn current(mut self, path: impl Into<SharedString>) -> Self {
+        self.path = Some(path.into());
+        self.current = true;
+        self
+    }
+
+    /// Checked out in a worktree at `path`.
+    pub fn worktree(mut self, path: impl Into<SharedString>) -> Self {
+        self.path = Some(path.into());
+        self.current = false;
+        self
+    }
+
+    /// The row's right-aligned muted tag: current beats worktree.
+    fn tag(&self) -> Option<&'static str> {
+        if self.current {
+            Some("current")
+        } else if self.path.is_some() {
+            Some("worktree")
+        } else {
+            None
+        }
+    }
+
+    /// Its accessible name: "main, current", "main, worktree" or "main".
+    fn spoken(&self) -> SharedString {
+        match self.tag() {
+            Some(tag) => format!("{}, {tag}", self.name).into(),
+            None => self.name.clone(),
+        }
+    }
+
+    /// The worktree's folder name, for the chip's "main in storefront-2".
+    fn folder(&self) -> Option<SharedString> {
+        let path = self.path.as_ref().filter(|_| !self.current)?;
+        let trimmed = path.trim_end_matches('/');
+        Some(
+            trimmed
+                .rsplit('/')
+                .next()
+                .filter(|name| !name.is_empty())
+                .unwrap_or(trimmed)
+                .to_string()
+                .into(),
+        )
+    }
+}
+
+impl From<&str> for BranchRef {
+    fn from(name: &str) -> Self {
+        Self::new(name.to_string())
+    }
+}
+
+impl From<String> for BranchRef {
+    fn from(name: String) -> Self {
+        Self::new(name)
+    }
+}
+
+impl From<SharedString> for BranchRef {
+    fn from(name: SharedString) -> Self {
+        Self::new(name)
+    }
+}
+
+/// Whether two checkout paths name the same folder, ignoring a trailing
+/// slash (Pink pickers.rs `same_checkout_path`).
+fn same_checkout_path(a: &str, b: &str) -> bool {
+    a.trim_end_matches('/') == b.trim_end_matches('/')
+}
+
+/// The branch menu row to tick (Pink pickers.rs branch menu, PINK 0.30.3):
+/// with a known checkout path, the row checked out in that folder, since two
+/// checkouts can both be on `main`, and a row with no folder is never it;
+/// without one, the row named like the checkout's branch.
+pub fn ticked_branch(rows: &[BranchRef], checkout: Option<&Checkout>) -> Option<usize> {
+    let checkout = checkout?;
+    match &checkout.path {
+        Some(root) => rows.iter().position(|row| {
+            row.path
+                .as_ref()
+                .is_some_and(|path| same_checkout_path(root, path))
+        }),
+        None => {
+            let branch = checkout.branch.as_ref()?;
+            rows.iter().position(|row| row.name == *branch)
         }
     }
 }
@@ -432,7 +574,10 @@ struct State {
     menu_focus: FocusHandle,
     has_text: bool,
     model: usize,
-    branch: usize,
+    /// The branch row picked from the menu; `None` follows the checkout.
+    branch: Option<usize>,
+    /// The row the checkout runs in (`ticked_branch`), refreshed every render.
+    ticked: Option<usize>,
     web: bool,
     ask_first: bool,
     menu: Option<Menu>,
@@ -477,7 +622,8 @@ impl State {
             menu_focus: cx.focus_handle(),
             has_text: false,
             model: 1,
-            branch: 0,
+            branch: None,
+            ticked: None,
             web: false,
             ask_first: true,
             menu: None,
@@ -537,7 +683,7 @@ impl State {
         match menu {
             Menu::Model => self.model,
             Menu::Access => usize::from(!self.ask_first),
-            Menu::Branch => self.branch,
+            Menu::Branch => self.branch.or(self.ticked).unwrap_or(0),
         }
     }
 
@@ -558,7 +704,8 @@ pub struct ChatComposer {
     id: ElementId,
     models: Vec<ComposerModel>,
     checkout: Option<Checkout>,
-    branches: Vec<SharedString>,
+    branches: Vec<BranchRef>,
+    in_thread: bool,
     pull_requests: Vec<PullRequest>,
     attachments: Vec<Attachment>,
     placeholder: SharedString,
@@ -584,6 +731,7 @@ impl ChatComposer {
             models: default_models(),
             checkout: None,
             branches: Vec::new(),
+            in_thread: false,
             pull_requests: Vec::new(),
             attachments: Vec::new(),
             placeholder: "Do anything…".into(),
@@ -615,10 +763,20 @@ impl ChatComposer {
         self
     }
 
-    /// Branches the checkout chip's menu offers; picking one renames the
-    /// chip and calls `on_branch`.
-    pub fn branches(mut self, branches: Vec<SharedString>) -> Self {
-        self.branches = branches;
+    /// Branches the checkout chip's menu offers, each with the folder it is
+    /// checked out in (plain names convert); picking one renames the chip
+    /// and calls `on_branch`. The menu ticks the row the checkout runs in.
+    pub fn branches(mut self, branches: impl IntoIterator<Item = impl Into<BranchRef>>) -> Self {
+        self.branches = branches.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// The composer writes to an existing thread: its checkout chip and pull
+    /// requests ride the controls row (Pink `render_context_row`). A new
+    /// thread's checkout sits in a row above the pill (Pink
+    /// `render_target_footer`).
+    pub fn in_thread(mut self, in_thread: bool) -> Self {
+        self.in_thread = in_thread;
         self
     }
 
@@ -1060,6 +1218,7 @@ fn target_chip(
 ) -> Stateful<Div> {
     let id: SharedString = id.into();
     let key = id.to_string();
+    let label_selector = format!("{key}-label");
     let rest = t.readable_muted(0.7);
     let lit = t.text.opacity(0.85);
     let ink = if open {
@@ -1112,7 +1271,13 @@ fn target_chip(
                         .flex_none()
                         .text_color(ink),
                 )
-                .child(div().min_w_0().truncate().child(label))
+                .child(
+                    div()
+                        .debug_selector(move || label_selector)
+                        .min_w_0()
+                        .truncate()
+                        .child(label),
+                )
                 .child(pink::line_glyph(
                     pink::glyphs::ALT_ARROW_DOWN,
                     TARGET_CHIP_CHEVRON,
@@ -1132,8 +1297,10 @@ fn pull_request_chip(key: &str, pr: &PullRequest, t: &Pink) -> Stateful<Div> {
     let id = format!("{key}-pr-{}", pr.number);
     let tone = pr.state.tone(t);
     let ink = t.readable_tone(tone, 0.85);
+    let selector = id.clone();
     div()
         .id(SharedString::from(id.clone()))
+        .debug_selector(move || selector)
         .role(Role::Link)
         .aria_label(pr.spoken())
         .tab_index(0)
@@ -1469,18 +1636,145 @@ fn access_row(
         )
 }
 
+/// A branch menu row (Pink pickers.rs branch menu, PINK 0.30.3): the name
+/// and a right-aligned muted 11 pt tag, `current` beating `worktree`. The
+/// ticked row is the checkout the thread runs in. Named "main, current" or
+/// "main, worktree" as a selectable option.
+fn branch_row(
+    ix: usize,
+    row: &BranchRef,
+    ticked: bool,
+    active: bool,
+    state: &Entity<State>,
+    on_branch: Option<NameHandler>,
+    t: &Pink,
+) -> Stateful<Div> {
+    let hover = state.clone();
+    let pick = state.clone();
+    let picked = row.name.clone();
+    pink::menu_row_nav(ticked, active, t)
+        .id(ElementId::NamedInteger("cc-branch-row".into(), ix as u64))
+        .role(Role::ListBoxOption)
+        .aria_label(row.spoken())
+        .aria_selected(ticked)
+        .on_mouse_move(move |_, _, cx| set_highlight(&hover, ix, cx))
+        .on_click(move |_, window, cx| {
+            choose(&pick, Menu::Branch, ix, window, cx);
+            if let Some(f) = &on_branch {
+                f(&picked, window, cx)
+            }
+        })
+        .child(div().flex_1().min_w_0().truncate().child(row.name.clone()))
+        .when_some(row.tag(), |el, tag| {
+            el.child(
+                div()
+                    .flex_none()
+                    .text_size(px(11.))
+                    .text_color(t.text_muted)
+                    .child(tag),
+            )
+        })
+}
+
 fn choose(state: &Entity<State>, kind: Menu, ix: usize, window: &mut Window, cx: &mut App) {
     let input = state.update(cx, |s, cx| {
         match kind {
             Menu::Model => s.model = ix,
             Menu::Access => s.ask_first = ix == 0,
-            Menu::Branch => s.branch = ix,
+            Menu::Branch => s.branch = Some(ix),
         }
         s.close_menu();
         cx.notify();
         s.input.clone()
     });
     TextInput::focus(&input, window, cx);
+}
+
+/// Pink pickers.rs `chip_text_width`: `text` at the chips' 12 px medium.
+fn chip_text_width(text: &str, window: &Window) -> f32 {
+    if text.is_empty() {
+        return 0.0;
+    }
+    let run = gpui::TextRun {
+        len: text.len(),
+        font: gpui::Font {
+            weight: FontWeight::MEDIUM,
+            ..gpui::font(pink::SANS)
+        },
+        color: gpui::black(),
+        background_color: None,
+        underline: None,
+        strikethrough: None,
+    };
+    let line = window.text_system().shape_line(
+        SharedString::from(text.to_string()),
+        px(CHIP_TEXT),
+        &[run],
+        None,
+    );
+    f32::from(line.width)
+}
+
+/// The branch chip's natural width (Pink pickers.rs `render_context_row`
+/// `branch_width`): its label, both paddings, the glyph, the chevron and
+/// the two gaps between them.
+fn branch_chip_width(label: &str, window: &Window, scale: f32) -> f32 {
+    chip_text_width(label, window)
+        + (2.0 * TARGET_CHIP_PAD_X
+            + TARGET_CHIP_GLYPH
+            + TARGET_CHIP_CHEVRON
+            + 2.0 * TARGET_CHIP_GAP)
+            * scale
+}
+
+/// What a PR chip adds beyond its texts (Pink change_requests.rs
+/// `composer_task_pull_request_chrome`): both side paddings, the glyph and
+/// the gap after it, the gap before Draft and the row's gap before the chip.
+pub fn pull_request_chrome(draft: bool, scale: f32) -> f32 {
+    let gap = 5.0;
+    2.0 * 7.0 + 11.0 * scale + gap + if draft { gap } else { 0.0 } + 2.0 * scale
+}
+
+/// The PR chips' natural width together (Pink `render_context_row`
+/// `pr_width`): each chip's `#N`, its Draft word and its chrome.
+fn pull_requests_width(prs: &[PullRequest], window: &Window, scale: f32) -> f32 {
+    prs.iter()
+        .map(|pr| {
+            let draft = pr.state == PullRequestState::Draft;
+            chip_text_width(&format!("#{}", pr.number), window)
+                + if draft {
+                    chip_text_width("Draft", window)
+                } else {
+                    0.0
+                }
+                + pull_request_chrome(draft, scale)
+        })
+        .sum()
+}
+
+/// The controls row's room for the branch chip and for the PR chips (Pink
+/// composer.rs `context_width`, PINK 0.30.3): the branch keeps its natural
+/// width up to 35% of the row and 240 pt, and the PRs reserve their own room
+/// on top, up to 30% of the row, so listing every PR never truncates the
+/// branch.
+pub fn context_reserve(branch: f32, prs: f32, row_budget: f32, scale: f32) -> (f32, f32) {
+    (
+        branch.min(row_budget * 0.35).min(240.0 * scale),
+        prs.min(row_budget * 0.3),
+    )
+}
+
+/// The controls row's room for chips in a pill `width` wide (Pink
+/// composer.rs `controls_row_budget` less `stop_reserve`): the hairline, the
+/// row's insets, attach, the mic and the submit disc, and Stop while a run
+/// is live.
+fn controls_row_budget(width: f32, running: bool, scale: f32) -> f32 {
+    width
+        - PILL_BORDER
+        - 2.0 * ACTIONS_ROW_INSET
+        - (ROW_BUTTON + ACTION_UTILITY_GAP)
+        - 2.0 * (ACTION_PRIMARY_GAP + ROW_BUTTON)
+        - stop_reserve(running, scale)
 }
 
 fn toggle_menu(state: &Entity<State>, kind: Menu, window: &mut Window, cx: &mut App) {
@@ -1520,7 +1814,18 @@ impl RenderOnce for ChatComposer {
         let attachments = self.attachments.clone();
         let models = self.models.clone();
         let branches = self.branches.clone();
-        let checkout_branch = self.checkout.as_ref().and_then(|c| c.branch.clone());
+        let checkout_branch = self
+            .checkout
+            .as_ref()
+            .and_then(|c| c.branch.clone())
+            .or_else(|| {
+                // No checkout: the menu's first branch names the chip.
+                self.checkout
+                    .is_none()
+                    .then(|| self.branches.first().map(|b| b.name.clone()))
+                    .flatten()
+            });
+        let ticked = ticked_branch(&self.branches, self.checkout.as_ref());
         let on_send = self.on_send.clone();
         let placeholder = self.placeholder.clone();
         let running = self.running;
@@ -1530,14 +1835,18 @@ impl RenderOnce for ChatComposer {
         let draft = self.draft.clone();
         state.update(cx, |s, cx| {
             s.model = s.model.min(model_count - 1);
-            s.branch = s.branch.min(branch_count.saturating_sub(1));
+            s.branch = s.branch.filter(|&ix| ix < branch_count);
+            s.ticked = ticked;
             s.snapshot = Some((
                 attachments,
                 models
                     .get(s.model)
                     .map(|m| m.name.clone())
                     .unwrap_or_default(),
-                branches.get(s.branch).cloned().or(checkout_branch),
+                s.branch
+                    .and_then(|ix| branches.get(ix))
+                    .map(|b| b.name.clone())
+                    .or(checkout_branch),
             ));
             s.on_send = on_send;
             s.running = running;
@@ -1863,7 +2172,149 @@ impl RenderOnce for ChatComposer {
             SendMode::Send => div().flex_none().child(submit),
         };
 
+        // ---- the checkout chip and the thread's PRs (Pink `render_context_row`)
+        let picked = branch_ix.and_then(|ix| self.branches.get(ix));
+        let checkout = match (&self.checkout, picked) {
+            // A pick renames the branch; a row checked out elsewhere moves
+            // the chip to that folder.
+            (Some(checkout), Some(row)) => Some(Checkout {
+                branch: Some(row.name.clone()),
+                worktree: if row.current {
+                    None
+                } else {
+                    row.folder().or_else(|| checkout.worktree.clone())
+                },
+                path: row.path.clone().or_else(|| checkout.path.clone()),
+                ..checkout.clone()
+            }),
+            (Some(checkout), None) => Some(checkout.clone()),
+            (None, row) => row.or(self.branches.first()).map(|row| Checkout {
+                worktree: row.folder(),
+                path: row.path.clone(),
+                ..Checkout::branch(row.name.clone())
+            }),
+        }
+        .filter(|checkout| !checkout.label().is_empty());
+        let menu_ticked = branch_ix.or(ticked);
+        let context = checkout.map(|checkout| {
+            let label = checkout.label();
+            let chip_selector = format!("{key}-checkout");
+            let chip = target_chip(
+                chip_selector.clone(),
+                checkout.glyph(),
+                checkout.noun(),
+                label.clone(),
+                menu == Some(Menu::Branch),
+                &t,
+            )
+            .debug_selector(move || chip_selector)
+            .when(!self.branches.is_empty(), |chip| {
+                chip.on_click({
+                    let state = state.clone();
+                    move |_, window, cx| toggle_menu(&state, Menu::Branch, window, cx)
+                })
+            })
+            .when_some(branch_menu, |d, exit| {
+                let card = menu_card(
+                    Menu::Branch,
+                    self.branches.len(),
+                    layout::MENU_W_M,
+                    exit.is_none(),
+                    &menu_focus,
+                    &state,
+                    &t,
+                )
+                .child(
+                    div()
+                        .id("cc-branch-list")
+                        .flex()
+                        .flex_col()
+                        .gap(px(layout::MENU_GAP))
+                        .max_h(px(224.))
+                        .overflow_y_scroll()
+                        .children(self.branches.iter().enumerate().map(|(ix, row)| {
+                            branch_row(
+                                ix,
+                                row,
+                                menu_ticked == Some(ix),
+                                ix == highlight,
+                                &state,
+                                self.on_branch.clone(),
+                                &t,
+                            )
+                        })),
+                );
+                d.child(menu_above("cc-branch-menu", card.into_any_element(), exit))
+            });
+            let prs: Vec<_> = self
+                .pull_requests
+                .iter()
+                .map(|pr| {
+                    let on_pull_request = self.on_pull_request.clone();
+                    let opened = pr.clone();
+                    pull_request_chip(&key, pr, &t).on_click(move |_, window, cx| {
+                        if let Some(f) = &on_pull_request {
+                            f(&opened, window, cx)
+                        }
+                    })
+                })
+                .collect();
+            (label, chip, prs)
+        });
+        let in_thread = self.in_thread;
+        let (thread_context, context_row) = match context {
+            // An existing thread (Pink `render_context_row` in the controls
+            // row): the branch chip keeps its natural width up to its share,
+            // and the PRs get their own share beside it.
+            Some((label, chip, prs)) if in_thread => {
+                let budget = controls_row_budget(self.width, running, scale);
+                let (branch_share, pr_share) = context_reserve(
+                    branch_chip_width(&label, window, CHIP_SCALE),
+                    pull_requests_width(&self.pull_requests, window, CHIP_SCALE),
+                    budget,
+                    CHIP_SCALE,
+                );
+                // The reserve never yields to the pickers. Inside it the PR
+                // chips keep their size; only when they outgrow their own
+                // share does the branch chip (shrinkable, up to 360) give way,
+                // and nothing paints past the reserve.
+                let row = div()
+                    .w(px(branch_share + pr_share))
+                    .flex_none()
+                    .overflow_hidden()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(2.))
+                    .child(chip)
+                    .children(prs);
+                (Some(row), None)
+            }
+            // A new thread: its checkout in the row above the pill (Pink
+            // `render_target_footer`).
+            Some((_, chip, prs)) => (
+                None,
+                Some(
+                    div()
+                        .w_full()
+                        .h(px(CONTEXT_ROW_HEIGHT))
+                        // Close to the pill it describes: half the column gap.
+                        .mb(px(-COLUMN_GAP / 2.))
+                        .px(px(6.))
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap(px(2.))
+                        .child(chip)
+                        .children(prs),
+                ),
+            ),
+            None => (None, None),
+        };
+
+        let controls_selector = format!("{key}-controls");
         let controls = div()
+            .debug_selector(move || controls_selector)
             .flex_none()
             .h(px(ACTIONS_ROW_HEIGHT))
             .flex()
@@ -1893,7 +2344,8 @@ impl RenderOnce for ChatComposer {
                             .child(model_chip)
                             .child(access_chip)
                             .child(search_chip),
-                    ),
+                    )
+                    .children(thread_context),
             )
             .child(mic)
             .child(send);
@@ -1929,8 +2381,10 @@ impl RenderOnce for ChatComposer {
             .map(|h| motion::follow(&format!("{key}-pill"), h, motion::COLLAPSE));
         let focus_input = input.clone();
         let focus_state = state.clone();
+        let pill_selector = format!("{key}-pill");
         let pill = div()
             .id(SharedString::from(format!("{key}-pill")))
+            .debug_selector(move || pill_selector)
             .relative()
             .w_full()
             .flex_none()
@@ -1954,99 +2408,6 @@ impl RenderOnce for ChatComposer {
                 None => pill.child(body),
             });
 
-        // ---- the checkout row above the pill (Pink `render_context_row`) ------
-        let checkout = match (&self.checkout, self.branches.get(branch_ix)) {
-            (Some(checkout), Some(branch)) => Some(Checkout {
-                branch: Some(branch.clone()),
-                ..checkout.clone()
-            }),
-            (Some(checkout), None) => Some(checkout.clone()),
-            (None, Some(branch)) => Some(Checkout::branch(branch.clone())),
-            (None, None) => None,
-        }
-        .filter(|checkout| !checkout.label().is_empty());
-        let context = checkout.map(|checkout| {
-            let chip = target_chip(
-                format!("{key}-checkout"),
-                checkout.glyph(),
-                checkout.noun(),
-                checkout.label(),
-                menu == Some(Menu::Branch),
-                &t,
-            )
-            .when(!self.branches.is_empty(), |chip| {
-                chip.on_click({
-                    let state = state.clone();
-                    move |_, window, cx| toggle_menu(&state, Menu::Branch, window, cx)
-                })
-            })
-            .when_some(branch_menu, |d, exit| {
-                let card = menu_card(
-                    Menu::Branch,
-                    self.branches.len(),
-                    layout::MENU_W_M,
-                    exit.is_none(),
-                    &menu_focus,
-                    &state,
-                    &t,
-                )
-                .child(
-                    div()
-                        .id("cc-branch-list")
-                        .flex()
-                        .flex_col()
-                        .gap(px(layout::MENU_GAP))
-                        .max_h(px(224.))
-                        .overflow_y_scroll()
-                        .children(self.branches.iter().enumerate().map(|(ix, name)| {
-                            let hover = state.clone();
-                            let pick = state.clone();
-                            let on_branch = self.on_branch.clone();
-                            let picked = name.clone();
-                            pink::menu_row_nav(ix == branch_ix, ix == highlight, &t)
-                                .id(ElementId::NamedInteger("cc-branch-row".into(), ix as u64))
-                                .on_mouse_move(move |_, _, cx| set_highlight(&hover, ix, cx))
-                                .on_click(move |_, window, cx| {
-                                    choose(&pick, Menu::Branch, ix, window, cx);
-                                    if let Some(f) = &on_branch {
-                                        f(&picked, window, cx)
-                                    }
-                                })
-                                .child(
-                                    svg()
-                                        .path(ICON_BRANCH)
-                                        .size(px(12.))
-                                        .flex_none()
-                                        .text_color(t.text_muted),
-                                )
-                                .child(div().flex_1().min_w_0().truncate().child(name.clone()))
-                        })),
-                );
-                d.child(menu_above("cc-branch-menu", card.into_any_element(), exit))
-            });
-            let prs = self.pull_requests.iter().map(|pr| {
-                let on_pull_request = self.on_pull_request.clone();
-                let opened = pr.clone();
-                pull_request_chip(&key, pr, &t).on_click(move |_, window, cx| {
-                    if let Some(f) = &on_pull_request {
-                        f(&opened, window, cx)
-                    }
-                })
-            });
-            div()
-                .w_full()
-                .h(px(CONTEXT_ROW_HEIGHT))
-                // Close to the pill it describes: half the column gap.
-                .mb(px(-COLUMN_GAP / 2.))
-                .px(px(6.))
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(2.))
-                .child(chip)
-                .children(prs)
-        });
-
         div()
             .id(self.id.clone())
             .w(px(self.width))
@@ -2055,7 +2416,7 @@ impl RenderOnce for ChatComposer {
             .flex_col()
             .gap(px(COLUMN_GAP))
             .font_family(pink::SANS)
-            .children(context)
+            .children(context_row)
             .child(pill)
     }
 }
@@ -2177,14 +2538,19 @@ fn state_cell(caption: &'static str, composer: ChatComposer, t: &Pink) -> Div {
 }
 
 const STATE_W: f32 = 420.;
+const DEMO_PROJECT: &str = "/Users/lena/storefront";
+const DEMO_WORKTREE: &str = "/Users/lena/storefront-2";
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |_, cx| {
         let t = Pink::get(cx);
-        let branches: Vec<SharedString> = vec![
-            "main".into(),
-            "checkout-copy".into(),
-            "annual-billing".into(),
+        // Two checkouts on main, the project folder and a worktree: the menu
+        // ticks the one the thread runs in.
+        let branches = vec![
+            BranchRef::new("main").current(DEMO_PROJECT),
+            BranchRef::new("main").worktree(DEMO_WORKTREE),
+            BranchRef::new("checkout-copy"),
+            BranchRef::new("annual-billing").worktree("/Users/lena/storefront-3"),
         ];
         let base = |id: &'static str| {
             ChatComposer::new(id)
@@ -2192,6 +2558,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                 .on_attach(|_, _| {})
                 .on_stop(|_, _| {})
         };
+        let thread = |id: &'static str| base(id).in_thread(true);
         div()
             .flex()
             .flex_col()
@@ -2202,18 +2569,21 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                     .flex_row()
                     .gap(px(24.))
                     .child(state_cell(
-                        "Idle: Send",
+                        "New thread: Send, checkout above the pill",
                         base("cc-idle")
-                            .checkout(Checkout::branch("main").worktree("storefront-2"))
-                            .pull_requests(demo_pull_requests())
+                            .checkout(
+                                Checkout::branch("main")
+                                    .worktree("storefront-2")
+                                    .path(DEMO_WORKTREE),
+                            )
                             .attachments(demo_files()[..2].to_vec()),
                         &t,
                     ))
                     .child(state_cell(
                         "Running, empty draft: Stop alone",
-                        base("cc-stop")
-                            .checkout(Checkout::branch("main"))
-                            .pull_requests(demo_pull_requests()[..2].to_vec())
+                        thread("cc-stop")
+                            .checkout(Checkout::branch("main").path(DEMO_PROJECT))
+                            .pull_requests(demo_pull_requests()[1..2].to_vec())
                             .running(true),
                         &t,
                     )),
@@ -2225,7 +2595,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                     .gap(px(24.))
                     .child(state_cell(
                         "Running, draft: Stop and Queue for after this turn",
-                        base("cc-queue")
+                        thread("cc-queue")
                             .checkout(Checkout::branch("main").machine("Studio Mac"))
                             .running(true)
                             .follow_up(FollowUp::Steer)
@@ -2235,14 +2605,43 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                     ))
                     .child(state_cell(
                         "Running, draft: Stop and Steer this turn",
-                        base("cc-steer")
-                            .checkout(Checkout::branch("annual-billing").worktree("storefront-3"))
+                        thread("cc-steer")
+                            .checkout(
+                                Checkout::branch("annual-billing")
+                                    .worktree("storefront-3")
+                                    .path("/Users/lena/storefront-3"),
+                            )
                             .running(true)
                             .follow_up(FollowUp::Steer)
                             .steer_available(true)
                             .draft("Skip the EU cohort, its sample is too small"),
                         &t,
                     )),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
+                    .child(
+                        div()
+                            .px(px(6.))
+                            .type_style(TextStyle::Footnote)
+                            .text_color(t.readable_muted(0.8))
+                            .child(
+                                "In a thread: the branch keeps its name beside every pull request",
+                            ),
+                    )
+                    .child(
+                        thread("cc-prs")
+                            .width(2. * STATE_W + 24.)
+                            .checkout(
+                                Checkout::branch("main")
+                                    .worktree("storefront-2")
+                                    .path(DEMO_WORKTREE),
+                            )
+                            .pull_requests(demo_pull_requests()[..3].to_vec()),
+                    ),
             )
     })
 }
