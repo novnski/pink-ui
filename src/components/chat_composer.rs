@@ -5,7 +5,13 @@
 //! hairline edge. Staged attachments sit above the text as 56 pt square
 //! thumbnails, the field grows from one line to 260 pt, and a 46 pt
 //! controls row holds the paperclip, ghost picker chips (model, access, web
-//! search) and the submit disc, named for what it does: Send with no live
+//! search) and the submit disc. The access chip names its mode in words
+//! ("Approve for me", "Full access") and the model chip its effort ("Low");
+//! on a narrow row the pieces yield in PINK's order (PINK 0.30.4,
+//! novnski/pink#187): the search label, then the access words, then the
+//! effort, then the model name, each kept in a tooltip. An existing thread
+//! says "Message this thread", a new one "Do anything…". The submit disc is
+//! named for what it does: Send with no live
 //! run; while one is live, a separate Stop sits beside Queue for after this
 //! turn, or Steer this turn when the follow-up preference is Steer and the
 //! provider steers natively. With an empty draft Stop shows alone, and the
@@ -55,7 +61,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Chat Composer";
-pub const DESCRIPTION: &str = "The composer's prompt pill: square attachment thumbnails over a field that grows as you type, quiet model, access and web search chips whose menus open upward, voice input, a branch-first checkout chip beside every pull request (in the controls row of a thread, above the pill of a new one), and a submit button named Send, Queue for after this turn or Steer this turn, with a separate Stop while a run is live";
+pub const DESCRIPTION: &str = "The composer's prompt pill: square attachment thumbnails over a field that grows as you type, quiet model, access and web search chips that name the model's effort and the access mode in words until the row runs out of room, with menus that open upward, voice input, a branch-first checkout chip beside every pull request (in the controls row of a thread, above the pill of a new one), and a submit button named Send, Queue for after this turn or Steer this turn, with a separate Stop while a run is live";
 
 const ICON_PAPERCLIP: &str = "icons/chat-composer/paperclip.svg";
 const ICON_ARROW_UP: &str = "icons/chat-composer/arrow-up.svg";
@@ -66,7 +72,7 @@ const ICON_MONITOR: &str = "icons/chat-composer/monitor.svg";
 const ICON_PULL_REQUEST: &str = "icons/chat-composer/git-pull-request.svg";
 const ICON_CLOSE: &str = "icons/chat-composer/close.svg";
 const ICON_GLOBE: &str = "icons/chat-composer/globe.svg";
-const ICON_LOCK: &str = "icons/chat-composer/lock-keyhole.svg";
+const ICON_SHIELD_CHECK: &str = "icons/chat-composer/shield-check.svg";
 const ICON_UNLOCKED: &str = "icons/chat-composer/lock-keyhole-unlocked.svg";
 const ICON_MIC: &str = "icons/chat-composer/mic.svg";
 const ICON_FILE: &str = "icons/chat-composer/file-text.svg";
@@ -151,6 +157,9 @@ pub struct ComposerModel {
     pub name: SharedString,
     pub description: SharedString,
     pub icon: SharedString,
+    /// The reasoning effort ("Low"), the chip's muted suffix while the row
+    /// has room (Pink `model_chip_content` `suffix`).
+    pub effort: Option<SharedString>,
 }
 
 impl ComposerModel {
@@ -163,6 +172,21 @@ impl ComposerModel {
             name: name.into(),
             description: description.into(),
             icon: icon.into(),
+            effort: None,
+        }
+    }
+
+    pub fn effort(mut self, effort: impl Into<SharedString>) -> Self {
+        self.effort = Some(effort.into());
+        self
+    }
+
+    /// The model and its effort as one label: "Opus 5.5, Low" (Pink
+    /// `execution_settings_label`, no dot joiners).
+    pub fn label(&self) -> SharedString {
+        match &self.effort {
+            Some(effort) => format!("{}, {effort}", self.name).into(),
+            None => self.name.clone(),
         }
     }
 }
@@ -170,9 +194,11 @@ impl ComposerModel {
 /// Quick, balanced and deep.
 pub fn default_models() -> Vec<ComposerModel> {
     vec![
-        ComposerModel::new("Quick", "Fast replies for everyday questions", ICON_QUICK),
-        ComposerModel::new("Balanced", "Careful writing and analysis", ICON_BALANCED),
-        ComposerModel::new("Deep", "Thinks longer on hard problems", ICON_DEEP),
+        ComposerModel::new("Quick", "Fast replies for everyday questions", ICON_QUICK)
+            .effort("Low"),
+        ComposerModel::new("Balanced", "Careful writing and analysis", ICON_BALANCED)
+            .effort("Medium"),
+        ComposerModel::new("Deep", "Thinks longer on hard problems", ICON_DEEP).effort("High"),
     ]
 }
 
@@ -221,6 +247,116 @@ pub enum FollowUp {
     Queue,
     /// Delivered into the running turn, when the provider steers natively.
     Steer,
+}
+
+/// The access mode chosen in the composer (Pink pickers.rs
+/// `PERMISSION_OPTIONS`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AccessMode {
+    /// The provider's own reviewer decides within workspace limits.
+    #[default]
+    ApproveForMe,
+    /// The provider's approval prompts are skipped.
+    FullAccess,
+}
+
+/// How much of the model chip the controls row shows (Pink pickers.rs
+/// `ModelChipFit`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ModelFit {
+    /// Glyph, name and the effort suffix.
+    #[default]
+    Full,
+    /// The effort moves into the tooltip.
+    NameOnly,
+    /// Only the glyph; the tooltip names the model and its effort.
+    IconOnly,
+}
+
+/// What the controls row shows at its width (Pink composer.rs
+/// `ControlsRowFit`). The library's web search chip takes the Goal chip's
+/// place.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ControlsRowFit {
+    pub model: ModelFit,
+    pub goal_icon_only: bool,
+    /// The context-usage chip shows its ring only.
+    pub usage_icon_only: bool,
+    /// The access chip shows its glyph only, its mode in the tooltip.
+    pub access_icon_only: bool,
+}
+
+/// Choose the richest controls row that fits `budget` without truncating
+/// (Pink composer.rs `controls_row_fit`, PINK 0.30.4): the goal label yields
+/// first, then the usage figure, then the access words, then the model's
+/// effort, then its name. Every dropped piece stays in a tooltip. `goal`,
+/// `usage` and `access` are `(label, icon-only)` widths; the first two only
+/// when those chips are shown. Fixed chip geometry scales with `ui_scale`.
+pub fn controls_row_fit(
+    budget: f32,
+    model_full: f32,
+    model_name_only: f32,
+    goal: Option<(f32, f32)>,
+    usage: Option<(f32, f32)>,
+    access: (f32, f32),
+    ui_scale: f32,
+) -> ControlsRowFit {
+    let gap = CHIP_GAP * ui_scale;
+    let icon_chip = ROW_BUTTON * ui_scale;
+    let need = |model: f32, access: f32, goal: Option<f32>, usage: Option<f32>| {
+        model
+            + gap
+            + access
+            + goal.map_or(0.0, |goal| gap + goal)
+            + usage.map_or(0.0, |usage| gap + usage)
+    };
+    // (model, goal icon-only, usage icon-only, access icon-only)
+    let candidates = [
+        (ModelFit::Full, false, false, false),
+        (ModelFit::Full, true, false, false),
+        (ModelFit::Full, true, true, false),
+        (ModelFit::Full, true, true, true),
+        (ModelFit::NameOnly, true, true, true),
+        (ModelFit::IconOnly, true, true, true),
+    ];
+    for (model, goal_icon_only, usage_icon_only, access_icon_only) in candidates {
+        let model_width = match model {
+            ModelFit::Full => model_full,
+            ModelFit::NameOnly => model_name_only,
+            ModelFit::IconOnly => icon_chip,
+        };
+        let access_width = if access_icon_only { access.1 } else { access.0 };
+        let goal_width = goal.map(|(label, icon)| if goal_icon_only { icon } else { label });
+        let usage_width = usage.map(|(label, icon)| if usage_icon_only { icon } else { label });
+        if need(model_width, access_width, goal_width, usage_width) <= budget {
+            // A chip that isn't shown has nothing to collapse.
+            return ControlsRowFit {
+                model,
+                goal_icon_only: goal.is_some() && goal_icon_only,
+                usage_icon_only: usage.is_some() && usage_icon_only,
+                access_icon_only,
+            };
+        }
+    }
+    ControlsRowFit {
+        model: ModelFit::IconOnly,
+        goal_icon_only: goal.is_some(),
+        usage_icon_only: usage.is_some(),
+        access_icon_only: true,
+    }
+}
+
+/// The field's hint (Pink composer/goals.rs): an existing thread's composer
+/// says "Message this thread" (`THREAD_PLACEHOLDER`, PINK 0.30.4), a new
+/// thread "Do anything…" (`MESSAGE_PLACEHOLDER`). A host's own hint wins.
+pub fn placeholder_for(in_thread: bool, custom: Option<SharedString>) -> SharedString {
+    custom.unwrap_or_else(|| {
+        if in_thread {
+            "Message this thread".into()
+        } else {
+            "Do anything…".into()
+        }
+    })
 }
 
 /// How a message left the composer.
@@ -513,7 +649,8 @@ pub struct Message {
     /// The branch the chip names when it was sent.
     pub branch: Option<SharedString>,
     pub web_search: bool,
-    pub ask_first: bool,
+    /// The access mode it was sent with.
+    pub access: AccessMode,
     /// Sent while a turn was running: it waits for that turn to end, or
     /// steers it (`delivery`).
     pub queued: bool,
@@ -593,6 +730,8 @@ struct State {
     steers: bool,
     /// The draft the host asked for, applied once.
     draft_applied: bool,
+    /// The access mode the host asked for, applied once.
+    access_applied: bool,
     /// The pill's natural content height, measured after layout; the pill
     /// eases toward it (Pink's committed-height morph).
     natural: Rc<Cell<Option<f32>>>,
@@ -634,6 +773,7 @@ impl State {
             running: false,
             steers: false,
             draft_applied: false,
+            access_applied: false,
             natural: Rc::default(),
             snapshot: None,
             on_send: None,
@@ -659,7 +799,11 @@ impl State {
             model,
             branch,
             web_search: self.web,
-            ask_first: self.ask_first,
+            access: if self.ask_first {
+                AccessMode::ApproveForMe
+            } else {
+                AccessMode::FullAccess
+            },
             queued: self.running,
             delivery: match (self.running, self.steers) {
                 (false, _) => Delivery::Send,
@@ -708,8 +852,9 @@ pub struct ChatComposer {
     in_thread: bool,
     pull_requests: Vec<PullRequest>,
     attachments: Vec<Attachment>,
-    placeholder: SharedString,
+    placeholder: Option<SharedString>,
     draft: Option<SharedString>,
+    access: Option<AccessMode>,
     listening: Option<SharedString>,
     running: bool,
     follow_up: FollowUp,
@@ -734,8 +879,9 @@ impl ChatComposer {
             in_thread: false,
             pull_requests: Vec::new(),
             attachments: Vec::new(),
-            placeholder: "Do anything…".into(),
+            placeholder: None,
             draft: None,
+            access: None,
             listening: None,
             running: false,
             follow_up: FollowUp::Queue,
@@ -787,6 +933,13 @@ impl ChatComposer {
         self
     }
 
+    /// The access mode chosen when the composer first appears (Approve for
+    /// me by default); the chip's menu changes it from there.
+    pub fn access(mut self, access: AccessMode) -> Self {
+        self.access = Some(access);
+        self
+    }
+
     /// Text placed in the field when the composer first appears.
     pub fn draft(mut self, text: impl Into<SharedString>) -> Self {
         self.draft = Some(text.into());
@@ -798,9 +951,10 @@ impl ChatComposer {
         self
     }
 
-    /// The empty field's hint (Pink: "Do anything…").
+    /// The empty field's hint. By default "Message this thread" in an
+    /// existing thread and "Do anything…" in a new one ([`placeholder_for`]).
     pub fn placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
-        self.placeholder = placeholder.into();
+        self.placeholder = Some(placeholder.into());
         self
     }
 
@@ -1579,17 +1733,17 @@ fn model_row(
     div().pb(px(2.)).child(row)
 }
 
-/// The access choices (Pink `PERMISSION_OPTIONS` row anatomy): label,
-/// description and whether the choice wears the warning tone.
+/// The access choices (Pink pickers.rs `PERMISSION_OPTIONS`, PINK 0.30.4):
+/// label, description and whether the choice wears the warning tone.
 const ACCESS: [(&str, &str, bool); 2] = [
     (
-        "Ask first",
-        "The assistant asks before it runs tools or changes files.",
+        "Approve for me",
+        "Keep workspace limits and let the provider's native reviewer decide; anything it won't approve is declined, never asked.",
         false,
     ),
     (
-        "Auto-run",
-        "Runs tools and edits without stopping to ask; app and system controls still apply.",
+        "Full access",
+        "Skip this execution provider's approval prompts; app, OS, and external controls still apply.",
         true,
     ),
 ];
@@ -1827,13 +1981,18 @@ impl RenderOnce for ChatComposer {
             });
         let ticked = ticked_branch(&self.branches, self.checkout.as_ref());
         let on_send = self.on_send.clone();
-        let placeholder = self.placeholder.clone();
+        let placeholder = placeholder_for(self.in_thread, self.placeholder.clone());
         let running = self.running;
         // A follow-up steers only when the preference is Steer and the
         // provider steers the running turn natively.
         let steers = self.follow_up == FollowUp::Steer && self.steer_available;
         let draft = self.draft.clone();
+        let access = self.access;
         state.update(cx, |s, cx| {
+            if let Some(access) = access.filter(|_| !s.access_applied) {
+                s.access_applied = true;
+                s.ask_first = access == AccessMode::ApproveForMe;
+            }
             s.model = s.model.min(model_count - 1);
             s.branch = s.branch.filter(|&ix| ix < branch_count);
             s.ticked = ticked;
@@ -1967,211 +2126,7 @@ impl RenderOnce for ChatComposer {
                 .into_any_element()
         };
 
-        // ---- controls row (Pink: actions row) ---------------------------------
-        let on_attach = self.on_attach.clone();
-        let attach = row_button(
-            format!("{key}-attach"),
-            ICON_PAPERCLIP,
-            "Attach files",
-            false,
-            1.,
-            &t,
-        )
-        .when_some(on_attach, |d, f| {
-            d.on_click(move |_, window, cx| f(window, cx))
-        });
-
-        let model = self.models.get(model_ix).cloned();
-        let model_chip =
-            pink::trigger_chip(format!("{key}-model"), true, menu == Some(Menu::Model), &t)
-                .relative()
-                .on_click({
-                    let state = state.clone();
-                    move |_, window, cx| toggle_menu(&state, Menu::Model, window, cx)
-                })
-                .when_some(model, |d, m| {
-                    d.when(menu != Some(Menu::Model), |d| {
-                        d.tooltip(pink::text_tooltip(m.name.clone()))
-                            .tooltip_show_delay(layout::TOOLTIP_DELAY)
-                    })
-                    .child(
-                        svg()
-                            .path(m.icon)
-                            .size(px(16.))
-                            .flex_none()
-                            .text_color(t.text_muted),
-                    )
-                    .child(div().min_w_0().truncate().child(m.name))
-                })
-                .when_some(model_menu, |d, exit| {
-                    let card = menu_card(
-                        Menu::Model,
-                        self.models.len(),
-                        layout::MENU_W_L,
-                        exit.is_none(),
-                        &menu_focus,
-                        &state,
-                        &t,
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .p(px(layout::CARD_INSET))
-                            .child(menu_label("Model", &t))
-                            .children(self.models.iter().enumerate().map(|(ix, m)| {
-                                model_row(ix, m, ix == model_ix, ix == highlight, &state, &t)
-                            })),
-                    );
-                    d.child(menu_above("cc-model-menu", card.into_any_element(), exit))
-                });
-
-        let (access_title, access_icon, access_tint) = if ask_first {
-            (ACCESS[0].0, ICON_LOCK, t.text_muted)
-        } else {
-            (ACCESS[1].0, ICON_UNLOCKED, t.warning)
-        };
-        let access_chip = pink::trigger_chip(
-            format!("{key}-access"),
-            true,
-            menu == Some(Menu::Access),
-            &t,
-        )
-        .relative()
-        .flex_none()
-        .w(px(ROW_BUTTON))
-        .px(px(0.))
-        .justify_center()
-        .aria_label(access_title)
-        .when(menu != Some(Menu::Access), |d| {
-            d.tooltip(pink::text_tooltip(access_title))
-                .tooltip_show_delay(layout::TOOLTIP_DELAY)
-        })
-        .on_click({
-            let state = state.clone();
-            move |_, window, cx| toggle_menu(&state, Menu::Access, window, cx)
-        })
-        .child(
-            svg()
-                .path(access_icon)
-                .size(px(16.))
-                .flex_none()
-                .text_color(access_tint),
-        )
-        .when_some(access_menu, |d, exit| {
-            let selected = usize::from(!ask_first);
-            let card = menu_card(
-                Menu::Access,
-                ACCESS.len(),
-                ACCESS_MENU_W,
-                exit.is_none(),
-                &menu_focus,
-                &state,
-                &t,
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .p(px(layout::CARD_INSET))
-                    .child(menu_label("Permission mode", &t))
-                    .children(
-                        (0..ACCESS.len())
-                            .map(|ix| access_row(ix, ix == selected, ix == highlight, &state, &t)),
-                    ),
-            );
-            d.child(menu_above("cc-access-menu", card.into_any_element(), exit))
-        });
-
-        let search_chip = search_chip(format!("{key}-search"), web, &t).on_click({
-            let state = state.clone();
-            move |_, _, cx| {
-                state.update(cx, |s, cx| {
-                    s.web = !s.web;
-                    cx.notify();
-                })
-            }
-        });
-
-        let on_listen = self.on_listen.clone();
-        let transcript = self.listening.clone();
-        let mic_input = input.clone();
-        let mic = row_button(
-            format!("{key}-mic"),
-            ICON_MIC,
-            if listening {
-                "Stop dictation"
-            } else {
-                "Dictate"
-            },
-            listening,
-            0.,
-            &t,
-        )
-        .on_click(move |_, window, cx| {
-            if listening && let Some(words) = &transcript {
-                let words = words.clone();
-                mic_input.update(cx, |i, cx| {
-                    let existing = i.text();
-                    let joined = if existing.trim().is_empty() {
-                        words.to_string()
-                    } else {
-                        format!("{} {}", existing.trim_end(), words)
-                    };
-                    i.set_text(joined, cx);
-                });
-                TextInput::focus(&mic_input, window, cx);
-            }
-            if let Some(f) = &on_listen {
-                f(!listening, window, cx);
-            }
-        });
-
-        let mode = send_mode(running, has_content, steers);
-        let recessed = mode != SendMode::Stop && (!has_content || listening);
-        let on_stop = self.on_stop.clone();
-        let submit =
-            send_disc(&key, mode, recessed, focused && !has_content, &t).when(!recessed, |d| {
-                let state = state.clone();
-                let on_stop = on_stop.clone();
-                d.on_click(move |_, window, cx| match mode {
-                    SendMode::Stop => {
-                        if let Some(f) = &on_stop {
-                            f(window, cx)
-                        }
-                    }
-                    _ => state.update(cx, |s, cx| s.send(window, cx)),
-                })
-            });
-        // A typed draft never hides Stop (Pink `Composer::render`): while a
-        // run is live, the submit button (Queue or Steer) sits beside a
-        // separate Stop, `STOP_GAP` apart. With an empty draft Stop shows
-        // alone, and the row still reserves the separate Stop's width so
-        // nothing moves when typing starts (`stop_reserve`).
         let scale = pink::ui_scale(cx);
-        let send = match mode {
-            SendMode::Queue | SendMode::Steer => div()
-                .flex_none()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(STOP_GAP * scale))
-                .child(stop_button(&key, scale, &t).on_click(move |_, window, cx| {
-                    if let Some(f) = &on_stop {
-                        f(window, cx)
-                    }
-                }))
-                .child(submit),
-            SendMode::Stop => div()
-                .flex_none()
-                .flex()
-                .flex_row()
-                .items_center()
-                .child(div().flex_none().w(px(stop_reserve(running, scale))))
-                .child(submit),
-            SendMode::Send => div().flex_none().child(submit),
-        };
-
         // ---- the checkout chip and the thread's PRs (Pink `render_context_row`)
         let picked = branch_ix.and_then(|ix| self.branches.get(ix));
         let checkout = match (&self.checkout, picked) {
@@ -2262,6 +2217,7 @@ impl RenderOnce for ChatComposer {
             (label, chip, prs)
         });
         let in_thread = self.in_thread;
+        let mut context_width = 0.0;
         let (thread_context, context_row) = match context {
             // An existing thread (Pink `render_context_row` in the controls
             // row): the branch chip keeps its natural width up to its share,
@@ -2274,6 +2230,7 @@ impl RenderOnce for ChatComposer {
                     budget,
                     CHIP_SCALE,
                 );
+                context_width = branch_share + pr_share;
                 // The reserve never yields to the pickers. Inside it the PR
                 // chips keep their size; only when they outgrow their own
                 // share does the branch chip (shrinkable, up to 360) give way,
@@ -2310,6 +2267,279 @@ impl RenderOnce for ChatComposer {
                 ),
             ),
             None => (None, None),
+        };
+
+        // ---- the controls row's fit (Pink `controls_row_fit`) ---------------
+        // Trigger chips are `px 10`, a 16 pt glyph and a 6 pt gap before the
+        // text (Pink pickers.rs `CHIP_PAD_X`, `CHIP_ICON`, `CHIP_GAP`); one
+        // pixel of slack per measured run absorbs subpixel rounding.
+        let chip_chrome = (2.0 * 10.0 + 16.0 + 6.0) * CHIP_SCALE;
+        let model = self.models.get(model_ix).cloned();
+        let model_name_only = model.as_ref().map_or(ROW_BUTTON, |m| {
+            chip_chrome + chip_text_width(&m.name, window) + 1.0
+        });
+        let model_full = model_name_only
+            + model
+                .as_ref()
+                .and_then(|m| m.effort.as_ref())
+                .map_or(0.0, |effort| {
+                    6.0 * CHIP_SCALE + chip_text_width(effort, window) + 1.0
+                });
+        let access_ix = usize::from(!ask_first);
+        let access_widths = (
+            chip_chrome + chip_text_width(ACCESS[access_ix].0, window) + 1.0,
+            ROW_BUTTON * CHIP_SCALE,
+        );
+        let search_widths = (
+            chip_chrome + chip_text_width("Search", window) + 1.0,
+            ROW_BUTTON * CHIP_SCALE,
+        );
+        let picker_budget = controls_row_budget(self.width, running, scale)
+            - if context_width > 0.0 {
+                context_width + ACTION_UTILITY_GAP
+            } else {
+                0.0
+            };
+        let fit = controls_row_fit(
+            picker_budget,
+            model_full,
+            model_name_only,
+            Some(search_widths),
+            None,
+            access_widths,
+            CHIP_SCALE,
+        );
+
+        // ---- controls row (Pink: actions row) ---------------------------------
+        let on_attach = self.on_attach.clone();
+        let attach = row_button(
+            format!("{key}-attach"),
+            ICON_PAPERCLIP,
+            "Attach files",
+            false,
+            1.,
+            &t,
+        )
+        .when_some(on_attach, |d, f| {
+            d.on_click(move |_, window, cx| f(window, cx))
+        });
+
+        // The model chip (Pink `model_chip_content`): glyph, name and the
+        // effort as a muted suffix while the row has room; the tooltip always
+        // names both, "Balanced, Medium".
+        let model_chip =
+            pink::trigger_chip(format!("{key}-model"), true, menu == Some(Menu::Model), &t)
+                .relative()
+                .on_click({
+                    let state = state.clone();
+                    move |_, window, cx| toggle_menu(&state, Menu::Model, window, cx)
+                })
+                .when(fit.model == ModelFit::IconOnly, |d| {
+                    d.flex_none().w(px(ROW_BUTTON)).px(px(0.)).justify_center()
+                })
+                .when_some(model, |d, m| {
+                    let label = m.label();
+                    d.aria_label(label.clone())
+                        .when(menu != Some(Menu::Model), |d| {
+                            d.tooltip(pink::text_tooltip(label))
+                                .tooltip_show_delay(layout::TOOLTIP_DELAY)
+                        })
+                        .child(
+                            svg()
+                                .path(m.icon)
+                                .size(px(16.))
+                                .flex_none()
+                                .text_color(t.text_muted),
+                        )
+                        .when(fit.model != ModelFit::IconOnly, |d| {
+                            d.child(div().min_w_0().truncate().child(m.name))
+                        })
+                        .when_some(m.effort.filter(|_| fit.model == ModelFit::Full), |d, e| {
+                            d.child(div().flex_none().text_color(t.readable_muted(0.7)).child(e))
+                        })
+                })
+                .when_some(model_menu, |d, exit| {
+                    let card = menu_card(
+                        Menu::Model,
+                        self.models.len(),
+                        layout::MENU_W_L,
+                        exit.is_none(),
+                        &menu_focus,
+                        &state,
+                        &t,
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .p(px(layout::CARD_INSET))
+                            .child(menu_label("Model", &t))
+                            .children(self.models.iter().enumerate().map(|(ix, m)| {
+                                model_row(ix, m, ix == model_ix, ix == highlight, &state, &t)
+                            })),
+                    );
+                    d.child(menu_above("cc-model-menu", card.into_any_element(), exit))
+                });
+
+        // The access chip names its mode in words beside its glyph (Pink
+        // pickers.rs `access_chip_content`, PINK 0.30.4): Approve for me a
+        // shield check, Full access an open lock in the warning tone. Glyph
+        // only when the row is too narrow; the tooltip names it either way.
+        let (access_title, access_icon, access_tint) = if ask_first {
+            (ACCESS[0].0, ICON_SHIELD_CHECK, t.text_muted)
+        } else {
+            (ACCESS[1].0, ICON_UNLOCKED, t.warning)
+        };
+        let access_selector = format!("{key}-access");
+        let access_label_selector = format!("{key}-access-label");
+        let access_chip = pink::trigger_chip(
+            format!("{key}-access"),
+            true,
+            menu == Some(Menu::Access),
+            &t,
+        )
+        .debug_selector(move || access_selector)
+        .relative()
+        .flex_none()
+        .when(fit.access_icon_only, |d| {
+            d.w(px(ROW_BUTTON)).px(px(0.)).justify_center()
+        })
+        .aria_label(access_title)
+        .when(menu != Some(Menu::Access), |d| {
+            d.tooltip(pink::text_tooltip(access_title))
+                .tooltip_show_delay(layout::TOOLTIP_DELAY)
+        })
+        .on_click({
+            let state = state.clone();
+            move |_, window, cx| toggle_menu(&state, Menu::Access, window, cx)
+        })
+        .child(
+            svg()
+                .path(access_icon)
+                .size(px(16.))
+                .flex_none()
+                .text_color(access_tint),
+        )
+        .when(!fit.access_icon_only, |d| {
+            d.child(
+                div()
+                    .debug_selector(move || access_label_selector)
+                    .flex_none()
+                    .child(access_title),
+            )
+        })
+        .when_some(access_menu, |d, exit| {
+            let selected = usize::from(!ask_first);
+            let card = menu_card(
+                Menu::Access,
+                ACCESS.len(),
+                ACCESS_MENU_W,
+                exit.is_none(),
+                &menu_focus,
+                &state,
+                &t,
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .p(px(layout::CARD_INSET))
+                    .child(menu_label("Permission mode", &t))
+                    .children(
+                        (0..ACCESS.len())
+                            .map(|ix| access_row(ix, ix == selected, ix == highlight, &state, &t)),
+                    ),
+            );
+            d.child(menu_above("cc-access-menu", card.into_any_element(), exit))
+        });
+
+        let search_chip = search_chip(format!("{key}-search"), web, fit.goal_icon_only, &t)
+            .on_click({
+                let state = state.clone();
+                move |_, _, cx| {
+                    state.update(cx, |s, cx| {
+                        s.web = !s.web;
+                        cx.notify();
+                    })
+                }
+            });
+
+        let on_listen = self.on_listen.clone();
+        let transcript = self.listening.clone();
+        let mic_input = input.clone();
+        let mic = row_button(
+            format!("{key}-mic"),
+            ICON_MIC,
+            if listening {
+                "Stop dictation"
+            } else {
+                "Dictate"
+            },
+            listening,
+            0.,
+            &t,
+        )
+        .on_click(move |_, window, cx| {
+            if listening && let Some(words) = &transcript {
+                let words = words.clone();
+                mic_input.update(cx, |i, cx| {
+                    let existing = i.text();
+                    let joined = if existing.trim().is_empty() {
+                        words.to_string()
+                    } else {
+                        format!("{} {}", existing.trim_end(), words)
+                    };
+                    i.set_text(joined, cx);
+                });
+                TextInput::focus(&mic_input, window, cx);
+            }
+            if let Some(f) = &on_listen {
+                f(!listening, window, cx);
+            }
+        });
+
+        let mode = send_mode(running, has_content, steers);
+        let recessed = mode != SendMode::Stop && (!has_content || listening);
+        let on_stop = self.on_stop.clone();
+        let submit =
+            send_disc(&key, mode, recessed, focused && !has_content, &t).when(!recessed, |d| {
+                let state = state.clone();
+                let on_stop = on_stop.clone();
+                d.on_click(move |_, window, cx| match mode {
+                    SendMode::Stop => {
+                        if let Some(f) = &on_stop {
+                            f(window, cx)
+                        }
+                    }
+                    _ => state.update(cx, |s, cx| s.send(window, cx)),
+                })
+            });
+        // A typed draft never hides Stop (Pink `Composer::render`): while a
+        // run is live, the submit button (Queue or Steer) sits beside a
+        // separate Stop, `STOP_GAP` apart. With an empty draft Stop shows
+        // alone, and the row still reserves the separate Stop's width so
+        // nothing moves when typing starts (`stop_reserve`).
+        let send = match mode {
+            SendMode::Queue | SendMode::Steer => div()
+                .flex_none()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(STOP_GAP * scale))
+                .child(stop_button(&key, scale, &t).on_click(move |_, window, cx| {
+                    if let Some(f) = &on_stop {
+                        f(window, cx)
+                    }
+                }))
+                .child(submit),
+            SendMode::Stop => div()
+                .flex_none()
+                .flex()
+                .flex_row()
+                .items_center()
+                .child(div().flex_none().w(px(stop_reserve(running, scale))))
+                .child(submit),
+            SendMode::Send => div().flex_none().child(submit),
         };
 
         let controls_selector = format!("{key}-controls");
@@ -2425,10 +2655,14 @@ impl RenderOnce for ChatComposer {
 /// `Pickers::trigger_chip`); on it wears the mode-on capsule of Pink's Goal
 /// chip (`goals.rs` `render_goal_mode_chip`): `accent@0.14` easing to 0.20 on
 /// hover, label and 15 pt glyph in `readable_tone(accent)`.
-fn search_chip(id: String, on: bool, t: &Pink) -> Stateful<Div> {
+fn search_chip(id: String, on: bool, icon_only: bool, t: &Pink) -> Stateful<Div> {
     if !on {
         return pink::trigger_chip(id, false, false, t)
             .flex_none()
+            .aria_label("Search the web")
+            .when(icon_only, |d| {
+                d.w(px(ROW_BUTTON)).px(px(0.)).justify_center()
+            })
             .role(Role::Switch)
             .aria_toggled(Toggled::False)
             .tooltip(pink::text_tooltip("Search the web"))
@@ -2440,7 +2674,7 @@ fn search_chip(id: String, on: bool, t: &Pink) -> Stateful<Div> {
                     .flex_none()
                     .text_color(t.text_muted),
             )
-            .child("Search");
+            .when(!icon_only, |d| d.child("Search"));
     }
     let tone = t.readable_tone(t.accent, 0.95);
     let ring = t.focus_ring();
@@ -2455,10 +2689,15 @@ fn search_chip(id: String, on: bool, t: &Pink) -> Stateful<Div> {
         .on_key_down(pink::swallow_activation_key)
         .flex_none()
         .h(px(ROW_BUTTON))
-        .px(px(10.))
+        .map(|d| {
+            if icon_only {
+                d.w(px(ROW_BUTTON)).justify_center()
+            } else {
+                d.px(px(10.)).gap(px(6.))
+            }
+        })
         .flex()
         .items_center()
-        .gap(px(6.))
         .rounded_full()
         .text_size(px(12.))
         .font_weight(FontWeight::MEDIUM)
@@ -2474,7 +2713,7 @@ fn search_chip(id: String, on: bool, t: &Pink) -> Stateful<Div> {
                 .flex_none()
                 .text_color(tone),
         )
-        .child("Search")
+        .when(!icon_only, |d| d.child("Search"))
 }
 
 // ---------------------------------------------------------------------------
@@ -2640,6 +2879,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                                     .worktree("storefront-2")
                                     .path(DEMO_WORKTREE),
                             )
+                            .access(AccessMode::FullAccess)
                             .pull_requests(demo_pull_requests()[..3].to_vec()),
                     ),
             )
