@@ -28,6 +28,7 @@ impl Render for Host {
             fill,
             glyph: t.text,
             actionable: true,
+            press_dim: true,
         };
         div()
             .flex()

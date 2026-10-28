@@ -1,9 +1,9 @@
 # Composer disc
 
-`pink-composer-disc` is PINK's composer Send, Queue, Steer and Stop buttons
-as a single-GPUI package (UI rethink decision 54). Like the other packages
-under `components/` it depends on crates.io `gpui = "=0.2.2"` in its own
-workspace. The pink-ui gallery compiles this same `src/lib.rs` in place
+`pink-composer-disc` is PINK's composer Send, Queue, Steer, Stop and Attach
+buttons as a single-GPUI package (UI rethink decision 54). Like the other
+packages under `components/` it depends on crates.io `gpui = "=0.2.2"` in its
+own workspace. The pink-ui gallery compiles this same `src/lib.rs` in place
 (`src/components/composer_disc.rs`). PINK pins the package and patches `gpui`
 to its vendored runtime, so there is one GPUI type graph and no copied source.
 
@@ -11,8 +11,9 @@ to its vendored runtime, so there is one GPUI type graph and no copied source.
 
 - `disc(id, glyph, &DiscStyle)`: a round disc `size` across with the host's
   `glyph` centred on its `fill`. `glyph` sets the text colour a glyph
-  inherits. An `actionable` disc shows the pointing cursor and dims to
-  `PRESSED_OPACITY` while pressed; a recessed one takes neither.
+  inherits. An `actionable` disc shows the pointing cursor, and with
+  `press_dim` it dims to `PRESSED_OPACITY` while pressed (Send and Stop do,
+  the quiet Attach doesn't). A recessed disc takes neither.
 - `stop_glyph(color)`: the stop square, `STOP_GLYPH` with `STOP_RADIUS`
   corners.
 - `ui_rems(design)`: a design size (pt at the 16 px default) in rems, so a

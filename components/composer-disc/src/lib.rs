@@ -1,7 +1,7 @@
-// PINK's composer discs (composer.rs `render_send_button` and
-// `render_stop_button`): the round primary button that sends, queues or
-// steers (and stops when nothing else is offered), and the separate Stop
-// beside it while a run is live. UI rethink decision 54: drawn here,
+// PINK's composer discs (composer.rs `render_send_button`,
+// `render_stop_button` and the Attach button): the round primary button
+// that sends, queues or steers (and stops when nothing else is offered),
+// the separate Stop beside it while a run is live, and the quiet Attach. UI rethink decision 54: drawn here,
 // consumed by PINK through a pinned revision.
 //
 // The package draws only. The host supplies the glyph (its own arrow
@@ -35,9 +35,12 @@ pub struct DiscStyle {
     pub fill: Hsla,
     /// The glyph colour, inherited by a glyph that takes the text colour.
     pub glyph: Hsla,
-    /// A disc that can act shows the pointing cursor and dims while
-    /// pressed; a recessed one keeps its shape and takes neither.
+    /// A disc that can act shows the pointing cursor; a recessed one keeps
+    /// its shape without it.
     pub actionable: bool,
+    /// An actionable disc that dims to `PRESSED_OPACITY` while pressed
+    /// (Send and Stop do; the quiet Attach doesn't).
+    pub press_dim: bool,
 }
 
 /// A round disc with `glyph` centred. The host chains its semantics,
@@ -61,9 +64,9 @@ pub fn disc(
         .justify_center()
         .text_color(style.glyph)
         .bg(style.fill)
-        .when(style.actionable, |disc| {
-            disc.cursor_pointer()
-                .active(|pressed| pressed.opacity(PRESSED_OPACITY))
+        .when(style.actionable, |disc| disc.cursor_pointer())
+        .when(style.actionable && style.press_dim, |disc| {
+            disc.active(|pressed| pressed.opacity(PRESSED_OPACITY))
         })
         .child(glyph)
 }

@@ -47,6 +47,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                     fill,
                     glyph: t.bg,
                     actionable,
+                    press_dim: true,
                 },
             )
         };
@@ -93,6 +94,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                             fill: t.text.opacity(0.08),
                             glyph: t.text,
                             actionable: true,
+                            press_dim: true,
                         },
                     ))
                     .child(primary(
