@@ -4,7 +4,11 @@
 //! height between sizes and the code's first line moves); actions
 //! crowding the frame's right edge or drifting apart; a Copy pill that
 //! changes height when it grows its "Copied" label; a bare block that still
-//! draws an empty strip above its code.
+//! draws an empty strip above its code. For the code surface header over a
+//! tool's output or inline diff: a strip that scales or loses its inset
+//! when it changes weight, a Copy action off the shared right inset, and a
+//! label-only (diff) strip whose long file name runs past the code's inset
+//! instead of truncating there.
 
 use gpui::{
     Bounds, Context, IntoElement, Pixels, Render, SharedString, TestAppContext, Window, div,
@@ -13,8 +17,8 @@ use gpui::{
 use pink_ui::{
     Theme, ThemeMode,
     components::code_block::{
-        ACTION_GAP, ACTION_ICON, ACTION_SIZE, COPY_ICON, HEADER_HEIGHT, HEADER_PAD_RIGHT,
-        copy_action, frame, frame_style, header, icon_action,
+        ACTION_GAP, ACTION_ICON, ACTION_SIZE, COPY_ICON, HEADER_HEIGHT, HEADER_PAD_LEFT,
+        HEADER_PAD_RIGHT, copy_action, frame, frame_style, header, icon_action, surface_header,
     },
     pink::Pink,
 };
@@ -169,5 +173,107 @@ fn the_chrome_stays_fixed_around_the_code_at_every_interface_size(cx: &mut TestA
     assert!(
         copy_widths[0] < copy_widths[2],
         "the Copied label scales: {copy_widths:?}"
+    );
+}
+
+/// A host drawing PINK's tool code surfaces: an "Output" segment with its
+/// Copy action, and an inline diff whose file name is too long to fit.
+struct SurfaceHost {
+    ui: f32,
+}
+
+impl Render for SurfaceHost {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        window.set_rem_size(gpui::px(self.ui));
+        let t = Pink::get(cx);
+        let style = frame_style(&t);
+        let copy = copy_action(
+            "output-copy",
+            div()
+                .flex_none()
+                .size(gpui::px(COPY_ICON))
+                .into_any_element(),
+            None,
+            t.content_muted,
+            transparent_black(),
+        )
+        .debug_selector(|| "output-copy".into());
+        let output = surface_header(
+            div()
+                .debug_selector(|| "output-label".into())
+                .child("Output"),
+            vec![copy.into_any_element()],
+            style,
+        )
+        .debug_selector(|| "output-header".into());
+        let diff = surface_header(
+            div()
+                .debug_selector(|| "diff-label".into())
+                .min_w_0()
+                .truncate()
+                .child("a-file-name-long-enough-to-outrun-any-column-it-sits-in.rs +3 -1"),
+            Vec::new(),
+            style,
+        )
+        .debug_selector(|| "diff-header".into());
+        div()
+            .w(gpui::px(COLUMN))
+            .flex()
+            .flex_col()
+            .gap(gpui::px(8.0))
+            .font_family(pink_ui::pink::SANS)
+            .child(frame("output", Some(output), style).child(div().h(gpui::px(40.0))))
+            .child(frame("diff", Some(diff), style).child(div().h(gpui::px(40.0))))
+    }
+}
+
+#[gpui::test]
+fn the_tool_surface_strip_keeps_the_code_insets_at_every_interface_size(cx: &mut TestAppContext) {
+    cx.update(pink_ui::init);
+    let mut label_widths = Vec::new();
+    for ui in [12.0_f32, 16.0, 20.0] {
+        let mut cx = cx.clone();
+        cx.update(|cx| Theme::set_mode(ThemeMode::Light, cx));
+        let (_, cx) = cx.add_window_view(|_, _| SurfaceHost { ui });
+        cx.run_until_parked();
+
+        let output = bounds(cx, "output-header".into());
+        let label = bounds(cx, "output-label".into());
+        let copy = bounds(cx, "output-copy".into());
+        assert!(
+            near(f32::from(output.size.height), HEADER_HEIGHT),
+            "a fixed strip at {ui}: {output:?}"
+        );
+        assert!(
+            near(f32::from(label.origin.x - output.origin.x), HEADER_PAD_LEFT),
+            "the caption at the code's inset at {ui}"
+        );
+        assert!(
+            near(f32::from(copy.size.height), ACTION_SIZE)
+                && near(
+                    f32::from(copy.origin.y - output.origin.y),
+                    (HEADER_HEIGHT - ACTION_SIZE) / 2.0
+                )
+                && near(f32::from(output.right() - copy.right()), HEADER_PAD_RIGHT),
+            "the Copy action centred on the shared right inset at {ui}: {copy:?}"
+        );
+        label_widths.push(f32::from(label.size.width));
+
+        let diff = bounds(cx, "diff-header".into());
+        let name = bounds(cx, "diff-label".into());
+        assert!(
+            near(f32::from(diff.size.height), HEADER_HEIGHT)
+                && near(f32::from(name.origin.x - diff.origin.x), HEADER_PAD_LEFT),
+            "the diff strip at {ui}: {diff:?}"
+        );
+        assert!(
+            f32::from(diff.right() - name.right()) >= HEADER_PAD_LEFT - 0.5,
+            "a long file name truncates at the code's inset at {ui}: {name:?} in {diff:?}"
+        );
+    }
+    // The caption grows with the Interface size; the strip does not.
+    assert!(
+        label_widths[0] < label_widths[2],
+        "the caption scales: {label_widths:?}"
     );
 }

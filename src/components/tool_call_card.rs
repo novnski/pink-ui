@@ -44,7 +44,9 @@ use gpui::{
 };
 
 use crate::{
-    HoverFill as _, motion,
+    HoverFill as _,
+    components::code_block,
+    motion,
     pink::{self, FillTier, Pink, loaders, radius},
     story,
 };
@@ -91,7 +93,7 @@ const FULL_OUTPUT_MAX_LINES: usize = 400;
 /// Invocation and output lines soft-wrap here (Pink `CALL_WRAP_COLS`).
 const CALL_WRAP_COLS: usize = 80;
 /// The code surface header (Pink `OUTPUT_CODE_HEADER_HEIGHT`).
-const OUTPUT_CODE_HEADER_HEIGHT: f32 = 28.0;
+const OUTPUT_CODE_HEADER_HEIGHT: f32 = code_block::HEADER_HEIGHT;
 /// Code segments scroll past this (Pink `OUTPUT_VIEWPORT_MAX_HEIGHT`).
 const OUTPUT_VIEWPORT_MAX_HEIGHT: f32 = 252.0;
 /// One code line: the code size's 12.5/18 rhythm (Pink `OUTPUT_LINE_HEIGHT`).
@@ -1614,27 +1616,6 @@ fn code_surface_frame(t: &Pink) -> Div {
         .overflow_hidden()
 }
 
-/// The code surface header (Pink `code_surface_header`): 28px, an 11px
-/// medium `content_muted` label, actions trailing, a barely raised
-/// `ink(0.02)` over the body.
-fn code_surface_header(t: &Pink) -> Div {
-    div()
-        .h(px(OUTPUT_CODE_HEADER_HEIGHT))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_between()
-        .pl(px(CODE_PADDING_X))
-        .pr(px(5.0))
-        .border_b_1()
-        .border_color(t.border)
-        .bg(t.ink(0.02))
-        .font_family(pink::SANS)
-        .text_size(px(pink::text::CAPTION))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(t.content_muted)
-}
-
 /// One code segment (Pink `detail_body`, output case): the header with its
 /// copy action, then verbatim 12.5/18 mono lines in `text` that scroll past
 /// 252px, and the counted tail. A standalone segment draws its own frame; a
@@ -1657,16 +1638,25 @@ fn detail_body(
         body.border_y_1().border_color(gpui::transparent_black())
     };
     let text = t.text;
+    // Pink `code_surface_header`, drawn by the `pink-code-block` package:
+    // 28px, an 11px medium `content_muted` label, the copy action trailing,
+    // a barely raised `ink(0.02)` over the body.
     body.child(
-        code_surface_header(t)
-            .child(section.label)
-            .child(copy_action(
-                SharedString::from(format!("{key}-copy-{}", section.slot)),
-                section.copy_label,
-                copied,
-                on_copy,
-                t,
-            )),
+        code_block::surface_header(
+            section.label,
+            vec![
+                copy_action(
+                    SharedString::from(format!("{key}-copy-{}", section.slot)),
+                    section.copy_label,
+                    copied,
+                    on_copy,
+                    t,
+                )
+                .into_any_element(),
+            ],
+            code_block::frame_style(t),
+        )
+        .font_family(pink::SANS),
     )
     .child(
         // Long lines scroll sideways instead of ending in an ellipsis
