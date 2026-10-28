@@ -77,6 +77,7 @@ pub mod tips_panel;
 pub mod toaster;
 pub mod tool_call_card;
 pub mod trace_waterfall;
+pub mod trigger_chip;
 pub mod usage_meter;
 pub mod welcome_screen;
 pub mod writing_assistant;
@@ -117,6 +118,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Chat",
         description: chat_composer::DESCRIPTION,
         story: chat_composer::story,
+    },
+    ComponentEntry {
+        slug: "trigger-chip",
+        name: trigger_chip::NAME,
+        category: "Chat",
+        description: trigger_chip::DESCRIPTION,
+        story: trigger_chip::story,
     },
     ComponentEntry {
         slug: "thinking-state",
