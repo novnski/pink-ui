@@ -33,6 +33,12 @@
 //! (`.pane(width)`, PINK 0.31.2, D43, D44) the composer takes the pane's
 //! shared conversation column: the Conversation width inside a 24 pt
 //! gutter, 16 pt below a 480 pt pane, the same edges as the transcript.
+//! An existing thread's context ring (`.context(ContextWindow)`) rides the
+//! controls row after the access and search chips and opens the Context
+//! menu; its share yields after the search label and before the access
+//! words. It shows only when the setting is on and the provider reports
+//! usage (`.context_ring`, PINK 0.31.3, D75); otherwise the model menu
+//! keeps Compact and Clear (`.context_controls`).
 //!
 //! ```ignore
 //! ChatComposer::new("composer")
@@ -61,6 +67,9 @@ use gpui::{
 
 use crate::{
     HoverFill,
+    components::context_window::{
+        ContextControls, ContextWindow, context_ring_shown, context_tray,
+    },
     motion::{self, AnimationExt},
     pink::{self, FillTier, Pink, TextStyle, TypeStyleExt, layout, loaders, radius},
     primitives::{InputEvent, TextInput},
@@ -68,7 +77,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Chat Composer";
-pub const DESCRIPTION: &str = "The composer's prompt pill: square attachment thumbnails over a field that grows as you type, quiet model, access and web search chips that name the model's effort and the access mode in words until the row runs out of room, with menus that open upward, voice input, a branch-first checkout chip beside every pull request (in the controls row of a thread, above the pill of a new one), and a submit button named Send, Queue for after this turn or Steer this turn, with a separate Stop while a run is live, and a notice above the pill that says why a file or an action was refused";
+pub const DESCRIPTION: &str = "The composer's prompt pill: square attachment thumbnails over a field that grows as you type, quiet model, access and web search chips that name the model's effort and the access mode in words until the row runs out of room, with menus that open upward, voice input, a branch-first checkout chip beside every pull request (in the controls row of a thread, above the pill of a new one), and a submit button named Send, Queue for after this turn or Steer this turn, with a separate Stop while a run is live, a notice above the pill that says why a file or an action was refused, and a thread's context ring, whose Compact and Clear move to the model menu when the provider reports no usage";
 
 const ICON_PAPERCLIP: &str = "icons/chat-composer/paperclip.svg";
 const ICON_ARROW_UP: &str = "icons/chat-composer/arrow-up.svg";
@@ -960,6 +969,10 @@ pub struct ChatComposer {
     follow_up: FollowUp,
     steer_available: bool,
     width: f32,
+    context: Option<ContextWindow>,
+    ring_setting: bool,
+    ring_reports: bool,
+    context_controls: Option<ContextControls>,
     pane: Option<f32>,
     reading: f32,
     on_send: Option<SendHandler>,
@@ -991,6 +1004,10 @@ impl ChatComposer {
             follow_up: FollowUp::Queue,
             steer_available: false,
             width: DEFAULT_WIDTH,
+            context: None,
+            ring_setting: true,
+            ring_reports: true,
+            context_controls: None,
             pane: None,
             reading: layout::CONVERSATION_WIDTH_DEFAULT,
             on_send: None,
@@ -1107,6 +1124,32 @@ impl ChatComposer {
     /// [`ChatComposer::pane`] takes the pane's shared column instead.
     pub fn width(mut self, width: f32) -> Self {
         self.width = width;
+        self
+    }
+
+    /// The thread's context window: its ring rides an existing thread's
+    /// controls row after the access and search chips and opens the Context
+    /// menu (Pink composer.rs `usage_chip`). The row's fit drops its share
+    /// after the search label and before the access words.
+    pub fn context(mut self, context: ContextWindow) -> Self {
+        self.context = Some(context);
+        self
+    }
+
+    /// D75 (PINK 0.31.3, `Pickers::context_ring_shown`): the ring shows
+    /// only when the setting is on and the provider reports context usage.
+    /// Both default to true.
+    pub fn context_ring(mut self, setting_on: bool, provider_reports_usage: bool) -> Self {
+        self.ring_setting = setting_on;
+        self.ring_reports = provider_reports_usage;
+        self
+    }
+
+    /// Compact and Clear for an existing thread with no ring: the model
+    /// menu ends in PINK's "Context" tray (the model menu's
+    /// `context_tray`). With a ring they live in its Context menu.
+    pub fn context_controls(mut self, controls: ContextControls) -> Self {
+        self.context_controls = Some(controls);
         self
     }
 
@@ -2174,6 +2217,20 @@ impl RenderOnce for ChatComposer {
                 }
             });
         });
+        // D75: an existing thread's ring, when the setting is on and the
+        // provider reports usage (Pink `Pickers::context_ring_shown`).
+        // Without it the model menu keeps Compact and Clear.
+        let ring_shown = self.in_thread
+            && self.context.is_some()
+            && context_ring_shown(self.ring_setting, self.ring_reports);
+        let model_context_tray = self
+            .context_controls
+            .take()
+            .filter(|_| {
+                self.in_thread && !ring_shown && state.read(cx).mounted(Menu::Model).is_some()
+            })
+            .map(|controls| context_tray(format!("{key}-context"), controls, window, cx));
+        let ring = self.context.take().filter(|_| ring_shown);
         let s = state.read(cx);
         let input = s.input.clone();
         let (model_ix, branch_ix, web, ask_first, menu, highlight) =
@@ -2449,10 +2506,11 @@ impl RenderOnce for ChatComposer {
             model_full,
             model_name_only,
             Some(search_widths),
-            None,
+            ring.as_ref().map(|ring| ring.chip_widths(window)),
             access_widths,
             CHIP_SCALE,
         );
+        let ring = ring.map(|ring| ring.show_label(!fit.usage_icon_only));
 
         // ---- controls row (Pink: actions row) ---------------------------------
         let on_attach = self.on_attach.clone();
@@ -2471,8 +2529,10 @@ impl RenderOnce for ChatComposer {
         // The model chip (Pink `model_chip_content`): glyph, name and the
         // effort as a muted suffix while the row has room; the tooltip always
         // names both, "Balanced, Medium".
+        let model_selector = format!("{key}-model");
         let model_chip =
             pink::trigger_chip(format!("{key}-model"), true, menu == Some(Menu::Model), &t)
+                .debug_selector(move || model_selector)
                 .relative()
                 .on_click({
                     let state = state.clone();
@@ -2521,7 +2581,9 @@ impl RenderOnce for ChatComposer {
                             .children(self.models.iter().enumerate().map(|(ix, m)| {
                                 model_row(ix, m, ix == model_ix, ix == highlight, &state, &t)
                             })),
-                    );
+                    )
+                    // A thread with no ring keeps Compact and Clear here.
+                    .children(model_context_tray);
                     d.child(menu_above("cc-model-menu", card.into_any_element(), exit))
                 });
 
@@ -2717,7 +2779,8 @@ impl RenderOnce for ChatComposer {
                             .gap(px(CHIP_GAP))
                             .child(model_chip)
                             .child(access_chip)
-                            .child(search_chip),
+                            .child(search_chip)
+                            .children(ring),
                     )
                     .children(thread_context),
             )
@@ -3130,6 +3193,11 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                             .running(true)
                             .follow_up(FollowUp::Steer)
                             .steer_available(true)
+                            // A provider that reports no usage: no ring, and
+                            // the model menu keeps Compact and Clear.
+                            .context(ContextWindow::new("cc-steer-context", "Balanced", 200_000))
+                            .context_ring(true, false)
+                            .context_controls(ContextControls::default())
                             .draft("Skip the EU cohort, its sample is too small"),
                         &t,
                     )),
@@ -3151,6 +3219,14 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                     .child(
                         thread("cc-prs")
                             .pane(2. * STATE_W + 24.)
+                            .context(
+                                ContextWindow::new("cc-prs-context", "Balanced", 200_000)
+                                    .system(3_100)
+                                    .tools(14_600)
+                                    .conversation(118_000, 38)
+                                    .window_map(false),
+                            )
+                            .context_controls(ContextControls::default())
                             .checkout(
                                 Checkout::branch("main")
                                     .worktree("storefront-2")
