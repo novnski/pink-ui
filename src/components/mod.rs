@@ -29,6 +29,7 @@ pub mod comments_panel;
 pub mod commit_history;
 pub mod compact_breakdown;
 pub mod composer_disc;
+pub mod composer_pill;
 pub mod context_ring;
 pub mod context_window;
 pub mod data_table;
@@ -135,6 +136,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Chat",
         description: composer_disc::DESCRIPTION,
         story: composer_disc::story,
+    },
+    ComponentEntry {
+        slug: "composer-pill",
+        name: composer_pill::NAME,
+        category: "Chat",
+        description: composer_pill::DESCRIPTION,
+        story: composer_pill::story,
     },
     ComponentEntry {
         slug: "thinking-state",
