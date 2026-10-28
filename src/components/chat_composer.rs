@@ -3095,12 +3095,13 @@ impl RenderOnce for ChatComposer {
     }
 }
 
-/// The composer's notice (Pink notice.rs `notice_chip`, PINK 0.31.0): an
-/// opaque plate on the stack ladder's notice step, the tone at 0.08
-/// flattened over the canvas with a `tone@0.22` edge, `px 10 py 8`, 12/16
-/// copy in the muted tone. The title row holds a 14 pt triangle, the medium
-/// title, the Dismiss capsule and a 20 pt Copy message button; the message
-/// follows on its own line. The message is one alert named "{title}:
+/// The composer's notice (Pink notice.rs `notice_chip`, PINK 0.31.0), drawn
+/// by the `pink-notice` package: an opaque plate on the stack ladder's
+/// notice step, the tone at 0.08 flattened over the canvas with a
+/// `tone@0.22` edge, `px 10 py 8`, 12/16 copy in the muted tone, in rems.
+/// The title row holds a 14 pt triangle, the medium title, the Dismiss
+/// capsule and a 20 pt Copy message button; the message follows on its own
+/// line. The message is one alert named "{title}:
 /// {message}", so VoiceOver reads the title, then the message, once.
 fn notice_chip(
     key: &str,
@@ -3108,6 +3109,7 @@ fn notice_chip(
     on_dismiss: Option<Handler>,
     t: &Pink,
 ) -> Stateful<Div> {
+    use super::notice::{self as notice_ui, NoticeStyle};
     let (accent, muted) = if notice.warning {
         (t.warning, t.warning_muted)
     } else {
@@ -3126,89 +3128,59 @@ fn notice_chip(
         .when_some(on_dismiss, |el, f| {
             el.on_click(move |_, window, cx| f(window, cx))
         });
-    div()
-        .id(SharedString::from(notice_selector.clone()))
-        .debug_selector(move || notice_selector)
-        .flex()
-        .flex_col()
-        .gap(px(6.))
-        .rounded(px(radius::STACK_NOTICE))
-        .border_1()
-        .border_color(accent.opacity(0.22))
-        .bg(pink::flatten(accent.opacity(0.08), t.canvas()))
-        .px(px(10.))
-        .py(px(8.))
-        .text_size(px(12.))
-        .line_height(px(16.))
-        .text_color(ink)
-        .child(
-            div()
-                .flex()
-                // A narrow pane or a large Interface size wraps the actions
-                // under the title instead of pushing them past the plate.
-                .flex_wrap()
-                .items_center()
-                .gap(px(8.))
-                .child(
-                    svg()
-                        .path(ICON_DANGER)
-                        .size(px(14.))
-                        .flex_none()
-                        .text_color(ink),
-                )
-                .child(
-                    div()
-                        .font_weight(FontWeight::MEDIUM)
-                        .child(notice.title.clone()),
-                )
-                .child(div().flex_1())
-                .child(dismiss)
-                .child(
-                    div()
-                        .id(SharedString::from(copy_key.clone()))
-                        .debug_selector(move || copy_selector)
-                        .role(Role::Button)
-                        .aria_label("Copy message")
-                        .tab_index(0)
-                        .focus_visible(move |s| pink::focus_ring(s, ring))
-                        .on_key_down(pink::swallow_activation_key)
-                        .flex_none()
-                        .size(px(20.))
-                        .rounded(px(6.))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .cursor_pointer()
-                        .hover_fill(copy_key, accent.opacity(0.0), accent.opacity(0.12))
-                        .tooltip(pink::text_tooltip("Copy message"))
-                        .tooltip_show_delay(layout::TOOLTIP_DELAY)
-                        .on_click(move |_, _, cx| {
-                            cx.stop_propagation();
-                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(
-                                copied.to_string(),
-                            ));
-                        })
-                        .child(
-                            svg()
-                                .path(ICON_COPY)
-                                .size(px(12.))
-                                .text_color(t.readable_tone(muted, 0.8)),
-                        ),
-                ),
-        )
-        .child(
-            div()
-                .id(SharedString::from(message_selector.clone()))
-                .debug_selector(move || message_selector)
-                .role(Role::Alert)
-                .aria_label(SharedString::from(format!(
-                    "{}: {}",
-                    notice.title, notice.message
-                )))
-                .min_w_0()
-                .w_full()
-                .child(notice.message.clone()),
-        )
+    notice_ui::plate(&NoticeStyle {
+        plate: pink::flatten(accent.opacity(0.08), t.canvas()),
+        edge: accent.opacity(0.22),
+        ink,
+    })
+    .id(SharedString::from(notice_selector.clone()))
+    .debug_selector(move || notice_selector)
+    .child(
+        notice_ui::title_row()
+            .child(
+                svg()
+                    .path(ICON_DANGER)
+                    .size(notice_ui::ui_rems(notice_ui::GLYPH))
+                    .flex_none()
+                    .text_color(ink),
+            )
+            .child(notice_ui::title(notice.title.clone()))
+            .child(notice_ui::spacer())
+            .child(dismiss)
+            .child(
+                notice_ui::copy_button()
+                    .id(SharedString::from(copy_key.clone()))
+                    .debug_selector(move || copy_selector)
+                    .role(Role::Button)
+                    .aria_label("Copy message")
+                    .tab_index(0)
+                    .focus_visible(move |s| pink::focus_ring(s, ring))
+                    .on_key_down(pink::swallow_activation_key)
+                    .hover_fill(copy_key, accent.opacity(0.0), accent.opacity(0.12))
+                    .tooltip(pink::text_tooltip("Copy message"))
+                    .tooltip_show_delay(layout::TOOLTIP_DELAY)
+                    .on_click(move |_, _, cx| {
+                        cx.stop_propagation();
+                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(copied.to_string()));
+                    })
+                    .child(
+                        svg()
+                            .path(ICON_COPY)
+                            .size(notice_ui::ui_rems(notice_ui::COPY_GLYPH))
+                            .text_color(t.readable_tone(muted, 0.8)),
+                    ),
+            ),
+    )
+    .child(
+        notice_ui::message(notice.message.clone())
+            .id(SharedString::from(message_selector.clone()))
+            .debug_selector(move || message_selector)
+            .role(Role::Alert)
+            .aria_label(SharedString::from(format!(
+                "{}: {}",
+                notice.title, notice.message
+            ))),
+    )
 }
 
 /// The web search switch. Off it is a ghost trigger chip (Pink

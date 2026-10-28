@@ -495,30 +495,22 @@ pub fn trigger_chip(id: impl Into<SharedString>, set: bool, open: bool, t: &Pink
         )
 }
 
-/// A notice's capsule action (Pink `notice::notice_action`): 24 tall,
-/// `px 10`, fully rounded, `border_strong` edge, medium `text`, the quiet
-/// hover wash.
+/// A notice's capsule action (Pink `notice::notice_action`), drawn by the
+/// `pink-notice` package: 24 tall, `px 10` in rems, fully rounded,
+/// `border_strong` edge, medium `text`, the quiet hover wash.
 pub fn notice_action(id: impl Into<SharedString>, t: &Pink) -> Stateful<Div> {
     let id: SharedString = id.into();
     let ring = t.focus_ring();
-    div()
-        .id(id.clone())
-        .role(Role::Button)
-        .tab_index(0)
-        .focus_visible(move |style| focus_ring(style, ring))
-        .on_key_down(swallow_activation_key)
-        .flex_none()
-        .h(px(24.0))
-        .px(px(10.0))
-        .flex()
-        .items_center()
-        .rounded_full()
-        .border_1()
-        .border_color(t.border_strong)
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(t.text)
-        .cursor_pointer()
-        .hover_wash(format!("pink-notice-{id}"), t.fill(FillTier::Tertiary))
+    crate::components::notice::action(&crate::components::notice::ActionStyle {
+        border: t.border_strong,
+        text: t.text,
+    })
+    .id(id.clone())
+    .role(Role::Button)
+    .tab_index(0)
+    .focus_visible(move |style| focus_ring(style, ring))
+    .on_key_down(swallow_activation_key)
+    .hover_wash(format!("pink-notice-{id}"), t.fill(FillTier::Tertiary))
 }
 
 // ---------------------------------------------------------------------------
@@ -920,23 +912,16 @@ pub fn status_pill(
         .child(label.into())
 }
 
-/// A message badge (Pink `badges::render`): at least 24 tall, `px 8`, gap 6,
+/// A message badge (Pink `badges::render`), drawn by the
+/// `pink-message-badge` package: at least 24 tall, `px 8`, gap 6 in rems,
 /// radius 8, an `ink(0.06)` plate, 12 medium `text_muted`. A leading icon is
-/// 12 px in `readable_muted(0.7)`.
+/// 12 (`BADGE_GLYPH`) in `readable_muted(0.7)`.
 pub fn message_badge(t: &Pink) -> Div {
-    div()
-        .flex_none()
-        .min_h(px(24.0))
-        .px(px(8.0))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(6.0))
-        .rounded(px(radius::MD))
-        .bg(t.ink(0.06))
-        .text_size(px(12.0))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(t.text_muted)
+    crate::components::message_badge::badge(&crate::components::message_badge::BadgeStyle {
+        fill: t.ink(0.06),
+        text: t.text_muted,
+    })
+    .flex_none()
 }
 
 // ---------------------------------------------------------------------------

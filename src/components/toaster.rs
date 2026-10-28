@@ -30,7 +30,7 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    motion::{self, AnimationExt, TOAST_IN, TOAST_IN_RISE},
+    motion::{self, AnimationExt, TOAST_IN},
     pink::{self, ButtonKind, ControlSize, FillTier, Pink, icon_size, layout, radius, space, text},
     story,
 };
@@ -45,19 +45,17 @@ const ICON_ERROR: &str = "icons/toaster/danger-triangle.svg";
 /// Pink: icons.rs `CLOSE`, the dismiss glyph.
 const ICON_CLOSE: &str = "icons/toaster/close.svg";
 
-/// Capsule height (Pink: shell.rs `TOAST_HEIGHT`).
-pub const TOAST_HEIGHT: f32 = 34.;
-/// Space between the capsule and its anchor's top edge (Pink: render_toast
-/// places the lane at `top(-(TOAST_HEIGHT + 8))`).
-pub const ANCHOR_GAP: f32 = 8.;
-/// Widest the capsule grows before the message truncates (Pink: render_toast).
-const MAX_WIDTH: f32 = 520.;
-/// Message size (Pink: render_toast `ui_rems(12.5)`).
-const TEXT_SIZE: f32 = 12.5;
-/// The round dismiss button (Pink: render_toast "toast-dismiss").
-const DISMISS_SIZE: f32 = 24.;
-/// Its close glyph (Pink: render_toast `CLOSE` at 10).
-const DISMISS_GLYPH: f32 = 10.;
+/// The capsule's drawing: the `pink-toast` package (`components/toast`),
+/// PINK's toast as a single-GPUI package the app pins (UI rethink decision
+/// 54). The gallery compiles the package's own source here, unchanged,
+/// against its GPUI; PINK compiles the same file against its patched one.
+#[allow(dead_code)]
+pub mod package {
+    include!("../../components/toast/src/lib.rs");
+}
+/// Capsule height and the space between the capsule and its anchor's top
+/// edge (Pink: shell.rs `TOAST_HEIGHT`, render_toast's lane).
+pub use package::{ANCHOR_GAP, TOAST_HEIGHT};
 
 /// A status notice's lifetime (Pink: `SidebarNotice::transient_status`).
 const STATUS_LIFETIME: Duration = Duration::from_secs(4);
@@ -316,13 +314,7 @@ impl RenderOnce for Toaster {
         let t = Pink::get(cx);
         let key = self.id.to_string();
         // Pink: render_toast's lane, centered over the composer column.
-        let lane = div()
-            .absolute()
-            .top(px(-(TOAST_HEIGHT + ANCHOR_GAP)))
-            .left_0()
-            .right_0()
-            .flex()
-            .justify_center();
+        let lane = package::lane();
         let Some(notice) = self.toasts.read(cx).current.clone() else {
             return lane;
         };
@@ -351,18 +343,11 @@ fn capsule(key: &str, notice: Notice, toasts: &Entity<Toasts>, t: &Pink) -> impl
     let dismiss = {
         let toasts = toasts.clone();
         let hover_key = format!("{key}-dismiss");
-        div()
+        package::dismiss()
             .id(SharedString::from(hover_key.clone()))
             .role(Role::Button)
             .aria_label("Dismiss notice")
             .tab_index(0)
-            .size(px(DISMISS_SIZE))
-            .flex_none()
-            .rounded_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_pointer()
             .hover_wash(hover_key, t.fill(FillTier::Tertiary))
             .focus_visible(move |style| pink::focus_ring(style, ring))
             .on_click(move |_, _, cx| toasts.update(cx, |q, cx| q.dismiss(id, cx)))
@@ -370,7 +355,7 @@ fn capsule(key: &str, notice: Notice, toasts: &Entity<Toasts>, t: &Pink) -> impl
             .child(
                 svg()
                     .path(ICON_CLOSE)
-                    .size(px(DISMISS_GLYPH))
+                    .size(px(package::DISMISS_GLYPH))
                     .flex_none()
                     .text_color(t.text_muted),
             )
@@ -389,40 +374,31 @@ fn capsule(key: &str, notice: Notice, toasts: &Entity<Toasts>, t: &Pink) -> impl
             })
     });
 
-    let pill = div()
-        .id(SharedString::from(format!("{key}-toast")))
-        .role(Role::Status)
-        .aria_label(toast.message.clone())
-        .h(px(TOAST_HEIGHT))
-        .max_w(px(MAX_WIDTH))
-        .pl(px(space::S12))
-        .pr(px(space::S4))
-        .rounded_full()
-        .border_1()
-        .border_color(t.hairline(0.10))
-        .bg(t.tooltip_surface())
-        .shadow(t.menu_shadows())
-        .flex()
-        .items_center()
-        .gap(px(space::S8))
-        .font_family(pink::SANS)
-        .text_size(px(TEXT_SIZE))
-        .text_color(t.text)
-        .child(
-            svg()
-                .path(if is_error { ICON_ERROR } else { ICON_STATUS })
-                .size(px(icon_size::SM))
-                .flex_none()
-                .text_color(tone),
-        )
-        .child(div().min_w_0().truncate().child(toast.message))
-        .children(action)
-        .child(dismiss);
+    let pill = package::capsule(&package::ToastStyle {
+        surface: t.tooltip_surface(),
+        edge: t.hairline(0.10),
+        text: t.text,
+        shadows: t.menu_shadows(),
+        font: pink::SANS.into(),
+    })
+    .id(SharedString::from(format!("{key}-toast")))
+    .role(Role::Status)
+    .aria_label(toast.message.clone())
+    .child(
+        svg()
+            .path(if is_error { ICON_ERROR } else { ICON_STATUS })
+            .size(px(package::GLYPH))
+            .flex_none()
+            .text_color(tone),
+    )
+    .child(package::message(toast.message))
+    .children(action)
+    .child(dismiss);
 
     div().relative().child(pill).with_animation(
         SharedString::from(format!("{key}-in-{id}-{version}")),
         TOAST_IN.animation(),
-        |el, p| el.opacity(p).top(px(TOAST_IN_RISE * (1. - p))),
+        package::arrive,
     )
 }
 
