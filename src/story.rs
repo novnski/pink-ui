@@ -38,6 +38,7 @@ impl Story {
 
 impl Render for Story {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::Theme::sync_rem_size(window, cx);
         let element = (self.build)(window, cx);
         let content = self.content.clone();
         if window.focused(cx).is_none() {

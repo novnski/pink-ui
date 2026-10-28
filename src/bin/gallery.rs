@@ -368,6 +368,7 @@ impl Gallery {
 
 impl Render for Gallery {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        pink_ui::Theme::sync_rem_size(window, cx);
         pink_ui::motion::frame(window, cx);
         let chrome = Chrome::get(cx);
         let root = div()
