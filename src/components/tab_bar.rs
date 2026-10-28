@@ -34,6 +34,7 @@ use gpui::{
     prelude::*, px, svg,
 };
 
+use super::tab_chip;
 use crate::{
     HoverFill,
     motion::{self, INSERT, MENU_OUT, TAB_SLIDE},
@@ -65,13 +66,13 @@ const ICON_OPENCODE: &str = "icons/tab-bar/opencode-mark.svg";
 
 /// Pink: workbench/render.rs `STRIP_HEIGHT` – the titlebar below its top pad.
 const STRIP_HEIGHT: f32 = layout::TITLEBAR_HEIGHT - layout::TITLEBAR_TOP_PAD;
-/// Pink: workbench/render.rs `TAB_HEIGHT`.
-const TAB_H: f32 = 28.0;
+/// Pink: workbench/render.rs `TAB_HEIGHT`, from the `pink-tab-chip` package.
+const TAB_H: f32 = tab_chip::TAB_HEIGHT;
 /// Pink: workbench/render.rs `TAB_MIN_WIDTH` / `TAB_MIN_WIDTH_COMPACT`.
-const TAB_MIN: f32 = 72.0;
-const TAB_MIN_COMPACT: f32 = 40.0;
+const TAB_MIN: f32 = tab_chip::TAB_MIN_WIDTH;
+const TAB_MIN_COMPACT: f32 = tab_chip::TAB_MIN_WIDTH_COMPACT;
 /// Pink: workbench/render.rs `TAB_MAX_WIDTH`.
-const TAB_MAX: f32 = 220.0;
+const TAB_MAX: f32 = tab_chip::TAB_MAX_WIDTH;
 /// Pink: workbench/render.rs `STRIP_COMPACT_WIDTH` – narrower groups fold
 /// their controls into Group actions.
 const STRIP_COMPACT: f32 = 220.0;
@@ -1015,7 +1016,7 @@ fn run(
 
 /// Pink: workbench/render.rs `tab_selected_fill` – the focused group's
 /// active tab a quiet accent tint, the others the neutral selected wash.
-fn selected_fill(t: &Pink, focused: bool) -> Hsla {
+pub(crate) fn selected_fill(t: &Pink, focused: bool) -> Hsla {
     if focused {
         t.tab_focused_fill()
     } else {
@@ -1025,7 +1026,7 @@ fn selected_fill(t: &Pink, focused: bool) -> Hsla {
 
 /// Pink: theme.rs `tab_title` – muted at rest; full text, floored on its
 /// own fill, on the active tab.
-fn tab_title_color(t: &Pink, active: bool, focused: bool) -> Hsla {
+pub(crate) fn tab_title_color(t: &Pink, active: bool, focused: bool) -> Hsla {
     if !active {
         return t.text_muted;
     }
@@ -1038,7 +1039,7 @@ fn tab_title_color(t: &Pink, active: bool, focused: bool) -> Hsla {
 
 /// Pink: theme.rs `tab_role_icon` – the accent on the focused group's
 /// active tab, else quiet.
-fn role_icon_color(t: &Pink, focused_active: bool) -> Hsla {
+pub(crate) fn role_icon_color(t: &Pink, focused_active: bool) -> Hsla {
     if focused_active {
         t.readable_on_stacks(
             t.accent,
@@ -1051,7 +1052,7 @@ fn role_icon_color(t: &Pink, focused_active: bool) -> Hsla {
 }
 
 /// Pink: theme.rs `tab_unread_dot` – the accent floored on every chip fill.
-fn unread_dot(t: &Pink) -> Hsla {
+pub(crate) fn unread_dot(t: &Pink) -> Hsla {
     let [rest, hover, active] = t.tab_chip_washes();
     t.readable_on_stacks(
         t.accent,
@@ -1062,7 +1063,7 @@ fn unread_dot(t: &Pink) -> Hsla {
 
 /// Pink: theme.rs `readable_on_tab_badge` – the Main badge's accent floored
 /// on its wash over every chip fill.
-fn on_tab_badge(t: &Pink, min: f32) -> Hsla {
+pub(crate) fn on_tab_badge(t: &Pink, min: f32) -> Hsla {
     let [rest, hover, active] = t.tab_chip_washes();
     let badge = t.accent_wash;
     t.readable_on_stacks(
@@ -1233,63 +1234,55 @@ fn tab_chip(
             loaders::mini_glyph_spinner(format!("{chip_id}-working"), 2.0, t.glyph)
                 .into_any_element(),
         ),
-        TabStatus::NeedsApproval => {
-            Some(icon(ICON_SHIELD, 11.0, t.readable_icon(t.warning)).into_any_element())
-        }
-        TabStatus::NeedsInput => {
-            Some(icon(ICON_CHAT, 11.0, t.readable_icon(t.warning)).into_any_element())
-        }
-        TabStatus::Failed => {
-            Some(icon(ICON_TRIANGLE, 11.0, t.readable_icon(t.danger)).into_any_element())
-        }
+        TabStatus::NeedsApproval => Some(
+            icon(
+                ICON_SHIELD,
+                tab_chip::STATUS_GLYPH,
+                t.readable_icon(t.warning),
+            )
+            .into_any_element(),
+        ),
+        TabStatus::NeedsInput => Some(
+            icon(
+                ICON_CHAT,
+                tab_chip::STATUS_GLYPH,
+                t.readable_icon(t.warning),
+            )
+            .into_any_element(),
+        ),
+        TabStatus::Failed => Some(
+            icon(
+                ICON_TRIANGLE,
+                tab_chip::STATUS_GLYPH,
+                t.readable_icon(t.danger),
+            )
+            .into_any_element(),
+        ),
         // Finished while you were elsewhere: a small accent dot, gone once
         // it is seen.
-        TabStatus::Unread => Some(
-            div()
-                .size(px(6.0))
-                .flex_none()
-                .rounded_full()
-                .bg(unread_dot(t))
-                .into_any_element(),
-        ),
+        TabStatus::Unread => Some(tab_chip::unread_dot(unread_dot(t)).into_any_element()),
         TabStatus::Idle => None,
     };
     let main_badge = is_main.then(|| {
-        div()
-            .flex_none()
-            .h(px(16.0))
-            .px(px(5.0))
-            .flex()
-            .items_center()
-            .gap(px(3.0))
-            .rounded(px(radius::XS))
-            .bg(t.accent_wash)
-            .text_size(px(11.0))
-            .font_weight(FontWeight::SEMIBOLD)
-            .text_color(on_tab_badge(t, pink::TEXT_CONTRAST_TARGET))
-            .child(icon(
-                ICON_HOME,
-                10.0,
-                on_tab_badge(t, pink::NON_TEXT_CONTRAST_TARGET),
-            ))
-            .child("Main")
+        tab_chip::badge(&tab_chip::BadgeStyle {
+            fill: t.accent_wash,
+            text: on_tab_badge(t, pink::TEXT_CONTRAST_TARGET),
+        })
+        .child(icon(
+            ICON_HOME,
+            tab_chip::BADGE_GLYPH,
+            on_tab_badge(t, pink::NON_TEXT_CONTRAST_TARGET),
+        ))
+        .child("Main")
     });
     let close = (!is_main).then(|| {
         let close_id = format!("{chip_id}-close");
         let state = c.state.clone();
         let id = tab.id.clone();
-        div()
+        tab_chip::close_slot(hover_group.clone(), active)
             .id(eid(close_id.clone()))
             .role(Role::Button)
             .aria_label(format!("Close tab: {}", tab.title))
-            .size(px(chrome::MIN_HIT))
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(px(chrome::RADIUS_S))
-            .opacity(if active { 1.0 } else { 0.0 })
-            .group_hover(hover_group.clone(), |st| st.opacity(1.0))
             .hover_fill(
                 close_id,
                 gpui::transparent_black(),
@@ -1304,7 +1297,7 @@ fn tab_chip(
                 cx.stop_propagation();
                 run(&state, window, cx, |s, _| s.close_tab(&id));
             })
-            .child(icon(ICON_CLOSE, chrome::ICON_S, t.text_muted))
+            .child(icon(ICON_CLOSE, tab_chip::CLOSE_GLYPH, t.text_muted))
     });
 
     let (heading, detail) = tab.help();
@@ -1365,121 +1358,116 @@ fn tab_chip(
     let menu_tab = tab.id.clone();
     let menu_group = group.id.clone();
     let key_id = tab.id.clone();
-    let chip = div()
-        .id(eid(chip_id.clone()))
-        .group(hover_group)
-        .role(Role::Tab)
-        .aria_label(accessible)
-        .aria_selected(active)
-        .when_some(focus, |el, focus| el.track_focus(focus))
-        .relative()
-        .left(px(slide))
-        .h(px(TAB_H))
-        .min_w(px(min_w))
-        // Never wider than the strip: the title truncates and the close
-        // control stays inside.
-        .max_w(px(max_width))
-        .flex_none()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(6.0))
-        .pl(px(8.0))
-        .pr(px(if is_main { 8.0 } else { 4.0 }))
-        .rounded(px(radius::MD))
-        .focus_visible(move |st| pink::focus_ring(st, ring))
-        .cursor_pointer()
-        .text_size(px(12.5))
-        // One weight for every tab: activation reads through the fill and
-        // the text colour, so the strip never reflows.
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(tab_title_color(t, active, strip_focused))
-        .when(active, |el| el.bg(selected_fill(t, strip_focused)))
-        .when(!active, |el| {
-            el.hover_wash(format!("{chip_id}-wash"), t.fill(FillTier::Tertiary))
-        })
-        .when(hidden, |el| el.opacity(0.0))
-        .tooltip(tooltip(heading, Some(detail)))
-        .tooltip_show_delay(layout::TOOLTIP_DELAY)
-        .on_click(move |_, window, cx| {
-            run(&click_state, window, cx, |s, _| s.select(&click_id));
-        })
-        .on_key_down(pink::swallow_activation_key)
-        // Arrow keys move between this group's tabs; selection follows.
-        .on_key_down(move |event: &KeyDownEvent, window, cx| {
-            let mods = &event.keystroke.modifiers;
-            if mods.platform || mods.control || mods.alt || mods.shift {
+    // The package's chip (`pink-tab-chip`): one weight for every tab, so
+    // activation reads through the fill and the text colour and the strip
+    // never reflows; never wider than the strip, so the title truncates and
+    // the close control stays inside.
+    let chip = tab_chip::tab(&tab_chip::TabStyle {
+        label: tab_chip::Label::Tab,
+        text: tab_title_color(t, active, strip_focused),
+        fill: active.then(|| selected_fill(t, strip_focused)),
+        closable: !is_main,
+        min_width: min_w,
+        max_width,
+    })
+    .id(eid(chip_id.clone()))
+    .group(hover_group)
+    .role(Role::Tab)
+    .aria_label(accessible)
+    .aria_selected(active)
+    .when_some(focus, |el, focus| el.track_focus(focus))
+    .relative()
+    .left(px(slide))
+    .focus_visible(move |st| pink::focus_ring(st, ring))
+    .when(!active, |el| {
+        el.hover_wash(format!("{chip_id}-wash"), t.fill(FillTier::Tertiary))
+    })
+    .when(hidden, |el| el.opacity(0.0))
+    .tooltip(tooltip(heading, Some(detail)))
+    .tooltip_show_delay(layout::TOOLTIP_DELAY)
+    .on_click(move |_, window, cx| {
+        run(&click_state, window, cx, |s, _| s.select(&click_id));
+    })
+    .on_key_down(pink::swallow_activation_key)
+    // Arrow keys move between this group's tabs; selection follows.
+    .on_key_down(move |event: &KeyDownEvent, window, cx| {
+        let mods = &event.keystroke.modifiers;
+        if mods.platform || mods.control || mods.alt || mods.shift {
+            return;
+        }
+        let target = {
+            let s = key_state.read(cx);
+            let Some(g) = s.group_of(&key_id).map(|g| &s.groups[g]) else {
                 return;
-            }
-            let target = {
-                let s = key_state.read(cx);
-                let Some(g) = s.group_of(&key_id).map(|g| &s.groups[g]) else {
-                    return;
-                };
-                let ids: Vec<SharedString> = g.tabs.iter().map(|t| t.id.clone()).collect();
-                let Some(at) = ids.iter().position(|id| id == &key_id) else {
-                    return;
-                };
-                let last = ids.len() - 1;
-                let next = match event.keystroke.key.as_str() {
-                    "left" => at.checked_sub(1).unwrap_or(last),
-                    "right" => (at + 1) % ids.len(),
-                    "home" => 0,
-                    "end" => last,
-                    _ => return,
-                };
-                ids[next].clone()
             };
+            let ids: Vec<SharedString> = g.tabs.iter().map(|t| t.id.clone()).collect();
+            let Some(at) = ids.iter().position(|id| id == &key_id) else {
+                return;
+            };
+            let last = ids.len() - 1;
+            let next = match event.keystroke.key.as_str() {
+                "left" => at.checked_sub(1).unwrap_or(last),
+                "right" => (at + 1) % ids.len(),
+                "home" => 0,
+                "end" => last,
+                _ => return,
+            };
+            ids[next].clone()
+        };
+        cx.stop_propagation();
+        let focus = key_state.read(cx).focus.get(&target).cloned();
+        run(&key_state, window, cx, |s, _| s.select(&target));
+        if let Some(focus) = focus {
+            window.focus(&focus, cx);
+        }
+    })
+    // Middle-click closes, like every tab strip.
+    .on_mouse_down(MouseButton::Middle, move |_, window, cx| {
+        run(&middle_state, window, cx, |s, _| s.close_tab(&middle_id));
+    })
+    .on_mouse_down(
+        MouseButton::Right,
+        move |event: &MouseDownEvent, window, cx| {
             cx.stop_propagation();
-            let focus = key_state.read(cx).focus.get(&target).cloned();
-            run(&key_state, window, cx, |s, _| s.select(&target));
-            if let Some(focus) = focus {
-                window.focus(&focus, cx);
-            }
-        })
-        // Middle-click closes, like every tab strip.
-        .on_mouse_down(MouseButton::Middle, move |_, window, cx| {
-            run(&middle_state, window, cx, |s, _| s.close_tab(&middle_id));
-        })
-        .on_mouse_down(
-            MouseButton::Right,
-            move |event: &MouseDownEvent, window, cx| {
-                cx.stop_propagation();
-                let position = event.position;
-                run(&menu_state, window, cx, |s, _| {
-                    s.open_menu(Menu {
-                        group: menu_group.clone(),
-                        tab: Some(menu_tab.clone()),
-                        group_actions: false,
-                        position,
-                    });
-                    Vec::new()
+            let position = event.position;
+            run(&menu_state, window, cx, |s, _| {
+                s.open_menu(Menu {
+                    group: menu_group.clone(),
+                    tab: Some(menu_tab.clone()),
+                    group_actions: false,
+                    position,
                 });
-            },
-        )
-        .on_drag(drag, |payload, _, _, cx| {
-            cx.stop_propagation();
-            let payload = payload.clone();
-            cx.new(|_| TabGhost {
-                title: payload.title,
-                role: payload.role,
-                harness: payload.harness,
-            })
+                Vec::new()
+            });
+        },
+    )
+    .on_drag(drag, |payload, _, _, cx| {
+        cx.stop_propagation();
+        let payload = payload.clone();
+        cx.new(|_| TabGhost {
+            title: payload.title,
+            role: payload.role,
+            harness: payload.harness,
         })
-        .when_some(tab.harness, |el, h| {
-            el.child(icon(h.mark(), 14.0, h.tint().unwrap_or(t.text_muted)))
-        })
-        .children(main_badge)
-        .when(!is_main, |el| {
-            el.child(icon(
-                tab.role.icon(),
-                11.0,
-                role_icon_color(t, focused_active),
-            ))
-        })
-        .child(div().min_w_0().truncate().child(tab.title.clone()))
-        .children(status)
-        .children(close);
+    })
+    .when_some(tab.harness, |el, h| {
+        el.child(icon(
+            h.mark(),
+            tab_chip::HARNESS_MARK,
+            h.tint().unwrap_or(t.text_muted),
+        ))
+    })
+    .children(main_badge)
+    .when(!is_main, |el| {
+        el.child(icon(
+            tab.role.icon(),
+            tab_chip::ROLE_GLYPH,
+            role_icon_color(t, focused_active),
+        ))
+    })
+    .child(tab_chip::title(tab.title.clone()))
+    .children(status)
+    .children(close);
     // A new tab fades in where it lands (Pink `INSERT_MS`).
     let chip = chip.with_animation(eid(format!("{chip_id}-in")), INSERT.animation(), |el, p| {
         el.opacity(p)

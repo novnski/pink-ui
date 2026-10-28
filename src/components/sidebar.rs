@@ -53,6 +53,7 @@ use gpui::{
     div, linear_color_stop, linear_gradient, prelude::*, px, radians, svg,
 };
 
+use super::section_header as header;
 use crate::{
     HoverFill,
     motion::{self, COLLAPSE, MENU_OUT, MENU_RISE_DOWN, RESORT},
@@ -110,8 +111,6 @@ const COMPACT_ROW_H: f32 = 32.0;
 const SHELF_ROW_H: f32 = 36.0;
 /// Pink: spaces.rs `SIDEBAR_MORE_ROW_HEIGHT`.
 const MORE_ROW_H: f32 = 28.0;
-/// Pink: spaces.rs `SIDEBAR_DISCLOSURE_HEADER_HEIGHT`.
-const HEADER_H: f32 = 28.0;
 /// Pink: spaces.rs `SIDEBAR_SECTION_GAP`, above every group.
 const SECTION_GAP: f32 = 12.0;
 /// Pink: spaces.rs `SIDEBAR_DISCLOSURE_BODY_INSET`.
@@ -146,10 +145,6 @@ const SCOPE_TILE: f32 = 18.0;
 /// New thread and Automations glyphs, and the All projects folder above
 /// them (Pink: spaces.rs `SIDEBAR_NAV_ICON`).
 const NAV_ICON: f32 = 16.0;
-/// The disclosure chevron's empty space at a row's trailing edge, pulled
-/// back so the arrow ends on the time column (Pink: spaces.rs
-/// `CHEVRON_TRAILING_BEARING`).
-const CHEVRON_TRAILING_BEARING: f32 = 4.0;
 /// The footer's buttons and glyphs (Pink: shell.rs `SIDEBAR_FOOTER_BUTTON`,
 /// `SIDEBAR_FOOTER_ICON`) and the gear's own empty space before its first
 /// stroke (`SIDEBAR_FOOTER_BEARING`).
@@ -2029,7 +2024,7 @@ fn u(n: f32) -> gpui::Pixels {
 /// `disclosure_header_height`): it scales with the text but never drops
 /// below the 24 pt minimum hit target.
 fn header_h() -> f32 {
-    (HEADER_H * scale()).max(chrome::MIN_HIT)
+    header::header_height(scale())
 }
 
 /// The Show N more row (Pink spaces.rs: `SIDEBAR_MORE_ROW_HEIGHT`, scaled,
@@ -2795,10 +2790,7 @@ fn chevron(reveal: f32, t: &Pink) -> Svg {
 /// #185): the glyph's empty space is pulled back so the arrow ends on the
 /// time column above it.
 fn trailing_chevron(chevron: Svg) -> Div {
-    div()
-        .flex_none()
-        .mr(-u(CHEVRON_TRAILING_BEARING))
-        .child(chevron)
+    header::trailing_chevron().child(chevron)
 }
 
 /// Empty space a leading glyph draws before its first stroke at its shelf
@@ -2913,39 +2905,22 @@ fn disclosure_header(
 ) -> Stateful<Div> {
     let t = c.t;
     let group: SharedString = format!("{id}-hdr").into();
-    div()
+    // The package's header (`pink-section-header`).
+    header::disclosure_header(scale())
         .id(eid(id.to_owned()))
         .group(group.clone())
         .role(Role::Button)
         .aria_expanded(open)
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(u(8.0))
-        .h(px(header_h()))
-        .px(px(space::SM))
-        .rounded(px(radius::SM))
-        .cursor_pointer()
         .hover_wash(id.to_owned(), t.fill(FillTier::Tertiary))
         .child(faded_label(
             format!("{id}-label"),
             false,
-            div()
-                .text_size(u(11.0))
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(t.readable_faint(0.9))
-                .child(label),
+            header::disclosure_label(t.readable_faint(0.9), label),
             c.surface,
             c.clips,
         ))
         .child(div().flex_1())
-        .child(
-            div()
-                .flex_none()
-                .opacity(0.0)
-                .group_hover(group, |st| st.opacity(1.0))
-                .child(chevron(reveal, t)),
-        )
+        .child(header::reveal_on_hover(group).child(chevron(reveal, t)))
 }
 
 /// An All projects group's header (Pink: sidebar_projects.rs
@@ -3215,7 +3190,8 @@ fn shelf_header(
     );
     let ring = t.focus_ring();
     let state = c.state.clone();
-    div()
+    // The package's header (`pink-section-header`).
+    header::shelf_header(scale())
         .id(eid(id.clone()))
         .role(Role::Button)
         .aria_label(format!(
@@ -3224,16 +3200,6 @@ fn shelf_header(
         ))
         .aria_expanded(open)
         .tab_index(0)
-        .w_full()
-        .flex_none()
-        .h(px(header_h()))
-        .px(px(space::SM))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(u(MARK_GAP))
-        .rounded(px(radius::SM))
-        .cursor_pointer()
         .focus_visible(move |st| pink::focus_ring(st, ring))
         .hover_fill_fg(
             id.clone(),
@@ -3255,39 +3221,24 @@ fn shelf_header(
             })
         })
         .child(
-            div()
-                .w(u(MARK_SLOT))
-                .flex_none()
-                .flex()
-                // The glyph's stroke starts on the title column.
-                .justify_start()
-                .child(
-                    icon(
-                        glyph,
-                        13.0,
-                        t.readable_icon(motion::hover_blend(
-                            &id,
-                            t.readable_muted(0.5),
-                            t.text_muted,
-                        )),
-                    )
-                    .ml(-u(leading_bearing(glyph))),
-                ),
+            // The glyph's stroke starts on the title column.
+            header::mark_slot().child(
+                icon(
+                    glyph,
+                    header::SHELF_GLYPH,
+                    t.readable_icon(motion::hover_blend(
+                        &id,
+                        t.readable_muted(0.5),
+                        t.text_muted,
+                    )),
+                )
+                .ml(-u(leading_bearing(glyph))),
+            ),
         )
+        .child(header::shelf_label(label))
         .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .text_size(u(12.0))
-                .font_weight(FontWeight::MEDIUM)
-                .child(label),
-        )
-        .child(
-            div()
-                .flex_none()
-                .text_size(u(11.0))
+            header::shelf_count(t.readable_faint(0.9))
                 .font_features(pink::tabular_figures())
-                .text_color(t.readable_faint(0.9))
                 .child(total.to_string()),
         )
         .child(trailing_chevron(chevron(reveal, t)))
