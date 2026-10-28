@@ -28,6 +28,7 @@ pub mod comment_thread;
 pub mod comments_panel;
 pub mod commit_history;
 pub mod compact_breakdown;
+pub mod composer_disc;
 pub mod context_window;
 pub mod data_table;
 pub mod date_range_picker;
@@ -125,6 +126,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Chat",
         description: trigger_chip::DESCRIPTION,
         story: trigger_chip::story,
+    },
+    ComponentEntry {
+        slug: "composer-disc",
+        name: composer_disc::NAME,
+        category: "Chat",
+        description: composer_disc::DESCRIPTION,
+        story: composer_disc::story,
     },
     ComponentEntry {
         slug: "thinking-state",
