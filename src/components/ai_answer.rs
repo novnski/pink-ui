@@ -44,11 +44,11 @@ use std::{
 use web_time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, AnyView, App, BoxShadow, ClickEvent, ClipboardItem, Context, Div, ElementId,
-    Entity, FillOptions, FillRule, Font, FontFeatures, FontWeight, Hsla, InteractiveText,
-    IntoElement, MouseMoveEvent, PathBuilder, PathStyle, Pixels, Point, Render, Role, SharedString,
-    Stateful, StyledText, Task, TextRun, Transformation, Window, canvas, div, point, prelude::*,
-    px, radians, svg,
+    AnyElement, AnyView, App, ClickEvent, ClipboardItem, Context, Div, ElementId, Entity,
+    FillOptions, FillRule, Font, FontFeatures, FontWeight, Hsla, InteractiveText, IntoElement,
+    MouseMoveEvent, PathBuilder, PathStyle, Pixels, Point, Render, Role, SharedString, Stateful,
+    StyledText, Task, TextRun, Transformation, Window, canvas, div, point, prelude::*, px, radians,
+    svg,
 };
 
 use crate::{
@@ -87,10 +87,6 @@ const LIST_MARKER_MIN_W: f32 = 18.;
 const LIST_DISC: f32 = 5.;
 const LIST_MARKER_GAP: f32 = 8.;
 const LIST_ITEM_GAP: f32 = 4.;
-/// Pink: `transcript.rs` `USER_LINE_HEIGHT`; the bubble caps at 80% of the
-/// column.
-const USER_LINE_HEIGHT: f32 = 22.;
-const USER_BUBBLE_SHARE: f32 = 0.8;
 /// Pink: `META_LANE_HEIGHT` – the reserved lane holds 24px actions under a
 /// 4px lead.
 const META_LANE_HEIGHT: f32 = 28.;
@@ -1498,30 +1494,11 @@ impl Render for CitationCard {
 
 impl AiAnswer {
     /// Pink: `RowKind::User` – the question in the right-aligned bubble
-    /// (`user_bubble_bg`, a 1px inset edge in light, r16, `px 16 py 10`,
-    /// 14/22), then its hover lane.
+    /// (the `pink-user-bubble` package), then its hover lane.
     fn render_question(&self, cx: &Ctx, hovered: bool, copied: bool) -> AnyElement {
         let t = cx.t;
-        let bubble = div()
-            .min_w_0()
-            .max_w(px(self.width * USER_BUBBLE_SHARE))
-            .bg(t.user_bubble_bg())
-            .when_some(t.user_bubble_edge(), |el, edge| {
-                el.shadow(vec![BoxShadow {
-                    color: edge,
-                    offset: point(px(0.), px(0.)),
-                    blur_radius: px(0.),
-                    spread_radius: px(1.),
-                    inset: true,
-                }])
-            })
-            .rounded(px(radius::BUBBLE))
-            .px(px(space::LG))
-            .py(px(space::S10))
-            .text_size(px(MD_TEXT_SIZE))
-            .line_height(px(USER_LINE_HEIGHT))
-            .text_color(t.text)
-            .child(self.question.clone());
+        let bubble =
+            crate::components::user_bubble::plate(self.width, t).child(self.question.clone());
         let state = cx.state.clone();
         let copy = copy_action(
             format!("{}-copy-q", cx.key).into(),

@@ -35,13 +35,13 @@ use std::{
 use web_time::{Duration, Instant};
 
 use gpui::{
-    Anchor, AnyElement, AnyView, App, AsyncApp, AvailableSpace, BorderStyle, Bounds, BoxShadow,
-    ClickEvent, ClipboardItem, Context, DispatchPhase, Div, Element, ElementId, Empty, Entity,
-    FocusHandle, Font, FontStyle, FontWeight, GlobalElementId, Hsla, InspectorElementId,
-    IntoElement, LayoutId, MouseButton, Pixels, Point, Render, Role, ScrollHandle,
-    ScrollWheelEvent, SharedString, StrikethroughStyle, StyledText, Task, TextLayout, TextRun,
-    Toggled, UnderlineStyle, WeakEntity, Window, anchored, canvas, deferred, div, point,
-    prelude::*, px, quad, size, svg, transparent_black,
+    Anchor, AnyElement, AnyView, App, AsyncApp, AvailableSpace, BorderStyle, Bounds, ClickEvent,
+    ClipboardItem, Context, DispatchPhase, Div, Element, ElementId, Empty, Entity, FocusHandle,
+    Font, FontStyle, FontWeight, GlobalElementId, Hsla, InspectorElementId, IntoElement, LayoutId,
+    MouseButton, Pixels, Point, Render, Role, ScrollHandle, ScrollWheelEvent, SharedString,
+    StrikethroughStyle, StyledText, Task, TextLayout, TextRun, Toggled, UnderlineStyle, WeakEntity,
+    Window, anchored, canvas, deferred, div, point, prelude::*, px, quad, size, svg,
+    transparent_black,
 };
 
 use crate::{
@@ -3581,32 +3581,14 @@ fn next_chunk(source: &str, from: usize) -> usize {
     at
 }
 
-/// Pink: the user message bubble (`transcript.rs` user row) – right-aligned,
-/// at most 80% wide, r16, 14/22 on the bubble wash with a light-mode edge.
+/// Pink: the user message bubble (`transcript.rs` user row), drawn by the
+/// `pink-user-bubble` package – right-aligned, at most 80% wide.
 fn user_bubble(text: &'static str, t: &Pink) -> impl IntoElement {
-    let edge = t.user_bubble_edge();
-    div().w_full().flex().justify_end().child(
-        div()
-            .min_w_0()
-            .max_w(px(DEMO_WIDTH * 0.8))
-            .bg(t.user_bubble_bg())
-            .when_some(edge, |el, edge| {
-                el.shadow(vec![BoxShadow {
-                    color: edge,
-                    offset: point(px(0.), px(0.)),
-                    blur_radius: px(0.),
-                    spread_radius: px(1.),
-                    inset: true,
-                }])
-            })
-            .rounded(px(radius::BUBBLE))
-            .px(px(16.))
-            .py(px(10.))
-            .text_size(px(MD_TEXT_SIZE))
-            .line_height(px(MD_LINE_HEIGHT))
-            .text_color(t.text)
-            .child(text),
-    )
+    div()
+        .w_full()
+        .flex()
+        .justify_end()
+        .child(crate::components::user_bubble::plate(DEMO_WIDTH, t).child(text))
 }
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {

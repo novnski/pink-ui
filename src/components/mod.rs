@@ -83,6 +83,7 @@ pub mod tool_call_card;
 pub mod trace_waterfall;
 pub mod trigger_chip;
 pub mod usage_meter;
+pub mod user_bubble;
 pub mod welcome_screen;
 pub mod writing_assistant;
 
@@ -192,6 +193,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Chat",
         description: message_actions::DESCRIPTION,
         story: message_actions::story,
+    },
+    ComponentEntry {
+        slug: "user-bubble",
+        name: user_bubble::NAME,
+        category: "Chat",
+        description: user_bubble::DESCRIPTION,
+        story: user_bubble::story,
     },
     ComponentEntry {
         slug: "model-picker",
