@@ -521,8 +521,83 @@ pub mod layout {
     pub const SIDEBAR_MIN: f32 = 224.0;
     pub const SIDEBAR_DEFAULT: f32 = 256.0;
     pub const SIDEBAR_MAX: f32 = 400.0;
-    /// The composer column.
+    /// PINK's composer cap before its shared column (PINK 0.31.2): kept
+    /// for the components that cap a composer-wide card at it. The
+    /// composer itself now takes a pane's [`ColumnBounds`].
     pub const COMPOSER_MAX_WIDTH: f32 = 768.0;
+
+    /// The shared column's side gutter from a 480 pt pane up (Pink
+    /// column_bounds.rs `GUTTER`, D43, D44).
+    pub const COLUMN_GUTTER: f32 = 24.0;
+    /// The gutter below a [`COLUMN_NARROW_PANE`] pane (`NARROW_GUTTER`).
+    pub const COLUMN_NARROW_GUTTER: f32 = 16.0;
+    /// Below this pane width the gutter narrows (`NARROW_PANE`).
+    pub const COLUMN_NARROW_PANE: f32 = 480.0;
+
+    /// The Conversation width setting: the reading column's width (Pink
+    /// settings.rs `TRANSCRIPT_WIDTH_*`).
+    pub const CONVERSATION_WIDTH_MIN: f32 = 560.0;
+    pub const CONVERSATION_WIDTH_MAX: f32 = 1200.0;
+    pub const CONVERSATION_WIDTH_DEFAULT: f32 = 736.0;
+    pub const CONVERSATION_WIDTH_STEP: f32 = 16.0;
+
+    /// A Conversation width clamped to its range in 16 pt steps; anything
+    /// not finite reads as the default (Pink settings.rs
+    /// `normalize_transcript_width`).
+    pub fn normalize_conversation_width(width: f32) -> f32 {
+        let width = if width.is_finite() {
+            width.clamp(CONVERSATION_WIDTH_MIN, CONVERSATION_WIDTH_MAX)
+        } else {
+            CONVERSATION_WIDTH_DEFAULT
+        };
+        CONVERSATION_WIDTH_MIN
+            + ((width - CONVERSATION_WIDTH_MIN) / CONVERSATION_WIDTH_STEP).round()
+                * CONVERSATION_WIDTH_STEP
+    }
+
+    /// The side gutter for a pane `pane` wide, 0 meaning not measured yet
+    /// (Pink column_bounds.rs `gutter_for`). Transcript rows use it too
+    /// (transcript.rs `transcript_row_gutter`), so prose, tool activity
+    /// and the composer share their edges.
+    pub fn column_gutter(pane: f32) -> f32 {
+        if pane > 0.0 && pane < COLUMN_NARROW_PANE {
+            COLUMN_NARROW_GUTTER
+        } else {
+            COLUMN_GUTTER
+        }
+    }
+
+    /// The conversation column a pane's surfaces share (Pink
+    /// column_bounds.rs `ColumnBounds`, PINK 0.31.2, D43, D44): the
+    /// Conversation width inside the pane's gutters, or less when the pane
+    /// is narrower than both.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct ColumnBounds {
+        /// Each side's gutter between the pane edge and the column.
+        pub gutter: f32,
+        /// The column's width.
+        pub width: f32,
+    }
+
+    impl ColumnBounds {
+        /// The column for a pane `pane` wide at the `reading` width. A pane
+        /// not measured yet (0) gets the wide gutter.
+        pub fn for_pane(pane: f32, reading: f32) -> Self {
+            let gutter = column_gutter(pane);
+            let width = if pane > 0.0 {
+                reading.min((pane - 2.0 * gutter).max(0.0))
+            } else {
+                reading
+            };
+            Self { gutter, width }
+        }
+
+        /// The column plus both gutters: the outer box a surface centres
+        /// in the pane.
+        pub fn outer_width(&self) -> f32 {
+            self.width + 2.0 * self.gutter
+        }
+    }
     /// Composer-row controls: 28 pt capsules and circles.
     pub const COMPOSER_CONTROL: f32 = 28.0;
 
