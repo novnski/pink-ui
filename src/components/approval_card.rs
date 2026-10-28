@@ -32,6 +32,7 @@ use gpui::{
 };
 
 use crate::{
+    components::question_card as card,
     motion,
     pink::{self, ButtonKind, ControlSize, Pink, layout, radius},
     primitives::{InputEvent, TextInput},
@@ -625,18 +626,8 @@ fn input_chip(value: SharedString, t: &Pink) -> Div {
     )
 }
 
-/// The pill chrome the composer and the question panel share (Pink:
-/// composer.rs `composer_surface`, on the frosted composer plate).
-fn composer_surface(t: &Pink) -> Div {
-    div()
-        .rounded(px(radius::COMPOSER_PILL))
-        .border_1()
-        .border_color(t.border)
-        .bg(t.surface_bg())
-        .shadow(pink::shadow_lg())
-}
-
-/// One numbered option (Pink: composer.rs `render_wizard` option rows).
+/// One numbered option (Pink: composer.rs `render_wizard` option rows),
+/// drawn by the `pink-question-card` package.
 fn option_row(
     ix: usize,
     option: &ApprovalOption,
@@ -648,86 +639,32 @@ fn option_row(
     let hover_key = format!("{key}-option-{ix}");
     let accent = t.accent;
     let click_state = state.clone();
-    div()
-        .id(eid(hover_key.clone()))
-        .role(Role::RadioButton)
-        .aria_label(option.label.clone())
-        .aria_toggled(if picked {
-            Toggled::True
-        } else {
-            Toggled::False
-        })
-        .tab_index(0)
-        .focus_visible(move |style| style.border_color(accent))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(12.))
-        .px(px(14.))
-        .py(px(10.))
-        .rounded(px(12.))
-        .border_1()
-        .border_color(if picked {
-            t.ink(0.16)
-        } else {
-            gpui::transparent_black()
-        })
-        .bg(if picked {
-            t.ink(0.09)
-        } else {
-            motion::hover_blend(&hover_key, t.ink(0.025), t.ink(0.06))
-        })
-        .on_hover(motion::hover_listener(hover_key))
-        .cursor_pointer()
-        .on_key_down(pink::swallow_activation_key)
-        .on_click(move |_, window, cx| {
-            click_state.update(cx, |s, cx| s.select(ix, window, cx));
-        })
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .text_size(px(13.5))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(if picked { t.text } else { t.text.opacity(0.9) })
-                .flex()
-                .flex_col()
-                .gap(px(3.))
-                .child(option.label.clone())
-                .when_some(option.detail(), |el, detail| {
-                    el.child(
-                        div()
-                            .text_size(px(11.5))
-                            .font_weight(FontWeight::NORMAL)
-                            .text_color(t.readable_muted(0.65))
-                            .child(detail),
-                    )
-                }),
-        )
-        .when(ix < 9, |el| {
-            // Number kbd chip: `size-[22px] rounded-md text-[11px]`.
-            el.child(
-                div()
-                    .flex_none()
-                    .size(px(22.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(6.))
-                    .bg(if picked { t.ink(0.16) } else { t.ink(0.05) })
-                    .text_size(px(11.))
-                    .text_color(if picked {
-                        t.text
-                    } else {
-                        t.readable_muted(0.6)
-                    })
-                    .child(format!("{}", ix + 1)),
-            )
-        })
+    card::option(
+        &card::option_style(t, picked, card::option_rest(t, &hover_key)),
+        option.label.clone(),
+        option.detail(),
+        (ix < 9).then_some(ix + 1),
+    )
+    .id(eid(hover_key.clone()))
+    .role(Role::RadioButton)
+    .aria_label(option.label.clone())
+    .aria_toggled(if picked {
+        Toggled::True
+    } else {
+        Toggled::False
+    })
+    .tab_index(0)
+    .focus_visible(move |style| style.border_color(accent))
+    .on_hover(motion::hover_listener(hover_key))
+    .on_key_down(pink::swallow_activation_key)
+    .on_click(move |_, window, cx| {
+        click_state.update(cx, |s, cx| s.select(ix, window, cx));
+    })
 }
 
 /// The question panel in the composer's slot (Pink: composer.rs
-/// `render_wizard` for an approval question).
+/// `render_wizard` for an approval question), drawn by the
+/// `pink-question-card` package.
 fn question_panel(
     req: &ApprovalRequest,
     options: &[ApprovalOption],
@@ -749,132 +686,52 @@ fn question_panel(
             s.label_of(auto)
         )
     });
+    let p = card::palette(t);
 
-    let header = div().flex().flex_row().items_center().gap(px(10.)).child(
-        div()
-            .text_size(px(11.))
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(t.readable_muted(0.6))
-            .child(pink::tracked_upper(&req.header)),
+    let option_rows = card::options(eid(format!("{key}-options"))).children(
+        options
+            .iter()
+            .enumerate()
+            .map(|(ix, option)| option_row(ix, option, picked == Some(ix), key, state, t)),
     );
-
-    let question = div()
-        .id(eid(format!("{key}-question")))
-        .max_h(px(160.))
-        .overflow_y_scroll()
-        .mt(px(6.))
-        .text_size(px(15.))
-        .line_height(px(20.))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(t.text)
-        .child(req.question.clone());
-
-    let context = div()
-        .id(eid(format!("{key}-context")))
-        .mt(px(8.))
-        .max_h(px(220.))
-        .overflow_y_scroll()
-        .flex()
-        .flex_col()
-        .gap(px(6.))
-        .children(req.context_rows().into_iter().map(|(label, value)| {
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(2.))
-                .child(
-                    div()
-                        .text_size(px(11.))
-                        .text_color(t.readable_muted(0.65))
-                        .child(label),
-                )
-                .child(div().text_size(px(12.)).text_color(t.text).child(value))
-        }));
-
-    let option_rows = div()
-        .id(eid(format!("{key}-options")))
-        .max_h(px(220.))
-        .overflow_y_scroll()
-        .mt(px(12.))
-        .flex()
-        .flex_col()
-        .gap(px(4.))
-        .children(
-            options
-                .iter()
-                .enumerate()
-                .map(|(ix, option)| option_row(ix, option, picked == Some(ix), key, state, t)),
-        );
 
     // The free answer: a composer surface nested in the panel.
     let answer = req.reply.then(|| {
-        div().mt(px(12.)).pb(px(4.)).px(px(4.)).child(
-            composer_surface(t)
-                .id(eid(format!("{key}-answer")))
-                .w_full()
-                .overflow_hidden()
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .min_w_0()
-                        .px(px(8.))
-                        .py(px(12.))
-                        // Pink composer input: `text-[14px] leading-relaxed`.
-                        .text_size(px(14.))
-                        .line_height(px(22.75))
-                        .text_color(t.text)
-                        .child(div().flex_1().min_w_0().child(reply.clone())),
-                ),
+        card::answer(
+            card::surface(t).id(eid(format!("{key}-answer"))),
+            // Pink composer input: `text-[14px] leading-relaxed`.
+            div()
+                .flex_1()
+                .min_w_0()
+                .text_size(px(14.))
+                .line_height(px(22.75))
+                .text_color(t.text)
+                .child(reply.clone()),
         )
     });
 
     let hold_state = state.clone();
     let keep_state = state.clone();
     let send_state = state.clone();
-    let footer = div()
-        .flex()
-        .flex_row()
-        .justify_between()
-        .items_center()
-        .gap(px(12.))
-        .px(px(16.))
-        .pb(px(16.))
-        .pt(px(4.))
-        .child(
-            div()
-                .flex()
-                .flex_1()
-                .min_w_0()
-                .items_center()
-                .gap(px(8.))
-                .when_some(countdown, |el, copy| {
-                    el.child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .text_size(px(12.))
-                            .text_color(t.readable_muted(0.7))
-                            .child(copy),
-                    )
-                    .child(
-                        pink::button(
-                            format!("{key}-keep-waiting"),
-                            ButtonKind::Ghost,
-                            ControlSize::Lg,
-                            t,
-                        )
-                        .aria_label("Keep waiting")
-                        .child("Keep waiting")
-                        .on_click(move |_, _, cx| {
-                            keep_state.update(cx, |s, cx| {
-                                s.hold();
-                                cx.notify();
-                            })
-                        }),
-                    )
+    let footer = card::footer()
+        .child(card::notes().when_some(countdown, |el, copy| {
+            el.child(card::note(&p, copy)).child(
+                pink::button(
+                    format!("{key}-keep-waiting"),
+                    ButtonKind::Ghost,
+                    ControlSize::Lg,
+                    t,
+                )
+                .aria_label("Keep waiting")
+                .child("Keep waiting")
+                .on_click(move |_, _, cx| {
+                    keep_state.update(cx, |s, cx| {
+                        s.hold();
+                        cx.notify();
+                    })
                 }),
-        )
+            )
+        }))
         .child(
             pink::button(
                 format!("{key}-send"),
@@ -883,14 +740,14 @@ fn question_panel(
                 t,
             )
             .aria_label("Send")
-            .px(px(16.))
+            .px(px(card::ACTION_PAD_X))
             .when(!can_advance, |el| el.opacity(0.4))
             .child("Send")
             .on_click(move |_, window, cx| send_state.update(cx, |s, cx| s.advance(window, cx))),
         );
 
     let key_state = state.clone();
-    composer_surface(t)
+    card::surface(t)
         .id(eid(format!("{key}-panel")))
         .track_focus(&s.focus)
         .capture_any_mouse_down(move |_, _, cx| {
@@ -909,14 +766,18 @@ fn question_panel(
         .flex()
         .flex_col()
         .child(
-            div()
-                .px(px(16.))
-                .pt(px(16.))
-                .flex()
-                .flex_col()
-                .child(header)
-                .child(question)
-                .child(context)
+            card::body()
+                .child(card::header(&p, pink::tracked_upper(&req.header), None))
+                .child(card::question(
+                    eid(format!("{key}-question")),
+                    &p,
+                    req.question.clone(),
+                ))
+                .child(card::context(
+                    eid(format!("{key}-context")),
+                    &p,
+                    req.context_rows(),
+                ))
                 .child(option_rows)
                 .children(answer),
         )
