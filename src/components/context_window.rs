@@ -1,22 +1,35 @@
-//! Context Window – the composer's context chip and what fills the window.
+//! Context Window – the composer's context ring and its Context menu.
 //!
 //! A Pink component. The chip is Pink's context-usage chip (Pink:
 //! context_usage.rs `render`): a 16 px ring and the occupied share, muted,
 //! warning from 75%, danger from 90% and accent while compacting. Before the
 //! provider reports usage the ring is empty and faint, with no share, and
 //! the chip is named "Context window: usage not reported yet" (PINK 0.30.6,
-//! novnski/pink#193). Resting
-//! the pointer on it shows Pink's details card (`UsageCard`) centered above
-//! the chip (Pink: popover.rs `tooltip_above`); clicking it opens the window
-//! card in the same place: the same details, a field of 100
+//! novnski/pink#193). Resting the pointer on it shows Pink's details card
+//! (`UsageCard`) centered above the chip (Pink: popover.rs `tooltip_above`).
+//!
+//! The chip is a button that opens PINK's Context menu (PINK 0.31.1,
+//! novnski/pink#195; Pink: pickers.rs `render_context_menu`), from the
+//! chip's leading edge (popover.rs `anchored_menu_above_leading`): "Context
+//! window", the usage in words, any provider note, then Compact
+//! ("Compacting…" while it runs, "Compact unresolved" when its result is
+//! unknown, disabled with the provider's reason when it can't) and Clear
+//! context, which asks once more. ↑/↓ move over the two rows and wrap,
+//! Enter acts on the highlighted one, Escape closes and disarms Clear.
+//!
+//! The library adds a map of the window between the usage and the controls
+//! (`.window_map(false)` gives PINK's plain 280 pt menu): a field of 100
 //! cells (one per percent of the window) filled column by column by the
 //! instructions, tool definitions, attached files, the chat history and
 //! memory, with the reply reserve as hollow cells at the end and a rule
-//! where auto-compaction kicks in; a breakdown whose rows light their
-//! cells; and Pink's context tray (Pink: pickers.rs
-//! `render_context_controls`) with Compact and Clear context. Files can be
-//! dropped from the breakdown. Compacting waves the chat history's cells on
-//! the pulse clock, then sweeps the freed cells clear.
+//! where auto-compaction kicks in, and a breakdown whose rows light their
+//! cells. Files can be dropped from the breakdown. Compacting waves the chat
+//! history's cells on the pulse clock, then sweeps the freed cells clear.
+//!
+//! The ring shows only when the setting is on and the provider reports
+//! context usage ([`context_ring_shown`], PINK 0.31.3, D75); without it a
+//! host's model menu keeps Compact and Clear in [`context_tray`] (Pink: the
+//! model menu's `context_tray`).
 //!
 //! ```ignore
 //! ContextWindow::new("ctx", "lumen-4", 200_000)
@@ -52,7 +65,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Context Window";
-pub const DESCRIPTION: &str = "A composer's context chip, a ring and the share in use that turns muted, then warning and danger as it fills and shows the token count on hover. It opens a card mapping the window one cell per percent, with a breakdown that lights its cells, files to drop, and Compact and Clear context";
+pub const DESCRIPTION: &str = "A composer's context ring and the share in use, muted, then warning and danger as it fills, with the token count on hover. It opens a Context menu with the usage in words, a map of the window one cell per percent whose breakdown lights its cells and drops files, and Compact and Clear context from the keyboard";
 
 /// Pink: icons.rs `COLLAPSE_ARROWS`, `REFRESH`, `CLOSE`, `PAPERCLIP`, `ARROW_UP`.
 const ICON_COMPACT: &str = "icons/context-window/minimize.svg";
@@ -110,6 +123,165 @@ type Handler = Rc<dyn Fn(&mut Window, &mut App)>;
 
 fn eid(s: impl Into<String>) -> ElementId {
     ElementId::Name(SharedString::from(s.into()))
+}
+
+/// Whether a composer shows its context ring, and so its Context menu
+/// (Pink: pickers.rs `Pickers::context_ring_shown`, PINK 0.31.3, D75): the
+/// setting is on and the provider reports context usage. Otherwise the
+/// model menu keeps Compact and Clear ([`context_tray`]) so they stay
+/// reachable.
+pub fn context_ring_shown(setting_on: bool, provider_reports_usage: bool) -> bool {
+    setting_on && provider_reports_usage
+}
+
+/// What Compact can do right now (Pink: the provider's
+/// `ContextControlCapabilities::compact` and the chat's compact status).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum CompactState {
+    /// The provider compacts on request.
+    #[default]
+    Ready,
+    /// A compaction is running (`ContextOperationStatus::Running`).
+    Running,
+    /// The last compaction's result is unknown (`Unknown`); a new one waits
+    /// until it resolves.
+    Unknown,
+    /// The provider can't compact (`compact_unavailable_reason`).
+    Unavailable(SharedString),
+}
+
+impl CompactState {
+    /// The row's label (Pink: `render_context_controls` `compact_label`).
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Running => "Compacting…",
+            Self::Unknown => "Compact unresolved",
+            Self::Ready | Self::Unavailable(_) => "Compact",
+        }
+    }
+
+    /// Pink: `compact.is_some() && !compact.blocks_new_turn()`.
+    pub fn enabled(&self) -> bool {
+        matches!(self, Self::Ready)
+    }
+
+    fn reason(&self) -> Option<SharedString> {
+        match self {
+            Self::Unavailable(reason) => Some(reason.clone()),
+            _ => None,
+        }
+    }
+}
+
+/// Compact and Clear for a host's own menu when there is no ring (Pink: the
+/// model menu's `context_tray`, PINK 0.31.3).
+#[derive(Clone, Default)]
+pub struct ContextControls {
+    compact: CompactState,
+    on_compact: Option<Handler>,
+    on_clear: Option<Handler>,
+}
+
+impl ContextControls {
+    pub fn new(compact: CompactState) -> Self {
+        Self {
+            compact,
+            on_compact: None,
+            on_clear: None,
+        }
+    }
+
+    /// Compact was chosen (only while it's [`CompactState::Ready`]).
+    pub fn on_compact(mut self, f: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_compact = Some(Rc::new(f));
+        self
+    }
+
+    /// Clear context was confirmed.
+    pub fn on_clear(mut self, f: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_clear = Some(Rc::new(f));
+        self
+    }
+}
+
+/// The context tray at the foot of a model menu (Pink: pickers.rs
+/// `render_context_controls` inside the model menu's `context_tray`): a
+/// hairline on top, an 11 faint "Context" heading, Compact with its reason
+/// when the provider can't, and Clear context, which asks once more. Debug
+/// selectors: `{id}`, `{id}-compact`, `{id}-clear`.
+pub fn context_tray(
+    id: impl Into<SharedString>,
+    controls: ContextControls,
+    window: &mut Window,
+    cx: &mut App,
+) -> Stateful<Div> {
+    let t = Pink::get(cx);
+    let id: SharedString = id.into();
+    let confirm = window.use_keyed_state(
+        ElementId::NamedChild(Arc::new(eid(id.to_string())), "confirm".into()),
+        cx,
+        |_, _| false,
+    );
+    let armed = *confirm.read(cx);
+    let ContextControls {
+        compact: state,
+        on_compact,
+        on_clear,
+    } = controls;
+    let enabled = state.enabled();
+    let compact = tray_row(
+        format!("{id}-compact"),
+        ICON_COMPACT,
+        state.label(),
+        enabled,
+        false,
+        true,
+        &t,
+    )
+    .on_click(move |_, window, cx| {
+        if enabled && let Some(f) = on_compact.as_ref() {
+            f(window, cx);
+        }
+    });
+    let clear = {
+        let confirm = confirm.clone();
+        tray_row(
+            format!("{id}-clear"),
+            ICON_CLEAR,
+            clear_label(armed),
+            true,
+            false,
+            true,
+            &t,
+        )
+        .on_click(move |_, window, cx| {
+            let fire = confirm.update(cx, |armed, cx| {
+                *armed = !*armed;
+                cx.notify();
+                !*armed
+            });
+            if fire && let Some(f) = on_clear.as_ref() {
+                f(window, cx);
+            }
+        })
+    };
+    let selector = id.to_string();
+    div()
+        .id(eid(id.to_string()))
+        .debug_selector(move || selector)
+        .flex_none()
+        .border_t_1()
+        .border_color(t.hairline(0.08))
+        .child(
+            controls_panel(&t)
+                .child(caption("Context".into(), &t))
+                .child(compact)
+                .when_some(state.reason(), |d, reason| {
+                    let selector = format!("{id}-compact-reason");
+                    d.child(caption(reason, &t).debug_selector(move || selector))
+                })
+                .child(clear),
+        )
 }
 
 /// A part of the context.
@@ -397,9 +569,15 @@ struct WindowState {
     peek: bool,
     /// A compaction started from the tray.
     compacting: Option<Instant>,
-    /// The host reports a compaction running (Pink: the chat's compact
-    /// status `Running`).
-    held: bool,
+    /// What the host says Compact can do; `Running` holds the chip on
+    /// Compacting… (Pink: the chat's compact status and the provider's
+    /// capability).
+    compact: CompactState,
+    /// The Context menu row the arrows rest on (Pink: `active`, none until
+    /// the first arrow).
+    active: Option<usize>,
+    /// The open menu's keyboard focus.
+    menu_focus: FocusHandle,
     /// Clear context asks once more before it acts (Pink:
     /// `clear_context_confirmation`).
     confirm_clear: bool,
@@ -423,7 +601,17 @@ impl WindowState {
     }
 
     fn is_compacting(&self) -> bool {
-        self.compacting.is_some() || self.held
+        self.compacting.is_some() || self.compact == CompactState::Running
+    }
+
+    /// Compact's row label: the demo's own compaction reads Compacting…,
+    /// else the host's state does (Pink: `compact_label`).
+    fn compact_label(&self) -> &'static str {
+        if self.compacting.is_some() {
+            CompactState::Running.label()
+        } else {
+            self.compact.label()
+        }
     }
 
     /// The details card's operation line (Pink: `compact.detail`, else the
@@ -431,7 +619,7 @@ impl WindowState {
     fn detail(&self) -> SharedString {
         match &self.note {
             Some(note) => note.clone(),
-            None if self.held => {
+            None if self.compact == CompactState::Running => {
                 format!("Compacting {} turns into a summary…", self.usage.turns).into()
             }
             None => "No provider context operation is pending.".into(),
@@ -471,10 +659,23 @@ impl WindowState {
         } else {
             self.open = true;
             self.opened += 1;
+            self.active = None;
             self.closing = None;
             self._close_task = None;
+            window.focus(&self.menu_focus, cx);
             cx.notify();
         }
+    }
+
+    /// ↑/↓ over Compact and Clear, wrapping (Pink: `popover::menu_step`
+    /// over `PickerKind::Context`'s two rows).
+    fn step(&mut self, delta: isize, cx: &mut Context<Self>) {
+        self.active = Some(match self.active {
+            None if delta >= 0 => 0,
+            None => 1,
+            Some(at) => (at as isize + delta).rem_euclid(2) as usize,
+        });
+        cx.notify();
     }
 
     /// Starts the exit fade; the card unmounts when it ends.
@@ -484,6 +685,7 @@ impl WindowState {
         }
         self.open = false;
         self.hover = None;
+        self.active = None;
         self.confirm_clear = false;
         self.closing = Some(Instant::now());
         let wait = MENU_OUT.total().mul_f32(motion::speed_scale()) + Duration::from_millis(16);
@@ -519,7 +721,7 @@ impl WindowState {
     }
 
     fn can_compact(&self) -> bool {
-        !self.is_compacting() && self.usage.conversation > COMPACT_MIN
+        self.compact.enabled() && !self.is_compacting() && self.usage.conversation > COMPACT_MIN
     }
 
     fn start_compaction(&mut self, cx: &mut Context<Self>) -> bool {
@@ -589,31 +791,35 @@ impl WindowState {
 
 /// The callbacks, shared by the card's listeners.
 struct Props {
-    model: SharedString,
+    /// A note from the provider, shown under the usage until an operation
+    /// here leaves its own (Pink: `compact.detail`, else `notice`).
+    note: Option<SharedString>,
     on_remove_file: Option<IdHandler>,
     on_compact: Option<Handler>,
     on_clear: Option<Handler>,
 }
 
-/// A model's context window: the composer chip and its window card.
+/// A model's context window: the composer chip and its Context menu.
 #[derive(IntoElement)]
 pub struct ContextWindow {
     id: ElementId,
-    model: SharedString,
     usage: Usage,
     show_label: bool,
     default_open: bool,
-    compacting: bool,
+    compact: CompactState,
+    window_map: bool,
+    note: Option<SharedString>,
     on_remove_file: Option<IdHandler>,
     on_compact: Option<Handler>,
     on_clear: Option<Handler>,
 }
 
 impl ContextWindow {
-    pub fn new(id: impl Into<ElementId>, model: impl Into<SharedString>, capacity: u32) -> Self {
+    /// The model's name is kept for the API's sake: the menu reads "Context
+    /// window", as PINK's does, rather than naming the model.
+    pub fn new(id: impl Into<ElementId>, _model: impl Into<SharedString>, capacity: u32) -> Self {
         Self {
             id: id.into(),
-            model: model.into(),
             usage: Usage {
                 capacity: capacity.max(1),
                 reserve: 0,
@@ -628,7 +834,9 @@ impl ContextWindow {
             },
             show_label: true,
             default_open: false,
-            compacting: false,
+            compact: CompactState::Ready,
+            window_map: true,
+            note: None,
             on_remove_file: None,
             on_compact: None,
             on_clear: None,
@@ -695,7 +903,7 @@ impl ContextWindow {
         self
     }
 
-    /// Starts with the window card open.
+    /// Starts with the Context menu open.
     pub fn default_open(mut self, open: bool) -> Self {
         self.default_open = open;
         self
@@ -704,8 +912,35 @@ impl ContextWindow {
     /// The provider is compacting this chat (Pink: compact status
     /// `Running`): the chip reads Compacting… in the accent, the chat
     /// history's cells wave and Compact waits, for as long as this is set.
+    /// Shorthand for `.compact(CompactState::Running)`.
     pub fn compacting(mut self, running: bool) -> Self {
-        self.compacting = running;
+        if running {
+            self.compact = CompactState::Running;
+        } else if self.compact == CompactState::Running {
+            self.compact = CompactState::Ready;
+        }
+        self
+    }
+
+    /// What Compact can do: ready, running, unresolved or unavailable with
+    /// the provider's reason (PINK 0.31.1).
+    pub fn compact(mut self, compact: CompactState) -> Self {
+        self.compact = compact;
+        self
+    }
+
+    /// Whether the menu maps the window cell by cell between the usage and
+    /// the controls (the library's addition, on by default). Off, the menu
+    /// is PINK's plain 280 pt Context menu.
+    pub fn window_map(mut self, map: bool) -> Self {
+        self.window_map = map;
+        self
+    }
+
+    /// A provider note under the usage (Pink: the chat's `compact.detail`
+    /// or context `notice`).
+    pub fn note(mut self, note: impl Into<SharedString>) -> Self {
+        self.note = Some(note.into());
         self
     }
 
@@ -751,7 +986,9 @@ impl RenderOnce for ContextWindow {
                 trigger: Bounds::default(),
                 peek: false,
                 compacting: None,
-                held: false,
+                compact: CompactState::Ready,
+                active: None,
+                menu_focus: cx.focus_handle(),
                 confirm_clear: false,
                 note: None,
                 changed: None,
@@ -760,12 +997,13 @@ impl RenderOnce for ContextWindow {
                 _peek_task: None,
             },
         );
-        if state.read(cx).held != self.compacting {
-            let held = self.compacting;
-            state.update(cx, |s, _| s.held = held);
+        if state.read(cx).compact != self.compact {
+            let compact = self.compact.clone();
+            state.update(cx, |s, _| s.compact = compact);
         }
+        let window_map = self.window_map;
         let props = Rc::new(Props {
-            model: self.model,
+            note: self.note,
             on_remove_file: self.on_remove_file,
             on_compact: self.on_compact,
             on_clear: self.on_clear,
@@ -805,7 +1043,7 @@ impl RenderOnce for ContextWindow {
                 .occlude()
                 .pb(px(layout::POPOVER_GAP))
                 .child(window_card(
-                    &key, s, tone, wave, &props, &state, window, &t, cx,
+                    &key, s, tone, wave, window_map, &props, &state, window, &t, cx,
                 ));
             let inner: AnyElement = match exit {
                 // A dying card takes no clicks (Pink: `menu_motion_from`).
@@ -822,17 +1060,36 @@ impl RenderOnce for ContextWindow {
                 )
                 .into_any_element(),
             };
-            // Centered above the chip, as Pink's details card.
-            above(inner)
+            // From the chip's leading edge (Pink: `anchored_menu_above_leading`).
+            above_leading(inner)
         });
 
+        // Pink: `Pickers::on_key_down` for `PickerKind::Context`. Enter acts
+        // only from the menu's own focus: a focused chip already takes Enter
+        // as a click.
         let on_key = {
             let state = state.clone();
+            let props = props.clone();
             move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {
-                if event.keystroke.key == "escape" && state.read(cx).open {
-                    state.update(cx, |s, cx| s.close_card(true, window, cx));
-                    cx.stop_propagation();
+                let (open, active, in_menu) = {
+                    let s = state.read(cx);
+                    (s.open, s.active, s.menu_focus.is_focused(window))
+                };
+                if !open {
+                    return;
                 }
+                match event.keystroke.key.as_str() {
+                    "escape" => state.update(cx, |s, cx| s.close_card(true, window, cx)),
+                    "up" => state.update(cx, |s, cx| s.step(-1, cx)),
+                    "down" => state.update(cx, |s, cx| s.step(1, cx)),
+                    "enter" if in_menu => {
+                        if let Some(row) = active {
+                            activate(&state, &props, row, window, cx);
+                        }
+                    }
+                    _ => return,
+                }
+                cx.stop_propagation();
             }
         };
 
@@ -848,6 +1105,22 @@ impl RenderOnce for ContextWindow {
         motion::keep_alive(window);
         el
     }
+}
+
+/// Floats `card` above the chip from its leading edge, shifted left by the
+/// card inset so the rows' text lines up with the ring, kept inside the
+/// window (Pink: popover.rs `anchored_menu_above_leading`).
+fn above_leading(card: impl IntoElement) -> Div {
+    div().absolute().top_0().left_0().size_0().child(
+        deferred(
+            anchored()
+                .anchor(Anchor::BottomLeft)
+                .offset(point(px(-layout::CARD_INSET), px(0.)))
+                .snap_to_window_with_margin(px(layout::WINDOW_MARGIN))
+                .child(card),
+        )
+        .with_priority(1),
+    )
 }
 
 /// Floats `card` centered above the chip, kept inside the window (Pink:
@@ -895,8 +1168,10 @@ fn chip(
     } else {
         transparent_black()
     };
+    let selector = hover_key.clone();
     div()
         .id(eid(hover_key.clone()))
+        .debug_selector(move || selector)
         .role(Role::Button)
         .aria_label(accessible)
         .aria_expanded(s.open)
@@ -1024,14 +1299,19 @@ fn card_note(note: String, t: &Pink) -> Div {
         .child(SharedString::from(note))
 }
 
-/// The window card: Pink's details card on the popover plate, the field and
-/// its breakdown, and Pink's context tray.
+/// The Context menu (Pink: pickers.rs `render_context_menu`, PINK 0.31.1):
+/// on the flush popover plate, "Context window" with the usage in words and
+/// any provider note, then Compact and Clear. With the window map (the
+/// library's addition) the field, its breakdown and their caption sit
+/// between the two, above a hairline; without it the card is PINK's 280 pt
+/// `MENU_W_M`. It holds the keyboard focus while open.
 #[allow(clippy::too_many_arguments)]
 fn window_card(
     key: &str,
     s: &WindowState,
     tone: Hsla,
     wave: Option<f32>,
+    window_map: bool,
     props: &Rc<Props>,
     state: &Entity<WindowState>,
     window: &mut Window,
@@ -1050,18 +1330,19 @@ fn window_card(
     let tone = t
         .readable_on(tone, t.surface_bg(), NON_TEXT_CONTRAST_TARGET)
         .opacity(strength);
-    let note: SharedString = if s.note.is_some() || s.held {
-        s.detail()
+    // Pink: `compact.detail`, else the context `notice`; nothing when the
+    // provider has nothing to say.
+    let note: Option<SharedString> = if s.note.is_some() || s.compact == CompactState::Running {
+        Some(s.detail())
     } else {
-        format!(
-            "Compacts on its own at the marker, {:.0}% full.",
-            AUTO_COMPACT * 100.
-        )
-        .into()
+        props.note.clone()
     };
     let closer = state.clone();
+    let selector = format!("{key}-menu");
     pink::popover_card_flush(t)
-        .w(px(CARD_W))
+        .debug_selector(move || selector)
+        .track_focus(&s.menu_focus)
+        .w(px(if window_map { CARD_W } else { layout::MENU_W_M }))
         .flex()
         .flex_col()
         .gap_0()
@@ -1072,22 +1353,69 @@ fn window_card(
                 }
             })
         })
+        .child(menu_header(&s.usage, note, t))
+        .when(window_map, |card| {
+            card.child(
+                div()
+                    .px(px(CARD_PAD))
+                    .pt(px(CARD_GAP))
+                    .pb(px(CARD_PAD))
+                    .flex()
+                    .flex_col()
+                    .gap(px(CARD_GAP))
+                    .child(field(key, s, tone, hover, wave, state, window, t, cx))
+                    .child(breakdown(key, s, tone, hover, props, state, t))
+                    .child(card_note(
+                        format!(
+                            "Compacts on its own at the marker, {:.0}% full.\nEach cell is 1% of the window.",
+                            AUTO_COMPACT * 100.
+                        ),
+                        t,
+                    )),
+            )
+        })
         .child(
-            div()
-                .p(px(CARD_PAD))
-                .flex()
-                .flex_col()
-                .gap(px(CARD_GAP))
-                .child(card_title(t))
-                .child(card_details(&s.usage, t))
-                .child(field(key, s, tone, hover, wave, state, window, t, cx))
-                .child(breakdown(key, s, tone, hover, props, state, t))
-                .child(card_note(
-                    format!("{note}\nEach cell is 1% of the window."),
-                    t,
-                )),
+            tray(key, s, props, state, t)
+                .when(window_map, |d| d.border_t_1().border_color(t.hairline(0.08))),
         )
-        .child(tray(key, s, props, state, t))
+}
+
+/// The Context menu's header (Pink: `render_context_menu` `header`): inset
+/// by the card and 8 more, 10 from the top, 4 apart: "Context window" (12
+/// medium), the usage in words (12/18 muted, Pink: context_usage.rs
+/// `details`) and the provider's note (11/16 faint).
+fn menu_header(usage: &Usage, note: Option<SharedString>, t: &Pink) -> Div {
+    div().px(px(layout::CARD_INSET)).child(
+        div()
+            .px(px(8.))
+            .pt(px(10.))
+            .flex()
+            .flex_col()
+            .gap(px(4.))
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(t.text)
+                    .child("Context window"),
+            )
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .line_height(px(18.))
+                    .text_color(t.text_muted)
+                    .child(SharedString::from(details(usage))),
+            )
+            .when_some(note, |header, note| {
+                header.child(
+                    div()
+                        .text_size(px(11.))
+                        .line_height(px(16.))
+                        .text_color(t.text_faint)
+                        .child(note),
+                )
+            }),
+    )
 }
 
 /// The color a cell rests at: parts in the tone at their strength, free
@@ -1497,16 +1825,25 @@ fn file_row(
 /// One of the tray's actions (Pink: pickers.rs `render_context_controls`
 /// `compact` / `clear`): 30 tall, `px 8`, radius 6, gap 8, a 13 px glyph in
 /// `text_muted`, the quiet wash on hover; half strength when unavailable.
+/// One of the controls' 30 tall rows (Pink: `render_context_controls`'s
+/// Compact and Clear): a 13 px muted glyph and the label, washed under the
+/// pointer, at half strength when disabled, and lit while the Context
+/// menu's arrows rest on it. A `focusable` row is its own tab stop (the
+/// model menu's tray); the Context menu's rows follow its arrows instead.
 fn tray_row(
     id: String,
     icon: &'static str,
     label: &'static str,
     enabled: bool,
+    highlighted: bool,
+    focusable: bool,
     t: &Pink,
 ) -> Stateful<Div> {
     let ring = t.focus_ring();
+    let selector = id.clone();
     div()
         .id(eid(id.clone()))
+        .debug_selector(move || selector)
         .role(Role::Button)
         .aria_label(label)
         .h(px(TRAY_ROW_H))
@@ -1515,11 +1852,14 @@ fn tray_row(
         .flex()
         .items_center()
         .gap(px(8.))
+        .when(highlighted, |row| row.bg(t.element_hover))
         .when(enabled, |row| {
             row.cursor_pointer()
-                .tab_index(0)
-                .focus_visible(move |style| pink::focus_ring(style, ring))
                 .hover_wash(id, t.fill(FillTier::Tertiary))
+        })
+        .when(enabled && focusable, |row| {
+            row.tab_index(0)
+                .focus_visible(move |style| pink::focus_ring(style, ring))
         })
         .when(!enabled, |row| row.opacity(0.5))
         .child(
@@ -1532,10 +1872,42 @@ fn tray_row(
         .child(label)
 }
 
-/// Pink: pickers.rs `render_context_controls`, the context tray: a hairline
-/// on top, an 11 faint heading (here naming the model), Compact (Compacting…
-/// while it runs, with the reason when there is nothing to compact) and
-/// Clear context, which asks to be confirmed.
+/// Clear's label (Pink: `clear_context_confirmation`).
+fn clear_label(armed: bool) -> &'static str {
+    if armed {
+        "Confirm clear context"
+    } else {
+        "Clear context…"
+    }
+}
+
+/// An 11 faint line in the controls (Pink: the tray heading and the
+/// compact reason).
+fn caption(text: SharedString, t: &Pink) -> Div {
+    div()
+        .px(px(8.))
+        .pb(px(3.))
+        .text_size(px(11.))
+        .text_color(t.text_faint)
+        .child(text)
+}
+
+/// The controls' column (Pink: `context-controls-tray`): inset by the card,
+/// 6 above and below, rows 2 apart.
+fn controls_panel(_: &Pink) -> Div {
+    div()
+        .flex_none()
+        .px(px(layout::CARD_INSET))
+        .py(px(6.))
+        .flex()
+        .flex_col()
+        .gap(px(2.))
+}
+
+/// The Context menu's Compact and Clear (Pink: `render_context_controls`
+/// while `PickerKind::Context` is open): no heading, Compact (its reason
+/// when the provider can't, or when the history is too short to compact)
+/// and Clear context, which asks to be confirmed.
 fn tray(
     key: &str,
     s: &WindowState,
@@ -1545,29 +1917,23 @@ fn tray(
 ) -> Div {
     let compacting = s.is_compacting();
     let compact_enabled = s.can_compact();
-    let compact_reason =
-        (!compacting && !compact_enabled).then_some("The chat history is too short to compact.");
+    let compact_reason = s.compact.reason().or_else(|| {
+        (!compacting && !compact_enabled && s.compact.enabled())
+            .then(|| "The chat history is too short to compact.".into())
+    });
     let compact = {
         let state = state.clone();
         let props = props.clone();
         tray_row(
             format!("{key}-compact"),
             ICON_COMPACT,
-            if compacting {
-                "Compacting…"
-            } else {
-                "Compact"
-            },
+            s.compact_label(),
             compact_enabled,
+            s.active == Some(0),
+            false,
             t,
         )
-        .on_click(move |_, window, cx| {
-            if state.update(cx, |s, cx| s.start_compaction(cx))
-                && let Some(f) = props.on_compact.as_ref()
-            {
-                f(window, cx);
-            }
-        })
+        .on_click(move |_, window, cx| activate(&state, &props, 0, window, cx))
     };
     let clear = {
         let state = state.clone();
@@ -1575,45 +1941,44 @@ fn tray(
         tray_row(
             format!("{key}-clear"),
             ICON_CLEAR,
-            if s.confirm_clear {
-                "Confirm clear context"
-            } else {
-                "Clear context…"
-            },
+            clear_label(s.confirm_clear),
             true,
+            s.active == Some(1),
+            false,
             t,
         )
-        .on_click(move |_, window, cx| {
-            if state.update(cx, |s, cx| s.clear(cx))
-                && let Some(f) = props.on_clear.as_ref()
-            {
-                f(window, cx);
-            }
-        })
+        .on_click(move |_, window, cx| activate(&state, &props, 1, window, cx))
     };
-    let caption = |text: SharedString| {
-        div()
-            .px(px(8.))
-            .pb(px(3.))
-            .text_size(px(11.))
-            .text_color(t.text_faint)
-            .child(text)
-    };
-    div()
-        .flex_none()
-        .border_t_1()
-        .border_color(t.hairline(0.08))
-        .px(px(layout::CARD_INSET))
-        .py(px(6.))
-        .flex()
-        .flex_col()
-        .gap(px(2.))
-        .child(caption(
-            format!("{} CONTEXT", props.model.to_uppercase()).into(),
-        ))
+    controls_panel(t)
         .child(compact)
-        .when_some(compact_reason, |d, reason| d.child(caption(reason.into())))
+        .when_some(compact_reason, |d, reason| {
+            let selector = format!("{key}-compact-reason");
+            d.child(caption(reason, t).debug_selector(move || selector))
+        })
         .child(clear)
+}
+
+/// Compact (row 0) or Clear (row 1), from a click or Enter (Pink:
+/// `compact_context`, `clear_context`).
+fn activate(
+    state: &Entity<WindowState>,
+    props: &Rc<Props>,
+    row: usize,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let fired = match row {
+        0 => state.update(cx, |s, cx| s.start_compaction(cx)),
+        1 => state.update(cx, |s, cx| s.clear(cx)),
+        _ => false,
+    };
+    let handler = match row {
+        0 => props.on_compact.as_ref(),
+        _ => props.on_clear.as_ref(),
+    };
+    if fired && let Some(f) = handler {
+        f(window, cx);
+    }
 }
 
 /// The story's column: a composer under Pink's 768 maximum, with room
@@ -1682,13 +2047,22 @@ fn story_states(t: &Pink) -> Div {
             chat("cw-tight", 46_000, 14).show_label(false),
             "Tight row",
         ))
+        // PINK's plain Context menu, for a provider that can't compact.
+        .child(sample(
+            chat("cw-plain", 46_000, 14)
+                .window_map(false)
+                .compact(CompactState::Unavailable(
+                    "This provider has no verified compact operation.".into(),
+                )),
+            "Can't compact",
+        ))
         .child(sample(
             chat("cw-new", 0, 0).unreported(true),
             "Not reported yet",
         ))
 }
 
-/// A composer with the chip beside the model picker and its window card
+/// A composer with the chip beside the model picker and its Context menu
 /// open (Pink: composer.rs controls row, opaque `composer_surface`).
 fn story_composer(t: &Pink) -> Div {
     let attach = div()
@@ -1719,6 +2093,7 @@ fn story_composer(t: &Pink) -> Div {
         .conversation(96_300, 46)
         .memory(2_400)
         .reserve(8_000)
+        .note("Applies to the next turn on this thread.")
         .default_open(true);
     let send = div()
         .id("story-send")
