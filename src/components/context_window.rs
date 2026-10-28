@@ -903,6 +903,32 @@ impl ContextWindow {
         self
     }
 
+    /// The chip's width with its share and with its ring alone (Pink:
+    /// context_usage.rs `chip_widths`), for a host fitting its controls
+    /// row: both paddings, the ring, the gap and the share's 12 px run. A
+    /// window with nothing reported shows the ring alone either way.
+    pub fn chip_widths(&self, window: &Window) -> (f32, f32) {
+        let ring = 2. * CHIP_PAD_X + RING;
+        let compacting = self.compact == CompactState::Running;
+        if !self.usage.reported && !compacting {
+            return (ring, ring);
+        }
+        let text = label(compacting, self.usage.fraction());
+        let run = gpui::TextRun {
+            len: text.len(),
+            font: gpui::font(pink::SANS),
+            color: gpui::black(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        let line = window
+            .text_system()
+            .shape_line(SharedString::from(text), px(12.), &[run], None);
+        // One pixel of slack absorbs subpixel rounding.
+        (ring + RING_GAP + f32::from(line.width) + 1., ring)
+    }
+
     /// Starts with the Context menu open.
     pub fn default_open(mut self, open: bool) -> Self {
         self.default_open = open;
