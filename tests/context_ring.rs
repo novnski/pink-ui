@@ -3,12 +3,15 @@
 //! ring-only chip and `chip_widths` (which a host's controls row budgets
 //! with) disagree, so the row gives the share up too late and a chip
 //! truncates, or too early; the chip or ring not growing with the
-//! Interface size.
+//! Interface size; an arc of fixed pixels that looks lost in a large ring
+//! and crowds a small one.
 
 use gpui::{Context, IntoElement, Render, TestAppContext, Window, div, prelude::*};
 use pink_ui::{
     Theme, ThemeMode,
-    components::context_ring::{ContextRingStyle, HEIGHT, chip_widths, context_ring},
+    components::context_ring::{
+        ContextRingStyle, HEIGHT, RADIUS, RING, STROKE, arc_metrics, chip_widths, context_ring,
+    },
     pink::Pink,
 };
 
@@ -59,4 +62,24 @@ fn the_drawn_ring_chip_matches_the_width_a_row_budgets(cx: &mut TestAppContext) 
             chip.size
         );
     }
+}
+
+#[test]
+fn the_arc_keeps_its_proportion_in_the_ring() {
+    for ui in [12.0_f32, 16.0, 20.0] {
+        let side = RING * ui / 16.0;
+        let (radius, stroke) = arc_metrics(side);
+        assert!(
+            (radius / side - RADIUS / RING).abs() < 1e-6,
+            "radius at {ui}"
+        );
+        assert!(
+            (stroke / side - STROKE / RING).abs() < 1e-6,
+            "stroke at {ui}"
+        );
+        // The stroked arc stays inside its box.
+        assert!(radius + stroke / 2.0 <= side / 2.0, "arc inside at {ui}");
+    }
+    // The default size draws exactly as before.
+    assert_eq!(arc_metrics(RING), (RADIUS, STROKE));
 }

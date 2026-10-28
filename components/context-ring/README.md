@@ -12,7 +12,9 @@ to its vendored runtime, so there is one GPUI type graph and no copied source.
 - `context_ring(id, fraction, label, &ContextRingStyle)`: a `HEIGHT` capsule
   with the ring and, when given, the share. The ring is `RING` across: the
   full `track`, then an arc for `fraction` from twelve o'clock, clockwise, in
-  `arc`, with a `STROKE` line at `RADIUS`. No fraction shows the bare track.
+  `arc`, with a `STROKE` line at `RADIUS`, both in proportion to the ring
+  so the arc keeps its weight at every Interface size (`arc_metrics`). No
+  fraction shows the bare track.
 - `ring(fraction, track, color)`: the ring alone.
 - `chip_widths(label_width, scale)`: the chip's `(with label, ring only)`
   widths at Interface `scale`, so a controls row can give the share up before

@@ -17,7 +17,8 @@ use gpui::{
 
 /// The ring's side, in pt at the 16 px default.
 pub const RING: f32 = 16.0;
-/// The ring's radius and stroke, in pixels.
+/// The ring's radius and stroke at the 16 pt default; both grow with the
+/// ring, so the arc keeps its proportion at every Interface size.
 pub const RADIUS: f32 = 6.0;
 pub const STROKE: f32 = 1.8;
 /// The gap between the ring and the share.
@@ -45,6 +46,13 @@ pub fn chip_widths(label_width: f32, scale: f32) -> (f32, f32) {
     )
 }
 
+/// The arc's `(radius, stroke)` in pixels for a ring laid out `side` pixels
+/// across: `RADIUS` and `STROKE` in proportion to `RING`.
+pub fn arc_metrics(side: f32) -> (f32, f32) {
+    let scale = side / RING;
+    (RADIUS * scale, STROKE * scale)
+}
+
 /// The ring alone: the full `track`, then the arc for `fraction` (clamped
 /// to 0..=1, starting at twelve o'clock and running clockwise) in `color`.
 pub fn ring(fraction: Option<f32>, track: Hsla, color: Hsla) -> impl IntoElement {
@@ -52,18 +60,19 @@ pub fn ring(fraction: Option<f32>, track: Hsla, color: Hsla) -> impl IntoElement
         |_, _, _| (),
         move |bounds, _, window, _| {
             let center = bounds.center();
+            let (radius, stroke) = arc_metrics(f32::from(bounds.size.width));
             let mut arc = |fraction: f32, color| {
                 if fraction <= 0.0 {
                     return;
                 }
                 let steps = (64.0 * fraction).ceil().max(2.0) as usize;
-                let mut path = PathBuilder::stroke(px(STROKE));
+                let mut path = PathBuilder::stroke(px(stroke));
                 for i in 0..=steps {
                     let angle = -std::f32::consts::FRAC_PI_2
                         + std::f32::consts::TAU * fraction * i as f32 / steps as f32;
                     let p = point(
-                        center.x + px(RADIUS * angle.cos()),
-                        center.y + px(RADIUS * angle.sin()),
+                        center.x + px(radius * angle.cos()),
+                        center.y + px(radius * angle.sin()),
                     );
                     if i == 0 {
                         path.move_to(p);
