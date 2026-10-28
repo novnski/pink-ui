@@ -71,8 +71,6 @@ const RING: f32 = 34.;
 const SPINNER_CELL: f32 = 3.;
 /// The file artwork at its own 24 box.
 const FILE_ICON: f32 = 24.;
-/// Pink: `widgets::error_strip` copy size.
-const STRIP_TEXT: f32 = 12.5;
 
 const TICK: Duration = Duration::from_millis(50);
 /// How long a new file reads before its bytes go out (the skeleton).
@@ -822,31 +820,16 @@ fn thumbnail(
     )
 }
 
-/// Pink: `widgets::error_strip` – the danger plate with a leading triangle.
+/// Pink: `widgets::error_strip` – the danger plate with a leading triangle,
+/// drawn by the `pink-settings-parts` package, flush with what it follows.
 fn error_strip(message: SharedString, t: &Pink) -> Div {
-    let (plate, edge, copy) = pink::strip_colors(t.danger, t.danger_muted, t);
-    div()
-        .px(px(layout::ROW_PAD_X))
-        .py(px(layout::ROW_PAD_Y))
-        .rounded(px(radius::STRIP))
-        .border_1()
-        .border_color(edge)
-        .bg(plate)
-        .text_size(px(STRIP_TEXT))
-        .text_color(copy)
-        .flex()
-        .flex_row()
-        .items_start()
-        .gap(px(space::S8))
-        .child(
-            div().flex_none().mt(px(space::S2)).child(
-                svg()
-                    .path(ICON_WARNING)
-                    .size(px(icon_size::MD))
-                    .text_color(copy),
-            ),
-        )
-        .child(div().min_w_0().child(message))
+    use crate::components::settings_parts as parts;
+    parts::error_strip(
+        &parts::strip_style(t.danger, t.danger_muted, t),
+        ICON_WARNING,
+        message,
+    )
+    .mt(px(0.0))
 }
 
 fn extension(name: &str) -> String {

@@ -601,26 +601,12 @@ impl IntegrationSettings {
     }
 }
 
-/// The quiet line under a row title (Pink `settings/widgets.rs` `meta_line`):
-/// 12 px fragments in `readable_muted(0.8)`, 12 apart and never split by a
-/// glyph (UI rethink decision 31), so each fragment reads as its own fact.
+/// The quiet line under a row title (Pink `settings/widgets.rs` `meta_line`),
+/// drawn by the `pink-settings-parts` package: 12 fragments in
+/// `readable_muted(0.8)`, 12 apart and never split by a glyph (UI rethink
+/// decision 31), so each fragment reads as its own fact.
 fn meta_line(fragments: Vec<AnyElement>, t: &Pink) -> Div {
-    let mut line = div()
-        .min_w_0()
-        .mt(px(space::TEXT_STACK_GAP))
-        .flex()
-        .flex_row()
-        .flex_wrap()
-        .items_center()
-        .gap_x(px(space::S12))
-        .gap_y(px(space::S2))
-        .text_size(px(12.))
-        .line_height(px(16.))
-        .text_color(t.readable_muted(0.8));
-    for fragment in fragments {
-        line = line.child(div().min_w_0().flex_shrink(1.0).child(fragment));
-    }
-    line
+    crate::components::settings_parts::meta_line(t.readable_muted(0.8), fragments)
 }
 
 /// The access token (Pink: settings/devices.rs `device_row`'s id): a mono

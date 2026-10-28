@@ -18,6 +18,7 @@ use super::{
     radius, shadow_lg,
 };
 use crate::HoverFill;
+use crate::components::settings_parts as parts;
 use crate::components::settings_section as section;
 
 // ---------------------------------------------------------------------------
@@ -109,26 +110,11 @@ pub fn row_block() -> Div {
     section::row_block()
 }
 
-/// A row's identity tile (Pink `widgets::row_tile`): 28 square, radius 7,
-/// 1 px `border`, `fill(Quaternary)`, a 16 px icon in `text_muted`.
+/// A row's identity tile (Pink `widgets::row_tile`), drawn by the
+/// `pink-settings-parts` package: 28 square, radius 7, 1 px `border`,
+/// `fill(Quaternary)`, a 16 icon in `text_muted`.
 pub fn row_tile(icon_path: impl Into<SharedString>, t: &Pink) -> Div {
-    div()
-        .flex_none()
-        .size(px(28.0))
-        .rounded(px(radius::TILE))
-        .border_1()
-        .border_color(t.border)
-        .bg(t.fill(FillTier::Quaternary))
-        .flex()
-        .items_center()
-        .justify_center()
-        .child(
-            gpui::svg()
-                .path(icon_path)
-                .size(px(16.0))
-                .flex_none()
-                .text_color(t.text_muted),
-        )
+    parts::row_tile(&parts::tile_style(t), icon_path)
 }
 
 /// Fine print under a section card: `mt 8 / px 16`, 12/16
