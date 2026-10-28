@@ -26,6 +26,17 @@
 //!     .loading(checking);
 //! ```
 
+// The control frame is the `pink-button` package (`components/button`),
+// the kit's frame as a single-GPUI package PINK pins (UI rethink decision
+// 54). The gallery compiles the package's own source here, unchanged,
+// against its GPUI; the kit (`pink::button`, `icon_button`, `select`,
+// `chip`) draws through it.
+#[allow(dead_code)]
+mod package {
+    include!("../../components/button/src/lib.rs");
+}
+pub use package::*;
+
 use std::{collections::HashMap, rc::Rc, time::Duration};
 
 use gpui::{
@@ -35,7 +46,7 @@ use gpui::{
 
 use crate::{
     motion,
-    pink::{self, ButtonKind, ControlSize, Pink, layout, loaders},
+    pink::{self, ButtonKind, Pink, layout, loaders},
     story,
 };
 

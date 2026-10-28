@@ -16,8 +16,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, Bounds, Canvas, Div, ElementId, FontWeight, Hsla, KeyDownEvent, Role,
-    SharedString, Stateful, Svg, Toggled, Window, canvas, div, point, prelude::*, px, svg,
+    AnyElement, App, Bounds, Canvas, Div, FontWeight, Hsla, KeyDownEvent, Role, SharedString,
+    Stateful, Svg, Toggled, Window, canvas, div, point, prelude::*, px, svg,
 };
 
 use super::{FillTier, MONO, Pink, focus_ring, radius, shadow_sm};
@@ -118,7 +118,8 @@ pub fn glyph(path: impl Into<SharedString>, size: ControlSize) -> Svg {
 // Sizes and the shared frame
 // ---------------------------------------------------------------------------
 
-/// The control size ladder (Pink `button::ControlSize`).
+/// The control size ladder (Pink `button::ControlSize`), from the
+/// `pink-button` package (`components/button`).
 ///
 /// | Size | Height | Radius | Type  | Side pad | Glyph | Gap |
 /// | ---- | ------ | ------ | ----- | -------- | ----- | --- |
@@ -128,107 +129,56 @@ pub fn glyph(path: impl Into<SharedString>, size: ControlSize) -> Svg {
 ///
 /// `Sm` is for toolbars, inline row actions and chips, `Md` for the settings
 /// control column and panel headers, `Lg` for dialogs and the sidebar footer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ControlSize {
-    Sm,
-    Md,
-    Lg,
-}
+pub use crate::components::button::ControlSize;
+use crate::components::button::{self as control, ControlStyle};
 
-impl ControlSize {
-    pub const fn height(self) -> f32 {
-        match self {
-            ControlSize::Sm => 24.0,
-            ControlSize::Md => 28.0,
-            ControlSize::Lg => 32.0,
-        }
-    }
-
-    pub const fn radius(self) -> f32 {
-        match self {
-            ControlSize::Sm => radius::SM,
-            ControlSize::Md | ControlSize::Lg => radius::MD,
-        }
-    }
-
-    pub const fn text(self) -> f32 {
-        match self {
-            ControlSize::Sm => 11.0,
-            ControlSize::Md => 12.0,
-            ControlSize::Lg => 13.0,
-        }
-    }
-
-    pub const fn line_height(self) -> f32 {
-        match self {
-            ControlSize::Sm => 14.0,
-            ControlSize::Md => 16.0,
-            ControlSize::Lg => 18.0,
-        }
-    }
-
-    pub const fn pad_x(self) -> f32 {
-        match self {
-            ControlSize::Sm => 8.0,
-            ControlSize::Md => 10.0,
-            ControlSize::Lg => 12.0,
-        }
-    }
-
-    pub const fn glyph(self) -> f32 {
-        match self {
-            ControlSize::Sm => 12.0,
-            ControlSize::Md => 14.0,
-            ControlSize::Lg => 16.0,
-        }
-    }
-
-    /// Icon → label gap.
-    pub const fn gap(self) -> f32 {
-        match self {
-            ControlSize::Sm => 4.0,
-            ControlSize::Md | ControlSize::Lg => 6.0,
-        }
-    }
-}
-
-/// The frame every control shares (Pink `control_frame_inner`): role, height,
-/// corner, type, the focus ring and a resting transparent border.
-/// `swallow_keys`: push buttons stop Enter/Space key-downs; pop-up triggers
-/// own their keys and opt out.
-fn control_frame(
-    id: ElementId,
-    size: ControlSize,
+/// The semantics every control adds over the package's frame (Pink
+/// `control_frame_inner`): the button role, the tab stop and the 2 px inset
+/// focus ring. `swallow_keys`: push buttons stop Enter/Space key-downs;
+/// pop-up triggers own their keys and opt out.
+fn control_semantics(
+    frame: Stateful<Div>,
     enabled: bool,
     swallow_keys: bool,
     t: &Pink,
 ) -> Stateful<Div> {
     let ring = t.focus_ring();
-    div()
-        .id(id)
+    frame
         .role(Role::Button)
-        .flex_none()
-        .h(px(size.height()))
-        .flex()
-        .flex_row()
-        .items_center()
-        .justify_center()
-        .gap(px(size.gap()))
-        .rounded(px(size.radius()))
-        .border_1()
-        .border_color(gpui::transparent_black())
-        .text_size(px(size.text()))
-        .line_height(px(size.line_height()))
-        .font_weight(FontWeight::MEDIUM)
         .when(enabled, |el| {
             el.tab_index(0)
-                .cursor_pointer()
                 .focus_visible(move |style| focus_ring(style, ring))
         })
         .when(enabled && swallow_keys, |el| {
             el.on_key_down(swallow_activation_key)
         })
-        .when(!enabled, |el| el.cursor_default().opacity(0.45))
+}
+
+/// A control's colours under its hover fade: the plate and label mixed from
+/// rest to hover by `key`'s fade while enabled, the resting ones otherwise.
+fn hover_style(
+    key: &str,
+    size: ControlSize,
+    enabled: bool,
+    colors: (Hsla, Hsla, Hsla, Hsla),
+    border: Hsla,
+    weight: FontWeight,
+) -> ControlStyle {
+    let (rest, hover, fg, hover_fg) = colors;
+    let mix = if enabled { motion::hover_t(key) } else { 0.0 };
+    ControlStyle {
+        size,
+        fill: Some(motion::mix(rest, hover, mix)),
+        text: motion::mix(fg, hover_fg, mix),
+        border,
+        weight,
+        enabled,
+    }
+}
+
+/// Adds the hover listener behind [`hover_style`]'s fade to an enabled control.
+fn with_hover(frame: Stateful<Div>, key: String, enabled: bool) -> Stateful<Div> {
+    frame.when(enabled, |el| el.on_hover(motion::hover_listener(key)))
 }
 
 // ---------------------------------------------------------------------------
@@ -315,20 +265,17 @@ pub fn button_enabled(
 ) -> Stateful<Div> {
     let id: SharedString = id.into();
     let colors = kind_colors(kind, t);
-    let frame = control_frame(id.clone().into(), size, enabled, true, t)
-        .px(px(size.pad_x()))
-        .when_some(colors.border, |el, border| el.border_color(border));
-    if enabled {
-        frame.hover_fill_fg(
-            format!("pink-btn-{id}"),
-            colors.rest,
-            colors.hover,
-            colors.fg,
-            colors.hover_fg,
-        )
-    } else {
-        frame.bg(colors.rest).text_color(colors.fg)
-    }
+    let key = format!("pink-btn-{id}");
+    let style = hover_style(
+        &key,
+        size,
+        enabled,
+        (colors.rest, colors.hover, colors.fg, colors.hover_fg),
+        colors.border.unwrap_or(gpui::transparent_black()),
+        FontWeight::MEDIUM,
+    );
+    let frame = control_semantics(control::button(id, &style), enabled, true, t);
+    with_hover(frame, key, enabled)
 }
 
 /// A square glyph-only button: transparent at rest, `fill(Tertiary)` under
@@ -360,14 +307,18 @@ pub fn icon_button_enabled(
         rest_fg
     };
     let hover = t.fill(FillTier::Tertiary);
-    let frame = control_frame(id.into(), size, enabled, true, t)
-        .w(px(size.height()))
+    let mix = if enabled { motion::hover_t(&key) } else { 0.0 };
+    let style = ControlStyle {
+        size,
+        fill: enabled.then(|| motion::mix(hover.opacity(0.0), hover, mix)),
+        text: motion::mix(rest_fg, t.text, mix),
+        border: gpui::transparent_black(),
+        weight: FontWeight::MEDIUM,
+        enabled,
+    };
+    let frame = control_semantics(control::square(id, &style), enabled, true, t)
         .child(glyph(glyph_path, size).text_color(tone));
-    if enabled {
-        frame.hover_fill_fg(key, hover.opacity(0.0), hover, rest_fg, t.text)
-    } else {
-        frame.text_color(rest_fg)
-    }
+    with_hover(frame, key, enabled)
 }
 
 /// A pop-up button: a Secondary control showing the current choice and one
@@ -403,25 +354,23 @@ pub fn select_frame(
 ) -> Stateful<Div> {
     let id: SharedString = id.into();
     let colors = kind_colors(ButtonKind::Secondary, t);
-    let frame = control_frame(id.clone().into(), size, enabled, false, t)
-        .pl(px(size.pad_x()))
-        .pr(px(size.pad_x() - 2.0))
-        .justify_start()
-        .gap(px(8.0))
-        .font_weight(FontWeight::NORMAL)
-        .when_some(colors.border, |el, border| el.border_color(border))
-        .aria_expanded(open);
-    if enabled {
-        frame.hover_fill_fg(
-            format!("pink-select-{id}"),
+    let key = format!("pink-select-{id}");
+    let style = hover_style(
+        &key,
+        size,
+        enabled,
+        (
             if open { colors.hover } else { colors.rest },
             colors.hover,
             colors.fg,
             colors.fg,
-        )
-    } else {
-        frame.bg(colors.rest).text_color(colors.fg)
-    }
+        ),
+        colors.border.unwrap_or(gpui::transparent_black()),
+        FontWeight::NORMAL,
+    );
+    let frame =
+        control_semantics(control::popup(id, &style), enabled, false, t).aria_expanded(open);
+    with_hover(frame, key, enabled)
 }
 
 /// A selectable chip for a choice among many: a quiet filled control
@@ -465,20 +414,22 @@ pub fn chip_enabled(
             t.separator(false),
         )
     };
-    let frame = control_frame(id.clone().into(), size, enabled, true, t)
-        .px(px(size.pad_x()))
-        .border_color(border)
-        .font_weight(if selected {
+    let key = format!("pink-chip-{id}");
+    let style = hover_style(
+        &key,
+        size,
+        enabled,
+        (rest, hover, fg, hover_fg),
+        border,
+        if selected {
             FontWeight::MEDIUM
         } else {
             FontWeight::NORMAL
-        })
+        },
+    );
+    let frame = control_semantics(control::button(id, &style), enabled, true, t)
         .aria_toggled(toggled(selected));
-    if enabled {
-        frame.hover_fill_fg(format!("pink-chip-{id}"), rest, hover, fg, hover_fg)
-    } else {
-        frame.bg(rest).text_color(fg)
-    }
+    with_hover(frame, key, enabled)
 }
 
 /// The selection ring for swatches and option cards: a 2 px accent ring 2 px
