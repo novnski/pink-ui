@@ -14,10 +14,11 @@ use gpui::{
 };
 
 use super::{
-    FillTier, Pink, SANS, TextStyle, TypeRole, TypeStyleExt, controls::glyphs,
-    controls::line_glyph, layout, radius, shadow_lg,
+    FillTier, Pink, SANS, TextStyle, TypeStyleExt, controls::glyphs, controls::line_glyph, layout,
+    radius, shadow_lg,
 };
 use crate::HoverFill;
+use crate::components::settings_section as section;
 
 // ---------------------------------------------------------------------------
 // In-flow cards
@@ -35,19 +36,15 @@ pub fn card(t: &Pink) -> Div {
         .rounded(px(radius::SECTION_CARD))
 }
 
-/// A settings section card (Pink `widgets::section_card`): `mt 24`, radius
-/// 12, 1 px `border`, `card_glass_bg()`, clipped, a column. Put a
-/// [`section_header`] inside, then [`card_row`]s.
+/// A settings section card (Pink `widgets::section_card`), drawn by the
+/// `pink-settings-section` package: `mt 24`, radius 12, 1 px `border`,
+/// `card_glass_bg()`, clipped, a column. Put a [`section_header`] inside,
+/// then [`card_row`]s.
 pub fn section_card(t: &Pink) -> Div {
-    div()
-        .mt(px(layout::SECTION_GAP))
-        .rounded(px(radius::SECTION_CARD))
-        .border_1()
-        .border_color(t.border)
-        .bg(t.card_glass_bg())
-        .overflow_hidden()
-        .flex()
-        .flex_col()
+    section::section_card(&section::CardStyle {
+        border: t.border,
+        background: t.card_glass_bg(),
+    })
 }
 
 /// A section's title block inside its card (Pink `widgets::section_header`):
@@ -59,117 +56,57 @@ pub fn section_header(
     description: Option<SharedString>,
     t: &Pink,
 ) -> Div {
-    div()
-        .w_full()
-        .px(px(layout::ROW_PAD_X))
-        .pt(px(14.0))
-        .pb(px(12.0))
-        .flex()
-        .flex_row()
-        .flex_wrap()
-        .items_start()
-        .gap_x(px(12.0))
-        .gap_y(px(8.0))
-        .child(
-            div()
-                .flex_1()
-                .min_w(px(layout::ROW_TEXT_MIN))
-                .flex()
-                .flex_col()
-                .gap(px(3.0))
-                .child(
-                    div()
-                        .type_style(TextStyle::Title3)
-                        .text_color(t.text)
-                        .child(title.into()),
-                )
-                .when_some(description, |column, copy| {
-                    column.child(row_description(copy, t))
-                }),
-        )
+    section::section_header().child(
+        section::header_text()
+            .child(section::header_title(t.text, title))
+            .when_some(description, |column, copy| {
+                column.child(row_description(copy, t))
+            }),
+    )
 }
 
 /// One settings card row (Pink `widgets::card_row`): at least 48 tall,
 /// `px 16 / py 12`, a `border` hairline on top unless `first`, wrapping with
 /// gaps 12 / 10. No hover: rows aren't controls.
 pub fn card_row(first: bool, t: &Pink) -> Div {
-    div()
-        .w_full()
-        .min_h(px(layout::ROW_MIN_HEIGHT))
-        .px(px(layout::ROW_PAD_X))
-        .py(px(layout::ROW_PAD_Y))
-        .when(!first, |el| el.border_t_1().border_color(t.border))
-        .flex()
-        .flex_row()
-        .flex_wrap()
-        .items_center()
-        .gap_x(px(12.0))
-        .gap_y(px(10.0))
+    section::card_row((!first).then_some(t.border))
 }
 
 /// A row's text column (Pink `widgets::row_text`): title and optional
-/// description, gap 2, holding 220 px so the controls wrap below it before
-/// the text squeezes.
+/// description, gap 2, holding 220 so the controls wrap below it before the
+/// text squeezes.
 pub fn row_text(
     title: impl Into<SharedString>,
     description: Option<SharedString>,
     t: &Pink,
 ) -> Div {
-    div()
-        .flex_1()
-        .min_w(px(layout::ROW_TEXT_MIN))
-        .flex()
-        .flex_col()
-        .gap(px(2.0))
+    section::row_text()
         .child(row_title(title, t))
         .when_some(description, |column, copy| {
             column.child(row_description(copy, t))
         })
 }
 
-/// A row title: `TypeRole::Chrome` (13/18) medium `text`, wrapping.
+/// A row title: 13/18 medium `text`, wrapping.
 pub fn row_title(title: impl Into<SharedString>, t: &Pink) -> Div {
-    div()
-        .min_w_0()
-        .type_role(TypeRole::Chrome)
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(t.text)
-        .child(title.into())
+    section::row_title(t.text, title)
 }
 
-/// A row description: `TypeRole::Metadata` (12/16) in `readable_muted(0.85)`,
-/// wrapping.
+/// A row description: 12/16 in `readable_muted(0.85)`, wrapping.
 pub fn row_description(copy: impl Into<SharedString>, t: &Pink) -> Div {
-    div()
-        .min_w_0()
-        .type_role(TypeRole::Metadata)
-        .text_color(t.readable_muted(0.85))
-        .child(copy.into())
+    section::row_description(t.readable_muted(0.85), copy)
 }
 
 /// A row's trailing controls (Pink `widgets::row_controls`): one line pushed
 /// right with `ml_auto` (as in Pink, so it also stays right-aligned when the
 /// row wraps it under the text), gap 8, never wrapping.
 pub fn row_controls() -> Div {
-    div()
-        .flex_none()
-        .ml_auto()
-        .flex()
-        .flex_row()
-        .items_center()
-        .justify_end()
-        .gap(px(8.0))
+    section::row_controls()
 }
 
 /// A full-width block under a row's text (chip groups, lists): wraps, gap 8.
 pub fn row_block() -> Div {
-    div()
-        .w_full()
-        .flex()
-        .flex_row()
-        .flex_wrap()
-        .items_center()
-        .gap(px(8.0))
+    section::row_block()
 }
 
 /// A row's identity tile (Pink `widgets::row_tile`): 28 square, radius 7,
@@ -197,12 +134,7 @@ pub fn row_tile(icon_path: impl Into<SharedString>, t: &Pink) -> Div {
 /// Fine print under a section card: `mt 8 / px 16`, 12/16
 /// `readable_muted(0.8)`.
 pub fn section_footer(copy: impl Into<SharedString>, t: &Pink) -> Div {
-    div()
-        .mt(px(8.0))
-        .px(px(layout::ROW_PAD_X))
-        .type_role(TypeRole::Metadata)
-        .text_color(t.readable_muted(0.8))
-        .child(copy.into())
+    section::section_footer(t.readable_muted(0.8), copy)
 }
 
 /// A form field label above a group (Pink `widgets::field_label`): `mt 12 /

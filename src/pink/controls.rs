@@ -20,7 +20,7 @@ use gpui::{
     Stateful, Svg, Toggled, Window, canvas, div, point, prelude::*, px, svg,
 };
 
-use super::{FillTier, MONO, Pink, focus_ring, radius, shadow_sm};
+use super::{FillTier, MONO, Pink, focus_ring, radius};
 use crate::{
     HoverFill,
     motion::{self, DISCLOSURE, QUICK},
@@ -678,9 +678,6 @@ pub fn segmented(
 /// glide over [`motion::DISCLOSURE`] (300 ms) only when the value flips. `key`
 /// names the switch's motion; keep it unique on screen.
 pub fn toggle_switch(on: bool, key: &str, t: &Pink) -> Div {
-    const W: f32 = 34.0;
-    const H: f32 = 20.0;
-    const KNOB: f32 = 16.0;
     let track_off = if t.dark {
         t.fill(FillTier::Primary)
     } else {
@@ -691,23 +688,13 @@ pub fn toggle_switch(on: bool, key: &str, t: &Pink) -> Div {
         if on { 1.0 } else { 0.0 },
         DISCLOSURE,
     );
-    div()
-        .flex_none()
-        .w(px(W))
-        .h(px(H))
-        .rounded_full()
-        .bg(motion::mix(track_off, t.accent_strong, p))
-        .relative()
-        .child(
-            div()
-                .absolute()
-                .top(px((H - KNOB) / 2.0))
-                .left(px(motion::lerp(2.0, W - KNOB - 2.0, p)))
-                .size(px(KNOB))
-                .rounded_full()
-                .bg(gpui::white())
-                .shadow(shadow_sm()),
-        )
+    crate::components::switch::switch(
+        &crate::components::switch::SwitchStyle {
+            track: motion::mix(track_off, t.accent_strong, p),
+            knob: gpui::white(),
+        },
+        p,
+    )
 }
 
 /// [`toggle_switch`] as a control (Pink `switch_control`): an announced,

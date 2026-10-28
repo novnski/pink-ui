@@ -38,6 +38,7 @@ use gpui::{
     anchored, canvas, deferred, div, point, prelude::*, px, svg,
 };
 
+use super::settings_section as section;
 use crate::{
     HoverFill,
     motion::{self, MENU_OUT, MENU_RISE_DOWN, RESIZE},
@@ -2414,17 +2415,7 @@ fn render_card(f: &Frame, card: &SettingsCard) -> AnyElement {
 
     // Pink `section_header`: `px 16 / pt 14 / pb 12`, Title3 over the
     // description (gap 3), trailing actions on the title's line.
-    let mut header = div()
-        .w_full()
-        .px(px(layout::ROW_PAD_X))
-        .pt(px(14.0))
-        .pb(px(12.0))
-        .flex()
-        .flex_row()
-        .flex_wrap()
-        .items_start()
-        .gap_x(px(12.0))
-        .gap_y(px(8.0));
+    let mut header = section::section_header();
     if let Some((d, _)) = card_mark {
         header = header.relative().child(destination_plate(
             f,
@@ -2436,18 +2427,8 @@ fn render_card(f: &Frame, card: &SettingsCard) -> AnyElement {
     }
     let header = header
         .child(
-            div()
-                .flex_1()
-                .min_w(px(layout::ROW_TEXT_MIN))
-                .flex()
-                .flex_col()
-                .gap(px(3.0))
-                .child(
-                    div()
-                        .type_style(TextStyle::Title3)
-                        .text_color(t.text)
-                        .child(card.title.clone()),
-                )
+            section::header_text()
+                .child(section::header_title(t.text, card.title.clone()))
                 .children(
                     card.description
                         .clone()
@@ -2565,12 +2546,7 @@ fn render_row(f: &Frame, card: &SettingsCard, row: &SettingRow, card_on: bool) -
     let dest = f
         .destination
         .filter(|d| d.card == card.key && d.row.as_ref() == Some(&row.key));
-    let mut text = div()
-        .flex_1()
-        .min_w(px(layout::ROW_TEXT_MIN))
-        .flex()
-        .flex_col()
-        .gap(px(2.0));
+    let mut text = section::row_text();
     if let Some(d) = dest {
         text = text.relative().child(destination_plate(
             f,
