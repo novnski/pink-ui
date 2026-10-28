@@ -58,7 +58,9 @@ pub mod markdown_message;
 pub mod memory_panel;
 pub mod menu_card;
 pub mod message_actions;
+pub mod message_badge;
 pub mod model_picker;
+pub mod notice;
 pub mod notification_stack;
 pub mod otp_input;
 pub mod permission_request;
@@ -140,6 +142,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Chat",
         description: trigger_chip::DESCRIPTION,
         story: trigger_chip::story,
+    },
+    ComponentEntry {
+        slug: "message-badge",
+        name: message_badge::NAME,
+        category: "Chat",
+        description: message_badge::DESCRIPTION,
+        story: message_badge::story,
     },
     ComponentEntry {
         slug: "composer-disc",
@@ -679,6 +688,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Feedback",
         description: decision_inbox::DESCRIPTION,
         story: decision_inbox::story,
+    },
+    ComponentEntry {
+        slug: "notice",
+        name: notice::NAME,
+        category: "Feedback",
+        description: notice::DESCRIPTION,
+        story: notice::story,
     },
     ComponentEntry {
         slug: "notification-stack",
