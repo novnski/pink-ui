@@ -437,8 +437,9 @@ const ICON_FORK: &str = "icons/toaster/arrow-fork.svg";
 const ICON_ATTACH: &str = "icons/toaster/paperclip.svg";
 const ICON_SEND: &str = "icons/toaster/arrow-up.svg";
 
-/// The transcript's row gutter (Pink: transcript.rs, 48 at desktop widths).
-const TRANSCRIPT_GUTTER: f32 = 48.;
+/// The transcript's row gutter: the shared column's (Pink: transcript.rs
+/// `transcript_row_gutter`, column_bounds.rs `GUTTER`, PINK 0.31.2).
+const TRANSCRIPT_GUTTER: f32 = layout::COLUMN_GUTTER;
 
 fn copy_link(q: &mut Toasts, cx: &mut Context<Toasts>) {
     q.push(Toast::status("PINK task link copied"), cx);
@@ -704,7 +705,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .child(triggers)
             .child(
                 // The bottom of a chat pane on Pink's content canvas, with
-                // the transcript's 48pt gutter (Pink: transcript.rs).
+                // the transcript's shared 24 pt gutter (Pink: transcript.rs).
                 div()
                     .px(px(TRANSCRIPT_GUTTER))
                     .pt(px(space::S24))

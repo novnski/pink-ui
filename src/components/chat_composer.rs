@@ -29,10 +29,14 @@
 //! adds a line. A notice above the pill (PINK 0.31.0) says what went wrong
 //! without touching the draft: a file that isn't an image ("Can't attach"),
 //! a refused action naming its cause first, or the connection. It is one
-//! alert, title then message, with a named Copy message button.
+//! alert, title then message, with a named Copy message button. In a pane
+//! (`.pane(width)`, PINK 0.31.2, D43, D44) the composer takes the pane's
+//! shared conversation column: the Conversation width inside a 24 pt
+//! gutter, 16 pt below a 480 pt pane, the same edges as the transcript.
 //!
 //! ```ignore
 //! ChatComposer::new("composer")
+//!     .pane(pane_width)
 //!     .attachments(files)
 //!     .running(agent_busy)
 //!     .follow_up(FollowUp::Steer)
@@ -143,8 +147,9 @@ const TARGET_CHIP_RADIUS: f32 = 6.0;
 const MODE_CHIP_ICON: f32 = 15.0;
 /// Pink `pickers.rs`: the permission popover is 340 wide.
 const ACCESS_MENU_W: f32 = 340.0;
-/// Pink `max-w-3xl` (768) less the column's 16 pt gutters.
-const DEFAULT_WIDTH: f32 = layout::COMPOSER_MAX_WIDTH - 32.0;
+/// The pill at the default Conversation width (Pink: a wide pane's 736 pt
+/// pill, the column inside its 24 pt gutters; PINK 0.31.2).
+const DEFAULT_WIDTH: f32 = layout::CONVERSATION_WIDTH_DEFAULT;
 /// A press on an open menu's own chip closes it (Pink
 /// `note_trigger_press_matching`); the click that follows must not reopen it.
 const REOPEN_GUARD: Duration = Duration::from_millis(250);
@@ -955,6 +960,8 @@ pub struct ChatComposer {
     follow_up: FollowUp,
     steer_available: bool,
     width: f32,
+    pane: Option<f32>,
+    reading: f32,
     on_send: Option<SendHandler>,
     on_stop: Option<Handler>,
     on_attach: Option<Handler>,
@@ -984,6 +991,8 @@ impl ChatComposer {
             follow_up: FollowUp::Queue,
             steer_available: false,
             width: DEFAULT_WIDTH,
+            pane: None,
+            reading: layout::CONVERSATION_WIDTH_DEFAULT,
             on_send: None,
             on_stop: None,
             on_attach: None,
@@ -1094,8 +1103,26 @@ impl ChatComposer {
         self
     }
 
+    /// The pill's width, for a host that lays the composer out itself.
+    /// [`ChatComposer::pane`] takes the pane's shared column instead.
     pub fn width(mut self, width: f32) -> Self {
         self.width = width;
+        self
+    }
+
+    /// Lay the composer out in the shared conversation column of a pane
+    /// `width` wide (Pink composer.rs `set_available_width`, PINK 0.31.2,
+    /// D43, D44): its outer box is the column plus the pane's gutters,
+    /// centred, so the pill's edges match the transcript's prose above it.
+    pub fn pane(mut self, width: f32) -> Self {
+        self.pane = Some(width);
+        self
+    }
+
+    /// The Conversation width setting the pane's column reads at (default
+    /// 736, 560 to 1200 in 16 pt steps).
+    pub fn reading_width(mut self, width: f32) -> Self {
+        self.reading = layout::normalize_conversation_width(width);
         self
     }
 
@@ -2062,8 +2089,15 @@ fn toggle_menu(state: &Entity<State>, kind: Menu, window: &mut Window, cx: &mut 
 }
 
 impl RenderOnce for ChatComposer {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Pink::get(cx);
+        // In a pane, the pill is the shared column's width.
+        let column = self
+            .pane
+            .map(|pane| layout::ColumnBounds::for_pane(pane, self.reading));
+        if let Some(column) = column {
+            self.width = column.width;
+        }
         let key = self.id.to_string();
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
@@ -2750,8 +2784,14 @@ impl RenderOnce for ChatComposer {
 
         div()
             .id(self.id.clone())
-            .w(px(self.width))
-            .max_w_full()
+            .map(|el| match column {
+                Some(column) => el
+                    .w_full()
+                    .max_w(px(column.outer_width()))
+                    .mx_auto()
+                    .px(px(column.gutter)),
+                None => el.w(px(self.width)).max_w_full(),
+            })
             .flex()
             .flex_col()
             .gap(px(COLUMN_GAP))
@@ -3105,12 +3145,12 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                             .type_style(TextStyle::Footnote)
                             .text_color(t.readable_muted(0.8))
                             .child(
-                                "In a thread: the branch keeps its name beside every pull request",
+                                "In a thread pane: the pill takes the shared column, and the branch keeps its name beside every pull request",
                             ),
                     )
                     .child(
                         thread("cc-prs")
-                            .width(2. * STATE_W + 24.)
+                            .pane(2. * STATE_W + 24.)
                             .checkout(
                                 Checkout::branch("main")
                                     .worktree("storefront-2")
