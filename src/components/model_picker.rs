@@ -10,7 +10,10 @@
 //! search row, a band of compact model rows (⌘1–⌘9 and a star each), and a
 //! pinned tray whose Reasoning and option rows open nested choice menus on
 //! hover. Picking a model keeps the card open, so the tray can be adjusted
-//! right after.
+//! right after. For a chat whose composer shows no context ring (the
+//! setting is off or the provider reports no usage; PINK 0.31.3, D75) the
+//! menu ends in PINK's "Context" tray with Compact and Clear
+//! (`.context_controls`); with a ring they live in its Context menu.
 //!
 //! Keys: ↑/↓ move through the models and on into the tray, Enter picks a
 //! model or opens a tray row, → opens and ← closes a tray row's choices,
@@ -35,6 +38,7 @@ use web_time::Instant;
 
 use crate::{
     HoverFill,
+    components::context_window::{CompactState, ContextControls, context_tray},
     motion::{self, MENU_OUT, MENU_RISE_DOWN, MENU_RISE_UP},
     pink::{self, FillTier, Pink, layout, radius},
     primitives::{InputEvent, TextInput, text_input},
@@ -42,7 +46,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Model Picker";
-pub const DESCRIPTION: &str = "A composer's model chip and menu: Favorites, Recent and provider tabs, a search row, compact model rows with ⌘ shortcuts and stars, and a tray whose Reasoning and option rows open nested choices";
+pub const DESCRIPTION: &str = "A composer's model chip and menu: Favorites, Recent and provider tabs, a search row, compact model rows with ⌘ shortcuts and stars, a tray whose Reasoning and option rows open nested choices, and Compact and Clear for a chat with no context ring";
 
 const ICON_HELIX: &str = "icons/model-picker/helix.svg";
 const ICON_ORBIT: &str = "icons/model-picker/orbit.svg";
@@ -351,6 +355,7 @@ pub struct ModelPicker {
     on_favorite_change: Option<FavoriteHandler>,
     recent: Vec<SharedString>,
     on_recent_change: Option<RecentHandler>,
+    context_controls: Option<ContextControls>,
 }
 
 impl ModelPicker {
@@ -370,6 +375,7 @@ impl ModelPicker {
             on_favorite_change: None,
             recent: Vec::new(),
             on_recent_change: None,
+            context_controls: None,
         }
     }
 
@@ -460,6 +466,16 @@ impl ModelPicker {
         handler: impl Fn(&SharedString, bool, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_favorite_change = Some(Rc::new(handler));
+        self
+    }
+
+    /// Compact and Clear at the foot of the menu, under a "Context"
+    /// heading, for a chat whose composer shows no context ring (Pink: the
+    /// model menu's `context_tray`, PINK 0.31.3, D75; decide with
+    /// [`context_ring_shown`](crate::components::context_window::context_ring_shown)).
+    /// With a ring they live in its Context menu instead.
+    pub fn context_controls(mut self, controls: ContextControls) -> Self {
+        self.context_controls = Some(controls);
         self
     }
 }
@@ -1322,6 +1338,14 @@ impl RenderOnce for ModelPicker {
         });
 
         let placement = self.placement;
+        let shown = {
+            let s = state.read(cx);
+            s.open || s.closing.is_some()
+        };
+        let context = self
+            .context_controls
+            .filter(|_| shown)
+            .map(|controls| context_tray(format!("{key}-context"), controls, window, cx));
         let s = state.read(cx);
         let trigger = trigger(&key, s, &t, &state);
         let layer = (s.open || s.closing.is_some()).then(|| {
@@ -1333,7 +1357,7 @@ impl RenderOnce for ModelPicker {
                 .occlude()
                 .when(above, |el| el.pb(px(layout::POPOVER_GAP)))
                 .when(!above, |el| el.pt(px(layout::POPOVER_GAP)))
-                .child(menu(&key, s, &t, &state));
+                .child(menu(&key, s, context, &t, &state));
             let inner: AnyElement = match exit {
                 // A dying menu takes no clicks (Pink: `menu_motion_from`).
                 Some(progress) => motion::menu_out(
@@ -1494,9 +1518,15 @@ fn trigger(key: &str, s: &PickerState, t: &Pink, state: &Entity<PickerState>) ->
 }
 
 /// The menu card (Pink: `popover_frame_flush` at `MENU_W_L` around
-/// `render_harness_model_popover`): tabs, search, the model band and the
-/// traits tray.
-fn menu(key: &str, s: &PickerState, t: &Pink, state: &Entity<PickerState>) -> Div {
+/// `render_harness_model_popover`): tabs, search, the model band, the
+/// traits tray and, for a chat without a context ring, the context tray.
+fn menu(
+    key: &str,
+    s: &PickerState,
+    context: Option<Stateful<Div>>,
+    t: &Pink,
+    state: &Entity<PickerState>,
+) -> Div {
     let rows = s.rows();
     let groups = s.groups();
     let refocus = s.search.clone();
@@ -1534,7 +1564,8 @@ fn menu(key: &str, s: &PickerState, t: &Pink, state: &Entity<PickerState>) -> Di
                 .child(tabs(key, s, t, state))
                 .child(search_row(s, t))
                 .child(list(key, s, &rows, t, state))
-                .children(tray(key, s, &groups, rows.len(), t, state)),
+                .children(tray(key, s, &groups, rows.len(), t, state))
+                .children(context),
         )
 }
 
@@ -2297,7 +2328,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             );
         div()
             .w(px(640.))
-            .h(px(520.))
+            .h(px(640.))
             .flex()
             .flex_col()
             .justify_end()
@@ -2334,7 +2365,16 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                                         .selected("helix-4-pro")
                                         .recent(["helix-4-pro", "orbit-6-coder", "lumen-3"])
                                         .default_open(true)
-                                        .autofocus(true),
+                                        .autofocus(true)
+                                        // A provider that reports no
+                                        // context usage: no ring, so the
+                                        // menu keeps Compact and Clear.
+                                        .context_controls(ContextControls::new(
+                                            CompactState::Unavailable(
+                                                "This provider has no verified compact operation."
+                                                    .into(),
+                                            ),
+                                        )),
                                 ),
                             )
                             .child(div().flex_1())
