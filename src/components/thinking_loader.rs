@@ -28,8 +28,8 @@ use std::{rc::Rc, sync::Arc};
 use web_time::{Duration, Instant};
 
 use gpui::{
-    AnyView, App, BoxShadow, ClickEvent, Context, ElementId, Hsla, IntoElement, Role, SharedString,
-    Task, Window, div, point, prelude::*, px,
+    AnyView, App, ClickEvent, Context, ElementId, Hsla, IntoElement, Role, SharedString, Task,
+    Window, div, prelude::*, px,
 };
 
 use crate::{
@@ -537,32 +537,14 @@ impl Demo {
     }
 }
 
-/// Pink: the user message bubble (`transcript.rs` user row) – right-aligned,
-/// 80% wide at most, r16, 14/22 on the bubble wash with a light-mode edge.
+/// Pink: the user message bubble (`transcript.rs` user row), drawn by the
+/// `pink-user-bubble` package – right-aligned, 80% wide at most.
 fn user_bubble(text: &'static str, width: f32, t: &Pink) -> impl IntoElement {
-    let edge = t.user_bubble_edge();
-    div().w_full().flex().justify_end().child(
-        div()
-            .min_w_0()
-            .max_w(px(width * 0.8))
-            .bg(t.user_bubble_bg())
-            .when_some(edge, |el, edge| {
-                el.shadow(vec![BoxShadow {
-                    color: edge,
-                    offset: point(px(0.), px(0.)),
-                    blur_radius: px(0.),
-                    spread_radius: px(1.),
-                    inset: true,
-                }])
-            })
-            .rounded(px(radius::BUBBLE))
-            .px(px(space::S16))
-            .py(px(space::S10))
-            .text_size(px(14.))
-            .line_height(px(TRANSCRIPT_LINE_HEIGHT))
-            .text_color(t.text)
-            .child(text),
-    )
+    div()
+        .w_full()
+        .flex()
+        .justify_end()
+        .child(crate::components::user_bubble::plate(width, t).child(text))
 }
 
 /// Pink: assistant text is bare markdown on the canvas, 14/22.

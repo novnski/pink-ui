@@ -10,6 +10,11 @@
 //! lane lines up with the right edge of its bubble, a reply's with the left
 //! edge of its text.
 //!
+//! The lane, its strip, the timestamp and each action's square are drawn by
+//! the `pink-message-actions` package (`components/message-actions`), the
+//! same source PINK pins; this module compiles it in place and adds the
+//! behaviour (hover fades, copy, focus, tooltips) and the story.
+//!
 //! ```ignore
 //! MessageActions::new("reply-7")
 //!     .role(MessageRole::Assistant)
@@ -22,15 +27,22 @@
 use std::{rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
-    AnyView, App, BoxShadow, ClipboardItem, Context, Div, ElementId, Entity, IntoElement, Role,
-    SharedString, Stateful, Task, Window, div, point, prelude::*, px, relative, svg,
+    AnyView, App, ClipboardItem, Context, Div, ElementId, Entity, IntoElement, Role, SharedString,
+    Stateful, Task, Window, div, prelude::*, px, relative, svg,
 };
 
 use crate::{
+    components::user_bubble,
     motion,
-    pink::{self, Pink, TextStyle, TypeStyleExt, icon_size, radius, space, text},
+    pink::{self, Pink, space, text},
     story,
 };
+
+#[allow(dead_code)]
+mod package {
+    include!("../../components/message-actions/src/lib.rs");
+}
+pub use package::*;
 
 pub const NAME: &str = "Message Actions";
 pub const DESCRIPTION: &str = "The hover lane under a chat message: its timestamp and quiet icon actions to branch into a side chat, fork from here, edit, rewind or copy, fading in while the message is hovered, with Copy turning into a check";
@@ -43,11 +55,6 @@ const ICON_FORK: &str = "icons/message-actions/arrow-fork.svg";
 const ICON_EDIT: &str = "icons/message-actions/pen.svg";
 const ICON_REWIND: &str = "icons/message-actions/restart.svg";
 
-/// The reserved lane (Pink: transcript.rs `META_LANE_HEIGHT`): the 24px
-/// actions plus a 4px lead above them.
-const LANE_HEIGHT: f32 = 28.0;
-/// One action's square (Pink: transcript.rs `meta_action`).
-const ACTION_SIZE: f32 = 24.0;
 /// How long Copy shows its check (Pink: `Transcript::copy_message`).
 const COPIED_FOR: Duration = Duration::from_millis(1200);
 
@@ -352,32 +359,20 @@ fn meta_action(
     t: &Pink,
 ) -> Stateful<Div> {
     let ring = t.focus_ring();
-    div()
-        .id(id)
+    let wash = motion::hover_blend(&fade_key, gpui::transparent_black(), t.ink(0.08));
+    let glyph = svg()
+        .path(icon)
+        .flex_none()
+        .size(ui_rems(ACTION_ICON))
+        .text_color(t.content_muted)
+        .into_any_element();
+    package::action(id, glyph, wash)
         .role(Role::Button)
         .aria_label(label)
         .tab_index(0)
-        .size(px(ACTION_SIZE))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(radius::SM))
-        .cursor_pointer()
-        .bg(motion::hover_blend(
-            &fade_key,
-            gpui::transparent_black(),
-            t.ink(0.08),
-        ))
         .on_hover(motion::hover_listener(fade_key))
         .focus_visible(move |style| pink::focus_ring(style, ring))
         .tooltip(pink::text_tooltip(label))
-        .child(
-            svg()
-                .path(icon)
-                .flex_none()
-                .size(px(icon_size::SM))
-                .text_color(t.content_muted),
-        )
 }
 
 impl RenderOnce for MessageActions {
@@ -409,18 +404,11 @@ impl RenderOnce for MessageActions {
         // (Pink: `render_row`'s `metadata`). It mounts only while shown and
         // fades in each time (Pink: `motion::fade_quick`, 150ms ease).
         let strip = shown.then(|| {
-            let mut strip = div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(space::S2))
-                .child(div().mr(px(space::S6)))
-                .children(self.timestamp.clone().map(|stamp| {
-                    div()
-                        .type_style(TextStyle::Footnote)
-                        .text_color(t.content_faint)
-                        .child(stamp)
-                }));
+            let mut strip = package::strip().children(
+                self.timestamp
+                    .clone()
+                    .map(|stamp| package::timestamp(stamp, t.content_faint)),
+            );
             for action in MessageAction::ORDER {
                 if !actions.contains(&action) || (action == MessageAction::SideChat && handoff) {
                     continue;
@@ -464,17 +452,11 @@ impl RenderOnce for MessageActions {
         motion::keep_alive(window);
 
         let hover = state.clone();
-        div()
+        // No horizontal inset: the lane sits on the content column's edges,
+        // start for replies and end for the user's bubble.
+        package::lane(self.role == MessageRole::User)
             .id(self.id.clone())
-            .w_full()
-            .h(px(LANE_HEIGHT))
-            .pt(px(LANE_HEIGHT - ACTION_SIZE))
-            .flex()
-            .items_center()
             .font_family(pink::SANS)
-            // No horizontal inset: the lane sits on the content column's
-            // edges, start for replies and end for the user's bubble.
-            .when(self.role == MessageRole::User, |el| el.justify_end())
             .on_hover(move |hovered, _, cx| hover.update(cx, |s, cx| s.set_hovered(*hovered, cx)))
             .children(strip)
     }
@@ -668,32 +650,14 @@ impl Demo {
     }
 }
 
-/// A user bubble (Pink: transcript.rs `RowKind::User`): right-aligned, at
-/// most 80% of the column, `user_bubble_bg` with light mode's inset edge,
-/// r16, `px 16 / py 10`, 14/22 text.
+/// A user bubble (Pink: transcript.rs `RowKind::User`), drawn by the
+/// `pink-user-bubble` package: right-aligned, at most 80% of the column.
 fn user_bubble(text: &'static str, t: &Pink) -> Div {
-    div().w_full().flex().justify_end().child(
-        div()
-            .min_w_0()
-            .max_w(px(COLUMN * 0.8))
-            .bg(t.user_bubble_bg())
-            .when_some(t.user_bubble_edge(), |el, edge| {
-                el.shadow(vec![BoxShadow {
-                    color: edge,
-                    offset: point(px(0.), px(0.)),
-                    blur_radius: px(0.),
-                    spread_radius: px(1.),
-                    inset: true,
-                }])
-            })
-            .rounded(px(radius::BUBBLE))
-            .px(px(space::S16))
-            .py(px(space::S10))
-            .text_size(px(text::PROSE))
-            .line_height(px(PROSE_LINE_HEIGHT))
-            .text_color(t.text)
-            .child(text),
-    )
+    div()
+        .w_full()
+        .flex()
+        .justify_end()
+        .child(user_bubble::plate(COLUMN, t).child(text))
 }
 
 /// A reply: bare prose on the canvas (Pink: markdown `MD_TEXT_SIZE` 14 /
