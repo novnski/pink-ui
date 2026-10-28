@@ -33,14 +33,15 @@ use gpui::{
 };
 
 use crate::{
-    HoverFill, motion,
+    HoverFill,
+    components::working_trailer,
+    motion,
     pink::{
         self, FillTier, Pink, TextStyle, TypeStyleExt,
         loaders::{
-            LIVE_STATUS_OBJECT_CHARS, WORKING_STATUS_LINE_HEIGHT, WORKING_TIMER_SIZE,
-            ellipsize_chars, orb_slot, working_status, working_timer,
+            LIVE_STATUS_OBJECT_CHARS, ellipsize_chars, orb_slot, working_status, working_timer,
         },
-        radius, space,
+        space,
     },
     story,
 };
@@ -59,8 +60,6 @@ const QUEUED_LABEL: &str = "Queued, will send automatically";
 const SETUP_LABEL: &str = "Setting up worktree";
 /// Pink: the send → turn bridge.
 const SENDING_LABEL: &str = "Sending";
-/// The group the hover-only Stop listens to (Pink `"working-trailer"`).
-const TRAILER_GROUP: &str = "working-trailer";
 
 type StopHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
@@ -360,18 +359,11 @@ impl RenderOnce for ThinkingLoader {
         let show_timer = !sending || setup.is_some();
         let stop = self.on_stop.filter(|_| !sending);
 
-        div()
-            .id(self.id)
-            .group(TRAILER_GROUP)
+        // Drawn by the `pink-working-trailer` package: each item is one line
+        // box tall, so the orb, timer and Stop stay on the first line of a
+        // wrapped sentence
+        working_trailer::trailer(self.id)
             .font_family(pink::SANS)
-            .flex()
-            .flex_row()
-            // Each item is one line box tall, so the orb, timer and Stop
-            // stay on the first line of a wrapped sentence
-            .items_start()
-            .gap(px(space::SM))
-            .pt(px(space::LG))
-            .min_w_0()
             .child(orb_slot(t.accent))
             .child(status_line)
             .when(show_timer, |el| {
@@ -385,28 +377,21 @@ impl RenderOnce for ThinkingLoader {
 /// pointer (or on keyboard focus), 11/16 `content_muted` with the standard
 /// hover wash.
 fn stop_button(key: &str, on_stop: StopHandler, t: &Pink) -> impl IntoElement {
-    div()
-        .id("working-stop")
-        .role(Role::Button)
-        .aria_label("Stop the current turn")
-        .tab_index(0)
-        .flex_none()
-        .ml(px(space::XS))
-        .px(px(space::S6))
-        .rounded(px(radius::CONTROL))
-        .cursor_pointer()
-        .text_size(px(WORKING_TIMER_SIZE))
-        .line_height(px(WORKING_STATUS_LINE_HEIGHT))
-        .text_color(t.content_muted)
-        .opacity(0.)
-        .group_hover(TRAILER_GROUP, |style| style.opacity(1.))
-        .focus_visible(|style| style.opacity(1.))
-        .hover_wash(format!("{key}-stop"), t.fill(FillTier::Tertiary))
-        .child("Stop")
-        .on_click(move |event, window, cx| {
-            cx.stop_propagation();
-            on_stop(event, window, cx);
-        })
+    working_trailer::stop(
+        "working-stop",
+        "Stop",
+        t.content_muted,
+        gpui::transparent_black(),
+    )
+    .role(Role::Button)
+    .aria_label("Stop the current turn")
+    .tab_index(0)
+    .focus_visible(|style| style.opacity(1.))
+    .hover_wash(format!("{key}-stop"), t.fill(FillTier::Tertiary))
+    .on_click(move |event, window, cx| {
+        cx.stop_propagation();
+        on_stop(event, window, cx);
+    })
 }
 
 // ---------------------------------------------------------------------------

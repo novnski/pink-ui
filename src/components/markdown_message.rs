@@ -45,7 +45,9 @@ use gpui::{
 };
 
 use crate::{
-    HoverFill, motion,
+    HoverFill,
+    components::code_block,
+    motion,
     pink::{self, Pink, Syntax, radius},
     story,
 };
@@ -69,10 +71,6 @@ const CODE_LINE_HEIGHT: f32 = 18.;
 /// Pink `CODE_PADDING_X` / `CODE_PADDING_Y`.
 const CODE_PADDING_X: f32 = 12.;
 const CODE_PADDING_Y: f32 = 10.;
-/// The fence header strip and its 22px actions (Pink `CODE_HEADER_HEIGHT`,
-/// `CODE_ACTION_SIZE`).
-const CODE_HEADER_HEIGHT: f32 = 28.;
-const CODE_ACTION_SIZE: f32 = 22.;
 /// The horizontal scrollbar under a fence (Pink `CODE_SCROLLBAR_HIT_HEIGHT`
 /// and `popover::MENU_SCROLLBAR_*`).
 const CODE_SCROLLBAR_HIT_HEIGHT: f32 = 10.;
@@ -3049,33 +3047,28 @@ impl Renderer<'_> {
         };
         let state = self.state.clone();
         let ring = t.focus_ring();
-        let fit_button = div()
-            .id(SharedString::from(fit_key.clone()))
-            .role(Role::Button)
-            .aria_label(label)
-            .tab_index(0)
-            .focus_visible(move |s| pink::focus_ring(s, ring))
-            .size(px(CODE_ACTION_SIZE))
-            .rounded(px(radius::SM))
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_pointer()
-            .hover_fill(fit_key, base, hover)
-            .on_click(move |_, _, cx| {
-                cx.stop_propagation();
-                state.update(cx, |s, cx| {
-                    s.fit = Some(!fit);
-                    cx.notify();
-                });
-            })
-            .tooltip(move |_, cx| cx.new(|_| CodeTooltip(label)).into())
-            .child(
-                svg()
-                    .path(WRAP_TEXT)
-                    .size(px(13.))
-                    .text_color(t.content_muted),
-            );
+        let fit_button = code_block::icon_action(
+            SharedString::from(fit_key.clone()),
+            svg()
+                .path(WRAP_TEXT)
+                .size(px(code_block::ACTION_ICON))
+                .text_color(t.content_muted)
+                .into_any_element(),
+            base,
+        )
+        .role(Role::Button)
+        .aria_label(label)
+        .tab_index(0)
+        .focus_visible(move |s| pink::focus_ring(s, ring))
+        .hover_fill(fit_key, base, hover)
+        .on_click(move |_, _, cx| {
+            cx.stop_propagation();
+            state.update(cx, |s, cx| {
+                s.fit = Some(!fit);
+                cx.notify();
+            });
+        })
+        .tooltip(move |_, cx| cx.new(|_| CodeTooltip(label)).into());
 
         // Pink `code_copy_button`
         let copied = self.copied == Some(ix);
@@ -3083,52 +3076,44 @@ impl Renderer<'_> {
         let state = self.state.clone();
         let code_text: SharedString = code.to_string().into();
         let on_copy = self.on_copy.clone();
-        let copy_button = div()
-            .id(SharedString::from(copy_key.clone()))
-            .role(Role::Button)
-            .aria_label("Copy code")
-            .tab_index(0)
-            .focus_visible(move |s| pink::focus_ring(s, ring))
-            .h(px(CODE_ACTION_SIZE))
-            .px(px(6.))
-            .rounded(px(radius::SM))
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(4.))
-            .cursor_pointer()
-            .hover_fill(copy_key, transparent_black(), t.ink(0.08))
-            .text_size(px(11.))
-            .text_color(t.content_muted)
-            .on_click(move |_, window, cx| {
-                cx.stop_propagation();
-                cx.write_to_clipboard(ClipboardItem::new_string(code_text.to_string()));
-                state.update(cx, |s, cx| {
-                    s.copied = Some(ix);
-                    s.copy_reset = Some(cx.spawn(
-                        async move |this: WeakEntity<State>, cx: &mut AsyncApp| {
-                            cx.background_executor().timer(COPIED_FOR).await;
-                            this.update(cx, |s, cx| {
-                                s.copied = None;
-                                cx.notify();
-                            })
-                            .ok();
-                        },
-                    ));
-                    cx.notify();
-                });
-                if let Some(on_copy) = &on_copy {
-                    on_copy(&code_text, window, cx);
-                }
-            })
-            .child(
-                svg()
-                    .path(if copied { COPY_CHECK } else { COPY })
-                    .flex_none()
-                    .size(px(12.))
-                    .text_color(t.content_muted),
-            )
-            .when(copied, |el| el.child("Copied"));
+        let copy_button = code_block::copy_action(
+            SharedString::from(copy_key.clone()),
+            svg()
+                .path(if copied { COPY_CHECK } else { COPY })
+                .flex_none()
+                .size(px(code_block::COPY_ICON))
+                .text_color(t.content_muted)
+                .into_any_element(),
+            copied.then(|| SharedString::from("Copied")),
+            t.content_muted,
+            transparent_black(),
+        )
+        .role(Role::Button)
+        .aria_label("Copy code")
+        .tab_index(0)
+        .focus_visible(move |s| pink::focus_ring(s, ring))
+        .hover_fill(copy_key, transparent_black(), t.ink(0.08))
+        .on_click(move |_, window, cx| {
+            cx.stop_propagation();
+            cx.write_to_clipboard(ClipboardItem::new_string(code_text.to_string()));
+            state.update(cx, |s, cx| {
+                s.copied = Some(ix);
+                s.copy_reset = Some(cx.spawn(
+                    async move |this: WeakEntity<State>, cx: &mut AsyncApp| {
+                        cx.background_executor().timer(COPIED_FOR).await;
+                        this.update(cx, |s, cx| {
+                            s.copied = None;
+                            cx.notify();
+                        })
+                        .ok();
+                    },
+                ));
+                cx.notify();
+            });
+            if let Some(on_copy) = &on_copy {
+                on_copy(&code_text, window, cx);
+            }
+        });
 
         // The lines, colored per token
         let lang = Lang::of(language);
@@ -3271,80 +3256,52 @@ impl Renderer<'_> {
         });
 
         // Pink `code_block_header`: language left, actions right, gap 2
-        let header = div()
-            .h(px(CODE_HEADER_HEIGHT))
-            .flex_none()
-            .pl(px(CODE_PADDING_X))
-            .pr(px(5.))
-            .border_b_1()
-            .border_color(t.border)
-            .bg(t.ink(0.02))
-            .flex()
-            .flex_row()
-            .items_center()
-            .justify_between()
-            .child(
-                div()
-                    .min_w_0()
-                    .text_size(px(11.))
-                    .text_color(t.content_muted)
-                    .children(language.map(|l| SharedString::from(l.to_string()))),
-            )
-            .child(
-                div()
-                    .flex_none()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap(px(2.))
-                    .child(fit_button)
-                    .child(copy_button),
-            );
+        let style = code_block::frame_style(&t);
+        let header = code_block::header(
+            language.map(|l| SharedString::from(l.to_string())),
+            vec![
+                fit_button.into_any_element(),
+                copy_button.into_any_element(),
+            ],
+            style,
+        );
 
         // Pink `code_block_frame`
         let hover_state = self.state.clone();
         let move_state = self.state.clone();
         let frame_key = key.clone();
-        div()
-            .id(SharedString::from(format!("{key}-code-frame-{ix}")))
-            .w_full()
-            .min_w_0()
-            .flex()
-            .flex_col()
-            .rounded(px(radius::LG))
-            .bg(t.ink(0.035))
-            .border_1()
-            .border_color(t.border)
-            .overflow_hidden()
-            .relative()
-            .child(header)
-            .child(div().w_full().relative().child(body).children(scrollbar))
-            .on_hover(move |hovered, _, cx| {
-                let hovered = *hovered;
-                hover_state.update(cx, |s, cx| {
-                    if s.code
-                        .get_mut(ix)
-                        .is_some_and(|c| c.set_viewport_hovered(hovered))
-                    {
-                        cx.notify();
-                    }
-                });
-            })
-            .on_drag_move(move |event: &gpui::DragMoveEvent<ScrollbarDrag>, _, cx| {
-                let Some(drag) = event.dragged_item().downcast_ref::<ScrollbarDrag>() else {
-                    return;
-                };
-                if drag.key != frame_key || drag.ix != ix {
-                    return;
+        code_block::frame(
+            SharedString::from(format!("{key}-code-frame-{ix}")),
+            header,
+            style,
+        )
+        .child(div().w_full().relative().child(body).children(scrollbar))
+        .on_hover(move |hovered, _, cx| {
+            let hovered = *hovered;
+            hover_state.update(cx, |s, cx| {
+                if s.code
+                    .get_mut(ix)
+                    .is_some_and(|c| c.set_viewport_hovered(hovered))
+                {
+                    cx.notify();
                 }
-                let x = event.event.position.x;
-                move_state.update(cx, |s, cx| {
-                    if s.code.get(ix).is_some_and(|c| c.drag_to(x)) {
-                        cx.notify();
-                    }
-                });
-            })
-            .into_any_element()
+            });
+        })
+        .on_drag_move(move |event: &gpui::DragMoveEvent<ScrollbarDrag>, _, cx| {
+            let Some(drag) = event.dragged_item().downcast_ref::<ScrollbarDrag>() else {
+                return;
+            };
+            if drag.key != frame_key || drag.ix != ix {
+                return;
+            }
+            let x = event.event.position.x;
+            move_state.update(cx, |s, cx| {
+                if s.code.get(ix).is_some_and(|c| c.drag_to(x)) {
+                    cx.notify();
+                }
+            });
+        })
+        .into_any_element()
     }
 }
 
