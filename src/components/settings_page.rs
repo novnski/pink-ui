@@ -2488,32 +2488,17 @@ fn render_card(f: &Frame, card: &SettingsCard) -> AnyElement {
         .into_any_element()
 }
 
-/// Pink `widgets::warning_strip`: `mt 8 / px 16 / py 10`, radius 12, an
-/// amber `@ 0.2` edge on `@ 0.06`, 12 copy in `readable_tone(warning_muted,
-/// 0.9)` after a 14 danger triangle.
+/// Pink `widgets::warning_strip`, drawn by the `pink-settings-parts`
+/// package: `mt 8 / px 16 / py 10`, radius 12, an amber `@ 0.2` edge on
+/// `@ 0.06`, 12 copy in `readable_tone(warning_muted, 0.9)` after a 14
+/// danger triangle.
 fn warning_strip(copy: SharedString, t: &Pink) -> Div {
-    let (plate, edge, tone) = pink::strip_colors(t.warning, t.warning_muted, t);
-    div()
-        .mt(px(8.0))
-        .px(px(16.0))
-        .py(px(10.0))
-        .rounded(px(12.0))
-        .border_1()
-        .border_color(edge)
-        .bg(plate)
-        .text_size(px(12.0))
-        .text_color(tone)
-        .flex()
-        .flex_row()
-        .items_start()
-        .gap(px(8.0))
-        .child(
-            div()
-                .flex_none()
-                .mt(px(2.0))
-                .child(svg().path(ICON_DANGER).size(px(14.0)).text_color(tone)),
-        )
-        .child(div().min_w_0().child(copy))
+    use crate::components::settings_parts as parts;
+    parts::warning_strip(
+        &parts::strip_style(t.warning, t.warning_muted, t),
+        ICON_DANGER,
+        copy,
+    )
 }
 
 /// The label a reset names (Pink general.rs `reset_control`'s "Reset to …").

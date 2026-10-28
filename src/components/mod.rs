@@ -69,6 +69,7 @@ pub mod recovery_card;
 pub mod section_header;
 pub mod segmented_control;
 pub mod settings_page;
+pub mod settings_parts;
 pub mod settings_section;
 pub mod setup_guide;
 pub mod sidebar;
@@ -617,6 +618,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Inputs",
         description: settings_section::DESCRIPTION,
         story: settings_section::story,
+    },
+    ComponentEntry {
+        slug: "settings-parts",
+        name: settings_parts::NAME,
+        category: "Inputs",
+        description: settings_parts::DESCRIPTION,
+        story: settings_parts::story,
     },
     ComponentEntry {
         slug: "switch",

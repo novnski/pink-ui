@@ -27,10 +27,11 @@ use gpui::{
     Anchor, AnyElement, App, Bounds, ClickEvent, Context, DispatchPhase, Div, ElementId, Entity,
     FocusHandle, Hsla, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, Pixels, Rgba, Role, SharedString, Stateful, Subscription, Task, Toggled, Window,
-    anchored, canvas, deferred, div, prelude::*, px, svg,
+    anchored, canvas, deferred, div, prelude::*, px,
 };
 
 use crate::{
+    components::settings_parts as parts,
     motion::{self, MENU_OUT, MENU_RISE_DOWN},
     pink::{self, ControlSize, FillTier, Pink, Segment, TextStyle, TypeStyleExt, layout},
     primitives::{InputEvent, TextInput},
@@ -48,11 +49,9 @@ const ICON_RESTART: &str = "icons/appearance-picker/restart.svg";
 /// Pink's settings column: `max_w 720` less its 32 px gutters.
 const CARD_W: f32 = 656.0;
 
-/// Option cards (Pink widgets.rs `OPTION_CARD_HEIGHT`, `OPTION_CARD_RADIUS`,
-/// `option_card_row`'s 16 gap).
-const OPTION_CARD_HEIGHT: f32 = 148.0;
-const OPTION_CARD_RADIUS: f32 = 6.0;
-const OPTION_CARD_GAP: f32 = 16.0;
+/// Option cards (Pink widgets.rs `OPTION_CARD_RADIUS`), drawn by the
+/// `pink-settings-parts` package.
+const OPTION_CARD_RADIUS: f32 = parts::OPTION_CARD_RADIUS;
 
 /// Pickers and menus (Pink appearance.rs).
 const FAMILY_PICKER_WIDTH: f32 = 200.0;
@@ -1372,17 +1371,7 @@ impl RenderOnce for AppearancePicker {
                         Some("Follow macOS, or keep PINK light or dark.".into()),
                         &t,
                     ))
-                    .child(
-                        pink::row_block().child(
-                            div()
-                                .flex()
-                                .flex_row()
-                                .items_start()
-                                .gap(px(OPTION_CARD_GAP))
-                                .w_full()
-                                .children(cards),
-                        ),
-                    ),
+                    .child(pink::row_block().child(parts::option_card_row().children(cards))),
             )
             .child(setting_row(
                 "Light theme",
@@ -1469,17 +1458,7 @@ fn setting_row(
 /// 2 px ring 2 px outside the child, its corner `inner + 4`, the space kept
 /// when unselected so choosing never shifts the layout.
 fn ring(selected: bool, inner_radius: f32, accent: Hsla, child: impl IntoElement) -> Div {
-    div()
-        .flex_none()
-        .p(px(2.0))
-        .border_2()
-        .border_color(if selected {
-            accent
-        } else {
-            gpui::transparent_black()
-        })
-        .rounded(px(inner_radius + 4.0))
-        .child(child)
+    parts::selection_ring(selected, inner_radius, accent, child)
 }
 
 // ── Option cards ────────────────────────────────────────────────────────
@@ -1579,83 +1558,52 @@ fn preview(mode: AppearanceMode, light: &ThemeVariant, dark: &ThemeVariant) -> A
     }
 }
 
-/// One option card (Pink widgets.rs `option_card`): a 148 tall preview
-/// frame (radius 6, `border`) inside the selection ring, and the caption
-/// under it, gap 8: a 16 glyph and the 13 label, medium `text` when chosen,
-/// `text_muted` otherwise. Accent is reserved for the ring.
+/// One option card (Pink widgets.rs `option_card`), drawn by the
+/// `pink-settings-parts` package: a 148 tall preview frame (radius 6,
+/// `border`) inside the selection ring, and the caption under it, gap 8: a
+/// 16 glyph and the 13 label, medium `text` when chosen, `text_muted`
+/// otherwise. Accent is reserved for the ring. The gallery adds the role,
+/// name, focus ring and click, as Pink's appearance page does.
 fn option_card(f: &Frame, mode: AppearanceMode, selected: bool) -> Stateful<Div> {
     let t = f.t;
     let ring_color = t.focus_ring();
     let state = f.state.clone();
-    div()
-        .id(SharedString::from(format!(
-            "{}-mode-{}",
-            f.key,
-            mode.label()
-        )))
-        .role(Role::Button)
-        .aria_label(format!("Appearance: {}", mode.label()))
-        .aria_toggled(if selected {
-            Toggled::True
-        } else {
-            Toggled::False
-        })
-        .tab_index(0)
-        .flex_1()
-        .min_w_0()
-        .flex()
-        .flex_col()
-        .items_center()
-        .gap(px(8.0))
-        .rounded(px(OPTION_CARD_RADIUS + 4.0))
-        .cursor_pointer()
-        .focus_visible(move |style| pink::focus_ring(style, ring_color))
-        .on_key_down(pink::swallow_activation_key)
-        .on_click(move |_, window, cx| {
-            apply(&state, window, cx, |s, _, _| {
-                (s.mode != mode).then(|| {
-                    s.mode = mode;
-                    AppearanceChange::Mode(mode)
-                })
+    parts::option_card(
+        &parts::OptionCardStyle {
+            ring: f.accent.primary,
+            border: t.border,
+            text: t.text,
+            text_muted: t.text_muted,
+        },
+        mode.icon(),
+        mode.label(),
+        selected,
+        preview(mode, &f.light, &f.dark),
+    )
+    .id(SharedString::from(format!(
+        "{}-mode-{}",
+        f.key,
+        mode.label()
+    )))
+    .role(Role::Button)
+    .aria_label(format!("Appearance: {}", mode.label()))
+    .aria_toggled(if selected {
+        Toggled::True
+    } else {
+        Toggled::False
+    })
+    .tab_index(0)
+    .rounded(px(OPTION_CARD_RADIUS + 4.0))
+    .focus_visible(move |style| pink::focus_ring(style, ring_color))
+    .on_key_down(pink::swallow_activation_key)
+    .on_click(move |_, window, cx| {
+        apply(&state, window, cx, |s, _, _| {
+            (s.mode != mode).then(|| {
+                s.mode = mode;
+                AppearanceChange::Mode(mode)
             })
         })
-        .child(
-            ring(
-                selected,
-                OPTION_CARD_RADIUS,
-                f.accent.primary,
-                div()
-                    .h(px(OPTION_CARD_HEIGHT))
-                    .w_full()
-                    .rounded(px(OPTION_CARD_RADIUS))
-                    .overflow_hidden()
-                    .border_1()
-                    .border_color(t.border)
-                    .child(preview(mode, &f.light, &f.dark)),
-            )
-            .w_full(),
-        )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(6.0))
-                .text_size(px(13.0))
-                .font_weight(if selected {
-                    gpui::FontWeight::MEDIUM
-                } else {
-                    gpui::FontWeight::NORMAL
-                })
-                .text_color(if selected { t.text } else { t.text_muted })
-                .child(
-                    svg()
-                        .path(mode.icon())
-                        .size(px(pink::icon_size::MD))
-                        .flex_none()
-                        .text_color(if selected { t.text } else { t.text_muted }),
-                )
-                .child(mode.label()),
-        )
+    })
 }
 
 // ── Accent swatches ─────────────────────────────────────────────────────
