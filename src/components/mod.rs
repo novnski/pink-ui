@@ -53,6 +53,7 @@ pub mod list_row;
 pub mod loaders;
 pub mod markdown_message;
 pub mod memory_panel;
+pub mod menu_card;
 pub mod message_actions;
 pub mod model_picker;
 pub mod notification_stack;
@@ -414,6 +415,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Data display",
         description: image_lightbox::DESCRIPTION,
         story: image_lightbox::story,
+    },
+    ComponentEntry {
+        slug: "menu-card",
+        name: menu_card::NAME,
+        category: "Navigation",
+        description: menu_card::DESCRIPTION,
+        story: menu_card::story,
     },
     ComponentEntry {
         slug: "command-menu",
