@@ -2775,10 +2775,10 @@ impl RenderOnce for ChatComposer {
         // pickers.rs `access_chip_content`, PINK 0.30.4): Approve for me a
         // shield check, Full access an open lock in the warning tone. Glyph
         // only when the row is too narrow; the tooltip names it either way.
-        let (access_title, access_icon, access_tint) = if ask_first {
-            (ACCESS[0].0, ICON_SHIELD_CHECK, t.text_muted)
+        let (access_title, access_detail, access_icon, access_tint) = if ask_first {
+            (ACCESS[0].0, ACCESS[0].1, ICON_SHIELD_CHECK, t.text_muted)
         } else {
-            (ACCESS[1].0, ICON_UNLOCKED, t.warning)
+            (ACCESS[1].0, ACCESS[1].1, ICON_UNLOCKED, t.warning)
         };
         let access_selector = format!("{key}-access");
         let access_label_selector = format!("{key}-access-label");
@@ -2794,7 +2794,10 @@ impl RenderOnce for ChatComposer {
         .when(fit.access_icon_only, |d| {
             d.w(px(ROW_BUTTON)).px(px(0.)).justify_center()
         })
+        // VoiceOver reads what the mode allows, as the tooltip's detail does
+        // in Pink (pickers.rs `trigger_chip`, PINK 0.31.5).
         .aria_label(access_title)
+        .aria_description(access_detail)
         .when(menu != Some(Menu::Access), |d| {
             d.tooltip(pink::text_tooltip(access_title))
                 .tooltip_show_delay(layout::TOOLTIP_DELAY)
