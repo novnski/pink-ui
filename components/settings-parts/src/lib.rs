@@ -142,9 +142,9 @@ pub struct OptionCardStyle {
     pub ring: Hsla,
     /// The preview frame's 1 px edge.
     pub border: Hsla,
-    /// The caption when the card is chosen.
+    /// The caption and its glyph when the card is chosen.
     pub text: Hsla,
-    /// The caption otherwise.
+    /// The caption and its glyph otherwise.
     pub text_muted: Hsla,
 }
 
@@ -184,9 +184,10 @@ pub fn selection_ring(
 /// One card in an `option_card_row`: an `OPTION_CARD_HEIGHT` preview frame
 /// (`OPTION_CARD_RADIUS`, 1 px border, clipped) inside the selection ring,
 /// and a caption under it: the glyph at `icon_path` and the label, medium
-/// `text` when chosen, regular `text_muted` otherwise. The accent is
-/// reserved for the ring. The glyph carries no colour of its own, exactly
-/// as PINK draws it. The caller adds the id, role, focus and click.
+/// `text` when chosen, regular `text_muted` otherwise. The glyph takes the
+/// label's colour: an svg paints only with its own text colour, never an
+/// inherited one, so an uncoloured glyph would leave a blank gap. The accent
+/// is reserved for the ring. The caller adds the id, role, focus and click.
 pub fn option_card(
     style: &OptionCardStyle,
     icon_path: impl Into<SharedString>,
@@ -194,6 +195,11 @@ pub fn option_card(
     selected: bool,
     preview: impl IntoElement,
 ) -> Div {
+    let caption = if selected {
+        style.text
+    } else {
+        style.text_muted
+    };
     div()
         .flex_1()
         .min_w_0()
@@ -229,16 +235,13 @@ pub fn option_card(
                 } else {
                     FontWeight::NORMAL
                 })
-                .text_color(if selected {
-                    style.text
-                } else {
-                    style.text_muted
-                })
+                .text_color(caption)
                 .child(
                     svg()
                         .path(icon_path)
                         .flex_none()
-                        .size(ui_rems(OPTION_GLYPH)),
+                        .size(ui_rems(OPTION_GLYPH))
+                        .text_color(caption),
                 )
                 .child(label.into()),
         )
