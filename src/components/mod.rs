@@ -29,6 +29,7 @@ pub mod comments_panel;
 pub mod commit_history;
 pub mod compact_breakdown;
 pub mod composer_disc;
+pub mod context_ring;
 pub mod context_window;
 pub mod data_table;
 pub mod date_range_picker;
@@ -259,6 +260,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Agents",
         description: context_window::DESCRIPTION,
         story: context_window::story,
+    },
+    ComponentEntry {
+        slug: "context-ring",
+        name: context_ring::NAME,
+        category: "Agents",
+        description: context_ring::DESCRIPTION,
+        story: context_ring::story,
     },
     ComponentEntry {
         slug: "delegate-board",
