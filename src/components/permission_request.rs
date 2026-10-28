@@ -30,6 +30,7 @@ use gpui::{
 };
 
 use crate::{
+    components::question_card as card,
     motion,
     pink::{self, ButtonKind, ControlSize, Pink, layout, radius, space, text},
     primitives::{InputEvent, TextInput},
@@ -45,18 +46,14 @@ const ICON_QUESTION: &str = "icons/permission-request/chat-round-line.svg";
 /// composer.rs `AUTO_ADVANCE_MS`).
 const AUTO_ADVANCE: Duration = Duration::from_millis(220);
 
-/// The answer rows' corner (Pink: composer.rs `render_wizard`, `rounded(12)`).
-const OPTION_RADIUS: f32 = 12.0;
-
 /// The answer field's copy before and after a pick (Pink: composer.rs
 /// `answer_placeholder`).
 const PLACEHOLDER: &str = "Type your own answer, or pick an option above";
 const PLACEHOLDER_PICKED: &str =
     "Type your own answer, or leave this blank to use the selected option";
-/// Pink composer input: `text-[14px] leading-relaxed`; `ANSWER_PADDING_Y`.
+/// Pink composer input: `text-[14px] leading-relaxed`.
 const INPUT_TEXT_SIZE: f32 = 14.0;
 const INPUT_LINE_HEIGHT: f32 = 22.75;
-const ANSWER_PADDING_Y: f32 = 12.0;
 
 /// What the person decided (Pink: proto `ApprovalDecision`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -451,17 +448,6 @@ impl PermState {
     }
 }
 
-/// The pill the composer and the request share (Pink: composer.rs
-/// `composer_surface`, on the frosted composer plate).
-fn composer_surface(t: &Pink) -> Div {
-    div()
-        .rounded(px(radius::COMPOSER_PILL))
-        .border_1()
-        .border_color(t.border)
-        .bg(t.surface_bg())
-        .shadow(pink::shadow_lg())
-}
-
 impl RenderOnce for PermissionRequest {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Pink::get(cx);
@@ -520,120 +506,44 @@ impl RenderOnce for PermissionRequest {
         }
 
         // ---- body: header, question, context, choices ------------------
-        let header = div()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(space::S10))
-            .child(
-                div()
-                    .text_size(px(text::CAPTION))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(t.readable_muted(0.6))
-                    .child(SharedString::from(pink::tracked_upper(&self.header))),
-            );
-        let question = div()
-            .id(SharedString::from(format!("{key}-question")))
-            .max_h(px(160.))
-            .overflow_y_scroll()
-            .mt(px(space::S6))
-            .text_size(px(text::TITLE3))
-            .line_height(px(20.))
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(t.text)
-            .child(self.question());
-        let context = div()
-            .id(SharedString::from(format!("{key}-context")))
-            .mt(px(space::S8))
-            .max_h(px(220.))
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .gap(px(space::S6))
-            .children(self.rows().into_iter().map(|(label, value)| {
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(space::S2))
-                    .child(
-                        div()
-                            .text_size(px(text::CAPTION))
-                            .text_color(t.readable_muted(0.65))
-                            .child(label),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(text::FOOTNOTE))
-                            .text_color(t.text)
-                            .child(value),
-                    )
-            }));
-        let options =
-            div()
-                .id(SharedString::from(format!("{key}-options")))
-                .max_h(px(220.))
-                .overflow_y_scroll()
-                .mt(px(space::S12))
-                .flex()
-                .flex_col()
-                .gap(px(space::S4))
-                .children(choices.iter().enumerate().map(|(ix, choice)| {
-                    option_row(&key, ix, choice, picked == Some(ix), &state, &t)
-                }));
+        let p = card::palette(&t);
+        let options = card::options(SharedString::from(format!("{key}-options"))).children(
+            choices
+                .iter()
+                .enumerate()
+                .map(|(ix, choice)| option_row(&key, ix, choice, picked == Some(ix), &state, &t)),
+        );
         // The free answer: a composer surface nested in the request.
-        let answer = div()
-            .mt(px(space::S12))
-            .pb(px(space::S4))
-            .px(px(space::S4))
-            .child(
-                composer_surface(&t)
-                    .id(SharedString::from(format!("{key}-answer")))
-                    .w_full()
-                    .overflow_hidden()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .min_w_0()
-                            .px(px(space::S8))
-                            .py(px(ANSWER_PADDING_Y))
-                            .text_size(px(INPUT_TEXT_SIZE))
-                            .line_height(px(INPUT_LINE_HEIGHT))
-                            .text_color(t.text)
-                            .child(div().flex_1().min_w_0().child(reply)),
-                    ),
-            );
-        let body = div()
-            .px(px(space::S16))
-            .pt(px(space::S16))
-            .flex()
-            .flex_col()
-            .child(header)
-            .child(question)
-            .child(context)
+        let answer = card::answer(
+            card::surface(&t).id(SharedString::from(format!("{key}-answer"))),
+            div()
+                .flex_1()
+                .min_w_0()
+                .text_size(px(INPUT_TEXT_SIZE))
+                .line_height(px(INPUT_LINE_HEIGHT))
+                .text_color(t.text)
+                .child(reply),
+        );
+        let body = card::body()
+            .child(card::header(&p, pink::tracked_upper(&self.header), None))
+            .child(card::question(
+                SharedString::from(format!("{key}-question")),
+                &p,
+                self.question(),
+            ))
+            .child(card::context(
+                SharedString::from(format!("{key}-context")),
+                &p,
+                self.rows(),
+            ))
             .child(options)
             .child(answer);
 
         // ---- footer: one Primary Send ------------------------------------
-        let footer = div()
-            .flex()
-            .flex_row()
-            .justify_between()
-            .items_center()
-            .gap(px(space::S12))
-            .px(px(space::S16))
-            .pb(px(space::S16))
-            .pt(px(space::S4))
+        let footer = card::footer()
             // Pink's note slot (countdowns, async notes); it also keeps Send
             // on the trailing edge.
-            .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .min_w_0()
-                    .items_center()
-                    .gap(px(space::S8)),
-            )
+            .child(card::notes())
             .child({
                 let state = state.clone();
                 pink::button(
@@ -644,7 +554,7 @@ impl RenderOnce for PermissionRequest {
                 )
                 .aria_label("Send")
                 .child("Send")
-                .px(px(space::S16))
+                .px(px(card::ACTION_PAD_X))
                 .when(!can_advance, |el| el.opacity(0.4))
                 .on_click(move |_, window, cx| state.update(cx, |s, cx| s.submit(window, cx)))
             });
@@ -656,7 +566,7 @@ impl RenderOnce for PermissionRequest {
             }
         };
 
-        let panel = composer_surface(&t)
+        let panel = card::surface(&t)
             .id(SharedString::from(format!("{key}-panel")))
             .track_focus(&focus)
             .on_key_down(on_key)
@@ -707,82 +617,30 @@ fn option_row(
     let hover_key = format!("{key}-option-{ix}");
     let accent = t.accent;
     let state = state.clone();
-    div()
-        .id(SharedString::from(hover_key.clone()))
-        .role(Role::RadioButton)
-        .aria_label(choice.label.clone())
-        .aria_toggled(if picked {
-            Toggled::True
-        } else {
-            Toggled::False
-        })
-        .tab_index(0)
-        .focus_visible(move |style| style.border_color(accent))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(space::S12))
-        .px(px(14.))
-        .py(px(space::S10))
-        .rounded(px(OPTION_RADIUS))
-        .border_1()
-        .border_color(if picked {
-            t.ink(0.16)
-        } else {
-            gpui::transparent_black()
-        })
-        .bg(if picked {
-            t.ink(0.09)
-        } else {
-            motion::hover_blend(&hover_key, t.ink(0.025), t.ink(0.06))
-        })
-        .on_hover(motion::hover_listener(hover_key))
-        .cursor_pointer()
-        // The click rides GPUI's key-up keyboard click; the key-down must not
-        // also reach the request's Enter.
-        .on_key_down(pink::swallow_activation_key)
-        .on_click(move |_, window, cx| state.update(cx, |s, cx| s.pick(ix, window, cx)))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .text_size(px(13.5))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(if picked { t.text } else { t.text.opacity(0.9) })
-                .flex()
-                .flex_col()
-                .gap(px(3.))
-                .child(choice.label.clone())
-                .child(
-                    div()
-                        .text_size(px(11.5))
-                        .font_weight(FontWeight::NORMAL)
-                        .text_color(t.readable_muted(0.65))
-                        .child(SharedString::from(format!(
-                            "{}: {}",
-                            choice.scope, choice.description
-                        ))),
-                ),
-        )
-        .when(ix < 9, |el| {
-            el.child(
-                div()
-                    .flex_none()
-                    .size(px(22.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(radius::SM))
-                    .bg(if picked { t.ink(0.16) } else { t.ink(0.05) })
-                    .text_size(px(text::CAPTION))
-                    .text_color(if picked {
-                        t.text
-                    } else {
-                        t.readable_muted(0.6)
-                    })
-                    .child(SharedString::from(format!("{}", ix + 1))),
-            )
-        })
+    card::option(
+        &card::option_style(t, picked, card::option_rest(t, &hover_key)),
+        choice.label.clone(),
+        [SharedString::from(format!(
+            "{}: {}",
+            choice.scope, choice.description
+        ))],
+        (ix < 9).then_some(ix + 1),
+    )
+    .id(SharedString::from(hover_key.clone()))
+    .role(Role::RadioButton)
+    .aria_label(choice.label.clone())
+    .aria_toggled(if picked {
+        Toggled::True
+    } else {
+        Toggled::False
+    })
+    .tab_index(0)
+    .focus_visible(move |style| style.border_color(accent))
+    .on_hover(motion::hover_listener(hover_key))
+    // The click rides GPUI's key-up keyboard click; the key-down must not
+    // also reach the request's Enter.
+    .on_key_down(pink::swallow_activation_key)
+    .on_click(move |_, window, cx| state.update(cx, |s, cx| s.pick(ix, window, cx)))
 }
 
 /// The answered request as the transcript keeps it (Pink: transcript.rs

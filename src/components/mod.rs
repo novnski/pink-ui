@@ -70,6 +70,7 @@ pub mod progress_tracker;
 pub mod project_card;
 pub mod project_row;
 pub mod prompt_library;
+pub mod question_card;
 pub mod reaction_bar;
 pub mod recovery_card;
 pub mod section_header;
@@ -289,6 +290,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Agents",
         description: approval_card::DESCRIPTION,
         story: approval_card::story,
+    },
+    ComponentEntry {
+        slug: "question-card",
+        name: question_card::NAME,
+        category: "Agents",
+        description: question_card::DESCRIPTION,
+        story: question_card::story,
     },
     ComponentEntry {
         slug: "autonomy-dial",
