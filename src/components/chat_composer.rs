@@ -38,7 +38,11 @@
 //! menu; its share yields after the search label and before the access
 //! words. It shows only when the setting is on and the provider reports
 //! usage (`.context_ring`, PINK 0.31.3, D75); otherwise the model menu
-//! keeps Compact and Clear (`.context_controls`).
+//! keeps Compact and Clear (`.context_controls`). A narrow pill (PINK
+//! 0.31.4, novnski/pink#199) folds Attach and the chips into a 24 pt
+//! Composer controls button whose tray opens above the pill, with the
+//! thread's branch and PRs on a row of their own so PRs never squeeze it;
+//! the mic and the submit disc stay in the row.
 //!
 //! ```ignore
 //! ChatComposer::new("composer")
@@ -60,9 +64,10 @@ use std::{cell::Cell, rc::Rc, sync::Arc};
 use web_time::{Duration, Instant};
 
 use gpui::{
-    Anchor, AnyElement, AnyView, App, Context, Div, ElementId, Entity, FocusHandle, FontWeight,
-    IntoElement, KeyDownEvent, MouseButton, ObjectFit, Role, SharedString, Stateful, Subscription,
-    Toggled, Window, anchored, canvas, deferred, div, img, point, prelude::*, px, svg,
+    Anchor, AnyElement, AnyView, App, Bounds, Context, Div, ElementId, Entity, FocusHandle,
+    FontWeight, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ObjectFit, Pixels, Role,
+    SharedString, Stateful, Subscription, Toggled, Window, anchored, canvas, deferred, div, img,
+    point, prelude::*, px, svg,
 };
 
 use crate::{
@@ -77,7 +82,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Chat Composer";
-pub const DESCRIPTION: &str = "The composer's prompt pill: square attachment thumbnails over a field that grows as you type, quiet model, access and web search chips that name the model's effort and the access mode in words until the row runs out of room, with menus that open upward, voice input, a branch-first checkout chip beside every pull request (in the controls row of a thread, above the pill of a new one), and a submit button named Send, Queue for after this turn or Steer this turn, with a separate Stop while a run is live, a notice above the pill that says why a file or an action was refused, and a thread's context ring, whose Compact and Clear move to the model menu when the provider reports no usage";
+pub const DESCRIPTION: &str = "The composer's prompt pill: square attachment thumbnails over a field that grows as you type, quiet model, access and web search chips that name the model's effort and the access mode in words until the row runs out of room, with menus that open upward, voice input, a branch-first checkout chip beside every pull request (in the controls row of a thread, above the pill of a new one), and a submit button named Send, Queue for after this turn or Steer this turn, with a separate Stop while a run is live, a notice above the pill that says why a file or an action was refused, a thread's context ring, whose Compact and Clear move to the model menu when the provider reports no usage, and a controls tray for a narrow pill that gives the branch and pull requests their own row";
 
 const ICON_PAPERCLIP: &str = "icons/chat-composer/paperclip.svg";
 const ICON_ARROW_UP: &str = "icons/chat-composer/arrow-up.svg";
@@ -93,6 +98,7 @@ const ICON_DANGER: &str = "icons/chat-composer/danger-triangle.svg";
 const ICON_COPY: &str = "icons/chat-composer/copy.svg";
 const ICON_UNLOCKED: &str = "icons/chat-composer/lock-keyhole-unlocked.svg";
 const ICON_MIC: &str = "icons/chat-composer/mic.svg";
+const ICON_MORE: &str = "icons/chat-composer/more-horizontal.svg";
 const ICON_FILE: &str = "icons/chat-composer/file-text.svg";
 const ICON_FILE_IMAGE: &str = "icons/chat-composer/file-image.svg";
 pub const ICON_QUICK: &str = "icons/chat-composer/bolt-fast.svg";
@@ -159,6 +165,19 @@ const ACCESS_MENU_W: f32 = 340.0;
 /// The pill at the default Conversation width (Pink: a wide pane's 736 pt
 /// pill, the column inside its 24 pt gutters; PINK 0.31.2).
 const DEFAULT_WIDTH: f32 = layout::CONVERSATION_WIDTH_DEFAULT;
+/// The compact controls row (Pink composer.rs `COMPACT_BUTTON`,
+/// `COMPACT_INSET`): a 24 pt tray button, inset 4, 8 above the pill's edge.
+const COMPACT_BUTTON: f32 = 24.0;
+const COMPACT_INSET: f32 = 4.0;
+const COMPACT_ROW_BOTTOM: f32 = 8.0;
+/// The room the tray gives its chips, so their labels show as on a wide
+/// row (Pink `TRAY_CHIP_BUDGET`).
+const TRAY_CHIP_BUDGET: f32 = 320.0;
+/// The tray card's padding (Pink `render_controls_tray`, `p 6`).
+const TRAY_PAD: f32 = 6.0;
+/// A thread's row folds into the tray when its chips have less than this
+/// left (Pink `Composer::render`'s `204.0 * ui_scale`).
+const THREAD_ROW_MIN: f32 = 204.0;
 /// A press on an open menu's own chip closes it (Pink
 /// `note_trigger_press_matching`); the click that follows must not reopen it.
 const REOPEN_GUARD: Duration = Duration::from_millis(250);
@@ -830,6 +849,14 @@ struct State {
     /// closed it.
     closed: Option<(Menu, Instant)>,
     highlight: usize,
+    /// A narrow composer's controls tray is open (Pink
+    /// `controls_tray_open`), and its button's bounds, so a press on the
+    /// button toggles it rather than counting as a press outside.
+    tray_open: bool,
+    tray_button: Bounds<Pixels>,
+    /// The tray button's focus: it holds the keyboard while the tray is
+    /// open, so Escape reaches the composer rather than the field.
+    tray_focus: FocusHandle,
     listen_started: Option<Instant>,
     placeholder: SharedString,
     running: bool,
@@ -875,6 +902,9 @@ impl State {
             menu: None,
             closed: None,
             highlight: 0,
+            tray_open: false,
+            tray_button: Bounds::default(),
+            tray_focus: cx.focus_handle().tab_stop(true),
             listen_started: None,
             placeholder: SharedString::default(),
             running: false,
@@ -1698,7 +1728,12 @@ fn pull_request_chip(key: &str, pr: &PullRequest, t: &Pink) -> Stateful<Div> {
 /// the window. It rises 6 pt in over `MENU_IN`; closing (`exit`) fades it
 /// over `MENU_OUT` under an occluder so its rows take no clicks.
 fn menu_above(id: &str, card: AnyElement, exit: Option<f32>) -> AnyElement {
-    let inner = div().occlude().pb(px(layout::POPOVER_GAP)).child(card);
+    let selector = id.to_string();
+    let inner = div()
+        .debug_selector(move || selector)
+        .occlude()
+        .pb(px(layout::POPOVER_GAP))
+        .child(card);
     let moving = match exit {
         Some(t) => motion::menu_out(
             SharedString::from(format!("{id}-out")),
@@ -1786,12 +1821,17 @@ fn menu_card(
             if let Some(ix) = chosen {
                 choose(&keys, kind, ix, window, cx);
             } else if escaped {
-                let input = keys.update(cx, |s, cx| {
+                // A menu opened from the tray hands the keyboard back to
+                // the tray button, so the next Escape closes the tray.
+                let (input, tray) = keys.update(cx, |s, cx| {
                     s.close_menu();
                     cx.notify();
-                    s.input.clone()
+                    (s.input.clone(), s.tray_open.then(|| s.tray_focus.clone()))
                 });
-                TextInput::focus(&input, window, cx);
+                match tray {
+                    Some(tray) => window.focus(&tray, cx),
+                    None => TextInput::focus(&input, window, cx),
+                }
             }
         })
         .on_mouse_down_out(move |_, _, cx| {
@@ -2098,6 +2138,18 @@ pub fn context_reserve(branch: f32, prs: f32, row_budget: f32, scale: f32) -> (f
     )
 }
 
+/// The tray's branch and PR row (Pink composer.rs `context_width` for a
+/// compact composer, PINK 0.31.4): a row of their own, so the branch keeps
+/// its name up to 240 pt and the PRs take what's left of the tray's
+/// `budget`, never squeezing it.
+pub fn tray_context_reserve(branch: f32, prs: f32, budget: f32, scale: f32) -> (f32, f32) {
+    let branch = branch.min(240.0 * scale).min(budget);
+    (
+        branch,
+        prs.min((budget - branch - CHIP_GAP * scale).max(0.0)),
+    )
+}
+
 /// The controls row's room for chips in a pill `width` wide (Pink
 /// composer.rs `controls_row_budget` less `stop_reserve`): the hairline, the
 /// row's insets, attach, the mic and the submit disc, and Stop while a run
@@ -2109,6 +2161,117 @@ fn controls_row_budget(width: f32, running: bool, scale: f32) -> f32 {
         - (ROW_BUTTON + ACTION_UTILITY_GAP)
         - 2.0 * (ACTION_PRIMARY_GAP + ROW_BUTTON)
         - stop_reserve(running, scale)
+}
+
+/// A narrow composer's controls tray (Pink composer.rs
+/// `render_controls_tray`, PINK 0.31.4): a 24 pt "Composer controls"
+/// button that opens a card above the pill holding Attach and the chips on
+/// one row, and the thread's branch and PRs on a row of their own, so PR
+/// chips never squeeze the branch. Escape and a press outside close it; a
+/// menu opened from inside keeps it open.
+#[allow(clippy::too_many_arguments)]
+fn controls_tray(
+    key: &str,
+    open: bool,
+    attach: Stateful<Div>,
+    chips: Div,
+    context: Option<Div>,
+    state: &Entity<State>,
+    t: &Pink,
+    cx: &App,
+) -> Stateful<Div> {
+    let id = format!("{key}-tray");
+    let selector = id.clone();
+    let ring = t.focus_ring();
+    let toggler = state.clone();
+    let measurer = state.clone();
+    let rest = if open {
+        t.ink(0.10)
+    } else {
+        gpui::transparent_black()
+    };
+    let button = div()
+        .id(SharedString::from(id.clone()))
+        .debug_selector(move || selector)
+        .role(Role::Button)
+        .aria_label("Composer controls")
+        .aria_expanded(open)
+        .track_focus(&state.read(cx).tray_focus)
+        .focus_visible(move |style| pink::focus_ring(style, ring))
+        .relative()
+        .size(px(COMPACT_BUTTON * CHIP_SCALE))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded_full()
+        .cursor_pointer()
+        .hover_fill(id.clone(), rest, t.ink(0.10))
+        .when(!open, |d| {
+            d.tooltip(pink::text_tooltip("Composer controls"))
+                .tooltip_show_delay(layout::TOOLTIP_DELAY)
+        })
+        .on_click(move |_, window, cx| {
+            cx.stop_propagation();
+            let focus = toggler.update(cx, |s, cx| {
+                s.tray_open = !s.tray_open;
+                cx.notify();
+                s.tray_focus.clone()
+            });
+            window.focus(&focus, cx);
+        })
+        .child(svg().path(ICON_MORE).size(px(16.)).text_color(t.text_muted))
+        .child(
+            canvas(
+                move |bounds, _, cx| measurer.update(cx, |s, _| s.tray_button = bounds),
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .size_full(),
+        );
+    if !open {
+        return button;
+    }
+    let closer = state.clone();
+    let card_selector = format!("{key}-tray-card");
+    let card = pink::popover_card(t)
+        .id(SharedString::from(format!("{key}-tray-card")))
+        .debug_selector(move || card_selector)
+        .on_mouse_down_out(move |event: &MouseDownEvent, _, cx| {
+            closer.update(cx, |s, cx| {
+                // A menu opened from the tray keeps it open; the button
+                // toggles it itself.
+                if s.menu.is_none() && !s.tray_button.contains(&event.position) {
+                    s.tray_open = false;
+                    cx.notify();
+                }
+            })
+        })
+        .p(px(TRAY_PAD))
+        .flex()
+        .flex_col()
+        .gap(px(ACTION_UTILITY_GAP))
+        .child(
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(ACTION_UTILITY_GAP))
+                .child(attach)
+                .child(chips),
+        )
+        .children(context);
+    button.child(
+        div().absolute().top_0().left_0().size_0().child(
+            deferred(
+                anchored()
+                    .anchor(Anchor::BottomLeft)
+                    .snap_to_window_with_margin(px(layout::WINDOW_MARGIN))
+                    .child(div().occlude().pb(px(layout::POPOVER_GAP)).child(card)),
+            )
+            .priority(1),
+        ),
+    )
 }
 
 fn toggle_menu(state: &Entity<State>, kind: Menu, window: &mut Window, cx: &mut App) {
@@ -2217,6 +2380,18 @@ impl RenderOnce for ChatComposer {
                 }
             });
         });
+        let scale = pink::ui_scale(cx);
+        // A narrow composer folds its chips into the controls tray (Pink
+        // `Composer::render`'s `compact`): when the row can't hold two
+        // glyph chips, or a thread's row has less than 204 pt for its chips.
+        // Widening past it closes the tray.
+        let row_budget = controls_row_budget(self.width, running, scale);
+        let compact = controls_row_budget(self.width, false, scale)
+            < (2.0 * ROW_BUTTON + CHIP_GAP) * CHIP_SCALE
+            || (self.in_thread && row_budget < THREAD_ROW_MIN * CHIP_SCALE);
+        if !compact && state.read(cx).tray_open {
+            state.update(cx, |s, _| s.tray_open = false);
+        }
         // D75: an existing thread's ring, when the setting is on and the
         // provider reports usage (Pink `Pickers::context_ring_shown`).
         // Without it the model menu keeps Compact and Clear.
@@ -2235,6 +2410,7 @@ impl RenderOnce for ChatComposer {
         let input = s.input.clone();
         let (model_ix, branch_ix, web, ask_first, menu, highlight) =
             (s.model, s.branch, s.web, s.ask_first, s.menu, s.highlight);
+        let tray_open = s.tray_open;
         let mounted = |kind| s.mounted(kind);
         let (model_menu, access_menu, branch_menu) = (
             mounted(Menu::Model),
@@ -2327,7 +2503,6 @@ impl RenderOnce for ChatComposer {
                 .into_any_element()
         };
 
-        let scale = pink::ui_scale(cx);
         // ---- the checkout chip and the thread's PRs (Pink `render_context_row`)
         let picked = branch_ix.and_then(|ix| self.branches.get(ix));
         let checkout = match (&self.checkout, picked) {
@@ -2418,20 +2593,29 @@ impl RenderOnce for ChatComposer {
             (label, chip, prs)
         });
         let in_thread = self.in_thread;
+        // The tray gives its chips room for their labels.
+        let chips_budget = if compact {
+            TRAY_CHIP_BUDGET * CHIP_SCALE
+        } else {
+            row_budget
+        };
         let mut context_width = 0.0;
         let (thread_context, context_row) = match context {
             // An existing thread (Pink `render_context_row` in the controls
             // row): the branch chip keeps its natural width up to its share,
-            // and the PRs get their own share beside it.
+            // and the PRs get their own share beside it. In the tray they
+            // have a row of their own (`tray_context_reserve`).
             Some((label, chip, prs)) if in_thread => {
-                let budget = controls_row_budget(self.width, running, scale);
-                let (branch_share, pr_share) = context_reserve(
-                    branch_chip_width(&label, window, CHIP_SCALE),
-                    pull_requests_width(&self.pull_requests, window, CHIP_SCALE),
-                    budget,
-                    CHIP_SCALE,
-                );
-                context_width = branch_share + pr_share;
+                let branch = branch_chip_width(&label, window, CHIP_SCALE);
+                let pr_width = pull_requests_width(&self.pull_requests, window, CHIP_SCALE);
+                let (branch_share, pr_share) = if compact {
+                    tray_context_reserve(branch, pr_width, chips_budget, CHIP_SCALE)
+                } else {
+                    context_reserve(branch, pr_width, chips_budget, CHIP_SCALE)
+                };
+                if !compact {
+                    context_width = branch_share + pr_share;
+                }
                 // The reserve never yields to the pickers. Inside it the PR
                 // chips keep their size; only when they outgrow their own
                 // share does the branch chip (shrinkable, up to 360) give way,
@@ -2495,7 +2679,7 @@ impl RenderOnce for ChatComposer {
             chip_chrome + chip_text_width("Search", window) + 1.0,
             ROW_BUTTON * CHIP_SCALE,
         );
-        let picker_budget = controls_row_budget(self.width, running, scale)
+        let picker_budget = chips_budget
             - if context_width > 0.0 {
                 context_width + ACTION_UTILITY_GAP
             } else {
@@ -2748,6 +2932,48 @@ impl RenderOnce for ChatComposer {
             SendMode::Send => div().flex_none().child(submit),
         };
 
+        let chips = div()
+            .min_w_0()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(CHIP_GAP))
+            .child(model_chip)
+            .child(access_chip)
+            .child(search_chip)
+            .children(ring);
+        // Narrow: one tray button holds Attach, the chips and the thread's
+        // branch and PRs (Pink `render_controls_tray`).
+        let leading: AnyElement = if compact {
+            controls_tray(
+                &key,
+                tray_open,
+                attach,
+                chips,
+                thread_context,
+                &state,
+                &t,
+                cx,
+            )
+            .into_any_element()
+        } else {
+            div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(ACTION_UTILITY_GAP))
+                .child(attach)
+                .child(chips)
+                .children(thread_context)
+                .into_any_element()
+        };
+        let inset = if compact {
+            COMPACT_INSET
+        } else {
+            ACTIONS_ROW_INSET
+        };
         let controls_selector = format!("{key}-controls");
         let controls = div()
             .debug_selector(move || controls_selector)
@@ -2756,34 +2982,17 @@ impl RenderOnce for ChatComposer {
             .flex()
             .flex_row()
             .items_center()
-            .gap(px(ACTION_PRIMARY_GAP))
-            .pl(px(ACTIONS_ROW_INSET))
-            .pr(px(ACTIONS_ROW_INSET))
+            .gap(px(if compact {
+                ACTION_UTILITY_GAP
+            } else {
+                ACTION_PRIMARY_GAP
+            }))
+            .pl(px(inset))
+            .pr(px(inset))
             .pt(px(2.))
-            .pb(px(12.))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap(px(ACTION_UTILITY_GAP))
-                    .child(attach)
-                    .child(
-                        div()
-                            .min_w_0()
-                            .flex()
-                            .flex_row()
-                            .items_center()
-                            .gap(px(CHIP_GAP))
-                            .child(model_chip)
-                            .child(access_chip)
-                            .child(search_chip)
-                            .children(ring),
-                    )
-                    .children(thread_context),
-            )
+            .pb(px(if compact { COMPACT_ROW_BOTTOM } else { 12. }))
+            .child(leading)
+            .when(compact, |row| row.child(div().flex_1()))
             .child(mic)
             .child(send);
 
@@ -2845,8 +3054,22 @@ impl RenderOnce for ChatComposer {
                 None => pill.child(body),
             });
 
+        // Escape closes the tray once no menu from it is open (Pink: the
+        // shell's capture chain, `close_controls_tray`); an open menu takes
+        // its own Escape first.
+        let tray_keys = state.clone();
         div()
             .id(self.id.clone())
+            .capture_key_down(move |event: &KeyDownEvent, _, cx| {
+                let s = tray_keys.read(cx);
+                if event.keystroke.key == "escape" && s.tray_open && s.menu.is_none() {
+                    tray_keys.update(cx, |s, cx| {
+                        s.tray_open = false;
+                        cx.notify();
+                    });
+                    cx.stop_propagation();
+                }
+            })
             .map(|el| match column {
                 Some(column) => el
                     .w_full()
@@ -3111,6 +3334,8 @@ fn state_cell(caption: &'static str, composer: ChatComposer, t: &Pink) -> Div {
 }
 
 const STATE_W: f32 = 420.;
+/// A pill narrow enough for its thread's chips to fold into the tray.
+const NARROW_W: f32 = 300.;
 const DEMO_PROJECT: &str = "/Users/lena/storefront";
 const DEMO_WORKTREE: &str = "/Users/lena/storefront-2";
 
@@ -3201,6 +3426,26 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                             .draft("Skip the EU cohort, its sample is too small"),
                         &t,
                     )),
+            )
+            .child(
+                div()
+                    .w(px(NARROW_W))
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
+                    .child(
+                        div()
+                            .px(px(6.))
+                            .type_style(TextStyle::Footnote)
+                            .text_color(t.readable_muted(0.8))
+                            .child("Narrow thread: the chips, branch and PRs in the controls tray"),
+                    )
+                    .child(
+                        thread("cc-narrow")
+                            .width(NARROW_W)
+                            .checkout(Checkout::branch("checkout-copy"))
+                            .pull_requests(demo_pull_requests()[..2].to_vec()),
+                    ),
             )
             .child(
                 div()
