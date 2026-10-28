@@ -20,7 +20,8 @@ vendored runtime, so there is one GPUI type graph and no copied source.
 - `option_card_row()` and `option_card(&OptionCardStyle, icon_path, label,
   selected, preview)`: equal preview cards for picking a visual option, an
   `OPTION_CARD_HEIGHT` frame inside a `selection_ring` and a caption. The
-  caption glyph carries no colour of its own, exactly as PINK draws it.
+  caption glyph takes the label's colour (`text` when chosen, `text_muted`
+  otherwise): an svg paints only with its own text colour.
 - `error_strip(&StripStyle, icon_path, message)` and
   `warning_strip(&StripStyle, icon_path, message)`: the red and amber strips
   a card shows above or between its rows, a leading icon before wrapping

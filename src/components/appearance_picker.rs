@@ -1561,8 +1561,8 @@ fn preview(mode: AppearanceMode, light: &ThemeVariant, dark: &ThemeVariant) -> A
 /// One option card (Pink widgets.rs `option_card`), drawn by the
 /// `pink-settings-parts` package: a 148 tall preview frame (radius 6,
 /// `border`) inside the selection ring, and the caption under it, gap 8: a
-/// 16 glyph and the 13 label, medium `text` when chosen, `text_muted`
-/// otherwise. Accent is reserved for the ring. The gallery adds the role,
+/// 16 glyph and the 13 label, both `text` when chosen (the label medium)
+/// and `text_muted` otherwise. Accent is reserved for the ring. The gallery adds the role,
 /// name, focus ring and click, as Pink's appearance page does.
 fn option_card(f: &Frame, mode: AppearanceMode, selected: bool) -> Stateful<Div> {
     let t = f.t;
