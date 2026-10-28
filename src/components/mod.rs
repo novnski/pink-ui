@@ -66,6 +66,7 @@ pub mod project_card;
 pub mod prompt_library;
 pub mod reaction_bar;
 pub mod recovery_card;
+pub mod section_header;
 pub mod segmented_control;
 pub mod settings_page;
 pub mod setup_guide;
@@ -74,6 +75,7 @@ pub mod smart_recommendation;
 pub mod stepper_form;
 pub mod subagent_cards;
 pub mod tab_bar;
+pub mod tab_chip;
 pub mod terminal;
 pub mod thinking_loader;
 pub mod thinking_state;
@@ -467,6 +469,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         story: sidebar::story,
     },
     ComponentEntry {
+        slug: "section-header",
+        name: section_header::NAME,
+        category: "Navigation",
+        description: section_header::DESCRIPTION,
+        story: section_header::story,
+    },
+    ComponentEntry {
         slug: "icon-button",
         name: icon_button::NAME,
         category: "Navigation",
@@ -486,6 +495,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Navigation",
         description: tab_bar::DESCRIPTION,
         story: tab_bar::story,
+    },
+    ComponentEntry {
+        slug: "tab-chip",
+        name: tab_chip::NAME,
+        category: "Navigation",
+        description: tab_chip::DESCRIPTION,
+        story: tab_chip::story,
     },
     ComponentEntry {
         slug: "file-tree",
