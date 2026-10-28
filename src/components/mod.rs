@@ -68,11 +68,13 @@ pub mod reaction_bar;
 pub mod recovery_card;
 pub mod segmented_control;
 pub mod settings_page;
+pub mod settings_section;
 pub mod setup_guide;
 pub mod sidebar;
 pub mod smart_recommendation;
 pub mod stepper_form;
 pub mod subagent_cards;
+pub mod switch;
 pub mod tab_bar;
 pub mod terminal;
 pub mod thinking_loader;
@@ -584,6 +586,20 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Inputs",
         description: settings_page::DESCRIPTION,
         story: settings_page::story,
+    },
+    ComponentEntry {
+        slug: "settings-section",
+        name: settings_section::NAME,
+        category: "Inputs",
+        description: settings_section::DESCRIPTION,
+        story: settings_section::story,
+    },
+    ComponentEntry {
+        slug: "switch",
+        name: switch::NAME,
+        category: "Inputs",
+        description: switch::DESCRIPTION,
+        story: switch::story,
     },
     ComponentEntry {
         slug: "appearance-picker",
