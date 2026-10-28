@@ -28,12 +28,13 @@
 
 use gpui::{
     AnyElement, App, AppContext, Bounds, ContentMask, Context, Div, Entity, FontFeatures,
-    FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement, PathBuilder, Render,
-    RenderOnce, Role, SharedString, StatefulInteractiveElement, StyleRefinement, Styled, TextAlign,
-    TextRun, Window, canvas, div, hsla, point, prelude::FluentBuilder, px, size,
+    FontWeight, Hsla, IntoElement, ParentElement, PathBuilder, Render, RenderOnce, Role,
+    SharedString, StatefulInteractiveElement, StyleRefinement, Styled, TextAlign, TextRun, Window,
+    canvas, div, hsla, point, prelude::FluentBuilder, px, size,
 };
 use web_time::Instant;
 
+use crate::components::working_trailer;
 use crate::motion::{
     self, GRADIENT_SPIN, ORB_BREATH, PINK_PULSE, PULSE_STAGGER, STATUS_SHIMMER, speed_scale,
 };
@@ -153,9 +154,9 @@ impl RenderOnce for PinkLoader {
 // ---------------------------------------------------------------------------
 
 /// The orb's box: it sits on a 12–13px text line (Pink `ORB_BOX`).
-pub const ORB_BOX: f32 = 12.0;
+pub const ORB_BOX: f32 = working_trailer::ORB_BOX;
 /// The solid core's size at full breath (Pink `ORB_CORE`).
-pub const ORB_CORE: f32 = 6.0;
+pub const ORB_CORE: f32 = working_trailer::ORB_CORE;
 
 /// The working orb (Pink `breathing_orb`): a solid `accent` core inside a
 /// soft halo, breathing on one slow sine over [`ORB_BREATH`] (1600ms) – core
@@ -172,31 +173,21 @@ pub struct BreathingOrb {
     accent: Hsla,
 }
 
+/// The orb's breath now: 0 (rest) to 1 (full), resting at 1 under reduced
+/// motion.
+fn orb_breath(window: &mut Window, cx: &mut App) -> f32 {
+    if cx.reduce_motion() {
+        1.0
+    } else {
+        // `0.5 - 0.5 * cos(2πt)`: Pink's breath is the pulse wave.
+        motion::pulse_wave(motion::pulse_phase(&ORB_BREATH, window, cx))
+    }
+}
+
 impl RenderOnce for BreathingOrb {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let accent = self.accent;
-        let breath = if cx.reduce_motion() {
-            1.0
-        } else {
-            // `0.5 - 0.5 * cos(2πt)`: Pink's breath is the pulse wave.
-            motion::pulse_wave(motion::pulse_phase(&ORB_BREATH, window, cx))
-        };
-        let core = ORB_CORE * (0.85 + 0.15 * breath);
-        div()
-            .flex_none()
-            .relative()
-            .size(px(ORB_BOX))
-            .flex()
-            .items_center()
-            .justify_center()
-            .child(
-                div()
-                    .absolute()
-                    .inset_0()
-                    .rounded_full()
-                    .bg(accent.opacity(0.16 + 0.18 * breath)),
-            )
-            .child(div().size(px(core)).rounded_full().bg(accent))
+        // Drawn by the `pink-working-trailer` package.
+        working_trailer::orb(self.accent, orb_breath(window, cx))
     }
 }
 
@@ -814,11 +805,11 @@ impl RenderOnce for ShimmerText {
 // `content_muted`, opacity 0 → 1 on group hover, `hover_wash`).
 
 /// Working-line verb and object size (Pink `WORKING_STATUS_SIZE`).
-pub const WORKING_STATUS_SIZE: f32 = 12.0;
+pub const WORKING_STATUS_SIZE: f32 = working_trailer::STATUS_TEXT;
 /// The working line's shared line box (Pink `WORKING_STATUS_LINE_HEIGHT`).
-pub const WORKING_STATUS_LINE_HEIGHT: f32 = 16.0;
+pub const WORKING_STATUS_LINE_HEIGHT: f32 = working_trailer::LINE_HEIGHT;
 /// The elapsed timer, one step quieter (Pink `WORKING_TIMER_SIZE`).
-pub const WORKING_TIMER_SIZE: f32 = 11.0;
+pub const WORKING_TIMER_SIZE: f32 = working_trailer::TIMER_TEXT;
 /// Tool-group title size (Pink `TOOL_LABEL_SIZE`).
 pub const TOOL_LABEL_SIZE: f32 = 12.0;
 /// Tool-group title line height (Pink `TOOL_LABEL_LINE_HEIGHT`).
@@ -877,27 +868,28 @@ pub fn label_id(prefix: &str, label: &str) -> SharedString {
 /// The working line's orb slot (Pink `render_working_trailer`): a
 /// `flex_none` 16px line box centering the [`breathing_orb`], so the orb
 /// stays on the first line when the status wraps.
-pub fn orb_slot(accent: Hsla) -> Div {
-    div()
-        .flex_none()
-        .h(px(WORKING_STATUS_LINE_HEIGHT))
-        .flex()
-        .items_center()
-        .child(breathing_orb(accent))
+pub fn orb_slot(accent: Hsla) -> OrbSlot {
+    OrbSlot { accent }
+}
+
+/// See [`orb_slot`].
+#[derive(IntoElement)]
+pub struct OrbSlot {
+    accent: Hsla,
+}
+
+impl RenderOnce for OrbSlot {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Drawn by the `pink-working-trailer` package.
+        working_trailer::orb_slot(self.accent, orb_breath(window, cx))
+    }
 }
 
 /// The working line's timer (Pink `render_working_trailer`): `"12s"` at
 /// 11/16 with tabular figures, `flex_none`, no wrap. Pink colors it
 /// `content_faint`.
 pub fn working_timer(elapsed_secs: i64, color: Hsla) -> Div {
-    div()
-        .flex_none()
-        .whitespace_nowrap()
-        .text_size(px(WORKING_TIMER_SIZE))
-        .line_height(px(WORKING_STATUS_LINE_HEIGHT))
-        .font_features(tabular_figures())
-        .text_color(color)
-        .child(SharedString::from(format_elapsed(elapsed_secs)))
+    working_trailer::timer(format_elapsed(elapsed_secs), color).font_features(tabular_figures())
 }
 
 /// The working line's status (Pink `render_working_trailer` status line):
@@ -956,11 +948,7 @@ impl RenderOnce for WorkingStatus {
             None => self.verb.clone(),
         };
         let verb = if self.sentence {
-            div()
-                .min_w_0()
-                .text_color(self.tone)
-                .child(self.verb)
-                .into_any_element()
+            working_trailer::verb(self.verb, self.tone, true).into_any_element()
         } else {
             shimmer_text(
                 self.verb,
@@ -974,20 +962,12 @@ impl RenderOnce for WorkingStatus {
             .into_any_element()
         };
         let text = self.text;
-        let line = div()
-            .id(label_id("working-status", &label))
+        let line = working_trailer::status_line(label_id("working-status", &label))
             .role(Role::Status)
             .aria_label(label.clone())
-            .min_w_0()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(4.0))
-            .text_size(px(WORKING_STATUS_SIZE))
-            .line_height(px(WORKING_STATUS_LINE_HEIGHT))
             .child(verb)
             .when_some(self.object, |el, object| {
-                el.child(div().min_w_0().truncate().text_color(text).child(object))
+                el.child(working_trailer::object(object, text))
             });
         motion::status_swap(label_id("working-status-in", &label), line)
     }

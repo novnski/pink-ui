@@ -22,6 +22,7 @@ pub mod button;
 pub mod change_summary;
 pub mod chat_composer;
 pub mod cited_answer;
+pub mod code_block;
 pub mod combobox;
 pub mod command_menu;
 pub mod comment_thread;
@@ -89,6 +90,7 @@ pub mod trigger_chip;
 pub mod usage_meter;
 pub mod user_bubble;
 pub mod welcome_screen;
+pub mod working_trailer;
 pub mod writing_assistant;
 
 /// Category order used in the gallery sidebar.
@@ -169,6 +171,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Chat",
         description: thinking_loader::DESCRIPTION,
         story: thinking_loader::story,
+    },
+    ComponentEntry {
+        slug: "working-trailer",
+        name: working_trailer::NAME,
+        category: "Chat",
+        description: working_trailer::DESCRIPTION,
+        story: working_trailer::story,
     },
     ComponentEntry {
         slug: "cited-answer",
@@ -680,6 +689,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Feedback",
         description: loaders::DESCRIPTION,
         story: loaders::story,
+    },
+    ComponentEntry {
+        slug: "code-block",
+        name: code_block::NAME,
+        category: "Code",
+        description: code_block::DESCRIPTION,
+        story: code_block::story,
     },
     ComponentEntry {
         slug: "diff-viewer",

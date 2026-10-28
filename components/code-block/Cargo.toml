@@ -1,0 +1,14 @@
+[package]
+name = "pink-code-block"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Host-adapted code block chrome (PINK's fenced-code frame, language header and its actions) for GPUI"
+
+# Independent boundary, like the other pink-ui packages: the gallery uses
+# gpui-pre, while native hosts patch gpui to their existing runtime. No
+# second GPUI enters the host graph.
+[workspace]
+
+[dependencies]
+gpui = "=0.2.2"
