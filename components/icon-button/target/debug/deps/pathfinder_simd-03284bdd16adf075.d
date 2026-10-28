@@ -1,9 +1,0 @@
-/Users/iulian/pink-ui/components/icon-button/target/debug/deps/pathfinder_simd-03284bdd16adf075.d: /Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pathfinder_simd-0.5.6/src/lib.rs /Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pathfinder_simd-0.5.6/src/extras.rs /Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pathfinder_simd-0.5.6/src/scalar/mod.rs /Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pathfinder_simd-0.5.6/src/scalar/swizzle_f32x4.rs /Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pathfinder_simd-0.5.6/src/scalar/swizzle_i32x4.rs
-
-/Users/iulian/pink-ui/components/icon-button/target/debug/deps/libpathfinder_simd-03284bdd16adf075.rmeta: /Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pathfinder_simd-0.5.6/src/lib.rs /Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pathfinder_simd-0.5.6/src/extras.rs /Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pathfinder_simd-0.5.6/src/scalar/mod.rs /Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pathfinder_simd-0.5.6/src/scalar/swizzle_f32x4.rs /Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pathfinder_simd-0.5.6/src/scalar/swizzle_i32x4.rs
-
-/Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pathfinder_simd-0.5.6/src/lib.rs:
-/Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pathfinder_simd-0.5.6/src/extras.rs:
-/Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pathfinder_simd-0.5.6/src/scalar/mod.rs:
-/Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pathfinder_simd-0.5.6/src/scalar/swizzle_f32x4.rs:
-/Users/iulian/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pathfinder_simd-0.5.6/src/scalar/swizzle_i32x4.rs:
