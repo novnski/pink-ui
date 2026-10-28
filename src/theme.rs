@@ -78,6 +78,13 @@ impl Theme {
         cx.refresh_windows();
     }
 
+    /// Make the window's rem the Interface size, as PINK's root does
+    /// (`window.set_rem_size`), so the rem-sized packages under
+    /// `components/` grow with it. Call once per frame from a window's root.
+    pub fn sync_rem_size(window: &mut gpui::Window, cx: &App) {
+        window.set_rem_size(gpui::px(cx.theme().ui_font_size));
+    }
+
     /// Interface size over the 16 px baseline (Pink `Theme::ui_scale`).
     pub fn ui_scale(&self) -> f32 {
         self.ui_font_size / Self::UI_FONT_SIZE_DEFAULT

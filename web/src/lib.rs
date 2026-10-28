@@ -78,6 +78,7 @@ impl Player {
 
 impl Render for Player {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        pink_ui::Theme::sync_rem_size(window, cx);
         pink_ui::motion::frame(window, cx);
         self.report_size(cx);
         // Pink's content panel: the gallery's stage, and `--stage` in
