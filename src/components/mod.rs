@@ -24,6 +24,7 @@ pub mod chat_composer;
 pub mod cited_answer;
 pub mod combobox;
 pub mod command_menu;
+pub mod command_row;
 pub mod comment_thread;
 pub mod comments_panel;
 pub mod commit_history;
@@ -60,9 +61,11 @@ pub mod model_picker;
 pub mod notification_stack;
 pub mod otp_input;
 pub mod permission_request;
+pub mod place_tab;
 pub mod profile_menu;
 pub mod progress_tracker;
 pub mod project_card;
+pub mod project_row;
 pub mod prompt_library;
 pub mod reaction_bar;
 pub mod recovery_card;
@@ -452,6 +455,20 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         story: command_menu::story,
     },
     ComponentEntry {
+        slug: "command-row",
+        name: command_row::NAME,
+        category: "Navigation",
+        description: command_row::DESCRIPTION,
+        story: command_row::story,
+    },
+    ComponentEntry {
+        slug: "project-row",
+        name: project_row::NAME,
+        category: "Navigation",
+        description: project_row::DESCRIPTION,
+        story: project_row::story,
+    },
+    ComponentEntry {
         slug: "integration-picker",
         name: integration_picker::NAME,
         category: "Navigation",
@@ -513,6 +530,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Navigation",
         description: tab_chip::DESCRIPTION,
         story: tab_chip::story,
+    },
+    ComponentEntry {
+        slug: "place-tab",
+        name: place_tab::NAME,
+        category: "Navigation",
+        description: place_tab::DESCRIPTION,
+        story: place_tab::story,
     },
     ComponentEntry {
         slug: "file-tree",
