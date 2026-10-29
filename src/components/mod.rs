@@ -78,6 +78,7 @@ pub mod prompt_library;
 pub mod question_card;
 pub mod reaction_bar;
 pub mod recovery_card;
+pub mod scroll_rail;
 pub mod section_header;
 pub mod segmented_control;
 pub mod settings_page;
@@ -85,6 +86,7 @@ pub mod settings_parts;
 pub mod settings_section;
 pub mod setup_guide;
 pub mod sidebar;
+pub mod skeleton;
 pub mod smart_recommendation;
 pub mod stepper_form;
 pub mod subagent_cards;
@@ -480,6 +482,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         story: menu_card::story,
     },
     ComponentEntry {
+        slug: "scroll-rail",
+        name: scroll_rail::NAME,
+        category: "Navigation",
+        description: scroll_rail::DESCRIPTION,
+        story: scroll_rail::story,
+    },
+    ComponentEntry {
         slug: "command-menu",
         name: command_menu::NAME,
         category: "Navigation",
@@ -779,6 +788,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Feedback",
         description: loaders::DESCRIPTION,
         story: loaders::story,
+    },
+    ComponentEntry {
+        slug: "skeleton",
+        name: skeleton::NAME,
+        category: "Feedback",
+        description: skeleton::DESCRIPTION,
+        story: skeleton::story,
     },
     ComponentEntry {
         slug: "code-block",

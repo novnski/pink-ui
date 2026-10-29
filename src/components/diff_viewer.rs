@@ -46,6 +46,7 @@ use gpui::{
     Window, anchored, canvas, deferred, div, font, img, point, prelude::*, px, radians, svg,
 };
 
+use super::scroll_rail;
 use crate::{
     HoverFill as _,
     components::diff_rows,
@@ -114,11 +115,8 @@ const REF_LIST_MAX_HEIGHT: f32 = 240.0;
 const MENU_DROP_GAP: f32 = 10.0;
 
 // The floating list scrollbar (Pink: popover.rs `MENU_SCROLLBAR_*`).
-const RAIL_TRACK_INSET: f32 = 4.0;
-const RAIL_HIT_WIDTH: f32 = 10.0;
-const RAIL_THUMB_WIDTH: f32 = 3.0;
-const RAIL_THUMB_ACTIVE_WIDTH: f32 = 5.0;
-const RAIL_MIN_THUMB: f32 = 24.0;
+const RAIL_TRACK_INSET: f32 = scroll_rail::TRACK_INSET;
+const RAIL_MIN_THUMB: f32 = scroll_rail::MIN_THUMB;
 const RAIL_LINGER: Duration = Duration::from_millis(1400);
 const RAIL_FADE: Duration = Duration::from_millis(260);
 const RAIL_FADE_FRAME: Duration = Duration::from_millis(16);
@@ -4025,11 +4023,6 @@ fn comment_action(c: &Ctx, name: &str, label: &'static str, primary: bool) -> St
 /// dragged) in `text_faint`, shown while scrolling and fading out after.
 fn rail(c: &Ctx, metrics: RailMetrics, fade: f32, held: bool) -> AnyElement {
     let t = c.t;
-    let width = if held {
-        RAIL_THUMB_ACTIVE_WIDTH
-    } else {
-        RAIL_THUMB_WIDTH
-    };
     let (hover, press, drag, up, up_out) = (
         c.state.clone(),
         c.state.clone(),
@@ -4037,14 +4030,8 @@ fn rail(c: &Ctx, metrics: RailMetrics, fade: f32, held: bool) -> AnyElement {
         c.state.clone(),
         c.state.clone(),
     );
-    div()
+    scroll_rail::rail(t.text_faint, fade, held, metrics.thumb_top, metrics.thumb)
         .id(SharedString::from(format!("{}-rail", c.key)))
-        .absolute()
-        .top_0()
-        .bottom_0()
-        .right_0()
-        .w(px(RAIL_HIT_WIDTH))
-        .opacity(fade)
         .on_hover(move |hovered: &bool, _, cx| {
             let hovered = *hovered;
             hover.update(cx, |s, cx| {
@@ -4087,18 +4074,6 @@ fn rail(c: &Ctx, metrics: RailMetrics, fade: f32, held: bool) -> AnyElement {
                 cx.notify();
             });
         })
-        .child(
-            div()
-                .id(SharedString::from(format!("{}-rail-thumb", c.key)))
-                .absolute()
-                .top(px(RAIL_TRACK_INSET + metrics.thumb_top))
-                .right(px(2.))
-                .w(px(width))
-                .h(px(metrics.thumb))
-                .rounded(px(width / 2.0))
-                .bg(t.text_faint.opacity(if held { 0.68 } else { 0.5 }))
-                .hover(|s| s.bg(t.text_faint.opacity(0.85))),
-        )
         .into_any_element()
 }
 

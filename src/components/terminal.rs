@@ -47,6 +47,7 @@ use gpui::{
     outline, point, prelude::*, px, size,
 };
 
+use super::scroll_rail;
 use super::terminal_tabs as tabs;
 use crate::{
     motion::{self, RESIZE, TAB_SLIDE},
@@ -87,11 +88,8 @@ const MIN_HEIGHT: f32 = 160.0;
 const DEFAULT_HEIGHT: f32 = 280.0;
 
 // Pink: popover.rs floating scrollbar rail.
-const RAIL_TRACK_INSET: f32 = 4.0;
-const RAIL_HIT_WIDTH: f32 = 10.0;
-const RAIL_THUMB_WIDTH: f32 = 3.0;
-const RAIL_HOVER_THUMB_WIDTH: f32 = 5.0;
-const RAIL_MIN_THUMB: f32 = 24.0;
+const RAIL_TRACK_INSET: f32 = scroll_rail::TRACK_INSET;
+const RAIL_MIN_THUMB: f32 = scroll_rail::MIN_THUMB;
 const RAIL_LINGER: Duration = Duration::from_millis(1_400);
 const RAIL_FADE: Duration = Duration::from_millis(260);
 
@@ -1859,11 +1857,6 @@ fn terminal_body(
         window.request_animation_frame();
     }
     let rail = rail_el.filter(|_| fade > 0.0).map(|(g, metrics, _)| {
-        let thumb_w = if rail_active {
-            RAIL_HOVER_THUMB_WIDTH
-        } else {
-            RAIL_THUMB_WIDTH
-        };
         let hover_state = state.clone();
         let press_state = state.clone();
         let drag_state = state.clone();
@@ -1885,73 +1878,61 @@ fn terminal_body(
             }
         };
         let apply_drag = apply;
-        div()
-            .id(SharedString::from(format!("{key}-rail")))
-            .absolute()
-            .top_0()
-            .bottom_0()
-            .right_0()
-            .w(px(RAIL_HIT_WIDTH))
-            .opacity(fade)
-            .on_hover(move |hovered, _, cx| {
-                hover_state.update(cx, |s, cx| {
-                    let active = *hovered || s.rail.grab.is_some();
-                    if s.rail.bar_hovered != active {
-                        s.rail.bar_hovered = active;
-                        if !active {
-                            s.rail.last_scroll_at = Some(Instant::now());
-                        }
-                        cx.notify();
+        scroll_rail::rail(
+            t.text_faint,
+            fade,
+            rail_active,
+            metrics.thumb_top,
+            metrics.thumb_height,
+        )
+        .id(SharedString::from(format!("{key}-rail")))
+        .on_hover(move |hovered, _, cx| {
+            hover_state.update(cx, |s, cx| {
+                let active = *hovered || s.rail.grab.is_some();
+                if s.rail.bar_hovered != active {
+                    s.rail.bar_hovered = active;
+                    if !active {
+                        s.rail.last_scroll_at = Some(Instant::now());
                     }
-                })
-            })
-            .on_mouse_down(MouseButton::Left, move |ev: &MouseDownEvent, _, cx| {
-                cx.stop_propagation();
-                let y = f32::from(ev.position.y);
-                press_state.update(cx, |s, cx| {
-                    let in_track = y - track_top - RAIL_TRACK_INSET;
-                    let grab = if (metrics.thumb_top..=metrics.thumb_top + metrics.thumb_height)
-                        .contains(&in_track)
-                    {
-                        in_track - metrics.thumb_top
-                    } else {
-                        metrics.thumb_height / 2.0
-                    };
-                    s.rail.grab = Some(grab);
-                    apply(s, y);
                     cx.notify();
-                })
+                }
             })
-            .on_drag(RailDrag, |_, _, _, cx| {
-                cx.stop_propagation();
-                cx.new(|_| EmptyGhost)
+        })
+        .on_mouse_down(MouseButton::Left, move |ev: &MouseDownEvent, _, cx| {
+            cx.stop_propagation();
+            let y = f32::from(ev.position.y);
+            press_state.update(cx, |s, cx| {
+                let in_track = y - track_top - RAIL_TRACK_INSET;
+                let grab = if (metrics.thumb_top..=metrics.thumb_top + metrics.thumb_height)
+                    .contains(&in_track)
+                {
+                    in_track - metrics.thumb_top
+                } else {
+                    metrics.thumb_height / 2.0
+                };
+                s.rail.grab = Some(grab);
+                apply(s, y);
+                cx.notify();
             })
-            .on_drag_move::<RailDrag>(move |ev, _, cx| {
-                let y = f32::from(ev.event.position.y);
-                drag_state.update(cx, |s, cx| {
-                    apply_drag(s, y);
-                    cx.notify();
-                })
+        })
+        .on_drag(RailDrag, |_, _, _, cx| {
+            cx.stop_propagation();
+            cx.new(|_| EmptyGhost)
+        })
+        .on_drag_move::<RailDrag>(move |ev, _, cx| {
+            let y = f32::from(ev.event.position.y);
+            drag_state.update(cx, |s, cx| {
+                apply_drag(s, y);
+                cx.notify();
             })
-            .on_mouse_up(MouseButton::Left, move |_: &MouseUpEvent, _, cx| {
-                up_state.update(cx, |s, cx| {
-                    s.rail.grab = None;
-                    s.rail.last_scroll_at = Some(Instant::now());
-                    cx.notify();
-                })
+        })
+        .on_mouse_up(MouseButton::Left, move |_: &MouseUpEvent, _, cx| {
+            up_state.update(cx, |s, cx| {
+                s.rail.grab = None;
+                s.rail.last_scroll_at = Some(Instant::now());
+                cx.notify();
             })
-            .child(
-                div()
-                    .id(SharedString::from(format!("{key}-rail-thumb")))
-                    .absolute()
-                    .top(px(RAIL_TRACK_INSET + metrics.thumb_top))
-                    .right(px(2.0))
-                    .w(px(thumb_w))
-                    .h(px(metrics.thumb_height))
-                    .rounded(px(thumb_w / 2.0))
-                    .bg(t.text_faint.opacity(if rail_active { 0.68 } else { 0.5 }))
-                    .hover(|s| s.bg(t.text_faint.opacity(0.85))),
-            )
+        })
     });
 
     let grid = snapshot.map(|(emu, offset, last_total)| {

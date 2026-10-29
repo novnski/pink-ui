@@ -712,20 +712,9 @@ impl RenderOnce for CommandMenu {
 }
 
 /// Pink: `popover::palette_search_icon`, the search glyph in the same 16px
-/// slot as the row glyphs.
+/// slot as the row glyphs, drawn by the `pink-menu-card` package.
 fn palette_search_icon(t: &Pink) -> gpui::Div {
-    div()
-        .size(px(16.))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .child(
-            svg()
-                .path(ICON_SEARCH)
-                .size(px(16.))
-                .text_color(t.text_muted),
-        )
+    crate::components::menu_card::search_glyph(ICON_SEARCH, t.text_muted)
 }
 
 /// Pink: `spaces::sidebar_separator` at `my 7`, the rule above a group.
