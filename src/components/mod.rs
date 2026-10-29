@@ -38,10 +38,12 @@ pub mod data_table;
 pub mod date_range_picker;
 pub mod decision_inbox;
 pub mod delegate_board;
+pub mod diff_rows;
 pub mod diff_viewer;
 pub mod dropzone;
 pub mod email_draft;
 pub mod experiment_card;
+pub mod file_row;
 pub mod file_tree;
 pub mod filter_menu;
 pub mod find_bar;
@@ -572,6 +574,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         story: file_tree::story,
     },
     ComponentEntry {
+        slug: "file-row",
+        name: file_row::NAME,
+        category: "Navigation",
+        description: file_row::DESCRIPTION,
+        story: file_row::story,
+    },
+    ComponentEntry {
         slug: "button",
         name: button::NAME,
         category: "Buttons",
@@ -752,6 +761,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Code",
         description: code_block::DESCRIPTION,
         story: code_block::story,
+    },
+    ComponentEntry {
+        slug: "diff-rows",
+        name: diff_rows::NAME,
+        category: "Code",
+        description: diff_rows::DESCRIPTION,
+        story: diff_rows::story,
     },
     ComponentEntry {
         slug: "diff-viewer",

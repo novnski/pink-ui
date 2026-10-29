@@ -1,7 +1,8 @@
 //! File Tree – Pink's workspace file tree: the Files pane's search toolbar
 //! over the project's folders and files.
 //!
-//! Rows are Pink's 27 px tree rows: a chevron that turns for folders, the
+//! Rows are Pink's 27 px tree rows, drawn by the `pink-file-row` package
+//! ([`crate::components::file_row`]): a chevron that turns for folders, the
 //! file-type artwork (Symbols, the VS Code theme Pink bundles) and the name,
 //! indented 14 px a level inside an inset, rounded selection pill. The
 //! selection takes the accent while the tree has focus and a quiet wash when
@@ -21,7 +22,6 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    f32::consts::FRAC_PI_2,
     ops::Range,
     rc::Rc,
     sync::Arc,
@@ -31,12 +31,14 @@ use web_time::{Duration, Instant};
 use gpui::{
     AnyElement, AnyView, App, Context, Div, DragMoveEvent, ElementId, Entity, FocusHandle,
     HighlightStyle, Hsla, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, Render, Role,
-    ScrollHandle, SharedString, Stateful, StyledText, Subscription, Task, Toggled, Transformation,
-    Window, div, img, point, prelude::*, px, radians, svg,
+    ScrollHandle, SharedString, Stateful, StyledText, Subscription, Task, Toggled, Window, div,
+    img, point, prelude::*, px, svg,
 };
 
 use crate::{
-    HoverFill, motion,
+    HoverFill,
+    components::file_row,
+    motion,
     pink::{self, FillTier, Pink, chrome, layout, loaders, radius},
     primitives::{InputEvent, TextInput},
     story,
@@ -53,23 +55,12 @@ const ICON_EYE: &str = "icons/file-tree/eye.svg";
 const ICON_EYE_CLOSED: &str = "icons/file-tree/eye-closed.svg";
 const ICON_FOLDER: &str = "icons/file-tree/folder.svg";
 
-/// Pink: files/tree.rs `TREE_ROW_HEIGHT`.
-const TREE_ROW_HEIGHT: f32 = 27.0;
-/// Pink: files/tree.rs `TREE_INDENT`.
-const TREE_INDENT: f32 = 14.0;
-/// Pink: files/tree.rs `TREE_ROW_INSET` – the selection pill's side inset.
-const TREE_ROW_INSET: f32 = 6.0;
-/// Pink: files/search.rs `SEARCH_ROW_HEIGHT` / `SEARCH_TREE_INDENT`.
-const SEARCH_ROW_HEIGHT: f32 = 27.0;
-const SEARCH_TREE_INDENT: f32 = 14.0;
 /// Pink: files/search.rs `SEARCH_RESULT_LIMIT`.
 const SEARCH_RESULT_LIMIT: usize = 200;
 /// Pink: files/search.rs – the name search waits this long after a keystroke.
 const NAME_SEARCH_DEBOUNCE: Duration = Duration::from_millis(200);
 /// Pink: files/text_search.rs `TEXT_SEARCH_DEBOUNCE`.
 const TEXT_SEARCH_DEBOUNCE: Duration = Duration::from_millis(250);
-/// Pink: files/text_search.rs `TEXT_MATCH_INDENT`.
-const TEXT_MATCH_INDENT: f32 = 26.0;
 /// Pink: files/preview.rs `TREE_SPLIT_DEFAULT`.
 const DEFAULT_WIDTH: f32 = 286.0;
 /// How long a lazy folder takes to list (Pink waits on the workspace host).
@@ -484,9 +475,7 @@ fn icon_path(name: &str, kind: EntryKind, dark: bool) -> SharedString {
 
 /// Polychrome artwork goes through `img` (an `svg()` is a one-color mask).
 fn file_icon(name: &str, kind: EntryKind, t: &Pink) -> impl IntoElement {
-    img(icon_path(name, kind, t.dark))
-        .size(px(14.0))
-        .flex_none()
+    file_row::artwork(img(icon_path(name, kind, t.dark)))
 }
 
 // ---------------------------------------------------------------------------
@@ -1784,40 +1773,27 @@ fn act(
     effects.run(&handlers, window, cx);
 }
 
-/// One entry row (Pink: files/tree.rs `render_tree_row`, `Entry`): 27 tall,
-/// an inset pill (`mx 6`, radius 6), indented 14 a level; a 14 px chevron
-/// slot (folders: one 12 px glyph, turned when open), the 14 px artwork, the
-/// 11.5 px name. Focused selection takes the accent; a blurred tree keeps a
-/// quiet wash.
+/// One entry row (Pink: files/tree.rs `render_tree_row`, `Entry`), drawn by
+/// the `pink-file-row` package: 27 tall, an inset pill indented 14 a level,
+/// the chevron slot (folders turn one glyph), the artwork and the name.
+/// Focused selection takes the accent; a blurred tree keeps a quiet wash.
 fn tree_row(c: &Ctx, row: &Row, model: &Model, focused: bool) -> AnyElement {
     let t = c.t;
     let Some(node) = model.node(&row.path) else {
         return div().into_any_element();
     };
     let path = row.path.clone();
-    let padding = 8.0 + row.depth as f32 * TREE_INDENT;
     let selected = model.selected.as_deref() == Some(path.as_str());
     let is_folder = node.kind == EntryKind::Folder;
     let expanded = is_folder && model.is_expanded(&path);
     let id = format!("{}-entry-{}", c.key, path);
     let state = c.state.clone();
-    div()
+    let base = div()
         .id(ElementId::Name(id.clone().into()))
         .role(Role::TreeItem)
         .aria_label(node.name.clone())
         .aria_selected(selected)
         .when(is_folder, |el| el.aria_expanded(expanded))
-        .h(px(TREE_ROW_HEIGHT))
-        .mx(px(TREE_ROW_INSET))
-        .rounded(px(radius::SM))
-        .flex_none()
-        .pl(px((padding - TREE_ROW_INSET).max(2.0)))
-        .pr(px(8.0 - TREE_ROW_INSET / 2.0))
-        .flex()
-        .items_center()
-        .gap(px(4.0))
-        .cursor_pointer()
-        .when(node.ignored, |el| el.opacity(0.52))
         .when(selected, |el| {
             el.bg(if focused {
                 t.accent.opacity(0.22)
@@ -1834,137 +1810,108 @@ fn tree_row(c: &Ctx, row: &Row, model: &Model, focused: bool) -> AnyElement {
                 window.focus(&s.focus, cx);
                 s.activate(&path, cx)
             });
-        })
-        .child(
-            div()
-                .size(px(14.0))
-                .flex_none()
-                .flex()
-                .items_center()
-                .justify_center()
-                .when(is_folder, |el| {
-                    el.child(
-                        svg()
-                            .path(ICON_CHEVRON)
-                            .size(px(12.0))
-                            .flex_none()
-                            .text_color(t.text_faint)
-                            .with_transformation(Transformation::rotate(radians(if expanded {
-                                FRAC_PI_2
-                            } else {
-                                0.0
-                            }))),
-                    )
-                }),
-        )
+        });
+    file_row::tree_entry(base, row.depth, node.ignored)
+        .child(file_row::disclosure(is_folder.then(|| {
+            file_row::tree_chevron(svg().path(ICON_CHEVRON).flex_none(), expanded, t.text_faint)
+        })))
         .child(file_icon(&node.name, node.kind, t))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .text_size(px(11.5))
-                .text_color(if selected { t.text } else { t.text_muted })
-                .child(node.name.clone()),
-        )
+        .child(file_row::name(
+            node.name.clone(),
+            if selected { t.text } else { t.text_muted },
+            pink::SANS.into(),
+        ))
         .into_any_element()
 }
 
-/// Pink: files/tree.rs `status_row` and the `Error` / `LoadMore` rows: full
-/// width, one level deeper than the folder's entries, 11 px.
+/// Pink: files/tree.rs `status_row` and the `Error` / `LoadMore` rows, drawn
+/// by `pink-file-row`: full width, one level deeper than the folder's
+/// entries, 11 pt.
 fn status_row(c: &Ctx, row: &Row, ix: usize) -> AnyElement {
     let t = c.t;
-    let padding = 8.0 + row.depth as f32 * TREE_INDENT + TREE_INDENT;
-    let base = |id: String| {
-        div()
-            .id(ElementId::Name(id.into()))
-            .h(px(TREE_ROW_HEIGHT))
-            .w_full()
-            .flex_none()
-            .pl(px(padding))
-            .pr(px(8.0))
-            .flex()
-            .items_center()
-            .text_size(px(11.0))
-    };
     let dir = row.path.clone();
     let state = c.state.clone();
+    let base = |id: String| div().id(ElementId::Name(id.into()));
     match &row.kind {
-        RowKind::Loading => base(format!("{}-status-{ix}", c.key))
-            .text_color(t.text_faint)
-            .child("Loading…")
-            .into_any_element(),
-        RowKind::Empty => base(format!("{}-status-{ix}", c.key))
-            .text_color(t.readable_faint(0.7))
-            .child("Empty folder")
-            .into_any_element(),
+        RowKind::Loading => file_row::status_row(
+            base(format!("{}-status-{ix}", c.key)),
+            row.depth,
+            file_row::StatusKind::Note,
+        )
+        .child(file_row::status_label("Loading…", t.text_faint))
+        .into_any_element(),
+        RowKind::Empty => file_row::status_row(
+            base(format!("{}-status-{ix}", c.key)),
+            row.depth,
+            file_row::StatusKind::Note,
+        )
+        .child(file_row::status_label(
+            "Empty folder",
+            t.readable_faint(0.7),
+        ))
+        .into_any_element(),
         RowKind::Error(message) => {
             let id = format!("{}-error-{ix}", c.key);
-            base(id.clone())
-                .gap(px(6.0))
-                .cursor_pointer()
-                .role(Role::Button)
-                .aria_label(format!("{message}. Retry"))
-                .hover_wash(id, t.fill(FillTier::Tertiary))
-                .on_click(move |_, _, cx| {
-                    let dir = dir.clone();
-                    state.update(cx, |s, cx| {
-                        s.start_load(dir, cx);
-                        cx.notify();
-                    });
-                })
-                .child(
-                    div()
-                        .min_w_0()
-                        .truncate()
-                        .text_color(t.readable_tone(t.danger, 0.82))
-                        .child(format!("{message}. Retry")),
-                )
-                .into_any_element()
+            file_row::status_row(
+                base(id.clone())
+                    .role(Role::Button)
+                    .aria_label(format!("{message}. Retry"))
+                    .hover_wash(id, t.fill(FillTier::Tertiary))
+                    .on_click(move |_, _, cx| {
+                        let dir = dir.clone();
+                        state.update(cx, |s, cx| {
+                            s.start_load(dir, cx);
+                            cx.notify();
+                        });
+                    }),
+                row.depth,
+                file_row::StatusKind::Error,
+            )
+            .child(file_row::error_message(
+                message.clone(),
+                t.readable_tone(t.danger, 0.82),
+            ))
+            .child(file_row::retry_label("Retry", t.text))
+            .into_any_element()
         }
         RowKind::LoadMore => {
             let id = format!("{}-more-{ix}", c.key);
-            base(id.clone())
-                .cursor_pointer()
-                .role(Role::Button)
-                .hover_wash(id, t.fill(FillTier::Tertiary))
-                .on_click(move |_, _, cx| {
-                    let dir = dir.clone();
-                    state.update(cx, |s, cx| {
-                        s.start_load(dir, cx);
-                        cx.notify();
-                    });
-                })
-                .child(div().text_color(t.text_muted).child("Load more…"))
-                .into_any_element()
+            file_row::status_row(
+                base(id.clone())
+                    .role(Role::Button)
+                    .hover_wash(id, t.fill(FillTier::Tertiary))
+                    .on_click(move |_, _, cx| {
+                        let dir = dir.clone();
+                        state.update(cx, |s, cx| {
+                            s.start_load(dir, cx);
+                            cx.notify();
+                        });
+                    }),
+                row.depth,
+                file_row::StatusKind::More,
+            )
+            .child(file_row::status_label("Load more…", t.text_muted))
+            .into_any_element()
         }
         RowKind::Entry => div().into_any_element(),
     }
 }
 
-/// One name-search row (Pink: files/search.rs `render_search_row`): full
-/// width, `pl 8 + 14` a level, an 11 px down/right chevron while it holds
-/// matches, folders in the muted tone; the cursor row takes Fill Secondary.
+/// One name-search row (Pink: files/search.rs `render_search_row`), drawn by
+/// `pink-file-row`: full width, indented 14 a level, an 11 pt down/right
+/// chevron while it holds matches, folders in the muted tone; the cursor
+/// row takes Fill Secondary.
 fn search_row(c: &Ctx, row: &SearchRow, ix: usize, active: bool, expanded: bool) -> AnyElement {
     let t = c.t;
     let is_folder = row.kind == EntryKind::Folder;
     let id = format!("{}-result-{ix}", c.key);
     let state = c.state.clone();
-    div()
+    let base = div()
         .id(ElementId::Name(id.clone().into()))
         .role(Role::TreeItem)
         .aria_label(row.name.clone())
         .aria_selected(active)
         .when(row.has_children, |el| el.aria_expanded(expanded))
-        .h(px(SEARCH_ROW_HEIGHT))
-        .w_full()
-        .flex_none()
-        .pl(px(8.0 + row.depth as f32 * SEARCH_TREE_INDENT))
-        .pr(px(8.0))
-        .flex()
-        .items_center()
-        .gap(px(4.0))
-        .cursor_pointer()
         .when(active, |el| el.bg(t.fill(FillTier::Secondary)))
         .when(!active, |el| el.hover_wash(id, t.fill(FillTier::Tertiary)))
         .on_click(move |_, window, cx| {
@@ -1972,44 +1919,32 @@ fn search_row(c: &Ctx, row: &SearchRow, ix: usize, active: bool, expanded: bool)
                 s.active = ix;
                 s.activate_result(cx)
             });
-        })
-        .child(
-            div()
-                .size(px(14.0))
-                .flex_none()
-                .flex()
-                .items_center()
-                .justify_center()
-                .when(row.has_children, |el| {
-                    el.child(
-                        svg()
-                            .path(if expanded {
-                                ICON_CHEVRON_DOWN
-                            } else {
-                                ICON_CHEVRON
-                            })
-                            .size(px(11.0))
-                            .text_color(t.text_faint),
-                    )
+        });
+    file_row::search_entry(base, row.depth)
+        .child(file_row::disclosure(row.has_children.then(|| {
+            file_row::search_chevron(
+                svg().path(if expanded {
+                    ICON_CHEVRON_DOWN
+                } else {
+                    ICON_CHEVRON
                 }),
-        )
+                t.text_faint,
+            )
+        })))
         .child(file_icon(&row.name, row.kind, t))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .text_size(px(11.5))
-                .text_color(if is_folder { t.text_muted } else { t.text })
-                .child(row.name.clone()),
-        )
+        .child(file_row::name(
+            row.name.clone(),
+            if is_folder { t.text_muted } else { t.text },
+            pink::SANS.into(),
+        ))
         .into_any_element()
 }
 
-/// One text-search row (Pink: files/text_search.rs `render_text_search_row`):
-/// a file row (chevron 11, artwork, name ≤ 180, its folder faint, the match
-/// count 10.5) or a match row (line number 10.5 in a 28 px column, the line
-/// in mono with the hit on the inline-code wash).
+/// One text-search row (Pink: files/text_search.rs `render_text_search_row`),
+/// drawn by `pink-file-row`: a file row (chevron 11, artwork, name ≤ 180,
+/// its folder faint, the match count 10.5) or a match row (line number 10.5
+/// in a 28 pt column, the line in mono with the hit on the inline-code
+/// wash).
 fn text_row(c: &Ctx, results: &TextResults, row: TextRow, ix: usize, active: bool) -> AnyElement {
     let t = c.t;
     let id = format!("{}-text-{ix}", c.key);
@@ -2018,15 +1953,6 @@ fn text_row(c: &Ctx, results: &TextResults, row: TextRow, ix: usize, active: boo
         .id(ElementId::Name(id.clone().into()))
         .role(Role::TreeItem)
         .aria_selected(active)
-        .h(px(SEARCH_ROW_HEIGHT))
-        .w_full()
-        .flex_none()
-        .pr(px(8.0))
-        .flex()
-        .items_center()
-        .gap(px(5.0))
-        .cursor_pointer()
-        .text_size(px(11.5))
         .when(active, |el| el.bg(t.fill(FillTier::Secondary)))
         .when(!active, |el| el.hover_wash(id, t.fill(FillTier::Tertiary)))
         .on_click(move |_, window, cx| {
@@ -2043,48 +1969,31 @@ fn text_row(c: &Ctx, results: &TextResults, row: TextRow, ix: usize, active: boo
                 .path
                 .rsplit_once('/')
                 .unwrap_or(("", file.path.as_str()));
-            base.aria_label(format!(
-                "{}, {}",
-                file.path,
-                plural(file.matches.len(), "match", "matches")
+            file_row::text_row(
+                base.aria_label(format!(
+                    "{}, {}",
+                    file.path,
+                    plural(file.matches.len(), "match", "matches")
+                ))
+                .aria_expanded(expanded),
+                file_row::TextRowKind::File,
+                pink::SANS.into(),
+            )
+            .child(file_row::search_chevron(
+                svg().path(if expanded {
+                    ICON_CHEVRON_DOWN
+                } else {
+                    ICON_CHEVRON
+                }),
+                t.text_faint,
             ))
-            .aria_expanded(expanded)
-            .pl(px(8.0))
-            .child(
-                svg()
-                    .path(if expanded {
-                        ICON_CHEVRON_DOWN
-                    } else {
-                        ICON_CHEVRON
-                    })
-                    .size(px(11.0))
-                    .flex_none()
-                    .text_color(t.text_faint),
-            )
             .child(file_icon(name, EntryKind::File, t))
-            .child(
-                div()
-                    .flex_none()
-                    .max_w(px(180.0))
-                    .truncate()
-                    .text_color(t.text)
-                    .child(name.to_string()),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_color(t.text_faint)
-                    .child(dir.to_string()),
-            )
-            .child(
-                div()
-                    .flex_none()
-                    .text_size(px(10.5))
-                    .text_color(t.text_faint)
-                    .child(file.matches.len().to_string()),
-            )
+            .child(file_row::text_file_name(name.to_string(), t.text))
+            .child(file_row::text_file_folder(dir.to_string(), t.text_faint))
+            .child(file_row::match_count(
+                file.matches.len().to_string(),
+                t.text_faint,
+            ))
             .into_any_element()
         }
         TextRow::Match(fx, mx) => {
@@ -2103,31 +2012,18 @@ fn text_row(c: &Ctx, results: &TextResults, row: TextRow, ix: usize, active: boo
                     },
                 )]);
             }
-            base.aria_label(format!(
-                "{} line {}: {}",
-                file.path,
-                found.line,
-                preview.trim()
-            ))
-            .pl(px(TEXT_MATCH_INDENT))
-            .child(
-                div()
-                    .flex_none()
-                    .min_w(px(28.0))
-                    .text_size(px(10.5))
-                    .text_color(t.text_faint)
-                    .child(found.line.to_string()),
+            file_row::text_row(
+                base.aria_label(format!(
+                    "{} line {}: {}",
+                    file.path,
+                    found.line,
+                    preview.trim()
+                )),
+                file_row::TextRowKind::Match,
+                pink::SANS.into(),
             )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .whitespace_nowrap()
-                    .font_family(pink::MONO)
-                    .text_color(t.text_muted)
-                    .child(styled),
-            )
+            .child(file_row::line_number(found.line.to_string(), t.text_faint))
+            .child(file_row::match_line(t.text_muted, pink::MONO.into()).child(styled))
             .into_any_element()
         }
     }

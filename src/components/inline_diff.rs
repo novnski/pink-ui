@@ -35,6 +35,7 @@ use gpui::{
 };
 
 use crate::{
+    components::diff_rows,
     motion::{self, DISCLOSURE, HOVER_FADE, TOOL_BODY_FADE},
     pink::{
         self, ButtonKind, ControlSize, Pink, Syntax, TEXT_CONTRAST_TARGET, layout, loaders, radius,
@@ -52,16 +53,14 @@ const ICON_UNDO: &str = "icons/inline-diff/undo-left.svg";
 /// Code type size and row height (`DIFF_TEXT_SIZE`, `DIFF_LINE_HEIGHT`).
 const DIFF_TEXT_SIZE: f32 = 12.0;
 const DIFF_LINE_HEIGHT: f32 = 21.0;
-/// Line numbers and the hunk band run at 11/12 of the code size.
-const DIFF_META_SIZE: f32 = 11.0;
-const HUNK_HEADER_HEIGHT: f32 = 28.0;
+// The row chrome (the hunk band, gutters, marker) is the `pink-diff-rows`
+// package's.
 const BODY_BOTTOM_PAD: f32 = 8.0;
 /// One line-number column, never narrower than this (`GUTTER_WIDTH`).
 const GUTTER_WIDTH: f32 = 36.0;
-const GUTTER_PAD_RIGHT: f32 = 8.0;
-const MARKER_WIDTH: f32 = 16.0;
-/// The left spacer every row keeps so columns align (`ACCENT_BAR_WIDTH`).
-const ACCENT_BAR_WIDTH: f32 = 3.0;
+const GUTTER_PAD_RIGHT: f32 = diff_rows::GUTTER_PAD_RIGHT;
+/// A review card's bar matches the rows' bar column.
+const ACCENT_BAR_WIDTH: f32 = diff_rows::ACCENT_BAR_WIDTH;
 const CODE_PADDING_LEFT: f32 = 12.0;
 
 // Code surface (Pink: transcript.rs `code_surface_header`, `copy_action`).
@@ -1098,21 +1097,13 @@ impl RenderOnce for InlineDiff {
             }
         }
 
-        let hunk = div()
-            .h(px(HUNK_HEADER_HEIGHT))
-            .w_full()
-            .flex_none()
-            .flex()
-            .items_center()
-            .px(px(pink::chrome::CONTENT_INSET))
-            .bg(t.diff_hunk_bg)
-            .font_family(pink::MONO)
-            .text_size(px(DIFF_META_SIZE))
-            .text_color(t.readable_on(t.text_faint, t.diff_hunk_bg, TEXT_CONTRAST_TARGET))
-            .child(format!(
+        let hunk = diff_rows::hunk_header_row(
+            format!(
                 "@@ -{},{} +{},{} @@",
                 self.first_line, plan.old_count, self.first_line, plan.new_count
-            ));
+            ),
+            &diff_rows::diff_style(&t),
+        );
 
         let body = div()
             .id(SharedString::from(format!("{key}-diff-scroll")))
@@ -1452,18 +1443,9 @@ impl RowPaint<'_> {
                 ..word
             },
         );
+        let style = diff_rows::diff_style(t);
         let gutter = |no: Option<usize>, color: Hsla| {
-            div()
-                .w(px(self.gutter_px))
-                .flex_none()
-                .flex()
-                .justify_end()
-                .pr(px(GUTTER_PAD_RIGHT))
-                .font_family(pink::MONO)
-                .text_size(px(DIFF_META_SIZE))
-                .line_height(px(DIFF_LINE_HEIGHT))
-                .text_color(color)
-                .child(no.map(|n| n.to_string()).unwrap_or_default())
+            diff_rows::gutter(no.map(|n| n as u32), color, self.gutter_px, &style)
         };
         let (old_color, new_color) = if row.added {
             (faint, changed_number)
@@ -1491,21 +1473,15 @@ impl RowPaint<'_> {
                     el.cursor_pointer()
                         .on_click(move |_, window, cx| act(Command::Focus(ix), window, cx))
                 })
-                .child(div().w(px(ACCENT_BAR_WIDTH)).flex_none())
+                .child(diff_rows::accent_bar(None))
                 .child(gutter(row.old_no, old_color))
                 .child(gutter(row.new_no, new_color))
-                .child(
-                    div()
-                        .w(px(MARKER_WIDTH))
-                        .flex_none()
-                        .flex()
-                        .justify_center()
-                        .font_family(pink::MONO)
-                        .text_size(px(DIFF_TEXT_SIZE))
-                        .line_height(px(DIFF_LINE_HEIGHT))
-                        .text_color(marker_color)
-                        .child(marker),
-                )
+                .child(diff_rows::marker(
+                    marker,
+                    marker_color,
+                    diff_rows::MARKER_WIDTH,
+                    &style,
+                ))
                 .child(
                     div()
                         .flex_1()
