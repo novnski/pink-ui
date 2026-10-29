@@ -34,7 +34,7 @@ use std::{rc::Rc, sync::Arc, time::Duration};
 use gpui::{
     AnyElement, AnyView, App, BoxShadow, Div, ElementId, FocusHandle, FontWeight, Hsla,
     IntoElement, KeyDownEvent, MouseDownEvent, Role, SharedString, Stateful, Task, TextRun,
-    Toggled, Window, div, font, point, prelude::*, px, relative, svg,
+    Toggled, Window, div, font, point, prelude::*, px, svg,
 };
 
 use crate::{
@@ -49,11 +49,12 @@ pub const DESCRIPTION: &str = "Switch between two to five options: a thumb that 
 
 type ChangeHandler = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
 
-/// Track inset around the thumb (Pink `SEGMENT_INSET`).
-const INSET: f32 = 2.0;
-/// A track option's side padding and its glyph → label gap (Pink `segmented`).
-const OPTION_PAD_X: f32 = 6.0;
-const OPTION_GAP: f32 = 5.0;
+/// The tray's drawing, shared with PINK's `button.rs` `segmented`.
+pub mod tray {
+    include!("../../components/segmented-control/src/lib.rs");
+}
+
+use tray::{INSET, OPTION_GAP, OPTION_PAD_X};
 /// Between chips (Pink: automations.rs, the editor's choice rows).
 const CHIP_GAP: f32 = 6.0;
 /// Between tabs, and how much taller the strip is than a tab (Pink: the model
@@ -391,10 +392,13 @@ impl Shape {
 
     /// The option's id and its announced role and state.
     fn option(&self, o: &SegmentOption, chosen: bool) -> Stateful<Div> {
+        self.announce(div().id(SharedString::from(self.option_key(o))), o, chosen)
+    }
+
+    /// An option's announced role, name and state.
+    fn announce(&self, el: Stateful<Div>, o: &SegmentOption, chosen: bool) -> Stateful<Div> {
         let radio = self.radio;
-        div()
-            .id(SharedString::from(self.option_key(o)))
-            .role(if radio { Role::RadioButton } else { Role::Tab })
+        el.role(if radio { Role::RadioButton } else { Role::Tab })
             .aria_label(o.label.clone().unwrap_or_else(|| o.value.clone()))
             .map(|el| {
                 if radio {
@@ -428,35 +432,20 @@ impl Shape {
     }
 
     /// Pink: button.rs `segmented` – the track, one sliding thumb and
-    /// equal-width options. `width: None` fills the container.
+    /// equal-width options, drawn by `pink-segmented-control`. `width: None`
+    /// fills the container.
     fn tray(&self, options: &[SegmentOption], width: Option<f32>) -> Div {
         let t = &self.t;
-        let n = options.len().max(1) as f32;
-        let thumb_radius = radius::inner(self.size.radius(), INSET);
         let muted = t.readable_muted(0.9);
+        let track_radius = self.size.radius();
         let items: Vec<AnyElement> = options
             .iter()
             .enumerate()
             .map(|(ix, o)| {
                 let chosen = Some(ix) == self.active;
                 let tone = if chosen { t.text } else { muted };
-                self.option(o, chosen)
-                    .relative()
-                    .flex_1()
-                    .min_w_0()
-                    .h_full()
-                    .px(px(OPTION_PAD_X))
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .justify_center()
-                    .gap(px(OPTION_GAP))
-                    .rounded(px(thumb_radius))
-                    .font_weight(if chosen {
-                        FontWeight::MEDIUM
-                    } else {
-                        FontWeight::NORMAL
-                    })
+                let el = tray::option(SharedString::from(self.option_key(o)), chosen, track_radius);
+                self.announce(el, o, chosen)
                     .map(|el| {
                         if self.picker.enabled[ix] {
                             self.focusable(self.wire(el, ix)).hover_fg(
@@ -476,53 +465,39 @@ impl Shape {
         // Placed by fraction of the content box, so nothing is measured
         let thumb = self.active.map(|ix| {
             let position = motion::follow(&format!("{}-thumb", self.key), ix as f32, QUICK);
-            div()
-                .absolute()
-                .top_0()
-                .bottom_0()
-                .left(relative(position / n))
-                .w(relative(1. / n))
-                .rounded(px(thumb_radius))
-                .bg(if t.dark {
+            tray::thumb(
+                position,
+                options.len(),
+                track_radius,
+                if t.dark {
                     t.fill(FillTier::Primary)
                 } else {
                     gpui::white()
-                })
-                .when(!t.dark, |el| {
-                    el.border_1()
-                        .border_color(t.separator(false))
-                        .shadow(vec![BoxShadow {
-                            color: gpui::hsla(0., 0., 0., 0.08),
-                            offset: point(px(0.), px(1.)),
-                            blur_radius: px(2.),
-                            spread_radius: px(0.),
-                            inset: false,
-                        }])
-                })
-        });
-        div()
-            .flex_none()
-            .map(|el| match width {
-                Some(w) => el.w(px(w)),
-                None => el.w_full(),
-            })
-            .h(px(self.size.height()))
-            .p(px(INSET))
-            .rounded(px(self.size.radius()))
-            .bg(t.fill(FillTier::Quaternary))
-            .border_1()
-            .border_color(t.separator(false))
-            .child(
-                // The content box the thumb's fractions are taken against
-                div().relative().size_full().children(thumb).child(
-                    div()
-                        .relative()
-                        .size_full()
-                        .flex()
-                        .flex_row()
-                        .children(items),
-                ),
+                },
+                (!t.dark).then(|| tray::Lift {
+                    edge: t.separator(false),
+                    shadows: vec![BoxShadow {
+                        color: gpui::hsla(0., 0., 0., 0.08),
+                        offset: point(px(0.), px(1.)),
+                        blur_radius: px(2.),
+                        spread_radius: px(0.),
+                        inset: false,
+                    }],
+                }),
             )
+        });
+        tray::tray(
+            &tray::Track {
+                width,
+                height: self.size.height(),
+                radius: track_radius,
+                text: self.size.text(),
+                fill: t.fill(FillTier::Quaternary),
+                edge: t.separator(false),
+            },
+            thumb,
+            items,
+        )
     }
 
     /// Pink: button.rs `chip` – one chip per option, gap 6; `full` shares
@@ -775,7 +750,11 @@ impl RenderOnce for SegmentedControl {
                 Role::TabList
             })
             .font_family(pink::SANS)
-            .text_size(px(size.text()))
+            // The tray sets its own rem type size, so it grows with the
+            // Interface size as PINK's does.
+            .when(self.variant != SegmentVariant::Tray, |el| {
+                el.text_size(px(size.text()))
+            })
             .line_height(px(size.line_height()))
             .text_color(t.text)
             .on_key_down(on_key)
