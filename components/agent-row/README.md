@@ -23,8 +23,8 @@ source.
 - `meta_line(color, activity)` and `figures(color, text)`: line two, indented
   `META_INDENT` under the title: what the agent is doing, which gives way
   first, then its figures (model, tokens, tool uses, runtime) ending on the
-  row's trailing edge. The figures truncate only when the line can't hold
-  them alone.
+  row's trailing edge. The figures truncate at `FIGURES_MAX` (half) of the
+  line, so long figures never hide the activity.
 - `agent_row(&RowStyle, mark, RowText)`: the whole row.
 - `ui_rems(design)`: a design size (pt at the 16 px default) in rems.
   Padding, gaps, the mark and text grow with the host's Interface size; the
