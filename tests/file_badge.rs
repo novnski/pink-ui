@@ -3,12 +3,17 @@
 //! well that grows with the Interface size, so the badge no longer sits in
 //! the tool header's fixed 22 pt detail slot; artwork that leaves the well's
 //! centre; a long name that pushes the badge out of a narrow header instead
-//! of truncating.
+//! of truncating. For a Markdown file link, the opposite: a well, artwork or
+//! gap that stays fixed while the paragraph's text grows with the Interface
+//! size.
 
 use gpui::{Bounds, Context, IntoElement, Pixels, Render, TestAppContext, Window, div, prelude::*};
 use pink_ui::{
     Theme, ThemeMode,
-    components::file_badge::{BadgeStyle, GLYPH, HEIGHT, PAD_LEFT, WELL, badge, name, well},
+    components::file_badge::{
+        BadgeStyle, GLYPH, HEIGHT, LINK_GAP, PAD_LEFT, WELL, badge, file_link, name, scaled_well,
+        ui_rems, well,
+    },
     pink::Pink,
 };
 
@@ -52,6 +57,22 @@ impl Render for Host {
                     .flex()
                     .child(chip("long", "an-unusually-long-file-name.rs")),
             )
+            .child(
+                file_link(
+                    scaled_well(
+                        t.border,
+                        gpui::img(ART)
+                            .flex_none()
+                            .size(ui_rems(GLYPH))
+                            .debug_selector(|| "link-art".into()),
+                    )
+                    .debug_selector(|| "link-well".into()),
+                    div()
+                        .debug_selector(|| "link-text".into())
+                        .child("the library source"),
+                )
+                .debug_selector(|| "link".into()),
+            )
     }
 }
 
@@ -89,6 +110,28 @@ fn file_badges_hold_the_header_slot_and_truncate(cx: &mut TestAppContext) {
                 "{prefix} artwork centred at {ui}"
             );
         }
+        // Scaled sizes land on whole pixels, so allow the layout's rounding.
+        let scale = ui / 16.0;
+        let close = |a: Pixels, b: f32| (f32::from(a) - b).abs() <= 0.5;
+        let link_well = bounds(cx, "link-well");
+        assert!(
+            close(link_well.size.width, WELL * scale),
+            "link well at {ui}: {:?}",
+            link_well.size.width
+        );
+        let link_art = bounds(cx, "link-art");
+        assert!(
+            close(
+                link_art.origin.x - link_well.origin.x,
+                (WELL - GLYPH) / 2.0 * scale
+            ),
+            "link artwork centred at {ui}"
+        );
+        let link_text = bounds(cx, "link-text");
+        assert!(
+            close(link_text.origin.x - link_well.right(), LINK_GAP * scale),
+            "link gap at {ui}"
+        );
         let long = bounds(cx, "long-badge");
         assert!(
             f32::from(long.size.width) <= NARROW,

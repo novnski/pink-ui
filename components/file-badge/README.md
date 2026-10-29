@@ -17,9 +17,14 @@ source.
 - `well(background, artwork)`: the `WELL` counter-shaded seat, `WELL_RADIUS`
   corners, centring the host's file-type artwork (sized `GLYPH`).
 - `name(text)`: the file's name on one line, truncating.
+- `scaled_well(background, artwork)` and `file_link(well, text)`: the same
+  well in Interface-scaled units (`ui_rems(WELL)`, artwork
+  `ui_rems(GLYPH)`, fixed `WELL_RADIUS` corners) beside a Markdown
+  paragraph that is one workspace file, `LINK_GAP` before the text, which
+  takes the rest of the width.
 
-Sizes are fixed so the badge fills the tool header's detail slot at every
-Interface size. The host adds the rest: the resolved colours (the chip's
+The badge's sizes are fixed so it fills the tool header's detail slot at
+every Interface size; the Markdown file link grows with its text. The host adds the rest: the resolved colours (the chip's
 fill blended over its hover fade when it opens the file), the artwork and
 name, the id, hover listener, role and accessible name, tooltip, frosted
 backdrop and the open action.
@@ -37,4 +42,4 @@ pink-file-badge = { git = "https://github.com/novnski/pink-ui", rev = "<merged m
 - Alone: `cargo clippy --features gpui/runtime_shaders -- -D warnings` in this
   directory.
 - In the gallery: `tests/file_badge.rs` lays a short and a truncated badge
-  out at Interface sizes 12, 16 and 20.
+  and a Markdown file link out at Interface sizes 12, 16 and 20.
