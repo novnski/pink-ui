@@ -26,7 +26,7 @@ use std::{rc::Rc, sync::Arc};
 
 use gpui::{
     AnyElement, AnyView, App, ElementId, Entity, FontWeight, Hsla, PathBuilder, SharedString,
-    TextAlign, Window, canvas, div, point, prelude::*, px, relative, rgb, svg,
+    TextAlign, Window, canvas, div, point, prelude::*, px, rgb, svg,
 };
 
 use crate::{
@@ -36,6 +36,14 @@ use crate::{
     },
     story,
 };
+
+/// The `pink-usage-meter` package (`components/usage-meter`): PINK's usage
+/// meter, the split bar and the plan badge, compiled here unchanged. The
+/// Compact Breakdown's split bar draws through it too.
+#[allow(dead_code)]
+pub mod package {
+    include!("../../components/usage-meter/src/lib.rs");
+}
 
 pub const NAME: &str = "Usage Meter";
 pub const DESCRIPTION: &str = "A plan's usage card: the share left over a capsule meter that turns amber, then red, the reset and even-pace reading, a strip that speaks up when the cycle runs ahead of its allowance, spend by category over a daily chart and the plan's other limits as compact meters";
@@ -697,33 +705,23 @@ impl RenderOnce for UsageMeter {
     }
 }
 
-/// Pink: usage.rs `usage_meter` / `usage_meter_with`. The fill is what's
-/// used: `text_muted` until 75%, warning from 75%, danger from 90%, on a
-/// `fill(Secondary)` track; a 6 px capsule with nothing drawn below 0.5%.
+/// Pink: usage.rs `usage_meter` / `usage_meter_with`, drawn by the
+/// `pink-usage-meter` package: `text_muted` until 75%, warning from 75%,
+/// danger from 90%, on a `fill(Secondary)` track; a 6 px capsule with
+/// nothing drawn below 0.5%.
 fn usage_meter(used_percent: f32, t: &Pink) -> gpui::Div {
-    let used = used_percent.clamp(0., 100.);
-    let fill = if used >= 90. {
-        t.readable_tone(t.danger, 1.0)
-    } else if used >= 75. {
-        t.readable_tone(t.warning, 1.0)
-    } else {
-        t.text_muted
-    };
-    div()
-        .h(px(6.))
-        .flex_1()
-        .min_w_0()
-        .rounded_full()
-        .bg(t.fill(FillTier::Secondary))
-        .when(used >= 0.5, |bar| {
-            bar.child(
-                div()
-                    .h_full()
-                    .w(relative(used / 100.))
-                    .rounded_full()
-                    .bg(fill),
-            )
-        })
+    package::meter(used_percent, &meter_style(t))
+}
+
+/// The kit's meter tones (Pink: usage.rs `usage_meter`): `text_muted`, the
+/// readable warning and danger tones, the `fill(Secondary)` track.
+pub fn meter_style(t: &Pink) -> package::MeterStyle {
+    package::MeterStyle {
+        neutral: t.text_muted,
+        warning: t.readable_tone(t.warning, 1.0),
+        danger: t.readable_tone(t.danger, 1.0),
+        track: t.fill(FillTier::Secondary),
+    }
 }
 
 /// A category's series color: Pink's usage series tones in order (usage.rs
@@ -737,19 +735,17 @@ fn series_tone(index: usize, t: &Pink) -> Hsla {
     }
 }
 
-/// The plan badge (Pink: usage.rs `compact_limit_row`): `px 5 / py 1`,
-/// radius 5, `surface_raised`, 11/12 in `text_muted`.
+/// The plan badge (Pink: usage.rs `compact_limit_row`), drawn by the
+/// package: `px 5 / py 1`, radius 5, `surface_raised`, 11/12 in
+/// `text_muted`.
 fn plan_badge(plan: SharedString, t: &Pink) -> gpui::Div {
-    div()
-        .flex_none()
-        .px(px(5.))
-        .py(px(1.))
-        .rounded(px(5.))
-        .bg(t.surface_raised)
-        .text_size(px(11.))
-        .line_height(px(12.))
-        .text_color(t.text_muted)
-        .child(plan)
+    package::plan_badge(
+        &package::BadgeStyle {
+            background: t.surface_raised,
+            text: t.text_muted,
+        },
+        plan,
+    )
 }
 
 /// The remaining share (Pink: usage.rs `pooled_limit_sections`): the figure
