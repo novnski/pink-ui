@@ -108,6 +108,7 @@ pub mod thinking_loader;
 pub mod thinking_state;
 pub mod tips_panel;
 pub mod toaster;
+pub mod tool_activity;
 pub mod tool_call_card;
 pub mod trace_waterfall;
 pub mod trigger_chip;
@@ -377,6 +378,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Agents",
         description: permission_request::DESCRIPTION,
         story: permission_request::story,
+    },
+    ComponentEntry {
+        slug: "tool-activity",
+        name: tool_activity::NAME,
+        category: "Agents",
+        description: tool_activity::DESCRIPTION,
+        story: tool_activity::story,
     },
     ComponentEntry {
         slug: "tool-call-card",
