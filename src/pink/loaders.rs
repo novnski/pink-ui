@@ -34,7 +34,7 @@ use gpui::{
 };
 use web_time::Instant;
 
-use crate::components::{loaders as package, working_trailer};
+use crate::components::{loaders as package, skeleton, working_trailer};
 use crate::motion::{
     self, GRADIENT_SPIN, ORB_BREATH, PINK_PULSE, PULSE_STAGGER, STATUS_SHIMMER, speed_scale,
 };
@@ -42,10 +42,6 @@ use crate::motion::{
 pub use crate::motion::{
     GSPIN_DIM, GSPIN_ROW_TINTS, MARK_CELLS, MATRIX_SIDE, PINK_CELLS, mark_cell_stagger,
 };
-
-/// Pink's control corner radius (Pink `Theme::CONTROL_RADIUS`), used by the
-/// skeleton rows.
-const CONTROL_RADIUS: f32 = 6.0;
 
 // ---------------------------------------------------------------------------
 // Pink mark loader
@@ -394,16 +390,16 @@ impl RenderOnce for SplashOverlay {
 }
 
 // ---------------------------------------------------------------------------
-// Skeletons (Pink `popover.rs`)
+// Skeletons (Pink `popover.rs`, drawn by the `pink-skeleton` package)
 // ---------------------------------------------------------------------------
 
 /// Per-row stagger of the skeleton pulse, as a fraction of [`PINK_PULSE`]
 /// (Pink `skeleton_rows`).
-pub const SKELETON_STAGGER: f32 = 0.08;
+pub const SKELETON_STAGGER: f32 = skeleton::STAGGER;
 
 /// A skeleton's opacity for a phase: `0.35 + 0.4 * pulse_wave` (Pink).
 pub fn skeleton_opacity(phase: f32) -> f32 {
-    0.35 + 0.4 * motion::pulse_wave(phase)
+    skeleton::opacity(motion::pulse_wave(phase))
 }
 
 /// Pulsing skeleton rows shown while a list loads (Pink `skeleton_rows`):
@@ -443,7 +439,8 @@ enum SkeletonKind {
     Bar(f32),
 }
 
-/// See [`skeleton_rows`], [`skeleton_menu_rows`] and [`skeleton_bar`].
+/// See [`skeleton_rows`], [`skeleton_menu_rows`] and [`skeleton_bar`]. The
+/// `pink-skeleton` package draws them on the shared [`PINK_PULSE`] clock.
 #[derive(IntoElement)]
 pub struct Skeleton {
     kind: SkeletonKind,
@@ -452,45 +449,15 @@ pub struct Skeleton {
 
 impl RenderOnce for Skeleton {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        const WIDTHS: [f32; 4] = [0.42, 0.58, 0.48, 0.66];
-        let wash = self.wash;
-        let delta = motion::pulse_phase(&PINK_PULSE, window, cx);
-        let phase = move |i: usize| motion::staggered_phase(delta, i, SKELETON_STAGGER);
+        let phase = motion::pulse_phase(&PINK_PULSE, window, cx);
         match self.kind {
             SkeletonKind::Rows(count) => {
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(6.0))
-                    .py(px(4.0))
-                    .children((0..count).map(move |i| {
-                        div()
-                            .h(px(28.0))
-                            .rounded(px(CONTROL_RADIUS))
-                            .bg(wash)
-                            .opacity(skeleton_opacity(phase(i)))
-                    }))
+                skeleton::rows(count, self.wash, phase, motion::pulse_wave)
             }
-            SkeletonKind::MenuRows(count) => div()
-                .flex()
-                .flex_col()
-                .gap(px(8.0))
-                .py(px(6.0))
-                .px(px(4.0))
-                .children((0..count).map(move |i| {
-                    div()
-                        .h(px(14.0))
-                        .w(gpui::relative(WIDTHS[i % WIDTHS.len()]))
-                        .rounded(px(7.0))
-                        .bg(wash)
-                        .opacity(skeleton_opacity(phase(i)))
-                })),
-            SkeletonKind::Bar(width) => div()
-                .w(px(width))
-                .h(px(11.0))
-                .rounded(px(5.5))
-                .bg(wash)
-                .opacity(skeleton_opacity(phase(0))),
+            SkeletonKind::MenuRows(count) => {
+                skeleton::menu_rows(count, self.wash, phase, motion::pulse_wave)
+            }
+            SkeletonKind::Bar(width) => skeleton::bar(width, self.wash, phase, motion::pulse_wave),
         }
     }
 }

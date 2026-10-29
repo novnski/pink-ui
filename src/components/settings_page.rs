@@ -38,6 +38,7 @@ use gpui::{
     anchored, canvas, deferred, div, point, prelude::*, px, svg,
 };
 
+use super::scroll_rail;
 use super::{settings_parts as parts, settings_section as section};
 use crate::{
     HoverFill,
@@ -128,12 +129,10 @@ const ROW_PLATE_INSET: f32 = -6.0;
 const CARD_PLATE_INSET: f32 = 4.0;
 const REVEAL_MARGIN: f32 = 24.0;
 
-/// The floating page scrollbar (Pink popover.rs `MENU_SCROLLBAR_*`).
-const RAIL_HIT_W: f32 = 10.0;
-const RAIL_THUMB_W: f32 = 3.0;
-const RAIL_THUMB_W_ACTIVE: f32 = 5.0;
-const RAIL_TRACK_INSET: f32 = 4.0;
-const RAIL_MIN_THUMB: f32 = 24.0;
+/// The floating page scrollbar (Pink popover.rs `MENU_SCROLLBAR_*`), drawn
+/// by the `pink-scroll-rail` package.
+const RAIL_TRACK_INSET: f32 = scroll_rail::TRACK_INSET;
+const RAIL_MIN_THUMB: f32 = scroll_rail::MIN_THUMB;
 const RAIL_LINGER_MS: u64 = 1400;
 const RAIL_FADE_MS: u64 = 260;
 
@@ -2144,11 +2143,6 @@ fn render_rail(f: &Frame, rail: RailView) -> Option<AnyElement> {
     let metrics = RailMetrics::of(&f.page_scroll)?;
     let visible = rail.fade > 0.0;
     let t = f.t;
-    let width = if rail.active {
-        RAIL_THUMB_W_ACTIVE
-    } else {
-        RAIL_THUMB_W
-    };
     let handle = f.page_scroll.clone();
     let state = f.state.clone();
     let hover_state = f.state.clone();
@@ -2210,44 +2204,32 @@ fn render_rail(f: &Frame, rail: RailView) -> Option<AnyElement> {
         .size_0()
     });
     Some(
-        div()
-            .id(SharedString::from(format!("{}-rail", f.key)))
-            .absolute()
-            .top_0()
-            .bottom_0()
-            .right_0()
-            .w(px(RAIL_HIT_W))
-            .opacity(rail.fade)
-            .when(visible || rail.grab.is_some(), |el| {
-                el.on_hover(move |hovered, _, cx| {
-                    hover_state.update(cx, |s, cx| {
-                        if s.rail.bar_hovered != *hovered {
-                            s.rail.bar_hovered = *hovered;
-                            if !*hovered {
-                                // Leaving restarts the wait; it never hides
-                                // under the pointer.
-                                s.rail.last_at = Some(Instant::now());
-                            }
-                            cx.notify();
+        scroll_rail::rail(
+            t.text_faint,
+            rail.fade,
+            rail.active,
+            metrics.thumb_top,
+            metrics.thumb,
+        )
+        .id(SharedString::from(format!("{}-rail", f.key)))
+        .when(visible || rail.grab.is_some(), |el| {
+            el.on_hover(move |hovered, _, cx| {
+                hover_state.update(cx, |s, cx| {
+                    if s.rail.bar_hovered != *hovered {
+                        s.rail.bar_hovered = *hovered;
+                        if !*hovered {
+                            // Leaving restarts the wait; it never hides
+                            // under the pointer.
+                            s.rail.last_at = Some(Instant::now());
                         }
-                    })
+                        cx.notify();
+                    }
                 })
-                .on_mouse_down(MouseButton::Left, press)
             })
-            .child(
-                div()
-                    .id(SharedString::from(format!("{}-rail-thumb", f.key)))
-                    .absolute()
-                    .top(px(RAIL_TRACK_INSET + metrics.thumb_top))
-                    .right(px(2.0))
-                    .w(px(width))
-                    .h(px(metrics.thumb))
-                    .rounded(px(width / 2.0))
-                    .bg(t.text_faint.opacity(if rail.active { 0.68 } else { 0.5 }))
-                    .hover(|s| s.bg(t.text_faint.opacity(0.85))),
-            )
-            .children(drag)
-            .into_any_element(),
+            .on_mouse_down(MouseButton::Left, press)
+        })
+        .children(drag)
+        .into_any_element(),
     )
 }
 

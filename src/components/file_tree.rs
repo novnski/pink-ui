@@ -35,6 +35,7 @@ use gpui::{
     img, point, prelude::*, px, svg,
 };
 
+use super::scroll_rail;
 use crate::{
     HoverFill,
     components::file_row,
@@ -66,12 +67,10 @@ const DEFAULT_WIDTH: f32 = 286.0;
 /// How long a lazy folder takes to list (Pink waits on the workspace host).
 const DEFAULT_LOAD_DELAY: Duration = Duration::from_millis(650);
 
-// Pink: popover.rs `MENU_SCROLLBAR_*` – the floating rail the tree wears.
-const RAIL_TRACK_INSET: f32 = 4.0;
-const RAIL_HIT_WIDTH: f32 = 10.0;
-const RAIL_THUMB_WIDTH: f32 = 3.0;
-const RAIL_HOVER_THUMB_WIDTH: f32 = 5.0;
-const RAIL_MIN_THUMB: f32 = 24.0;
+// Pink: popover.rs `MENU_SCROLLBAR_*` – the floating rail the tree wears,
+// drawn by the `pink-scroll-rail` package.
+const RAIL_TRACK_INSET: f32 = scroll_rail::TRACK_INSET;
+const RAIL_MIN_THUMB: f32 = scroll_rail::MIN_THUMB;
 const RAIL_LINGER_MS: f32 = 1400.0;
 const RAIL_FADE_MS: f32 = 260.0;
 
@@ -2106,11 +2105,6 @@ fn scroll_rail(c: &Ctx, window: &mut Window, cx: &mut App) -> Option<AnyElement>
     if !visible {
         return None;
     }
-    let thumb = if active {
-        RAIL_HOVER_THUMB_WIDTH
-    } else {
-        RAIL_THUMB_WIDTH
-    };
     let faint = t.text_faint;
     let state = c.state.clone();
     let press_state = c.state.clone();
@@ -2118,14 +2112,8 @@ fn scroll_rail(c: &Ctx, window: &mut Window, cx: &mut App) -> Option<AnyElement>
     let up_state = c.state.clone();
     let out_state = c.state.clone();
     Some(
-        div()
+        scroll_rail::rail(faint, fade, active, metrics.thumb_top, metrics.thumb_height)
             .id(ElementId::Name(format!("{}-rail", c.key).into()))
-            .absolute()
-            .top_0()
-            .bottom_0()
-            .right_0()
-            .w(px(RAIL_HIT_WIDTH))
-            .opacity(fade)
             .on_hover(move |hovered: &bool, _, cx| {
                 let hovered = *hovered;
                 state.update(cx, |s, cx| {
@@ -2198,18 +2186,6 @@ fn scroll_rail(c: &Ctx, window: &mut Window, cx: &mut App) -> Option<AnyElement>
                     }
                 });
             })
-            .child(
-                div()
-                    .id(ElementId::Name(format!("{}-rail-thumb", c.key).into()))
-                    .absolute()
-                    .top(px(RAIL_TRACK_INSET + metrics.thumb_top))
-                    .right(px(2.0))
-                    .w(px(thumb))
-                    .h(px(metrics.thumb_height))
-                    .rounded(px(thumb / 2.0))
-                    .bg(faint.opacity(if active { 0.68 } else { 0.5 }))
-                    .hover(move |s| s.bg(faint.opacity(0.85))),
-            )
             .into_any_element(),
     )
 }

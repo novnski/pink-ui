@@ -23,6 +23,7 @@ use gpui::{
 use super::{FillTier, MONO, Pink, focus_ring, radius};
 use crate::{
     HoverFill,
+    components::menu_card as menu,
     motion::{self, DISCLOSURE, QUICK},
 };
 
@@ -928,20 +929,24 @@ pub fn message_badge(t: &Pink) -> Div {
 // Keyboard hints
 // ---------------------------------------------------------------------------
 
-/// A keyboard hint inside a menu row or tooltip (Pink `popover::kbd_hint`):
-/// `px 5 / py 1`, radius 5, `fill(Quaternary)`, 11 Geist Mono in the
-/// popup's `text_muted` (`for_popup`).
+/// A key legend's paint on Pink's theme (Pink popover.rs): the
+/// `fill(Quaternary)` cap, the popup's `text_muted` (`for_popup`) for glyphs,
+/// words and verbs, a `separator(false)` hairline and Geist Mono.
+fn key_style(t: &Pink) -> menu::KeyHintStyle {
+    menu::KeyHintStyle {
+        cap: t.fill(FillTier::Quaternary),
+        text: t.for_popup().text_muted,
+        divider: t.separator(false),
+        mono: MONO.into(),
+    }
+}
+
+/// A keyboard hint inside a menu row or tooltip (Pink `popover::kbd_hint`),
+/// drawn by the `pink-menu-card` package: `px 5 / py 1`, radius 5,
+/// `fill(Quaternary)`, 11 Geist Mono in the popup's `text_muted`
+/// (`for_popup`).
 pub fn kbd(keys: impl Into<SharedString>, t: &Pink) -> Div {
-    div()
-        .flex_none()
-        .px(px(5.0))
-        .py(px(1.0))
-        .rounded(px(radius::KBD))
-        .bg(t.fill(FillTier::Quaternary))
-        .text_size(px(11.0))
-        .font_family(MONO)
-        .text_color(t.for_popup().text_muted)
-        .child(keys.into())
+    menu::kbd_hint(&key_style(t), keys)
 }
 
 /// Pink's name for [`kbd`].
@@ -949,53 +954,22 @@ pub fn kbd_hint(keys: impl Into<SharedString>, t: &Pink) -> Div {
     kbd(keys, t)
 }
 
-/// A footer key cap holding any children (Pink `popover::key_cap`): 22 tall,
-/// `px 5`, radius 5, gap 4, `fill(Quaternary)`.
+/// A footer key cap holding any children (Pink `popover::key_cap`), drawn by
+/// the `pink-menu-card` package: 22 tall, `px 5`, radius 5, gap 4,
+/// `fill(Quaternary)`. It keeps its width in a squeezed row.
 pub fn key_cap(t: &Pink) -> Div {
-    div()
-        .flex_none()
-        .h(px(22.0))
-        .px(px(5.0))
-        .rounded(px(radius::KBD))
-        .flex()
-        .flex_row()
-        .items_center()
-        .justify_center()
-        .gap(px(4.0))
-        .bg(t.fill(FillTier::Quaternary))
-}
-
-/// The small verb after a key cap: 11 in the popup's `text_muted`.
-fn key_hint_label(label: impl Into<SharedString>, t: &Pink) -> Div {
-    div()
-        .text_size(px(11.0))
-        .text_color(t.for_popup().text_muted)
-        .child(label.into())
+    menu::key_cap(t.fill(FillTier::Quaternary)).flex_none()
 }
 
 /// A footer legend: one glyph key cap (12.5 px, the popup's `text_muted`)
-/// and its verb, gap 5 (Pink `popover::key_hint`).
+/// and its verb, gap 5 (Pink `popover::key_hint`, drawn by the
+/// `pink-menu-card` package).
 pub fn key_hint(
     icon_path: impl Into<SharedString>,
     label: impl Into<SharedString>,
     t: &Pink,
 ) -> Div {
-    let t = &t.for_popup();
-    div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(5.0))
-        .child(
-            key_cap(t).child(
-                svg()
-                    .path(icon_path)
-                    .size(px(12.5))
-                    .flex_none()
-                    .text_color(t.text_muted),
-            ),
-        )
-        .child(key_hint_label(label, t))
+    menu::key_hint(&key_style(t), icon_path, label)
 }
 
 /// A footer legend whose cap holds a word ("esc", "tab") in 11 mono.
@@ -1004,20 +978,7 @@ pub fn key_hint_text(
     label: impl Into<SharedString>,
     t: &Pink,
 ) -> Div {
-    let t = &t.for_popup();
-    div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(5.0))
-        .child(
-            key_cap(t)
-                .text_size(px(11.0))
-                .font_family(MONO)
-                .text_color(t.text_muted)
-                .child(cap.into()),
-        )
-        .child(key_hint_label(label, t))
+    menu::key_hint_text(&key_style(t), cap, label)
 }
 
 /// A footer legend whose cap holds two glyphs split by a hairline
@@ -1028,26 +989,7 @@ pub fn key_hint_pair(
     label: impl Into<SharedString>,
     t: &Pink,
 ) -> Div {
-    let t = &t.for_popup();
-    let icon = |path: SharedString| {
-        svg()
-            .path(path)
-            .size(px(12.5))
-            .flex_none()
-            .text_color(t.text_muted)
-    };
-    div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(5.0))
-        .child(
-            key_cap(t)
-                .child(icon(first.into()))
-                .child(div().w(px(1.0)).h(px(11.0)).bg(t.separator(false)))
-                .child(icon(second.into())),
-        )
-        .child(key_hint_label(label, t))
+    menu::key_hint_pair(&key_style(t), first, second, label)
 }
 
 // ---------------------------------------------------------------------------

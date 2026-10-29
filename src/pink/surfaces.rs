@@ -18,6 +18,7 @@ use super::{
     radius, shadow_lg,
 };
 use crate::HoverFill;
+use crate::components::menu_card as menu;
 use crate::components::overlay_card as overlay;
 use crate::components::settings_parts as parts;
 use crate::components::settings_section as section;
@@ -326,55 +327,31 @@ pub fn menu_chevron(t: &Pink) -> gpui::Canvas<()> {
 }
 
 /// A small uppercase section heading inside a menu (Pink
-/// `popover::menu_heading`): `px 8 / pt 6 / pb 4`, 11 semibold in the
-/// popup's `text_muted` (`for_popup`: text at 64%), tracked with hair
-/// spaces.
+/// `popover::menu_heading`), drawn by the `pink-menu-card` package: `px 8 /
+/// pt 6 / pb 4`, 11 semibold in the popup's `text_muted` (`for_popup`: text
+/// at 64%), tracked with hair spaces.
 pub fn menu_heading(label: &str, t: &Pink) -> Div {
-    div()
-        .px(px(8.0))
-        .pb(px(4.0))
-        .pt(px(6.0))
-        .text_size(px(11.0))
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(t.for_popup().text_muted)
-        .child(SharedString::from(tracked_upper(label)))
+    menu::heading(t.for_popup().text_muted, label)
 }
 
 /// Uppercase with hair-space (U+200A) tracking, about 0.1em: GPUI has no
-/// letter spacing.
+/// letter spacing (the `pink-menu-card` package's `tracked_upper`).
 pub fn tracked_upper(label: &str) -> String {
-    let upper = label.to_uppercase();
-    let mut out = String::with_capacity(upper.len() * 2);
-    for (ix, ch) in upper.chars().enumerate() {
-        if ix > 0 {
-            out.push('\u{200A}');
-        }
-        out.push(ch);
-    }
-    out
+    menu::tracked_upper(label)
 }
 
-/// The divider between menu sections (Pink `popover::menu_separator`): 1 px
-/// of `separator(false)`, full-bleed (`mx −4` cancels the card inset), `my 2`.
+/// The divider between menu sections (Pink `popover::menu_separator`), drawn
+/// by the `pink-menu-card` package: 1 px of `separator(false)`, full-bleed
+/// (`mx −4` cancels the card inset), `my 2`.
 pub fn menu_separator(t: &Pink) -> Div {
-    div()
-        .h(px(1.0))
-        .mx(px(-layout::CARD_INSET))
-        .my(px(layout::MENU_GAP))
-        .bg(t.separator(false))
+    menu::separator(t.separator(false))
 }
 
-/// A bordered trailing menu block (Pink `popover::menu_section`): `mt 4 /
-/// pt 4`, a `separator(false)` rule on top, a column with gap 2.
+/// A bordered trailing menu block (Pink `popover::menu_section`), drawn by
+/// the `pink-menu-card` package: `mt 4 / pt 4`, a `separator(false)` rule on
+/// top, a column with gap 2.
 pub fn menu_section(t: &Pink) -> Div {
-    div()
-        .mt(px(4.0))
-        .pt(px(4.0))
-        .border_t_1()
-        .border_color(t.separator(false))
-        .flex()
-        .flex_col()
-        .gap(px(layout::MENU_GAP))
+    menu::section(t.separator(false))
 }
 
 /// A menu's empty line: `px 8 / py 24`, 12 `text_muted`, centered.
@@ -393,16 +370,11 @@ pub fn menu_empty(copy: impl Into<SharedString>, t: &Pink) -> Div {
 // ---------------------------------------------------------------------------
 
 /// The search field at the top of a picker popover (Pink
-/// `popover::search_input_frame`): `mb 4`, `px 10 / py 6`, radius 8,
-/// `fill(Quaternary)`, borderless, 13. Add the `TextInput` as its child.
+/// `popover::search_input_frame`), drawn by the `pink-menu-card` package:
+/// `mb 4`, `px 10 / py 6`, radius 8, `fill(Quaternary)`, borderless, 13.
+/// Add the `TextInput` as its child.
 pub fn search_input_frame(t: &Pink) -> Div {
-    div()
-        .mb(px(4.0))
-        .px(px(10.0))
-        .py(px(6.0))
-        .rounded(px(radius::MD))
-        .bg(t.fill(FillTier::Quaternary))
-        .text_size(px(13.0))
+    menu::search_frame(t.fill(FillTier::Quaternary))
 }
 
 /// A dialog or form text field (Pink `popover::dialog_field`): full width,
@@ -519,24 +491,25 @@ pub fn dialog_body(copy: impl Into<SharedString>, t: &Pink) -> Div {
         .child(copy.into())
 }
 
-/// A command-palette card (Pink `popover::palette_card`, mounted elevated):
-/// `width`, radius `corner_radius` (Pink uses 16), a `separator(false)`
-/// edge, the popover plate, the frost elevation rings over `shadow_lg`,
-/// clipped, a column. Rows inside are radius 8 ([`radius::PALETTE_ITEM`]);
-/// header and footer rules are `hairline(0.06)`.
+/// A command-palette card (Pink `popover::palette_card`, mounted elevated),
+/// drawn by the `pink-menu-card` package: `width`, radius `corner_radius`
+/// (Pink uses 16), a `separator(false)` edge, the popover plate, clipped, a
+/// column. The kit's plate is opaque, so the card lifts with the frost
+/// elevation rings over `shadow_lg` rather than the package's plain one.
+/// Rows inside are radius 8 ([`radius::PALETTE_ITEM`]); header and footer
+/// rules are `hairline(0.06)`.
 pub fn palette_card(width: f32, corner_radius: f32, t: &Pink) -> Div {
-    div()
-        .w(px(width))
-        .rounded(px(corner_radius))
-        .border_1()
-        .border_color(t.separator(false))
-        .bg(t.surface_bg())
-        .shadow(floating_shadows(shadow_lg(), t))
-        .overflow_hidden()
-        .flex()
-        .flex_col()
-        .font_family(SANS)
-        .text_color(t.text)
+    menu::palette_card(
+        &menu::PaletteStyle {
+            border: t.separator(false),
+            background: t.surface_bg(),
+            text: t.text,
+            font_family: SANS.into(),
+        },
+        px(width),
+        corner_radius,
+    )
+    .shadow(floating_shadows(shadow_lg(), t))
 }
 
 /// A floating card's elevation: Pink's frost rings (a crisp contact rim and
