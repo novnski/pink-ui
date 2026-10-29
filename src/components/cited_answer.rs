@@ -84,9 +84,6 @@ const SOURCE_HEADER_HEIGHT: f32 = 44.;
 /// tiles, 18 px, chevron 12).
 const TILE: f32 = 18.;
 const CHEVRON: f32 = icon_size::XS;
-/// A meta-lane action (Pink: `meta_action`, 24 px, icon 14).
-const META_ACTION: f32 = 24.;
-const META_ICON: f32 = icon_size::SM;
 /// Stacked chip cards sit 8 px apart (Pink: `CHIP_HEIGHT` 38 around a
 /// `CHIP_CARD_HEIGHT` 30 card).
 const CARD_GAP: f32 = space::S8;
@@ -534,10 +531,11 @@ impl Render for CiteDestination {
     }
 }
 
-/// Pink: `transcript.rs` `meta_action` – a 24 px icon button with the shared
-/// hover fade to `ink(0.08)`, a text tooltip, an accessible name and the
-/// inset focus ring. `live` is false while its card is folded shut, so a
-/// hidden action is neither a tab stop nor a tooltip.
+/// Pink: `transcript.rs` `meta_action`, drawn by the `pink-message-actions`
+/// package: a 24 pt icon button with the shared hover fade to `ink(0.08)`,
+/// a text tooltip, an accessible name and the inset focus ring. `live` is
+/// false while its card is folded shut, so a hidden action is neither a tab
+/// stop nor a tooltip.
 fn meta_action(
     id: SharedString,
     icon: &'static str,
@@ -545,38 +543,29 @@ fn meta_action(
     live: bool,
     t: &Pink,
 ) -> Stateful<Div> {
+    use crate::components::message_actions as lane;
     let fade_key = SharedString::from(format!("{id}-fade"));
     let ring = t.focus_ring();
-    div()
-        .id(id)
-        .role(Role::Button)
-        .aria_label(label.clone())
-        .when(live, |el| {
-            el.tab_index(0)
-                .tooltip(pink::text_tooltip(label))
-                .tooltip_show_delay(layout::TOOLTIP_DELAY)
-        })
-        .size(px(META_ACTION))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(radius::SM))
-        .cursor_pointer()
-        .bg(motion::hover_blend(
-            &fade_key,
-            transparent_black(),
-            t.ink(0.08),
-        ))
-        .on_hover(motion::hover_listener(fade_key))
-        .focus_visible(move |style| pink::focus_ring(style, ring))
-        .child(
-            svg()
-                .path(icon)
-                .size(px(META_ICON))
-                .flex_none()
-                .text_color(t.content_muted),
-        )
+    lane::action(
+        id,
+        svg()
+            .path(icon)
+            .size(lane::ui_rems(lane::ACTION_ICON))
+            .flex_none()
+            .text_color(t.content_muted)
+            .into_any_element(),
+        motion::hover_blend(&fade_key, transparent_black(), t.ink(0.08)),
+    )
+    .flex_none()
+    .role(Role::Button)
+    .aria_label(label.clone())
+    .when(live, |el| {
+        el.tab_index(0)
+            .tooltip(pink::text_tooltip(label))
+            .tooltip_show_delay(layout::TOOLTIP_DELAY)
+    })
+    .on_hover(motion::hover_listener(fade_key))
+    .focus_visible(move |style| pink::focus_ring(style, ring))
 }
 
 // ---------------------------------------------------------------------------

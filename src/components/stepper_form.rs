@@ -22,13 +22,15 @@
 use std::{rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
-    AnyElement, AnyView, App, Context, Div, ElementId, Entity, FocusHandle, FontWeight,
-    IntoElement, KeyDownEvent, Role, SharedString, Stateful, Subscription, Task, Toggled, Window,
-    div, prelude::*, px, svg,
+    AnyElement, AnyView, App, Context, Div, ElementId, Entity, FocusHandle, IntoElement,
+    KeyDownEvent, Role, SharedString, Stateful, Subscription, Task, Toggled, Window, div,
+    prelude::*, px, svg,
 };
 
 use crate::{
-    HoverFill, motion,
+    HoverFill,
+    components::question_card as card,
+    motion,
     pink::{self, ButtonKind, ControlSize, FillTier, Pink, radius},
     primitives::{InputEvent, TextInput},
     story,
@@ -575,28 +577,19 @@ impl RenderOnce for StepperForm {
             _ => Some(step_review(&key, &state, &t, cx)),
         };
 
-        // Pink render_wizard: the question at mt 6 in 15/20 medium, a
-        // 12 px line under it (the multi-select hint's recipe), the page's
-        // controls at mt 12 / pb 4 (the answer field's wrapper).
+        // Pink render_wizard, drawn by the `pink-question-card` package: the
+        // question at mt 6 in 15/20 medium, the hint line under it, the
+        // page's controls at mt 12 / pb 4 (the answer field's wrapper).
+        let p = card::palette(&t);
         let page = div()
             .flex()
             .flex_col()
-            .child(
-                div()
-                    .mt(px(6.))
-                    .text_size(px(15.))
-                    .line_height(px(20.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(t.text)
-                    .child(question),
-            )
-            .child(
-                div()
-                    .mt(px(4.))
-                    .text_size(px(12.))
-                    .text_color(t.readable_muted(0.65))
-                    .child(description),
-            )
+            .child(card::question(
+                SharedString::from(format!("{key}-question")),
+                &p,
+                question,
+            ))
+            .child(card::hint(&p, description))
             .map(|el| match content {
                 Some(content) => el.child(div().mt(px(12.)).pb(px(4.)).child(content)),
                 // The finished page has no controls; keep their room.
@@ -617,9 +610,9 @@ impl RenderOnce for StepperForm {
         };
 
         let keys = state.clone();
-        // Pink composer_surface (opaque): the composer pill's radius, edge,
-        // input plate and shadow, which the wizard reuses.
-        div()
+        // Pink composer_surface (opaque): the composer pill
+        // (`pink-composer-pill`), which the wizard reuses.
+        card::surface(&t)
             .id(self.id.clone())
             .aria_label(self.title.clone())
             .track_focus(&focus)
@@ -631,58 +624,16 @@ impl RenderOnce for StepperForm {
             .w(self.width)
             .flex()
             .flex_col()
-            .rounded(px(radius::COMPOSER_PILL))
-            .border_1()
-            .border_color(t.border)
-            .bg(t.surface_bg())
-            .shadow(pink::shadow_lg())
             .font_family(pink::SANS)
             .text_size(px(14.))
             .text_color(t.text)
             .child(
-                div()
-                    .px(px(16.))
-                    .pt(px(16.))
-                    .flex()
-                    .flex_col()
-                    .child(wizard_header(header, counter, &t))
+                card::body()
+                    .child(card::header(&p, pink::tracked_upper(&header), counter))
                     .child(page),
             )
             .child(footer(&key, &state, &t, cx))
     }
-}
-
-/// The wizard header (Pink render_wizard): the label tracked uppercase in
-/// 11 medium, and the "1/3" counter chip (h 20, px 6, radius 6, `ink(0.06)`).
-fn wizard_header(label: SharedString, counter: Option<SharedString>, t: &Pink) -> Div {
-    let tone = t.readable_muted(0.6);
-    div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(10.))
-        .child(
-            div()
-                .text_size(px(11.))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(tone)
-                .child(pink::tracked_upper(&label)),
-        )
-        .when_some(counter, |el, counter| {
-            el.child(
-                div()
-                    .h(px(20.))
-                    .px(px(6.))
-                    .flex()
-                    .items_center()
-                    .rounded(px(radius::SM))
-                    .bg(t.ink(0.06))
-                    .text_size(px(11.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(tone)
-                    .child(counter),
-            )
-        })
 }
 
 /// The line under a page's controls: what Next found missing, in the error
@@ -768,10 +719,10 @@ fn step_project(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> Any
         .into_any_element()
 }
 
-/// One choice (Pink render_wizard option rows): px 14 / py 10, gap 12,
-/// radius 12; picked rows take an `ink(0.16)` edge on `ink(0.09)`, others
-/// ease `ink(0.025)` → `ink(0.06)` under the pointer; the label 13.5 medium
-/// over an 11.5 description, and the 22 px number chip its digit picks.
+/// One choice (Pink render_wizard option rows), drawn by the
+/// `pink-question-card` package: picked rows take an `ink(0.16)` edge on
+/// `ink(0.09)`, others ease `ink(0.025)` → `ink(0.06)` under the pointer; the
+/// label over its description, and the number chip its digit picks.
 fn option_row(
     key: &str,
     ix: usize,
@@ -784,75 +735,25 @@ fn option_row(
     let hover = format!("{key}-option-{ix}");
     let accent = t.accent;
     let state = state.clone();
-    div()
-        .id(SharedString::from(hover.clone()))
-        .role(Role::RadioButton)
-        .aria_label(label)
-        .aria_toggled(if picked {
-            Toggled::True
-        } else {
-            Toggled::False
-        })
-        .tab_index(0)
-        .focus_visible(move |style| style.border_color(accent))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(12.))
-        .px(px(14.))
-        .py(px(10.))
-        .rounded(px(12.))
-        .border_1()
-        .border_color(if picked {
-            t.ink(0.16)
-        } else {
-            gpui::transparent_black()
-        })
-        .bg(if picked {
-            t.ink(0.09)
-        } else {
-            motion::hover_blend(&hover, t.ink(0.025), t.ink(0.06))
-        })
-        .on_hover(motion::hover_listener(hover))
-        .cursor_pointer()
-        .on_key_down(pink::swallow_activation_key)
-        .on_click(move |_, _, cx| state.update(cx, |s, cx| s.pick_region(ix, cx)))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .gap(px(3.))
-                .text_size(px(13.5))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(if picked { t.text } else { t.text.opacity(0.9) })
-                .child(label)
-                .child(
-                    div()
-                        .text_size(px(11.5))
-                        .font_weight(FontWeight::NORMAL)
-                        .text_color(t.readable_muted(0.65))
-                        .child(description),
-                ),
-        )
-        .child(
-            div()
-                .flex_none()
-                .size(px(22.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(radius::SM))
-                .bg(if picked { t.ink(0.16) } else { t.ink(0.05) })
-                .text_size(px(11.))
-                .text_color(if picked {
-                    t.text
-                } else {
-                    t.readable_muted(0.6)
-                })
-                .child(SharedString::from((ix + 1).to_string())),
-        )
+    card::option(
+        &card::option_style(t, picked, card::option_rest(t, &hover)),
+        label,
+        Some(description),
+        Some(ix + 1),
+    )
+    .id(SharedString::from(hover.clone()))
+    .role(Role::RadioButton)
+    .aria_label(label)
+    .aria_toggled(if picked {
+        Toggled::True
+    } else {
+        Toggled::False
+    })
+    .tab_index(0)
+    .focus_visible(move |style| style.border_color(accent))
+    .on_hover(motion::hover_listener(hover))
+    .on_key_down(pink::swallow_activation_key)
+    .on_click(move |_, _, cx| state.update(cx, |s, cx| s.pick_region(ix, cx)))
 }
 
 fn step_region(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> AnyElement {
@@ -1107,27 +1008,16 @@ fn footer(key: &str, state: &Entity<FormState>, t: &Pink, cx: &App) -> impl Into
             t,
         )
         .aria_label(label)
-        .px(px(16.))
+        .px(px(card::ACTION_PAD_X))
         .when(!ready, |el| el.opacity(0.4))
         .on_click(move |_, _, cx| state.update(cx, |s, cx| s.advance(cx)))
         .child(label)
     };
-    div()
-        .flex()
-        .flex_row()
-        .justify_between()
-        .items_center()
-        .gap(px(12.))
-        .px(px(16.))
-        .pb(px(16.))
-        .pt(px(4.))
+    // Pink render_wizard's footer (`pink-question-card`): the secondary
+    // actions leading, the one Primary on the trailing edge.
+    card::footer()
         .child(
-            div()
-                .flex()
-                .flex_1()
-                .min_w_0()
-                .items_center()
-                .gap(px(8.))
+            card::notes()
                 .children(back)
                 .children(skip)
                 .children(restart),

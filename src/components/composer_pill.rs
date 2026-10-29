@@ -10,7 +10,7 @@ mod package {
 }
 pub use package::*;
 
-use gpui::{AnyView, App, IntoElement, Window, div, prelude::*, px};
+use gpui::{AnyView, App, Window, div, prelude::*, px};
 
 use crate::{pink::Pink, story};
 

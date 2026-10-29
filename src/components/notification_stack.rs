@@ -11,7 +11,9 @@
 //! (`notice_action`); the 20 px button in the copy button's slot dismisses the
 //! card, with the board notice's close glyph (Pink: board/page.rs). The
 //! front card's message is one alert named "{title}: {message}", so
-//! VoiceOver reads the title, then the message, once (PINK 0.31.0).
+//! VoiceOver reads the title, then the message, once (PINK 0.31.0). The
+//! plate, its title row, the dismiss button's slot and the message are the
+//! `pink-notice` package PINK pins, in rems like PINK's.
 //!
 //! PINK has no deck of notices, so the stacking borrows its one tucked-behind
 //! pattern, the queue tray behind the composer (Pink: composer.rs
@@ -37,14 +39,14 @@ use std::{
 use web_time::Duration;
 
 use gpui::{
-    AnyElement, AnyView, App, Context, ElementId, Entity, FontWeight, Hsla, IntoElement, Role,
-    SharedString, Task, Window, canvas, div, prelude::*, px, svg,
+    AnyElement, AnyView, App, Context, ElementId, Entity, Hsla, IntoElement, Role, SharedString,
+    Task, Window, canvas, div, prelude::*, px, svg,
 };
 
 use crate::{
     HoverFill,
     motion::{self, MotionSpec},
-    pink::{self, FillTier, Pink, TextStyle, TypeStyleExt, icon_size, layout, radius, space},
+    pink::{self, FillTier, Pink, TextStyle, TypeStyleExt, layout, space},
     story,
 };
 
@@ -62,12 +64,6 @@ const PEEK: f32 = space::S10;
 const SIDE_INSET: f32 = 16.;
 /// Cards behind the front one that still show; the rest wait unseen.
 const MAX_BEHIND: usize = 2;
-/// The notice plate's padding and row gap (Pink: notice.rs `notice_chip`).
-const PAD_X: f32 = space::S10;
-const PAD_Y: f32 = space::S8;
-const ROW_GAP: f32 = space::S6;
-/// The trailing button in the title row (Pink: `notice_chip` copy button).
-const TRAILING_BUTTON: f32 = 20.;
 
 /// Cards moving forward and the stack's height: a list reorder.
 const STACK: MotionSpec = motion::RESORT;
@@ -261,6 +257,7 @@ struct Placement {
 impl RenderOnce for NotificationStack {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Pink::get(cx);
+        let scale = pink::ui_scale(cx);
         let key = self.id.to_string();
 
         let state = {
@@ -378,6 +375,7 @@ impl RenderOnce for NotificationStack {
                     interactive: !gone && depth == 0,
                     state: &state,
                     dismiss: dismiss.clone(),
+                    scale,
                     t: &t,
                 });
                 (z, card.into_any_element())
@@ -407,11 +405,16 @@ struct CardProps<'a> {
     interactive: bool,
     state: &'a Entity<StackState>,
     dismiss: DismissHandler,
+    /// The Interface size over its 16 px baseline: the plate's padding is
+    /// in rems.
+    scale: f32,
     t: &'a Pink,
 }
 
-/// One notice card, placed in the stack (Pink: notice.rs `notice_chip`).
+/// One notice card, placed in the stack (Pink: notice.rs `notice_chip`),
+/// drawn by the `pink-notice` package.
 fn card(props: CardProps) -> impl IntoElement {
+    use crate::components::notice::{self as plate, NoticeStyle};
     let CardProps {
         key,
         notice,
@@ -419,6 +422,7 @@ fn card(props: CardProps) -> impl IntoElement {
         interactive,
         state,
         dismiss,
+        scale,
         t,
     } = props;
     let c = NoticeColors::get(notice.tone, t);
@@ -430,8 +434,8 @@ fn card(props: CardProps) -> impl IntoElement {
         let id = notice.id.clone();
         canvas(
             move |bounds, window, cx| {
-                // The plate's 1 px border, top and bottom
-                let h = f32::from(bounds.size.height) + 2.;
+                // The plate's padding and its 1 px border, top and bottom
+                let h = f32::from(bounds.size.height) + 2. * plate::PLATE_PAD_Y * scale + 2.;
                 let changed = state.update(cx, |s, _| {
                     let changed = s.heights.get(&id).is_none_or(|old| (old - h).abs() > 0.5);
                     if changed {
@@ -468,20 +472,14 @@ fn card(props: CardProps) -> impl IntoElement {
             })
     });
 
-    // The 20 px button in `notice_chip`'s copy slot, dismissing the card
+    // The package's 20 px copy slot (`notice_chip`'s), dismissing the card
     let close_key = format!("{key}-{}-dismiss", notice.id);
-    let close = div()
+    let close = plate::copy_button()
         .id("dismiss")
-        .flex_none()
-        .size(px(TRAILING_BUTTON))
-        .rounded(px(radius::SM))
-        .flex()
-        .items_center()
-        .justify_center()
         .child(
             svg()
                 .path(ICON_CLOSE)
-                .size(px(icon_size::XS))
+                .size(plate::ui_rems(plate::COPY_GLYPH))
                 .flex_none()
                 .text_color(c.close),
         )
@@ -490,7 +488,6 @@ fn card(props: CardProps) -> impl IntoElement {
             d.role(Role::Button)
                 .aria_label("Dismiss")
                 .tab_index(0)
-                .cursor_pointer()
                 .hover_fill(close_key, c.close_wash.opacity(0.), c.close_wash)
                 .focus_visible(move |s| pink::focus_ring(s, ring))
                 .on_click(move |_, window, cx| {
@@ -500,74 +497,57 @@ fn card(props: CardProps) -> impl IntoElement {
                 .on_key_down(pink::swallow_activation_key)
         });
 
-    let title_row = div()
-        .flex()
-        // A narrow stack wraps the actions under the label instead of
-        // pushing them past the plate
-        .flex_wrap()
-        .items_center()
-        .gap(px(space::S8))
+    let title_row = plate::title_row()
         .child(
             svg()
                 .path(tone_icon(notice.tone))
-                .size(px(icon_size::SM))
+                .size(plate::ui_rems(plate::GLYPH))
                 .flex_none()
                 .text_color(c.glyph),
         )
-        .child(
-            div()
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(c.label)
-                .child(notice.title.clone()),
-        )
-        .child(div().flex_1())
+        .child(plate::title(notice.title.clone()).text_color(c.label))
+        .child(plate::spacer())
         .children(action)
         .child(close);
 
+    // The plate's contents at their natural height, so the measure reads
+    // them while the card's own height eases.
     let body = div()
         .relative()
         .flex()
         .flex_col()
         .flex_none()
-        .gap(px(ROW_GAP))
-        .px(px(PAD_X))
-        .py(px(PAD_Y))
-        .text_color(c.copy)
+        .gap(plate::ui_rems(plate::PLATE_GAP))
         .child(measure)
         .child(title_row)
         // Announced as one alert, title then message (Pink notice.rs
         // `notice_chip`, PINK 0.31.0); only the front card speaks.
         .child(
-            div()
+            plate::message(notice.text.clone())
                 .id("message")
                 .when(interactive, |d| {
                     d.role(Role::Alert).aria_label(SharedString::from(format!(
                         "{}: {}",
                         notice.title, notice.text
                     )))
-                })
-                .min_w_0()
-                .w_full()
-                .child(notice.text.clone()),
+                }),
         );
 
-    div()
-        .id(ElementId::Name(format!("card-{}", notice.id).into()))
-        .absolute()
-        .top(px(place.y))
-        .left(px(place.inset + place.x))
-        .right(px(place.inset - place.x))
-        .when_some(place.height, |d, h| d.h(px(h)))
-        .flex()
-        .flex_col()
-        .overflow_hidden()
-        .rounded(px(radius::STACK_NOTICE))
-        .border_1()
-        .border_color(c.edge)
-        .bg(c.plate)
-        .opacity(place.opacity)
-        .when(interactive, |d| d.occlude())
-        .child(body.opacity(place.content))
+    plate::plate(&NoticeStyle {
+        plate: c.plate,
+        edge: c.edge,
+        ink: c.copy,
+    })
+    .id(ElementId::Name(format!("card-{}", notice.id).into()))
+    .absolute()
+    .top(px(place.y))
+    .left(px(place.inset + place.x))
+    .right(px(place.inset - place.x))
+    .when_some(place.height, |d, h| d.h(px(h)))
+    .overflow_hidden()
+    .opacity(place.opacity)
+    .when(interactive, |d| d.occlude())
+    .child(body.opacity(place.content))
 }
 
 /// A failed turn, a dropped connection, a moved ticket and an unsaved draft,
