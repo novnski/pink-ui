@@ -2,9 +2,9 @@
 // Window, adopted by PINK's pickers.rs `render_context_menu`, novnski/pink
 // #257): a field of 100 cells, one per percent of the window, filled column
 // by column by the parts of the context, with the reserve as hollow cells at
-// the end and a rule where auto-compaction kicks in; under it a breakdown
-// whose rows (and the items under a row, such as attached or memory files)
-// name each part and its tokens; and a note.
+// the end where usage hasn't reached it and a rule where auto-compaction
+// kicks in; under it a breakdown whose rows (and the items under a row, such
+// as attached or memory files) name each part and its tokens; and a note.
 //
 // The package draws only. The host decides what fills the window (`cells`
 // lays its parts out), resolves every colour (the occupancy tone at each
@@ -83,41 +83,100 @@ pub struct FillPart {
 
 /// Lays the window out over the field, column by column: the parts in
 /// order (a part with items gives each item its own run), free room, then
-/// the reserve's cells at the end. A part with any tokens gets at least
-/// one cell; parts that overrun the window stop at the reserve.
+/// the reserve's hollow cells at the end.
+///
+/// The occupied cells always total the parts' [`share_percent`] of the
+/// window, so the map agrees with a ring that prints it; each run's cells
+/// are its share of them
+/// (largest remainder). A run with any tokens keeps at least one cell, so
+/// only a window with more runs than its share has cells shows more. Usage
+/// that runs into the reserve stays occupied: the reserve is hollow only
+/// over the cells usage hasn't reached, and an overfull window fills every
+/// cell. Where compaction kicks in is the host's rule, not these cells.
 pub fn cells(capacity: u64, parts: &[FillPart], reserve: u64) -> Vec<Cell> {
-    let per = (capacity as f64 / CELLS as f64).max(1.0);
-    let count = |tokens: u64| {
-        if tokens == 0 {
-            0
-        } else {
-            ((tokens as f64 / per).round() as usize).max(1)
-        }
-    };
-    let reserved = count(reserve).min(CELLS);
-    let room = CELLS - reserved;
-    let mut out = Vec::with_capacity(CELLS);
-    let mut push = |cell: Cell, n: usize| {
-        for _ in 0..n {
-            if out.len() < room {
-                out.push(cell);
-            }
-        }
-    };
+    let mut runs: Vec<(Cell, u64)> = Vec::new();
     for (index, part) in parts.iter().enumerate() {
         let mut listed = 0u64;
         for (item, tokens) in part.items.iter().enumerate() {
             listed = listed.saturating_add(*tokens);
-            push(Cell::Part(index, Some(item)), count(*tokens));
+            runs.push((Cell::Part(index, Some(item)), *tokens));
         }
-        push(
-            Cell::Part(index, None),
-            count(part.tokens.saturating_sub(listed)),
-        );
+        runs.push((Cell::Part(index, None), part.tokens.saturating_sub(listed)));
     }
-    out.resize(room, Cell::Free);
+    runs.retain(|(_, tokens)| *tokens > 0);
+    let used = runs
+        .iter()
+        .fold(0u64, |sum, (_, tokens)| sum.saturating_add(*tokens));
+    let occupied = (share_percent(used, capacity).min(CELLS as u64) as usize)
+        .max(runs.len())
+        .min(CELLS);
+    // Each run's exact share of the occupied cells, floored (one at least),
+    // then the cells left over (or taken back) by largest remainder.
+    let quota: Vec<f64> = runs
+        .iter()
+        .map(|(_, tokens)| *tokens as f64 / used.max(1) as f64 * occupied as f64)
+        .collect();
+    let mut take: Vec<usize> = quota.iter().map(|q| (q.floor() as usize).max(1)).collect();
+    let short = |take: &[usize], i: usize| quota[i] - take[i] as f64;
+    let mut total: usize = take.iter().sum();
+    while total < occupied {
+        // The run furthest under its share, the first on a tie.
+        let Some(i) = (0..take.len()).min_by(|a, b| short(&take, *b).total_cmp(&short(&take, *a)))
+        else {
+            break;
+        };
+        take[i] += 1;
+        total += 1;
+    }
+    while total > occupied {
+        // The run furthest over its share that can spare a cell; only more
+        // runs than cells drops the last ones.
+        let Some(i) = (0..take.len())
+            .filter(|i| take[*i] > 1)
+            .min_by(|a, b| short(&take, *a).total_cmp(&short(&take, *b)))
+            .or_else(|| take.iter().rposition(|n| *n > 0))
+        else {
+            break;
+        };
+        take[i] -= 1;
+        total -= 1;
+    }
+    let reserved = if reserve == 0 {
+        0
+    } else {
+        let (whole, rest, capacity) = percent_parts(reserve, capacity);
+        ((whole + u128::from(2 * rest >= capacity)).min(CELLS as u128) as usize).max(1)
+    };
+    let hollow = reserved.min(CELLS - occupied);
+    let mut out = Vec::with_capacity(CELLS);
+    for ((cell, _), n) in runs.iter().zip(take) {
+        out.extend(std::iter::repeat_n(*cell, n));
+    }
+    out.resize(CELLS - hollow, Cell::Free);
     out.resize(CELLS, Cell::Reserved);
     out
+}
+
+/// The share of a window of `capacity` tokens that `tokens` fill, in whole
+/// percent, rounded as `{:.0}%` prints an exact share (ties to even) but
+/// without the float error that moves a half percent off its tie. A host
+/// prints this beside the map so its ring and the field agree.
+pub fn share_percent(tokens: u64, capacity: u64) -> u64 {
+    let (whole, rest, capacity) = percent_parts(tokens, capacity);
+    let up = match (2 * rest).cmp(&capacity) {
+        std::cmp::Ordering::Greater => true,
+        std::cmp::Ordering::Equal => whole % 2 == 1,
+        std::cmp::Ordering::Less => false,
+    };
+    u64::try_from(whole + u128::from(up)).unwrap_or(u64::MAX)
+}
+
+/// `tokens` as a percent of `capacity` (at least 1): the whole percent, the
+/// remainder and the divisor, exactly.
+fn percent_parts(tokens: u64, capacity: u64) -> (u128, u128, u128) {
+    let scaled = u128::from(tokens) * CELLS as u128;
+    let capacity = u128::from(capacity.max(1));
+    (scaled / capacity, scaled % capacity, capacity)
 }
 
 /// A cell's top-left corner in the field, in design pt: the field fills

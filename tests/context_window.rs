@@ -4,8 +4,9 @@
 //! instead of column by column, or the reserve placed before free room; a
 //! part with a few tokens vanishing instead of keeping one cell; an item's
 //! run merged into its part (so hovering a file can't light only its
-//! cells), or a part's tokens beyond its items dropped; parts that overrun
-//! the window eating the reserve; the field, its cells, the auto-compaction
+//! cells), or a part's tokens beyond its items dropped; an overfull window
+//! hiding a later part or keeping hollow cells; the field, its cells, the
+//! auto-compaction
 //! rule or the breakdown rows keeping their 16 px size at other Interface
 //! sizes, so the map drifts from the card PINK sizes in rems; a removed item
 //! that keeps its height instead of folding away.
@@ -16,6 +17,7 @@ use pink_ui::{
     components::context_window::package::{
         CELL, CELLS, Cell, CellPaint, FIELD_H, FIELD_W, FillPart, ITEM_H, ItemStyle, PITCH, ROW_H,
         RowStyle, Swatch, breakdown, cell, cells, field, item_row, marker_column, part_row,
+        share_percent,
     },
     pink::Pink,
 };
@@ -44,27 +46,101 @@ fn parts_fill_column_by_column_with_the_reserve_last() {
         8_000,
     );
     assert_eq!(field.len(), CELLS);
+    // 38,300 tokens are 19% (19.15) of the window: 19 cells, shared out by
+    // largest remainder although each run alone would round up to 21.
+    assert_eq!(occupied(&field), 19);
     assert_eq!(field[0], Cell::Part(0, None));
-    assert_eq!(field[1], Cell::Part(0, None));
     // Each item its own run, then the part's tokens beyond its items.
-    assert_eq!(field[2], Cell::Part(1, Some(0)));
-    assert_eq!(field[6], Cell::Part(1, Some(0)));
+    assert_eq!(field[1], Cell::Part(1, Some(0)));
+    assert_eq!(field[5], Cell::Part(1, Some(0)));
+    assert_eq!(field[6], Cell::Part(1, Some(1)));
     assert_eq!(field[7], Cell::Part(1, Some(1)));
-    assert_eq!(field[8], Cell::Part(1, Some(1)));
-    assert_eq!(field[9], Cell::Part(1, None));
-    assert_eq!(field[10], Cell::Part(2, None));
+    assert_eq!(field[8], Cell::Part(1, None));
+    assert_eq!(field[9], Cell::Part(2, None));
+    assert_eq!(field[17], Cell::Part(2, None));
     // A sliver still shows.
-    assert_eq!(field[20], Cell::Part(3, None));
-    assert_eq!(field[21], Cell::Free);
+    assert_eq!(field[18], Cell::Part(3, None));
+    assert_eq!(field[19], Cell::Free);
     assert!(field[96..].iter().all(|c| *c == Cell::Reserved));
     assert_eq!(field[95], Cell::Free);
 }
 
+/// Claude Code 2.1.312's recorded parts in a 200k window (instructions
+/// 3,275, tool definitions 10,722, one 2,413-token memory file; the parts
+/// in PINK's fill order with the history sized to the share) and its 33,000
+/// autocompact buffer as the reserve, 17 cells from cell 83 on.
+fn claude_at(percent: u64) -> Vec<Cell> {
+    let history = 200_000 * percent / 100 - (3_275 + 10_722 + 2_413);
+    cells(
+        200_000,
+        &[
+            part(3_275),
+            part(10_722),
+            part(history),
+            FillPart {
+                tokens: 2_413,
+                items: vec![2_413],
+            },
+        ],
+        33_000,
+    )
+}
+
+fn occupied(field: &[Cell]) -> usize {
+    field.iter().filter(|c| matches!(c, Cell::Part(..))).count()
+}
+
+/// novnski/pink#277: the ring said 95% while the map filled 83 cells,
+/// because the parts stopped where the reserve began. Failure modes: usage
+/// that runs into the reserve left undrawn (the map understating a nearly
+/// full window); rounding each part on its own (or a sliver's one cell)
+/// adding up to more or fewer cells than the share; the reserve drawn over
+/// occupied cells, or its hollow cells dropped where usage hasn't reached
+/// them; occupied cells out of fill order or broken up by free room; float
+/// error rounding an exact half percent the other way from the ring.
 #[test]
-fn an_overfull_window_stops_at_the_reserve() {
-    let field = cells(100_000, &[part(150_000)], 3_000);
-    assert!(field[..97].iter().all(|c| *c == Cell::Part(0, None)));
-    assert!(field[97..].iter().all(|c| *c == Cell::Reserved));
+fn filled_cells_equal_the_rounded_share() {
+    for (percent, hollow) in [(25, 17), (80, 17), (95, 5)] {
+        let field = claude_at(percent);
+        assert_eq!(field.len(), CELLS);
+        let filled = occupied(&field);
+        assert_eq!(filled, percent as usize, "filled cells at {percent}%");
+        // Occupied cells first, then free room, then the reserve's hollow
+        // cells only where usage hasn't reached it.
+        assert!(field[..filled].iter().all(|c| matches!(c, Cell::Part(..))));
+        let reserved = field.iter().filter(|c| **c == Cell::Reserved).count();
+        assert_eq!(reserved, hollow, "hollow reserve at {percent}%");
+        assert!(field[CELLS - hollow..].iter().all(|c| *c == Cell::Reserved));
+        assert!(
+            field[filled..CELLS - hollow]
+                .iter()
+                .all(|c| *c == Cell::Free)
+        );
+    }
+    // Above `100 - reserve` the parts keep their fill order into the
+    // reserve: the history and then the memory file own the overlap.
+    let full = claude_at(95);
+    assert_eq!(full[0], Cell::Part(0, None));
+    assert!(full[83..93].iter().all(|c| *c == Cell::Part(2, None)));
+    assert_eq!(full[94], Cell::Part(3, Some(0)));
+    assert_eq!(full[95], Cell::Reserved);
+    // Exact half percents round as `{:.0}%` prints the exact share (ties to
+    // even), without float error moving them off the tie: 57.5% fills 58
+    // cells and 54.5% fills 54.
+    for (tokens, percent) in [(115_000, 58), (109_000, 54)] {
+        let field = cells(200_000, &[part(tokens)], 33_000);
+        assert_eq!(occupied(&field), percent, "{tokens} of 200,000");
+        assert_eq!(share_percent(tokens, 200_000), percent as u64);
+    }
+}
+
+#[test]
+fn an_overfull_window_fills_every_cell() {
+    // 150% of the window: every cell occupied, the reserve wholly overlapped,
+    // and the later part still drawn at its share.
+    let field = cells(100_000, &[part(30_000), part(120_000)], 3_000);
+    assert!(field[..20].iter().all(|c| *c == Cell::Part(0, None)));
+    assert!(field[20..].iter().all(|c| *c == Cell::Part(1, None)));
     assert_eq!(marker_column(0.9), 18);
     assert_eq!(marker_column(0.967), 19);
 }
