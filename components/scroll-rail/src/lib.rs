@@ -1,14 +1,16 @@
 // PINK's floating scroll rail (popover.rs `MenuScrollbarState::render_rail`
 // under `rail`): the quiet thumb that appears at the right edge of a menu,
 // a settings page or a panel while it scrolls, widening and brightening
-// under the pointer. UI rethink decision 54: drawn here, consumed by PINK
-// through a pinned revision.
+// under the pointer, and its horizontal turn along the bottom of a code
+// fence that scrolls sideways (markdown/render.rs, `horizontal_rail`). UI
+// rethink decision 54: drawn here, consumed by PINK through a pinned
+// revision.
 //
-// The package draws only. The host measures the thumb (its top inside the
-// track and its height), decides when the rail shows, how far it has faded
-// and whether it is active (hovered or dragged), and supplies the faint
-// tone the thumb is painted from; it adds the rail's id, its hover, press,
-// drag and release listeners, and the scrolling itself. Plain `//`
+// The package draws only. The host measures the thumb (its offset inside
+// the track and its length), decides when the rail shows, how far it has
+// faded and whether it is active (hovered or dragged), and supplies the
+// faint tone the thumb is painted from; it adds the rail's id, its hover,
+// press, drag and release listeners, and the scrolling itself. Plain `//`
 // comments: the pink-ui gallery compiles this file in place with
 // `include!` for its story.
 
@@ -17,11 +19,13 @@ use gpui::{Div, Hsla, div, prelude::*, px};
 /// The track's inset from the top and bottom of the scroll viewport; the
 /// thumb travels inside it.
 pub const TRACK_INSET: f32 = 4.0;
-/// The invisible hit strip's width along the viewport's right edge.
+/// The invisible hit strip's width along the viewport's right edge (its
+/// height along the bottom edge for `horizontal_rail`).
 pub const HIT_WIDTH: f32 = 10.0;
-/// The thumb's gap from the viewport's right edge.
+/// The thumb's gap from the viewport's right edge (bottom edge for
+/// `horizontal_rail`).
 pub const THUMB_INSET: f32 = 2.0;
-/// The resting thumb's width.
+/// The resting thumb's width (its thickness across the rail).
 pub const THUMB_WIDTH: f32 = 3.0;
 /// The thumb's width while the rail is active (hovered or dragged).
 pub const ACTIVE_THUMB_WIDTH: f32 = 5.0;
@@ -83,5 +87,44 @@ pub fn rail(faint: Hsla, fade: f32, active: bool, thumb_top: f32, thumb_height: 
                 .rounded(px(width / 2.0))
                 .bg(thumb_color(faint, active))
                 .hover(|style| style.bg(faint.opacity(HOVER_THUMB_ALPHA))),
+        )
+}
+
+/// The rail turned to run along its parent's bottom edge, for a viewport
+/// that scrolls sideways (PINK's code fences): a full-width `HIT_WIDTH`
+/// strip absolutely positioned on the bottom edge at `fade` opacity,
+/// holding the thumb `thumb_left` along the track (`TRACK_INSET` in from the
+/// leading edge) and `thumb_length` long, `THUMB_INSET` above the edge, a
+/// capsule `thumb_width(active)` thick in `thumb_color(faint, active)`. The
+/// whole strip is the pointer's target and turns the rail active, so the
+/// thumb keeps the active paint under the pointer instead of brightening to
+/// `HOVER_THUMB_ALPHA`. The thumb thickens inside the fixed strip, so the
+/// code never reflows. The host chains the strip's id first, then its
+/// listeners. The thumb's debug selector is `scrollbar-thumb`.
+pub fn horizontal_rail(
+    faint: Hsla,
+    fade: f32,
+    active: bool,
+    thumb_left: f32,
+    thumb_length: f32,
+) -> Div {
+    let thickness = thumb_width(active);
+    div()
+        .absolute()
+        .left(px(0.0))
+        .right(px(0.0))
+        .bottom(px(0.0))
+        .h(px(HIT_WIDTH))
+        .opacity(fade)
+        .child(
+            div()
+                .debug_selector(|| "scrollbar-thumb".into())
+                .absolute()
+                .left(px(TRACK_INSET + thumb_left))
+                .bottom(px(THUMB_INSET))
+                .w(px(thumb_length))
+                .h(px(thickness))
+                .rounded(px(thickness / 2.0))
+                .bg(thumb_color(faint, active)),
         )
 }

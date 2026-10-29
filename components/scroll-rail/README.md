@@ -17,8 +17,15 @@ source.
   host's faint tone, `ACTIVE_THUMB_WIDTH` at `ACTIVE_THUMB_ALPHA` while the
   rail is hovered or dragged, and `HOVER_THUMB_ALPHA` under the pointer.
   Widening happens inside the fixed strip, so rows never reflow.
+- `horizontal_rail(faint, fade, active, thumb_left, thumb_length)`: the
+  same rail along its parent's bottom edge, for a viewport that scrolls
+  sideways (PINK's code fences). A full-width `HIT_WIDTH` strip holds the
+  thumb `TRACK_INSET + thumb_left` from the leading edge and `THUMB_INSET`
+  above the bottom, `THUMB_WIDTH` thick, `ACTIVE_THUMB_WIDTH` while active.
+  The whole strip is the pointer target, so the thumb keeps the active
+  paint under the pointer rather than brightening further.
 - `thumb_width`, `thumb_color` and `MIN_THUMB`, for hosts that measure the
-  thumb or draw a rotated rail of their own.
+  thumb.
 
 The host adds the rest: the thumb's measurements, when the rail shows and
 how far it has faded, whether it is active, the rail's id, its hover,
@@ -36,5 +43,5 @@ pink-scroll-rail = { git = "https://github.com/novnski/pink-ui", rev = "<merged 
 
 - Alone: `cargo clippy --features gpui/runtime_shaders -- -D warnings` in this
   directory.
-- In the gallery: `tests/scroll_rail.rs` lays the rail out at Interface
+- In the gallery: `tests/scroll_rail.rs` lays both rails out at Interface
   sizes 12, 16 and 20.
