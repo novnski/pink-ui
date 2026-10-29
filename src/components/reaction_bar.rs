@@ -14,6 +14,11 @@
 //! to its new width. Arrow keys, Home and End move between the actions,
 //! Enter or Space takes the focused one.
 //!
+//! Gallery-only (novnski/pink#307): PINK has no likes, reposts or counts,
+//! so the `pink-message-actions` package it pins for this row stays a bare
+//! square and is not extended to draw a count. The counted button is drawn
+//! here, in the story.
+//!
 //! ```ignore
 //! ReactionBar::new("post-reactions")
 //!     .reaction(ReactionKey::Like, ReactionState::new(128))

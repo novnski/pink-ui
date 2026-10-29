@@ -2,16 +2,26 @@
 //!
 //! What an assistant is doing while it thinks, drawn the way Pink's
 //! transcript draws it (Pink: `transcript.rs` `render_tool_group`,
-//! `activity_rail`, `chip_header_row`, `render_working_trailer`). There is no
-//! card. Reasoning and the tool calls between thoughts form one tool group:
-//! a quiet 24px plate naming the work ("Thought 2 times · Read 3 files") with
-//! a light sweeping across it while it runs, over rows that arrive one by one
-//! on a drawn rail. A thought row opens onto its text while it streams, and a
-//! running tool shows the mini spinner in its glyph slot. Under the group the
-//! working line names the current step beside a breathing orb and a timer,
-//! with a Stop that shows on hover. When the work is done the line goes and
-//! the group folds shut; click the plate (or press Enter or Space on it) to
-//! open it again.
+//! `activity_rail`, `chip_header_row`, `ThoughtExpand`,
+//! `render_working_trailer`). There is no card. Reasoning and the tool calls
+//! between thoughts form one tool group on the 28 pt activity pitch, its
+//! sentence in 14/20 drawn by the `pink-tool-activity` package with a light
+//! sweeping its verb while it runs: what the calls did, verb first and
+//! counted (`Read 3 files and searched once`, `Running psql`), `Thinking` or
+//! `Reasoning` for a group of thoughts alone, and a red `1 failed` when the
+//! sentence does not say it (UI rethink D63; the sentences are Tool Call
+//! Card's, Pink `transcript/activity.rs`). Rows arrive one by one on a drawn
+//! rail: a "Thought process" row opens onto its text while it streams, a
+//! running tool shows the mini spinner in its glyph slot, and a failed one
+//! reads `Failed to run` over its failure line (what it reported, then Copy
+//! command). A thought past 24 lines shows its tail while it streams and its
+//! head once settled, with `Show N more lines` to read the rest (#177), and
+//! past eight settled calls the rest wait behind `Show N more` (D64). Under
+//! the group the working line names the current step beside a breathing orb
+//! and a timer, with a Stop that shows on hover. When the work is done the
+//! line goes and the group folds shut; click the plate (or press Enter or
+//! Space on it) to open it again. Pitch and text scale with the Interface
+//! size.
 //!
 //! ```ignore
 //! ThinkingState::new("plan", vec![
@@ -24,25 +34,34 @@
 //! .on_stop(|_, cx| stop_turn(cx))
 //! ```
 
-use std::{collections::HashMap, f32::consts::FRAC_PI_2, rc::Rc, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    f32::consts::FRAC_PI_2,
+    rc::Rc,
+    sync::Arc,
+};
 use web_time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, AnyView, App, BoxShadow, Context, Div, ElementId, FillOptions, FillRule, Font,
-    FontWeight, Hsla, IntoElement, PathBuilder, PathStyle, Pixels, Point, Role, SharedString,
-    StyledText, Task, TextRun, Transformation, Window, canvas, div, img, point, prelude::*, px,
-    radians, svg,
+    AnyElement, AnyView, App, BoxShadow, ClipboardItem, Context, Div, ElementId, Entity,
+    FillOptions, FillRule, Font, Hsla, IntoElement, PathBuilder, PathStyle, Pixels, Point, Role,
+    SharedString, StyledText, Task, TextRun, Transformation, Window, canvas, div, img, point,
+    prelude::*, px, radians, svg,
 };
 
 use crate::{
     HoverFill,
+    components::{
+        file_badge as badge,
+        tool_activity::{self as activity, ActivityState, ActivitySummary, Segment},
+        tool_call_card::{self as calls, ToolCallCard, ToolCallStatus, Verb},
+    },
     motion::{self, TOOL_CONNECTOR_REVEAL, TOOL_FOLD, TOOL_ROW_REVEAL},
     pink::{
         self, FillTier, Pink, icon_size,
         loaders::{
-            LIVE_STATUS_OBJECT_CHARS, TOOL_LABEL_LINE_HEIGHT, TOOL_LABEL_SIZE,
-            WORKING_STATUS_LINE_HEIGHT, WORKING_TIMER_SIZE, ellipsize_chars, mini_glyph_spinner,
-            orb_slot, shimmer_text, working_status, working_timer,
+            self, LIVE_STATUS_OBJECT_CHARS, WORKING_STATUS_LINE_HEIGHT, WORKING_TIMER_SIZE,
+            ellipsize_chars, mini_glyph_spinner, orb_slot, working_status, working_timer,
         },
         radius, space,
     },
@@ -50,11 +69,12 @@ use crate::{
 };
 
 pub const NAME: &str = "Thinking State";
-pub const DESCRIPTION: &str = "An assistant's reasoning as it works: thoughts and the tool calls between them arriving one by one on a drawn rail under a summary that shimmers while live, a streaming thought open to its text, the current step and a timer on the working line, folding to one quiet line when the work is done";
+pub const DESCRIPTION: &str = "An assistant's reasoning as it works: thoughts and the tool calls between them arriving one by one on a drawn rail under one verb-first sentence that shimmers while live, a streaming thought open to its text with a long one capped behind Show N more lines, a failed call's own words, the current step and a timer on the working line, folding to one quiet line when the work is done";
 
 const ICON_BRAIN: &str = "icons/thinking-state/brain.svg";
 const ICON_LAYERS: &str = "icons/thinking-state/layers-minimalistic.svg";
 const ICON_CHEVRON: &str = "icons/thinking-state/alt-arrow-right.svg";
+const ICON_MORE: &str = "icons/thinking-state/alt-arrow-down.svg";
 const ICON_DANGER: &str = "icons/thinking-state/danger-circle.svg";
 const ICON_READ: &str = "icons/thinking-state/file-text.svg";
 const ICON_SEARCH: &str = "icons/thinking-state/file-search.svg";
@@ -70,13 +90,22 @@ const FILE_DATABASE: &str = "icons/thinking-state/file-database.svg";
 const FILE_DOCUMENT: &str = "icons/thinking-state/file-document.svg";
 const FILE_DOCUMENT_DARK: &str = "icons/thinking-state/file-document-dark.svg";
 
-/// Pink: `TOOL_GROUP_HEADER_HEIGHT` – the summary row; its plate is 2px
-/// shorter.
-const TOOL_GROUP_HEADER_HEIGHT: f32 = 26.;
-/// Pink: `TOOL_TREE_ROW_HEIGHT`, `CHIP_CARD_HEIGHT`, `CHIPS_TOP_PAD`.
-const TOOL_TREE_ROW_HEIGHT: f32 = 32.;
-const CHIP_CARD_HEIGHT: f32 = 30.;
+/// Pink: `TOOL_GROUP_HEADER_HEIGHT`, `TOOL_TREE_ROW_HEIGHT` – the header and
+/// every row share the 28 pt activity pitch (D63), scaled with the Interface
+/// size; the header's plate is 1 pt in on each side. `CHIPS_TOP_PAD`.
+const TOOL_GROUP_HEADER_HEIGHT: f32 = 28.;
+const TOOL_TREE_ROW_HEIGHT: f32 = 28.;
 const CHIPS_TOP_PAD: f32 = 2.;
+/// Pink: `TOOL_LABEL_SIZE`, `TOOL_LABEL_LINE_HEIGHT` – the sentences' 14/20.
+const TOOL_LABEL_SIZE: f32 = activity::TEXT_SIZE;
+const TOOL_LABEL_LINE_HEIGHT: f32 = activity::LINE_HEIGHT;
+/// Pink: `TOOL_TEXT_SIZE` – a thought's text stays 12 on its 18 pt rows.
+const THOUGHT_TEXT_SIZE: f32 = loaders::TOOL_LABEL_SIZE;
+/// Pink: `TOOL_FAILURE_LINE_HEIGHT`, `TOOL_FAILURE_TEXT_SIZE`.
+const TOOL_FAILURE_LINE_HEIGHT: f32 = 24.;
+const TOOL_FAILURE_TEXT_SIZE: f32 = 13.;
+/// How long Copy command reads "Copied" (Pink `copy_ui_for`).
+const COPIED_FOR: Duration = Duration::from_millis(1200);
 /// Pink: the activity rail – a 48px gutter, the trunk at x 12.5, a 6px elbow
 /// to x 28, the glyph at x 32, then 8px to the row text.
 const ACTIVITY_GUTTER_WIDTH: f32 = 48.;
@@ -90,13 +119,6 @@ const ACTIVITY_ICON_SIZE: f32 = icon_size::SM;
 /// tile.
 const DISCLOSURE_CHEVRON_SIZE: f32 = icon_size::XS;
 const TRAIL_TILE: f32 = 18.;
-/// Pink: `file_badges::render_file_badge` – a 22px chip, a 20px well, a 14px
-/// file icon.
-const FILE_BADGE_HEIGHT: f32 = 22.;
-const FILE_WELL: f32 = 20.;
-const FILE_ICON: f32 = icon_size::SM;
-/// Pink: the "Failed" word, the Stop action – 11px.
-const STATUS_WORD_SIZE: f32 = 11.;
 /// Pink: `OUTPUT_LINE_HEIGHT`, `OUTPUT_BODY_PAD` (`py 6` × 2),
 /// `DETAIL_SEPARATOR`, `OUTPUT_DETAIL_MAX_LINES` – a thought's text rows.
 const OUTPUT_LINE_HEIGHT: f32 = 18.;
@@ -289,6 +311,13 @@ struct State {
     mounted: bool,
     group: Fold,
     details: HashMap<usize, Fold>,
+    /// Thoughts the reader opened past the 24-line cap (Pink
+    /// `expanded_thoughts`).
+    expanded: HashSet<usize>,
+    /// `Show N more` was pressed.
+    more_open: bool,
+    /// Which failed step's Copy command reads "Copied", and since when.
+    copied: Option<(usize, Instant)>,
     /// The working line's clock when the caller gives none.
     started: Instant,
     live: bool,
@@ -319,6 +348,9 @@ impl State {
             mounted: false,
             group: Fold::default(),
             details: HashMap::new(),
+            expanded: HashSet::new(),
+            more_open: false,
+            copied: None,
             started: Instant::now(),
             live: true,
             _ticker: ticker,
@@ -336,6 +368,9 @@ impl State {
             self.shimmer_started_at = None;
             self.group = Fold::default();
             self.details.clear();
+            self.expanded.clear();
+            self.more_open = false;
+            self.copied = None;
             self.started = now;
         }
         let historical = !self.mounted;
@@ -423,83 +458,61 @@ impl ThinkingState {
 // Copy: summary, working status, thought lines
 // ---------------------------------------------------------------------------
 
-fn plural(n: usize, one: &str, many: &str) -> String {
-    if n == 1 {
-        format!("{n} {one}")
-    } else {
-        format!("{n} {many}")
-    }
-}
-
-/// Pink: `pink_proto::view::tool_group_summary` – "Ran 2 commands · read 3
-/// files · 1 failed", first letter capitalized.
-fn tools_summary(tools: &[&ThinkingStep]) -> String {
-    let count = |kind: StepKind| tools.iter().filter(|s| s.kind == kind).count();
-    let mut edited: Vec<&str> = Vec::new();
-    for step in tools.iter().filter(|s| s.kind == StepKind::Edit) {
-        if !edited.contains(&step.detail.as_ref()) {
-            edited.push(step.detail.as_ref());
-        }
-    }
-    let mut segments = Vec::new();
-    let commands = count(StepKind::Run);
-    if commands > 0 {
-        segments.push(format!("ran {}", plural(commands, "command", "commands")));
-    }
-    if !edited.is_empty() {
-        segments.push(format!("edited {}", plural(edited.len(), "file", "files")));
-    }
-    let reads = count(StepKind::Read);
-    if reads > 0 {
-        segments.push(format!("read {}", plural(reads, "file", "files")));
-    }
-    let searches = count(StepKind::Search);
-    if searches > 0 {
-        segments.push(format!("searched {}", plural(searches, "time", "times")));
-    }
-    let fetches = count(StepKind::Fetch);
-    if fetches > 0 {
-        segments.push(format!("fetched {}", plural(fetches, "page", "pages")));
-    }
-    if segments.is_empty() {
-        segments.push(plural(tools.len(), "tool", "tools"));
-    }
-    let failed = tools
-        .iter()
-        .filter(|s| s.status == StepStatus::Failed)
-        .count();
-    if failed > 0 {
-        segments.push(format!("{failed} failed"));
-    }
-    let mut summary = segments.join(", ");
-    if let Some(first) = summary.get(0..1) {
-        let upper = first.to_uppercase();
-        summary.replace_range(0..1, &upper);
-    }
-    summary
-}
-
-/// Pink: `tool_group_summary` – the tools' summary with the thoughts named on
-/// the collapsed line ("Thought process", "Thought 3 times · Read 2 files").
-fn group_summary(steps: &[&ThinkingStep]) -> String {
-    let tools: Vec<&ThinkingStep> = steps
-        .iter()
-        .copied()
-        .filter(|s| s.kind != StepKind::Thought)
-        .collect();
-    let thoughts = steps.len() - tools.len();
-    let base = if tools.is_empty() {
-        String::new()
-    } else {
-        tools_summary(&tools)
+/// A tool step as the call Tool Call Card names, so both stories read the
+/// same sentences (Pink `activity::call_sentence`). Thoughts are not calls.
+fn step_call(ix: usize, step: &ThinkingStep) -> Option<ToolCallCard> {
+    let status = match step.status {
+        StepStatus::Pending => return None,
+        StepStatus::Running => ToolCallStatus::Running,
+        StepStatus::Done => ToolCallStatus::Success,
+        StepStatus::Failed => ToolCallStatus::Error,
     };
-    match (base.is_empty(), thoughts) {
-        (_, 0) => base,
-        (true, 1) => "Thought process".into(),
-        (true, n) => format!("Thought {n} times"),
-        (false, 1) => format!("Thought, {base}"),
-        (false, n) => format!("Thought {n} times, {base}"),
+    let call = |verb| ToolCallCard::new(("step", ix), verb, status);
+    let detail = step.detail.clone();
+    Some(match step.kind {
+        StepKind::Thought => return None,
+        StepKind::Read => call(Verb::READ).file(detail),
+        StepKind::Edit => call(Verb::EDIT).file(detail),
+        StepKind::Search => call(Verb::SEARCH).words("for").code(detail),
+        StepKind::Run => call(Verb::RUN).code(detail),
+        StepKind::Fetch => call(Verb::FETCH).object(page(&detail).to_owned()),
+    })
+}
+
+/// The group's sentence and header facts (Pink `tool_activity_summary`):
+/// the calls' sentence, or `Thinking` / `Reasoning` for thoughts alone;
+/// running while a call runs, thinking while only a thought streams.
+fn group_sentence(steps: &[&ThinkingStep], live: bool) -> (calls::Sentence, ActivitySummary) {
+    let cards: Vec<ToolCallCard> = steps
+        .iter()
+        .enumerate()
+        .filter_map(|(ix, step)| step_call(ix, step))
+        .collect();
+    let running = steps
+        .iter()
+        .any(|step| step.kind != StepKind::Thought && step.status == StepStatus::Running);
+    let state = if running {
+        ActivityState::Running
+    } else if live {
+        ActivityState::Thinking
+    } else {
+        ActivityState::Recorded
+    };
+    if cards.is_empty() {
+        let words = if live { "Thinking" } else { "Reasoning" };
+        return (
+            calls::Sentence::plain(words),
+            ActivitySummary { state, failures: 0 },
+        );
     }
+    let group = calls::group_sentence(&cards);
+    (
+        group.sentence,
+        ActivitySummary {
+            state,
+            failures: group.failures,
+        },
+    )
 }
 
 /// Pink: `tool_group_glyph` – the brain for a thought-only group, the tools'
@@ -527,6 +540,13 @@ fn file_name(path: &str) -> &str {
 fn url_host(url: &str) -> &str {
     let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
     rest.split(['/', '?', '#']).next().unwrap_or(rest)
+}
+
+/// Pink: `activity::page` – a page's readable address, host and path, no
+/// scheme or trailing slash.
+fn page(url: &str) -> &str {
+    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    rest.strip_suffix('/').unwrap_or(rest)
 }
 
 /// Pink: `live_status` / `tool_status` – the working line's verb and object:
@@ -573,8 +593,8 @@ fn push_run(line: &mut ThoughtLine, text: &str, code: bool) {
 
 /// Pink: `thought_cols_for_width` – columns of 12px text (Geist's average
 /// advance ≈ 0.56em) that fit the text column.
-fn thought_cols_for_width(text_width: f32) -> usize {
-    let advance = TOOL_LABEL_SIZE * 0.56;
+fn thought_cols_for_width(text_width: f32, scale: f32) -> usize {
+    let advance = THOUGHT_TEXT_SIZE * scale.max(0.5) * 0.56;
     ((text_width / advance).floor() as usize).clamp(24, 200)
 }
 
@@ -648,11 +668,12 @@ fn cap_thought_lines(mut lines: Vec<ThoughtLine>, live: bool) -> (Vec<ThoughtLin
     (lines, truncated_by)
 }
 
-/// Pink: `detail_height_for` (`ToolDetail::Thought`) – separator, rows and
-/// the body's padding.
-fn thought_detail_height(lines: usize, truncated_by: usize) -> f32 {
+/// Pink: `detail_height_for` (`ToolDetail::Thought`) – separator, rows (on
+/// the Interface size's 18 pt rhythm) and the body's padding; a capped
+/// thought adds its `Show N more lines` row.
+fn thought_detail_height(lines: usize, truncated_by: usize, scale: f32) -> f32 {
     let rows = lines + usize::from(truncated_by > 0);
-    DETAIL_SEPARATOR + rows as f32 * OUTPUT_LINE_HEIGHT + OUTPUT_BODY_PAD
+    DETAIL_SEPARATOR + rows as f32 * OUTPUT_LINE_HEIGHT * scale + OUTPUT_BODY_PAD
 }
 
 // ---------------------------------------------------------------------------
@@ -748,10 +769,10 @@ fn activity_rail(
     continues: bool,
     reveal: f32,
     continuation: f32,
+    row_height: f32,
     t: &Pink,
 ) -> Div {
     let color = t.hairline(0.12);
-    let row_height = TOOL_TREE_ROW_HEIGHT;
     let (incoming, branch) = motion::tool_connector_parts(reveal, has_predecessor);
     div()
         .relative()
@@ -823,123 +844,84 @@ fn file_icon(path: &str, dark: bool) -> &'static str {
     }
 }
 
-/// Pink: `file_badges::render_file_badge` (no open route) – a 22px chip on
-/// `ink(0.06)`: the file-type artwork in a 20px well, then the file name at
-/// `text` 85%.
-fn file_badge(path: &str, t: &Pink) -> Div {
+/// Pink: `file_badges::render_file_badge` (no open route), drawn by the
+/// `pink-file-badge` package as Pink does: a 22px chip on `ink(0.06)`, the
+/// file-type artwork in a 20px well, then the file name at `text` 85%.
+fn file_badge(path: &str, t: &Pink) -> AnyElement {
     // Pink: `file_icons::well_bg` – a counter-shade seat for the artwork.
     let well = pink::grey(if t.dark { 0 } else { 255 }).opacity(0.16);
-    div()
-        .min_w_0()
-        .h(px(FILE_BADGE_HEIGHT))
-        .flex()
-        .items_center()
-        .overflow_hidden()
-        .gap(px(space::S6))
-        .rounded(px(radius::SM))
-        .bg(t.ink(0.06))
-        .pl(px(1.))
-        .pr(px(space::S6))
-        .text_color(t.text.opacity(0.85))
-        .child(
-            div()
-                .size(px(FILE_WELL))
-                .flex_none()
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(radius::XS))
-                .bg(well)
-                .child(img(file_icon(path, t.dark)).flex_none().size(px(FILE_ICON))),
-        )
-        .child(
-            div()
-                .min_w_0()
-                .truncate()
-                .child(SharedString::from(file_name(path).to_string())),
-        )
+    badge::badge(&badge::BadgeStyle {
+        background: t.ink(0.06),
+        text: t.text.opacity(0.85),
+    })
+    .child(badge::well(
+        well,
+        img(file_icon(path, t.dark))
+            .flex_none()
+            .size(px(badge::GLYPH)),
+    ))
+    .child(badge::name(file_name(path).to_owned()))
+    .into_any_element()
 }
 
 const HEADER_GROUP: &str = "tool-header";
 
-/// Pink: `chip_header_row` for a row on the rail – the label and its detail
-/// at 12/18 in `content_muted` (a file badge for a path), "Failed" in red
-/// when it failed, and for an expandable row the trailing tile: a chevron at
-/// half strength turning with `trail` (0 shut, 1 open). An expandable row's
-/// text brightens to `text` under the pointer.
-fn chip_header_row(step: &ThinkingStep, trail: Option<f32>, t: &Pink) -> Div {
+/// Pink: `chip_header_row` for a row on the rail – the call's verb-first
+/// sentence (a thought reads "Thought process") drawn by the
+/// `pink-tool-activity` package in `content_muted`, a file ending it as its
+/// badge, and for an expandable row the trailing tile: a chevron at half
+/// strength turning with `trail` (0 shut, 1 open). An expandable row's text
+/// brightens to `text` under the pointer. A failure is the sentence's own
+/// words ("Failed to run"), never a red word.
+fn chip_header_row(
+    step: &ThinkingStep,
+    ix: usize,
+    trail: Option<f32>,
+    pitch: f32,
+    t: &Pink,
+) -> Div {
+    let scale = pitch / TOOL_TREE_ROW_HEIGHT;
     let hover_text = trail.is_some();
     let text = t.text;
-    let label = div()
-        .flex_none()
-        .h(px(TOOL_LABEL_LINE_HEIGHT))
-        .flex()
-        .items_center()
-        .text_color(t.content_muted)
-        .child(step.kind.label());
-    let label = if hover_text {
-        label
-            .id("tool-label")
+    let (mut segments, names_file) = match step_call(ix, step) {
+        Some(call) => (call.sentence().segments, step.kind.names_file()),
+        None => (vec![Segment::Text(step.kind.label().into())], false),
+    };
+    let badge = names_file.then(|| {
+        segments.pop();
+        file_badge(&step.detail, t)
+    });
+    let line = activity::sentence(&segments, &activity::sentence_style(t, scale))
+        .text_color(t.content_muted);
+    let line = if hover_text {
+        line.id("tool-label")
             .group_hover(HEADER_GROUP, move |s| s.text_color(text))
             .into_any_element()
     } else {
-        label.into_any_element()
+        line.into_any_element()
     };
-    let detail = (!step.detail.is_empty()).then(|| {
-        let names_file = step.kind.names_file();
-        let detail = div()
-            .min_w_0()
-            .h(px(if names_file {
-                FILE_BADGE_HEIGHT
-            } else {
-                TOOL_LABEL_LINE_HEIGHT
-            }))
-            .flex()
-            .items_center()
-            .truncate()
-            .text_color(t.content_muted)
-            .child(if names_file {
-                file_badge(&step.detail, t).into_any_element()
-            } else {
-                div()
-                    .min_w_0()
-                    .truncate()
-                    .child(step.detail.clone())
-                    .into_any_element()
-            });
-        if hover_text {
-            detail
-                .id("tool-detail")
-                .group_hover(HEADER_GROUP, move |s| s.text_color(text))
-                .into_any_element()
-        } else {
-            detail.into_any_element()
-        }
-    });
     div()
         .group(HEADER_GROUP)
-        .h(px(CHIP_CARD_HEIGHT))
+        .h(px(pitch))
         .w_full()
         .min_w_0()
         .flex()
         .flex_row()
         .items_center()
         .gap(px(space::SM))
-        .text_size(px(TOOL_LABEL_SIZE))
-        .line_height(px(TOOL_LABEL_LINE_HEIGHT))
-        .child(label)
-        .children(detail)
+        .text_size(px(TOOL_LABEL_SIZE * scale))
+        .line_height(px(TOOL_LABEL_LINE_HEIGHT * scale))
+        .child(
+            div()
+                .min_w_0()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(activity::SEGMENT_GAP * scale))
+                .child(line)
+                .children(badge),
+        )
         .child(div().flex_1().min_w(px(space::XS)))
-        .when(step.status == StepStatus::Failed, |row| {
-            row.child(
-                div()
-                    .flex_none()
-                    .text_size(px(STATUS_WORD_SIZE))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(t.readable_tone(t.danger, 1.))
-                    .child("Failed"),
-            )
-        })
         .when_some(trail, |row, progress| {
             row.child(
                 div()
@@ -953,7 +935,7 @@ fn chip_header_row(step: &ThinkingStep, trail: Option<f32>, t: &Pink) -> Div {
                     .child(
                         svg()
                             .path(ICON_CHEVRON)
-                            .size(px(DISCLOSURE_CHEVRON_SIZE))
+                            .size(px(DISCLOSURE_CHEVRON_SIZE * scale))
                             .with_transformation(Transformation::rotate(radians(
                                 FRAC_PI_2 * progress,
                             )))
@@ -962,6 +944,88 @@ fn chip_header_row(step: &ThinkingStep, trail: Option<f32>, t: &Pink) -> Div {
                     ),
             )
         })
+}
+
+/// The line under a failed call (D63, Pink `tool_failure_line`): what it
+/// reported, then Copy command for a command, so it can be rerun by hand.
+/// The rows here carry no detail body, so there is no Show details; nothing
+/// retries or claims the failure resolved.
+fn failure_line(
+    state: &Entity<State>,
+    ix: usize,
+    step: &ThinkingStep,
+    copied: bool,
+    pitch: f32,
+    t: &Pink,
+) -> AnyElement {
+    let scale = pitch / TOOL_TREE_ROW_HEIGHT;
+    let spoken = step_call(ix, step)
+        .map(|call| call.sentence().text)
+        .unwrap_or_default();
+    let message = step
+        .text
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map_or_else(
+            || "The tool reported a failure without output".to_owned(),
+            str::to_owned,
+        );
+    let mut actions = Vec::new();
+    if step.kind == StepKind::Run {
+        let ring = t.focus_ring();
+        let id: SharedString = format!("thinking-failure-copy-{ix}").into();
+        let command = step.detail.clone();
+        let state = state.clone();
+        actions.push(
+            activity::recovery_action(
+                id.clone(),
+                if copied { "Copied" } else { "Copy command" }.into(),
+                &activity::RecoveryStyle {
+                    scale,
+                    height: TOOL_LABEL_LINE_HEIGHT * scale,
+                    radius: radius::CONTROL,
+                    text: t.content_muted,
+                },
+            )
+            .role(Role::Button)
+            .aria_label(SharedString::from(format!("Copy command, {command}")))
+            .tab_index(0)
+            .focus_visible(move |s| pink::focus_ring(s, ring))
+            .hover_fill_fg(
+                format!("tl-{id}"),
+                t.fill(FillTier::Quaternary),
+                t.fill(FillTier::Tertiary),
+                t.content_muted,
+                t.text,
+            )
+            .on_click(move |_, _, cx| {
+                cx.stop_propagation();
+                cx.write_to_clipboard(ClipboardItem::new_string(command.to_string()));
+                state.update(cx, |s, cx| {
+                    s.copied = Some((ix, Instant::now()));
+                    cx.notify();
+                });
+            })
+            .into_any_element(),
+        );
+    }
+    let label = format!("{spoken}, {message}");
+    activity::failure_line(
+        message.into(),
+        actions,
+        &activity::FailureStyle {
+            scale,
+            height: TOOL_FAILURE_LINE_HEIGHT * scale,
+            text_size: TOOL_FAILURE_TEXT_SIZE * scale,
+            line_height: TOOL_LABEL_LINE_HEIGHT * scale,
+            message: t.readable_tone(t.danger, 1.),
+        },
+    )
+    .id(("thinking-failure", ix))
+    .role(Role::Group)
+    .aria_label(SharedString::from(label))
+    .into_any_element()
 }
 
 /// Pink: `thought_line_text` – a line as shaped runs: faint prose, code in
@@ -987,10 +1051,19 @@ fn thought_line_text(line: &ThoughtLine, color: Hsla) -> Option<(SharedString, V
     Some((text.into(), runs))
 }
 
-/// Pink: `detail_body` (`ToolDetail::Thought`) – 18px rows of 12px
-/// `content_faint` text inside 6px of padding, then a counted tail.
-fn thought_body(lines: &[ThoughtLine], truncated_by: usize, t: &Pink) -> Div {
+/// Pink: `detail_body` (`ToolDetail::Thought`) – 18 pt rows of 12 pt
+/// `content_faint` text inside 6px of padding, scaled with the Interface
+/// size. Past the 24-line cap comes Pink's `ThoughtExpand`: `Show N more
+/// lines`, a focusable text action that shows the whole thought.
+fn thought_body(
+    lines: &[ThoughtLine],
+    truncated_by: usize,
+    expand: Option<(SharedString, Rc<dyn Fn(&mut App)>)>,
+    scale: f32,
+    t: &Pink,
+) -> Div {
     let color = t.content_faint;
+    let line_height = OUTPUT_LINE_HEIGHT * scale;
     div()
         .w_full()
         .min_w_0()
@@ -998,10 +1071,10 @@ fn thought_body(lines: &[ThoughtLine], truncated_by: usize, t: &Pink) -> Div {
         .flex_col()
         .overflow_hidden()
         .py(px(OUTPUT_BODY_PAD / 2.))
-        .text_size(px(TOOL_LABEL_SIZE))
+        .text_size(px(THOUGHT_TEXT_SIZE * scale))
         .children(lines.iter().map(|line| {
             let row = div()
-                .h(px(OUTPUT_LINE_HEIGHT))
+                .h(px(line_height))
                 .w_full()
                 .min_w_0()
                 .flex()
@@ -1018,18 +1091,48 @@ fn thought_body(lines: &[ThoughtLine], truncated_by: usize, t: &Pink) -> Div {
             }
         }))
         .when(truncated_by > 0, |body| {
-            // Pink: `more_lines_row`.
-            body.child(
-                div()
-                    .h(px(OUTPUT_LINE_HEIGHT))
-                    .flex()
-                    .items_center()
-                    .text_color(color)
-                    .child(match truncated_by {
-                        1 => "… 1 more line".to_string(),
-                        n => format!("… {n} more lines"),
-                    }),
-            )
+            let label: SharedString = match truncated_by {
+                1 => "Show 1 more line".into(),
+                n => format!("Show {n} more lines").into(),
+            };
+            let row = div().h(px(line_height)).flex().items_center();
+            body.child(match expand {
+                Some((id, on_expand)) => {
+                    let ring = t.focus_ring();
+                    row.child(
+                        div()
+                            .id(id.clone())
+                            .role(Role::Button)
+                            .aria_label(label.clone())
+                            .tab_index(0)
+                            .focus_visible(move |s| pink::focus_ring(s, ring))
+                            .h_full()
+                            .flex()
+                            .items_center()
+                            .px(px(4. * scale))
+                            .ml(px(-4. * scale))
+                            .rounded(px(radius::CONTROL))
+                            .cursor_pointer()
+                            .hover_fill_fg(
+                                format!("tl-{id}"),
+                                t.fill(FillTier::Tertiary).opacity(0.),
+                                t.fill(FillTier::Tertiary),
+                                t.content_muted,
+                                t.text,
+                            )
+                            .on_click(move |_, _, cx| {
+                                cx.stop_propagation();
+                                on_expand(cx);
+                            })
+                            .child(label),
+                    )
+                }
+                // Pink: `more_lines_row`.
+                None => row.text_color(color).child(match truncated_by {
+                    1 => "… 1 more line".to_string(),
+                    n => format!("… {n} more lines"),
+                }),
+            })
         })
 }
 
@@ -1039,6 +1142,8 @@ struct RowFrame {
     ix: usize,
     detail: Option<(Vec<ThoughtLine>, usize)>,
     open: bool,
+    /// The failure line under a failed call, else zero.
+    failure: f32,
     height: f32,
     chevron: f32,
     body_alpha: f32,
@@ -1059,6 +1164,11 @@ impl RenderOnce for ThinkingState {
         let scale = motion::speed_scale();
         let fold_span = TOOL_FOLD.total().mul_f32(scale);
         let fold_window = motion::FOLD_TWEEN_WINDOW.mul_f32(scale);
+        // Pitch, sentences and thought rows follow the Interface size.
+        let ui = pink::ui_scale(cx);
+        let pitch = TOOL_TREE_ROW_HEIGHT * ui;
+        let header_height = TOOL_GROUP_HEADER_HEIGHT * ui;
+        let failure_height = TOOL_FAILURE_LINE_HEIGHT * ui;
 
         let state = window.use_keyed_state(
             ElementId::NamedChild(Arc::new(self.id.clone()), "state".into()),
@@ -1078,7 +1188,7 @@ impl RenderOnce for ThinkingState {
 
         // ---- arrival clocks (Pink: `tool_row_reveal_progress`,
         // `tool_connector_reveal_progress`) -------------------------------
-        let (starts, header_start, shimmer_start, clock) = {
+        let (starts, header_start, shimmer_start, clock, more_open, copied) = {
             let s = state.read(cx);
             (
                 visible
@@ -1088,6 +1198,10 @@ impl RenderOnce for ThinkingState {
                 s.header_started_at,
                 s.shimmer_started_at,
                 s.started,
+                s.more_open,
+                s.copied
+                    .filter(|(_, at)| now.saturating_duration_since(*at) < COPIED_FOR)
+                    .map(|(ix, _)| ix),
             )
         };
         let reveals: Vec<f32> = starts
@@ -1100,24 +1214,38 @@ impl RenderOnce for ThinkingState {
             .collect();
         let header_reveal = motion::reveal_progress(TOOL_ROW_REVEAL, header_start, now, reduced);
         let arrival_pending = connectors.iter().any(|p| *p < 1.);
-        let mut motion_active =
-            header_reveal < 1. || arrival_pending || reveals.iter().any(|p| *p < 1.);
+        // "Copied" reverts on its own.
+        let mut motion_active = header_reveal < 1.
+            || arrival_pending
+            || reveals.iter().any(|p| *p < 1.)
+            || copied.is_some();
 
         // ---- rows: thought details and their folds -----------------------
         let cols = thought_cols_for_width(
             (self.width - ACTIVITY_GUTTER_WIDTH - ACTIVITY_TEXT_GAP).max(120.),
+            ui,
         );
         let rows: Vec<RowFrame> = state.update(cx, |s, _| {
             visible
                 .iter()
                 .map(|&ix| {
                     let step = &self.steps[ix];
+                    // A failed call adds its failure line under the sentence.
+                    let failure =
+                        if step.status == StepStatus::Failed && step.kind != StepKind::Thought {
+                            failure_height
+                        } else {
+                            0.
+                        };
                     let detail = (step.kind == StepKind::Thought)
                         .then(|| {
-                            cap_thought_lines(
-                                thought_lines(&step.text, cols),
-                                step.status == StepStatus::Running,
-                            )
+                            let lines = thought_lines(&step.text, cols);
+                            // The reader asked for all of it: no cap.
+                            if s.expanded.contains(&ix) {
+                                (lines, 0)
+                            } else {
+                                cap_thought_lines(lines, step.status == StepStatus::Running)
+                            }
                         })
                         .filter(|(lines, _)| !lines.is_empty());
                     let Some((lines, truncated_by)) = detail else {
@@ -1125,7 +1253,8 @@ impl RenderOnce for ThinkingState {
                             ix,
                             detail: None,
                             open: false,
-                            height: TOOL_TREE_ROW_HEIGHT,
+                            failure,
+                            height: pitch + failure,
                             chevron: 0.,
                             body_alpha: 1.,
                             body_mounted: false,
@@ -1137,9 +1266,9 @@ impl RenderOnce for ThinkingState {
                     let open = fold.open.unwrap_or(step.status == StepStatus::Running);
                     fold.settle(open, now);
                     let target = if open {
-                        TOOL_TREE_ROW_HEIGHT + thought_detail_height(lines.len(), truncated_by)
+                        pitch + thought_detail_height(lines.len(), truncated_by, ui)
                     } else {
-                        TOOL_TREE_ROW_HEIGHT
+                        pitch
                     };
                     let elapsed = fold.elapsed(now, reduced);
                     let height = match elapsed {
@@ -1158,6 +1287,7 @@ impl RenderOnce for ThinkingState {
                         ix,
                         detail: Some((lines, truncated_by)),
                         open,
+                        failure: 0.,
                         height,
                         chevron,
                         body_alpha,
@@ -1167,14 +1297,40 @@ impl RenderOnce for ThinkingState {
                 .collect()
         });
 
+        // ---- the row budget (D64): settled calls past eight wait behind
+        // `Show N more`; thoughts, running and failed calls never hide -----
+        let settled: Vec<bool> = rows
+            .iter()
+            .map(|row| {
+                let step = &self.steps[row.ix];
+                step.kind != StepKind::Thought && step.status == StepStatus::Done
+            })
+            .collect();
+        let inspected: Vec<bool> = rows.iter().map(|row| row.open).collect();
+        let budget = calls::history_budget(&settled, &inspected, more_open);
+        // Positions into `rows`; `None` is the `Show N more` row, which
+        // draws in with the first call it stands for.
+        let mut items: Vec<Option<usize>> = Vec::new();
+        for pos in 0..rows.len() {
+            if budget.more_at == Some(pos) {
+                items.push(None);
+            }
+            if budget.visible[pos] {
+                items.push(Some(pos));
+            }
+        }
+        let item_pos = |item: &Option<usize>| item.unwrap_or(budget.more_at.unwrap_or(0));
+
         // ---- the group's fold (Pink: `render_tool_group`) ------------------
         let auto_open = live || !self.auto_fold;
         let effective_auto_open = auto_open || arrival_pending;
         let revealed_height = CHIPS_TOP_PAD
-            + rows
+            + items
                 .iter()
-                .zip(&reveals)
-                .map(|(row, progress)| row.height * progress)
+                .map(|item| {
+                    let height = item.map_or(pitch, |pos| rows[pos].height);
+                    height * reveals[item_pos(item)]
+                })
                 .sum::<f32>();
         let (open, body_height, disclosure) = state.update(cx, |s, _| {
             let open = s.group.open.unwrap_or(effective_auto_open);
@@ -1200,34 +1356,23 @@ impl RenderOnce for ThinkingState {
         if motion_active {
             window.request_animation_frame();
         }
+        let shimmer_phase = shimmer_start.filter(|_| live && !reduced).map(|start| {
+            motion::pulse_keep(window, cx);
+            loaders::shimmer_phase_since(start, now)
+        });
 
         let shown: Vec<&ThinkingStep> = visible.iter().map(|ix| &self.steps[*ix]).collect();
         let group = (!shown.is_empty()).then(|| {
-            let summary: SharedString = group_summary(&shown).into();
+            let (sentence, summary) = group_sentence(&shown, live);
             let hover_key = format!("tl-{key}-hdr");
+            let glyph_size = ACTIVITY_ICON_SIZE * ui;
 
-            // The summary plate (Pink: `render_tool_group` header): a glyph
-            // on the rail's trunk naming what is inside, the summary with a
-            // light sweeping across it while the work runs, and a chevron
-            // that turns as the group opens. Quiet even when steps failed.
-            let title = if live {
-                shimmer_text(
-                    summary.clone(),
-                    TOOL_LABEL_SIZE,
-                    TOOL_LABEL_LINE_HEIGHT,
-                    t.content_muted,
-                    t.text,
-                )
-                .started_at(shimmer_start.unwrap_or(now))
-                .text_color(motion::hover_blend(&hover_key, t.content_muted, t.text))
-                .h_full()
-                .min_w_0()
-                .flex_1()
-                .overflow_hidden()
-                .into_any_element()
-            } else {
-                summary.clone().into_any_element()
-            };
+            // The header (Pink: `render_tool_group` on the
+            // `pink-tool-activity` header): a glyph on the rail's trunk
+            // naming what is inside, the sentence with a light sweeping its
+            // verb while the work runs, a failure count only when the
+            // sentence does not say it, and a chevron that turns as the
+            // group opens.
             let toggle = {
                 let state = state.clone();
                 let on_toggle = self.on_toggle.clone();
@@ -1242,85 +1387,143 @@ impl RenderOnce for ThinkingState {
                 }
             };
             let header = div()
-                .h(px(TOOL_GROUP_HEADER_HEIGHT))
+                .h(px(header_height))
                 .flex()
                 .flex_row()
                 .items_center()
                 .child(
-                    div()
-                        .id("tool-group-header")
-                        .rounded(px(radius::CONTROL))
-                        .focus_visible(move |s| pink::focus_ring(s, ring))
-                        .role(Role::Button)
-                        .aria_label(SharedString::from(format!("Tool activity: {summary}")))
-                        .aria_expanded(open)
-                        .tab_index(0)
-                        .flex_none()
-                        .max_w_full()
-                        .min_w_0()
-                        .h(px(TOOL_GROUP_HEADER_HEIGHT - 2.))
-                        .flex()
-                        .flex_row()
-                        .items_center()
-                        .gap(px(space::S6))
-                        .pl(px(ACTIVITY_TRUNK_X - ACTIVITY_ICON_SIZE / 2.))
-                        .pr(px(space::SM))
-                        .cursor_pointer()
-                        .text_size(px(TOOL_LABEL_SIZE))
-                        .line_height(px(TOOL_LABEL_LINE_HEIGHT))
-                        .hover_fill_fg(
-                            hover_key.clone(),
-                            t.fill(FillTier::Quaternary),
-                            t.fill(FillTier::Tertiary),
-                            t.content_muted,
-                            t.text,
-                        )
-                        .on_click(move |_, window, cx| {
-                            cx.stop_propagation();
-                            toggle(window, cx);
-                        })
-                        .child(
-                            svg()
-                                .path(group_glyph(&shown))
-                                .flex_none()
-                                .size(px(ACTIVITY_ICON_SIZE))
-                                .text_color(motion::hover_blend(
-                                    &hover_key,
-                                    t.content_muted,
-                                    t.text,
-                                )),
-                        )
-                        .child(
-                            div()
-                                .min_w_0()
-                                .h(px(TOOL_LABEL_LINE_HEIGHT))
-                                .flex()
-                                .items_center()
-                                .truncate()
-                                .child(title),
-                        )
-                        .child(
-                            svg()
-                                .path(ICON_CHEVRON)
-                                .flex_none()
-                                .size(px(DISCLOSURE_CHEVRON_SIZE))
-                                .with_transformation(Transformation::rotate(radians(
-                                    FRAC_PI_2 * disclosure,
-                                )))
-                                .text_color(t.content_faint),
-                        ),
+                    activity::activity_header(
+                        "tool-group-header",
+                        calls::group_title(&sentence, shimmer_phase, ui, &t),
+                        svg()
+                            .path(group_glyph(&shown))
+                            .flex_none()
+                            .size(px(glyph_size))
+                            .text_color(motion::hover_blend(&hover_key, t.content_muted, t.text))
+                            .into_any_element(),
+                        svg()
+                            .path(ICON_CHEVRON)
+                            .flex_none()
+                            .size(px(DISCLOSURE_CHEVRON_SIZE * ui))
+                            .with_transformation(Transformation::rotate(radians(
+                                FRAC_PI_2 * disclosure,
+                            )))
+                            .text_color(t.content_faint)
+                            .into_any_element(),
+                        summary,
+                        activity::HeaderStyle {
+                            scale: ui,
+                            height: header_height - 2. * ui,
+                            radius: radius::CONTROL,
+                            left_inset: ACTIVITY_TRUNK_X - glyph_size / 2.,
+                            text_size: TOOL_LABEL_SIZE * ui,
+                            line_height: TOOL_LABEL_LINE_HEIGHT * ui,
+                            foreground: t.content_muted,
+                            muted: t.content_faint,
+                            active: t.text,
+                            danger: t.readable_tone(t.danger, 1.),
+                            warning: t.warning,
+                        },
+                    )
+                    .focus_visible(move |s| pink::focus_ring(s, ring))
+                    .role(Role::Button)
+                    .aria_label(SharedString::from(summary.description(&sentence.text)))
+                    .aria_expanded(open)
+                    .tab_index(0)
+                    .hover_fill_fg(
+                        hover_key.clone(),
+                        t.fill(FillTier::Quaternary),
+                        t.fill(FillTier::Tertiary),
+                        t.content_muted,
+                        t.text,
+                    )
+                    .on_click(move |_, window, cx| {
+                        cx.stop_propagation();
+                        toggle(window, cx);
+                    }),
                 );
 
             // ---- rows on the rail --------------------------------------
-            let count = rows.len();
+            let count = items.len();
             let chips = div().pt(px(CHIPS_TOP_PAD)).flex().flex_col().children(
-                rows.into_iter().enumerate().map(|(pos, row)| {
-                    let step = &self.steps[row.ix];
+                items.iter().enumerate().map(|(place, item)| {
+                    let pos = item_pos(item);
                     let reveal = reveals[pos];
                     let connector = connectors[pos];
-                    let content_reveal = motion::tool_connector_parts(connector, pos > 0).1;
-                    let continuation =
-                        motion::tool_connector_continuation(connectors.get(pos + 1).copied());
+                    let content_reveal = motion::tool_connector_parts(connector, place > 0).1;
+                    let continuation = motion::tool_connector_continuation(
+                        items.get(place + 1).map(|next| connectors[item_pos(next)]),
+                    );
+                    let rise = |el: Div| {
+                        el.when(content_reveal < 1., |el| {
+                            el.relative()
+                                .top(px(ROW_CONTENT_RISE * (1. - content_reveal)))
+                                .opacity(content_reveal)
+                        })
+                    };
+                    let rail = |slot: AnyElement| {
+                        activity_rail(
+                            slot,
+                            place > 0,
+                            place + 1 < count,
+                            connector,
+                            continuation,
+                            pitch,
+                            &t,
+                        )
+                    };
+
+                    let Some(pos) = *item else {
+                        // Pink: `tool_history_more_row`.
+                        let action = calls::more_action(
+                            format!("{key}-more").into(),
+                            budget.hidden,
+                            pitch,
+                            &t,
+                        )
+                        .on_click({
+                            let state = state.clone();
+                            move |_, _, cx| {
+                                cx.stop_propagation();
+                                state.update(cx, |s, cx| {
+                                    s.more_open = true;
+                                    s.group.open = Some(true);
+                                    cx.notify();
+                                });
+                            }
+                        });
+                        let el = div()
+                            .h(px(pitch))
+                            .w_full()
+                            .flex_none()
+                            .flex()
+                            .flex_row()
+                            .child(rail(
+                                svg()
+                                    .path(ICON_MORE)
+                                    .size(px(ACTIVITY_ICON_SIZE))
+                                    .text_color(t.content_faint)
+                                    .into_any_element(),
+                            ))
+                            .child(rise(
+                                // The label's text, not its padding, sits on
+                                // the sentences' column.
+                                div()
+                                    .ml(px(ACTIVITY_TEXT_GAP - 6. * ui))
+                                    .h(px(pitch))
+                                    .min_w_0()
+                                    .flex_1()
+                                    .flex()
+                                    .items_center()
+                                    .text_size(px(TOOL_LABEL_SIZE * ui))
+                                    .line_height(px(TOOL_LABEL_LINE_HEIGHT * ui))
+                                    .child(action),
+                            ))
+                            .into_any_element();
+                        return reveal_tool_row(el, pitch, reveal);
+                    };
+                    let row = &rows[pos];
+                    let step = &self.steps[row.ix];
                     // A running tool shows the item spinner in its glyph
                     // slot; a thought keeps its brain while it streams.
                     let slot =
@@ -1339,38 +1542,46 @@ impl RenderOnce for ThinkingState {
                                 .text_color(if failed { t.danger } else { t.content_muted })
                                 .into_any_element()
                         };
-                    let rail =
-                        activity_rail(slot, pos > 0, pos + 1 < count, connector, continuation, &t);
-                    let rise = |el: Div| {
-                        el.when(content_reveal < 1., |el| {
-                            el.relative()
-                                .top(px(ROW_CONTENT_RISE * (1. - content_reveal)))
-                                .opacity(content_reveal)
-                        })
-                    };
 
                     let Some((lines, truncated_by)) = &row.detail else {
-                        // Pink: `tool_chip` – a plain row.
+                        // Pink: `tool_chip` – a plain row on the pitch, its
+                        // failure line under it.
                         let card = div()
                             .ml(px(ACTIVITY_TEXT_GAP))
-                            .my(px((TOOL_TREE_ROW_HEIGHT - CHIP_CARD_HEIGHT) / 2.))
-                            .h(px(CHIP_CARD_HEIGHT))
+                            .h(px(row.height))
                             .min_w_0()
                             .flex_1()
                             .flex()
-                            .items_center()
+                            .flex_col()
                             .overflow_hidden()
-                            .child(chip_header_row(step, None, &t));
+                            .child(
+                                div()
+                                    .h(px(pitch))
+                                    .flex_none()
+                                    .flex()
+                                    .items_center()
+                                    .child(chip_header_row(step, row.ix, None, pitch, &t)),
+                            )
+                            .when(row.failure > 0., |card| {
+                                card.child(failure_line(
+                                    &state,
+                                    row.ix,
+                                    step,
+                                    copied == Some(row.ix),
+                                    pitch,
+                                    &t,
+                                ))
+                            });
                         let el = div()
-                            .h(px(TOOL_TREE_ROW_HEIGHT))
+                            .h(px(row.height))
                             .w_full()
                             .flex_none()
                             .flex()
                             .flex_row()
-                            .child(rail)
+                            .child(rail(slot))
                             .child(rise(card))
                             .into_any_element();
-                        return reveal_tool_row(el, TOOL_TREE_ROW_HEIGHT, reveal);
+                        return reveal_tool_row(el, row.height, reveal);
                     };
 
                     // Pink: the expandable chip – a header that toggles its
@@ -1386,8 +1597,20 @@ impl RenderOnce for ThinkingState {
                             });
                         }
                     };
+                    let expand: Rc<dyn Fn(&mut App)> = {
+                        let state = state.clone();
+                        Rc::new(move |cx: &mut App| {
+                            state.update(cx, |s, cx| {
+                                s.expanded.insert(ix);
+                                // Reading on is an explicit choice to keep
+                                // the thought and its group open.
+                                s.details.entry(ix).or_default().open = Some(true);
+                                s.group.open = Some(true);
+                                cx.notify();
+                            });
+                        })
+                    };
                     let mut card = div()
-                        .my(px((TOOL_TREE_ROW_HEIGHT - CHIP_CARD_HEIGHT) / 2.))
                         .ml(px(ACTIVITY_TEXT_GAP))
                         .min_w_0()
                         .flex_1()
@@ -1403,7 +1626,7 @@ impl RenderOnce for ThinkingState {
                                 .tab_index(0)
                                 .rounded(px(radius::CONTROL))
                                 .focus_visible(move |s| pink::focus_ring(s, ring))
-                                .h(px(CHIP_CARD_HEIGHT))
+                                .h(px(pitch))
                                 .flex_none()
                                 .flex()
                                 .items_center()
@@ -1412,7 +1635,7 @@ impl RenderOnce for ThinkingState {
                                     cx.stop_propagation();
                                     toggle_detail(cx);
                                 })
-                                .child(chip_header_row(step, Some(row.chevron), &t)),
+                                .child(chip_header_row(step, ix, Some(row.chevron), pitch, &t)),
                         );
                     if row.body_mounted {
                         let alpha = row.body_alpha;
@@ -1430,16 +1653,22 @@ impl RenderOnce for ThinkingState {
                                         .opacity(alpha)
                                 })
                                 .child(div().h(px(DETAIL_SEPARATOR)).flex_none())
-                                .child(thought_body(lines, *truncated_by, &t)),
+                                .child(thought_body(
+                                    lines,
+                                    *truncated_by,
+                                    Some((format!("{key}-thought-more-{ix}").into(), expand)),
+                                    ui,
+                                    &t,
+                                )),
                         );
                     }
-                    let card = card.h(px(row.height - TOOL_TREE_ROW_HEIGHT + CHIP_CARD_HEIGHT));
+                    let card = card.h(px(row.height));
                     let el = div()
                         .w_full()
                         .flex_none()
                         .flex()
                         .flex_row()
-                        .child(rail)
+                        .child(rail(slot))
                         .child(rise(div().min_w_0().flex_1().child(card)))
                         .into_any_element();
                     reveal_tool_row(el, row.height, reveal)
@@ -1452,7 +1681,7 @@ impl RenderOnce for ThinkingState {
                 .flex_col()
                 .child(reveal_tool_row(
                     header.into_any_element(),
-                    TOOL_GROUP_HEADER_HEIGHT,
+                    header_height,
                     header_reveal,
                 ))
                 .child(div().overflow_hidden().h(px(body_height)).child(chips))
@@ -1534,7 +1763,7 @@ struct DemoStep {
     text: &'static str,
     from: f32,
     to: f32,
-    /// Ends with an error: one red glyph and one red word.
+    /// Ends with an error: the red glyph and its failure line.
     fails: bool,
 }
 
@@ -1582,25 +1811,26 @@ const DEMO: &[DemoStep] = &[
     DemoStep {
         kind: StepKind::Thought,
         detail: "",
-        text: "Two raw SQL writers update `orders.total` directly, so a rename would break them mid-deploy. The safe path is expand, backfill, dual-write, then contract.\n\nAt 2.3M rows, batches of 5,000 should keep each lock under 40 ms. I'll check the row count before committing to that.",
+        text: "Two raw SQL writers update `orders.total` directly, so a rename would break them mid-deploy. The safe path is expand, backfill, dual-write, then contract, each step shippable and reversible on its own.\n\nExpand: add nullable `subtotal`, `tax` and `shipping` columns. Nullable columns without defaults are a catalog-only change in Postgres, so the `ALTER TABLE` takes a brief lock and no rewrite, even at 2.3M rows.\n\nDual-write: `checkout.ts` already computes all three parts, so it can write them beside `total` in the same statement. The raw writers in `0041_orders.sql` and the refunds job need the same change, or rows written during the backfill come out half filled.\n\nBackfill: batches of 5,000 ordered by `id` keep each transaction short and the replica lag under a second. Old rows have no tax breakdown, so they get `subtotal = total` with zero tax and shipping, which keeps every sum equal to the stored total.\n\nVerify: a check that compares `subtotal + tax + shipping` with `total` across the table must return no rows before anything reads the new columns, and again after the deploy that switches the readers.\n\nContract: after a full release on the new readers, drop the old writes, make the three columns `NOT NULL`, then drop `total`. Until that drop, `total` stays correct for every row, so each step keeps its rollback.",
         from: 5.5,
-        to: 8.6,
+        to: 9.6,
         fails: false,
     },
     DemoStep {
         kind: StepKind::Run,
         detail: "psql -c \"select count(*) from orders\"",
-        text: "",
-        from: 8.6,
-        to: 9.4,
+        // What the failed command reported: its failure line shows this.
+        text: "psql: error: connection to server on socket \"/tmp/.s.PGSQL.5432\" failed: No such file or directory",
+        from: 9.6,
+        to: 10.4,
         fails: true,
     },
     DemoStep {
         kind: StepKind::Run,
         detail: "psql \"$DATABASE_URL\" -c \"select count(*) from orders\"",
         text: "",
-        from: 9.4,
-        to: 10.4,
+        from: 10.4,
+        to: 11.4,
         fails: false,
     },
 ];
@@ -1608,8 +1838,9 @@ const DEMO: &[DemoStep] = &[
 /// Seconds from the end of a run to the next one.
 const DEMO_REST: f32 = 5.0;
 const DEMO_WIDTH: f32 = 580.;
-/// Tall enough for the open group, so the stage never jumps.
-const DEMO_HEIGHT: f32 = 480.;
+/// Tall enough for the open group with a capped thought, so the stage never
+/// jumps.
+const DEMO_HEIGHT: f32 = 780.;
 
 fn demo_end() -> f32 {
     DEMO.last().map_or(0., |s| s.to)
