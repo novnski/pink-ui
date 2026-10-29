@@ -15,6 +15,11 @@
 //! menu ends in PINK's "Context" tray with Compact and Clear
 //! (`.context_controls`); with a ring they live in its Context menu.
 //!
+//! The card is drawn by the `pink-model-picker` package
+//! (`components/model-picker`), which PINK pins, so the two share one
+//! source. Every size is in rems, so the whole card grows with the
+//! Interface size, and the viewed tab's bar stays on the strip's hairline.
+//!
 //! Keys: ↑/↓ move through the models and on into the tray, Enter picks a
 //! model or opens a tray row, → opens and ← closes a tray row's choices,
 //! ⌘1–⌘9 pick a model, Escape closes the choices, then the menu.
@@ -26,6 +31,16 @@
 //! ```
 
 use std::{collections::HashMap, rc::Rc, sync::Arc, time::Duration};
+
+/// The `pink-model-picker` package (`components/model-picker`): the menu
+/// card's drawing, shared with PINK, which pins it. The gallery compiles the
+/// package's own source here, unchanged, against its GPUI; this module adds
+/// the chip, the state and the behaviour around it.
+#[allow(dead_code)]
+pub mod menu {
+    include!("../../components/model-picker/src/lib.rs");
+}
+use menu::ui_rems;
 
 use gpui::{
     Action, Anchor, AnyElement, AnyView, App, Bounds, Context, DispatchPhase, Div, ElementId,
@@ -64,18 +79,6 @@ const ICON_ARROW_UP: &str = "icons/model-picker/arrow-up.svg";
 /// `CHIP_BOLT`).
 const CHIP_ICON: f32 = 16.;
 const CHIP_BOLT: f32 = 13.;
-/// The tab strip and the search row (Pink: `render_harness_model_popover`).
-const STRIP_H: f32 = 40.;
-const TAB: f32 = 32.;
-/// The model band: roughly seven compact rows (Pink: 216 at the 16 px
-/// baseline).
-const LIST_H: f32 = 216.;
-const TRAY_MAX_H: f32 = 236.;
-const ROW_STAR: f32 = 22.;
-/// Tray rows and their nested choices (Pink: `render_traits_sections`).
-const TRAY_ROW_H: f32 = 30.;
-const CHOICES_W: f32 = 232.;
-const CHOICES_MAX_H: f32 = 240.;
 /// Room a nested choices card needs beside its row before it opens left.
 const NESTED_ROOM: f32 = 244.;
 /// Gap between a tray row and its nested card (Pink: `nested_menu`).
@@ -1532,7 +1535,7 @@ fn menu(
     let refocus = s.search.clone();
     let closer = state.clone();
     pink::popover_card_flush(t)
-        .w(px(layout::MENU_W_L))
+        .w(ui_rems(menu::CARD_W))
         .flex()
         .flex_col()
         .on_mouse_down(MouseButton::Left, move |_, window, cx| {
@@ -1571,10 +1574,15 @@ fn menu(
 
 /// A provider tab (Pink: `model_tab`): an announced tab that keeps focus in
 /// the search field when pressed.
-fn tab(id: impl Into<ElementId>, label: SharedString, viewed: bool, t: &Pink) -> Stateful<Div> {
+fn tab(
+    id: impl Into<ElementId>,
+    label: SharedString,
+    glyph: AnyElement,
+    viewed: bool,
+    t: &Pink,
+) -> Stateful<Div> {
     let ring = t.accent;
-    div()
-        .id(id)
+    menu::tab(id, glyph, viewed, t.accent)
         .role(Role::Tab)
         .aria_label(label)
         .aria_selected(viewed)
@@ -1582,94 +1590,75 @@ fn tab(id: impl Into<ElementId>, label: SharedString, viewed: bool, t: &Pink) ->
         .focus_visible(move |style| pink::focus_ring(style, ring))
         .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
         .on_key_down(pink::swallow_activation_key)
-        .relative()
-        .w(px(TAB))
-        .h(px(TAB))
-        .rounded(px(radius::MD))
-        .flex()
-        .items_center()
-        .justify_center()
-        .cursor_pointer()
-}
-
-/// The viewed tab's 2 px accent bar, sitting on the strip's bottom hairline
-/// (Pink: `tab_indicator`).
-fn tab_indicator(t: &Pink) -> Div {
-    div()
-        .absolute()
-        .bottom(px(-4.))
-        .left(px(6.))
-        .right(px(6.))
-        .h(px(2.))
-        .rounded(px(1.))
-        .bg(t.accent)
 }
 
 /// The tab strip: the Favorites star, then one mark per provider.
 fn tabs(key: &str, s: &PickerState, t: &Pink, state: &Entity<PickerState>) -> Stateful<Div> {
     let favorites = s.rail == Rail::Favorites;
     let viewer = state.clone();
-    let star = tab("tab-favorites", "Favorites".into(), favorites, t)
-        .when(!favorites, |el| {
-            el.hover_wash(format!("{key}-tab-favorites"), t.fill(FillTier::Tertiary))
-        })
-        .on_click(move |_, _, cx| viewer.update(cx, |s, cx| s.view(Rail::Favorites, cx)))
-        .child(
-            svg()
-                .path(ICON_STAR_BOLD)
-                .size(px(15.))
-                .text_color(if favorites { t.text } else { t.text_muted }),
-        )
-        .when(favorites, |el| el.child(tab_indicator(t)));
+    let star = tab(
+        "tab-favorites",
+        "Favorites".into(),
+        svg()
+            .path(ICON_STAR_BOLD)
+            .size(ui_rems(menu::TAB_GLYPH))
+            .text_color(if favorites { t.text } else { t.text_muted })
+            .into_any_element(),
+        favorites,
+        t,
+    )
+    .when(!favorites, |el| {
+        el.hover_wash(format!("{key}-tab-favorites"), t.fill(FillTier::Tertiary))
+    })
+    .on_click(move |_, _, cx| viewer.update(cx, |s, cx| s.view(Rail::Favorites, cx)));
     // Recent (Pink `model-tab-recent`, UI rethink D60): the models picked
     // explicitly, newest first, behind a 15 pt clock. Shown once there is
     // one.
     let recent_view = s.rail == Rail::Recent;
     let recent = (!s.recent.is_empty()).then(|| {
         let viewer = state.clone();
-        tab("tab-recent", "Recent".into(), recent_view, t)
-            .when(!recent_view, |el| {
-                el.hover_wash(format!("{key}-tab-recent"), t.fill(FillTier::Tertiary))
-            })
-            .on_click(move |_, _, cx| viewer.update(cx, |s, cx| s.view(Rail::Recent, cx)))
-            .child(
-                svg()
-                    .path(ICON_CLOCK)
-                    .size(px(15.))
-                    .text_color(if recent_view { t.text } else { t.text_muted }),
-            )
-            .when(recent_view, |el| el.child(tab_indicator(t)))
+        tab(
+            "tab-recent",
+            "Recent".into(),
+            svg()
+                .path(ICON_CLOCK)
+                .size(ui_rems(menu::TAB_GLYPH))
+                .text_color(if recent_view { t.text } else { t.text_muted })
+                .into_any_element(),
+            recent_view,
+            t,
+        )
+        .when(!recent_view, |el| {
+            el.hover_wash(format!("{key}-tab-recent"), t.fill(FillTier::Tertiary))
+        })
+        .on_click(move |_, _, cx| viewer.update(cx, |s, cx| s.view(Rail::Recent, cx)))
     });
     let providers = s.props.providers.iter().enumerate().map(|(ix, provider)| {
         let viewed = s.rail == Rail::Provider(ix);
         let viewer = state.clone();
-        tab(("tab-provider", ix), provider.name.clone(), viewed, t)
-            .when(!viewed, |el| {
-                el.hover_wash(format!("{key}-tab-{ix}"), t.fill(FillTier::Tertiary))
-            })
-            .on_click(move |_, _, cx| viewer.update(cx, |s, cx| s.view(Rail::Provider(ix), cx)))
-            .child(
-                svg().path(provider.icon.clone()).size(px(16.)).text_color(
+        tab(
+            ("tab-provider", ix),
+            provider.name.clone(),
+            svg()
+                .path(provider.icon.clone())
+                .size(ui_rems(menu::PROVIDER_MARK))
+                .text_color(
                     provider
                         .tint
                         .unwrap_or(if viewed { t.text } else { t.text_muted }),
-                ),
-            )
-            .when(viewed, |el| el.child(tab_indicator(t)))
+                )
+                .into_any_element(),
+            viewed,
+            t,
+        )
+        .when(!viewed, |el| {
+            el.hover_wash(format!("{key}-tab-{ix}"), t.fill(FillTier::Tertiary))
+        })
+        .on_click(move |_, _, cx| viewer.update(cx, |s, cx| s.view(Rail::Provider(ix), cx)))
     });
-    div()
-        .id("model-provider-tabs")
+    menu::tab_strip("model-provider-tabs", t.hairline(0.08))
         .role(Role::TabList)
         .aria_label("Providers")
-        .flex_none()
-        .h(px(STRIP_H))
-        .px(px(layout::CARD_INSET))
-        .border_b_1()
-        .border_color(t.hairline(0.08))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(2.))
         .child(star)
         .children(recent)
         .children(providers)
@@ -1678,30 +1667,16 @@ fn tabs(key: &str, s: &PickerState, t: &Pink, state: &Entity<PickerState>) -> St
 /// The search row: a magnifier and a borderless field over a full-bleed
 /// hairline (a strip, not a well).
 fn search_row(s: &PickerState, t: &Pink) -> Div {
-    div()
-        .flex_none()
-        .h(px(STRIP_H))
-        .px(px(10.))
-        .border_b_1()
-        .border_color(t.hairline(0.08))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(8.))
-        .child(
-            svg()
-                .path(ICON_MAGNIFER)
-                .size(px(14.))
-                .flex_none()
-                .text_color(t.text_muted),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .text_size(px(13.))
-                .child(s.search.clone()),
-        )
+    menu::search_row(
+        svg()
+            .path(ICON_MAGNIFER)
+            .size(ui_rems(menu::SEARCH_GLYPH))
+            .flex_none()
+            .text_color(t.text_muted)
+            .into_any_element(),
+        s.search.clone().into_any_element(),
+        t.hairline(0.08),
+    )
 }
 
 /// The model band: a fixed height on a whisper of wash between the pinned
@@ -1739,14 +1714,7 @@ fn list(
                     .map(|(ix, &row)| model_row(key, ix, row, rows.len(), s, t, state)),
             )
     };
-    div()
-        .id("model-list-host")
-        .relative()
-        .flex_none()
-        .h(px(LIST_H))
-        .py(px(layout::CARD_INSET))
-        .bg(t.ink(0.02))
-        .child(body)
+    menu::list_band("model-list-host", ui_rems(menu::LIST_H), t.ink(0.02)).child(body)
 }
 
 /// One model row (Pink: `render_model_row`). Hovering moves the shared
@@ -1770,177 +1738,117 @@ fn model_row(
     let compact = s.rail != Rail::Favorites;
     let name = model.name.clone();
 
-    let label = div()
-        .text_size(px(12.5))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(t.text)
-        .child(name.clone());
-    let badge = model.tag.clone().map(|tag| new_badge(tag, t));
-    let attribution = model.attribution.clone();
-    let body = if compact {
-        div()
-            .flex_1()
-            .min_w_0()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(6.))
-            .child(label.flex_none().max_w_full().truncate())
-            .children(badge)
-            .when_some(attribution, |el, attribution| {
-                el.child(
-                    div()
-                        .min_w_0()
-                        .truncate()
-                        .text_size(px(11.))
-                        .text_color(t.text_muted)
-                        .child(attribution),
-                )
-            })
-    } else {
-        let meta = |copy: SharedString| {
-            div()
-                .flex_none()
-                .text_size(px(11.))
-                .text_color(t.text_muted)
-                .child(copy)
-        };
-        div()
-            .flex_1()
-            .min_w_0()
-            .flex()
-            .flex_col()
-            .gap(px(2.))
-            .child(
-                div()
-                    .w_full()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .child(label.min_w_0().truncate())
-                    .children(badge),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap(px(6.))
-                    .child(
-                        svg()
-                            .path(provider.icon.clone())
-                            .size(px(11.))
-                            .flex_none()
-                            .text_color(provider.tint.unwrap_or(t.text_muted)),
-                    )
-                    .child(meta(provider.name.clone()))
-                    .when_some(attribution, |el, attribution| {
-                        el.child(meta(attribution).flex_initial().min_w_0().truncate())
-                    }),
-            )
-    };
+    let badge = model
+        .tag
+        .clone()
+        .map(|tag| new_badge(tag, t).into_any_element());
+    // The two-line row words its upstream provider as a phrase ("via
+    // Anthropic"), never a joined pair (Pink: `render_model_row`).
+    let attribution = model.attribution.clone().map(|attribution| {
+        if compact {
+            attribution
+        } else {
+            SharedString::from(format!("via {attribution}"))
+        }
+    });
+    let provider_line = (!compact).then(|| menu::ProviderLine {
+        mark: svg()
+            .path(provider.icon.clone())
+            .size(ui_rems(menu::META_MARK))
+            .flex_none()
+            .text_color(provider.tint.unwrap_or(t.text_muted))
+            .into_any_element(),
+        name: provider.name.clone(),
+    });
 
     let hover = state.clone();
     let chooser = state.clone();
     let star_state = state.clone();
-    let star = div()
-        .id("star")
-        .role(Role::Button)
-        .aria_label(SharedString::from(format!("Favorite {name}")))
-        .aria_toggled(if starred {
-            Toggled::True
-        } else {
-            Toggled::False
-        })
-        .flex_none()
-        .size(px(ROW_STAR))
-        .rounded(px(radius::MENU_ITEM))
-        .flex()
-        .items_center()
-        .justify_center()
-        .cursor_pointer()
-        .hover_wash(
-            format!("{key}-star-{}-{}", provider.id, model.id),
-            t.fill(FillTier::Tertiary),
-        )
-        .on_click(move |_, window, cx| {
-            cx.stop_propagation();
-            star_state.update(cx, |s, cx| s.toggle_favorite(row.p, row.m, window, cx));
-        })
-        .child(
-            svg()
-                .path(if starred { ICON_STAR_BOLD } else { ICON_STAR })
-                .size(px(13.))
-                .text_color(if starred { t.warning } else { t.text_muted }),
-        );
+    let star = menu::star_button(
+        "star",
+        svg()
+            .path(if starred { ICON_STAR_BOLD } else { ICON_STAR })
+            .size(ui_rems(menu::STAR_GLYPH))
+            .text_color(if starred { t.warning } else { t.text_muted })
+            .into_any_element(),
+    )
+    .role(Role::Button)
+    .aria_label(SharedString::from(format!("Favorite {name}")))
+    .aria_toggled(if starred {
+        Toggled::True
+    } else {
+        Toggled::False
+    })
+    .hover_wash(
+        format!("{key}-star-{}-{}", provider.id, model.id),
+        t.fill(FillTier::Tertiary),
+    )
+    .on_click(move |_, window, cx| {
+        cx.stop_propagation();
+        star_state.update(cx, |s, cx| s.toggle_favorite(row.p, row.m, window, cx));
+    });
 
-    let el = div()
-        .id(ElementId::Name(
-            format!("model-row-{}-{}", provider.id, model.id).into(),
-        ))
-        .role(Role::ListBoxOption)
-        .aria_label(name)
-        .aria_selected(selected)
-        .aria_position_in_set(ix + 1)
-        .aria_size_of_set(count)
-        .px(px(8.))
-        .py(px(if compact { 5. } else { 6. }))
-        .rounded(px(radius::MENU_ITEM))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(10.))
-        .cursor_pointer()
-        .when(selected, |el| {
-            el.bg(t.card_selected_bg())
-                .shadow(t.card_selected_shadows())
-        })
-        .when(!selected && active, |el| el.bg(t.ink(0.05)))
-        .on_hover(move |hovered, _, cx| {
-            if *hovered {
-                hover.update(cx, |s, cx| {
-                    if s.active != ix {
-                        s.active = ix;
-                        cx.notify();
-                    }
-                });
-            }
-        })
-        .on_click(move |_, window, cx| chooser.update(cx, |s, cx| s.pick_model(ix, window, cx)))
-        .child(body)
-        .when(ix < 9, |el| {
-            el.child(pink::kbd_hint(format!("⌘{}", ix + 1), t))
-        })
-        .child(star);
-    div().pb(px(layout::MENU_GAP)).child(el).into_any_element()
+    let el = menu::model_row(
+        ElementId::Name(format!("model-row-{}-{}", provider.id, model.id).into()),
+        menu::ModelRow {
+            name: name.clone(),
+            badge,
+            attribution,
+            provider: provider_line,
+            shortcut: (ix < 9)
+                .then(|| pink::kbd_hint(format!("⌘{}", ix + 1), t).into_any_element()),
+            star: star.into_any_element(),
+        },
+        &menu::ModelRowStyle {
+            text: t.text,
+            muted: t.text_muted,
+            faint: t.text_faint,
+            fill: if selected {
+                Some(t.card_selected_bg())
+            } else if active {
+                Some(t.ink(0.05))
+            } else {
+                None
+            },
+            shadows: if selected {
+                t.card_selected_shadows()
+            } else {
+                Vec::new()
+            },
+        },
+    )
+    .role(Role::ListBoxOption)
+    .aria_label(name)
+    .aria_selected(selected)
+    .aria_position_in_set(ix + 1)
+    .aria_size_of_set(count)
+    .on_hover(move |hovered, _, cx| {
+        if *hovered {
+            hover.update(cx, |s, cx| {
+                if s.active != ix {
+                    s.active = ix;
+                    cx.notify();
+                }
+            });
+        }
+    })
+    .on_click(move |_, window, cx| chooser.update(cx, |s, cx| s.pick_model(ix, window, cx)));
+    menu::row_slot().child(el).into_any_element()
 }
 
 /// The "New" capsule beside a model's name (Pink: `new_model_badge`).
 fn new_badge(label: SharedString, t: &Pink) -> Div {
-    div()
-        .flex_none()
-        .h(px(16.))
-        .px(px(5.))
-        .flex()
-        .items_center()
-        .rounded(px(radius::XS))
-        .bg(t.accent.opacity(0.14))
-        .text_size(px(10.5))
-        .line_height(px(14.))
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(t.readable_tone(t.accent, 1.0))
-        .child(label)
+    menu::new_badge(
+        label,
+        t.readable_tone(t.accent, 1.0),
+        t.accent.opacity(0.14),
+    )
 }
 
 /// The "Default" marker beside a row's default choice: bare muted text
 /// (Pink: `default_badge`).
 fn default_badge(t: &Pink) -> Div {
-    div()
-        .flex_none()
-        .text_size(px(11.))
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(t.text_muted)
-        .child("Default")
+    menu::default_badge("Default", t.text_muted)
 }
 
 /// The traits tray pinned under the list (Pink: the tray around
@@ -1961,24 +1869,7 @@ fn tray(
         .iter()
         .enumerate()
         .map(|(ix, group)| tray_row(key, ix, group, base, s, t, state));
-    Some(
-        div()
-            .id("model-traits-tray")
-            .flex_none()
-            .border_t_1()
-            .border_color(t.hairline(0.08))
-            .max_h(px(TRAY_MAX_H))
-            .overflow_y_scroll()
-            .px(px(layout::CARD_INSET))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(layout::MENU_GAP))
-                    .py(px(layout::CARD_INSET))
-                    .children(rows),
-            ),
-    )
+    Some(menu::tray("model-traits-tray", t.hairline(0.08)).child(menu::tray_rows().children(rows)))
 }
 
 /// One tray row: a 30 tall menu row with the label, the muted value and a
@@ -2014,7 +1905,7 @@ fn tray_row(
     .aria_value(value.clone())
     .aria_expanded(open)
     .relative()
-    .h(px(TRAY_ROW_H))
+    .h(ui_rems(menu::TRAY_ROW_H))
     .py(px(0.))
     .on_click(move |_, window, cx| {
         cx.stop_propagation();
@@ -2091,23 +1982,12 @@ fn tray_row(
         .absolute()
         .inset_0(),
     )
-    .child(
-        div()
-            .flex_1()
-            .min_w_0()
-            .truncate()
-            .child(group.label.clone()),
-    )
-    .child(
-        div()
-            .max_w(px(100.))
-            .truncate()
-            .text_color(t.text_muted)
-            .child(value),
-    )
-    .child(pink::line_glyph(
-        pink::glyphs::ALT_ARROW_RIGHT,
-        12.,
+    .children(menu::setting_parts(
+        group.label.clone(),
+        value,
+        pink::line_glyph(pink::glyphs::ALT_ARROW_RIGHT, 12., t.text_muted)
+            .size(ui_rems(menu::CHEVRON))
+            .into_any_element(),
         t.text_muted,
     ))
     .when(open, |el| el.child(choices(key, ix, group, s, t, state)));
@@ -2173,7 +2053,7 @@ fn choices(
             .role(Role::ListBoxOption)
             .aria_label(choice.label.clone())
             .aria_selected(choice.selected)
-            .h(px(TRAY_ROW_H))
+            .h(ui_rems(menu::TRAY_ROW_H))
             .py(px(0.))
             .flex_none()
             .on_click(move |_, window, cx| {
@@ -2192,7 +2072,7 @@ fn choices(
     });
     let measurer = state.clone();
     let card = pink::popover_card(t)
-        .w(px(CHOICES_W))
+        .w(ui_rems(menu::CHOICES_W))
         .relative()
         .child(pink::menu_heading(&group.label, t))
         .child(
@@ -2200,7 +2080,7 @@ fn choices(
                 .id("model-setting-choices")
                 .role(Role::ListBox)
                 .aria_label(group.label.clone())
-                .max_h(px(CHOICES_MAX_H))
+                .max_h(ui_rems(menu::CHOICES_MAX_H))
                 .overflow_y_scroll()
                 .flex()
                 .flex_col()
