@@ -7,8 +7,9 @@
 // hairline edge (light appearance) as an inset shadow it builds itself
 // (crates.io GPUI 0.2.2 has no inset shadows), the text colour and the
 // column's width cap; it adds the prompt's text and mention chips, text
-// selection, the long-prompt fold and its expander, attachments and the
-// pending clock.
+// selection, attachments and the pending clock. Long prompts are never
+// folded (UI rethink D44): they wrap inside the cap, and a column narrower
+// than the cap gives them its full width.
 // Plain `//` comments: the pink-ui gallery compiles this file in place with
 // `include!` for its story.
 
@@ -20,10 +21,11 @@ pub const RADIUS: f32 = 16.0;
 pub const PAD_X: f32 = 16.0;
 /// Vertical padding, in pt at the 16 px default.
 pub const PAD_Y: f32 = 10.0;
-/// The prompt's text size, in pt at the 16 px default.
-pub const TEXT: f32 = 14.0;
+/// The prompt's text size, in pt at the 16 px default: the prose size
+/// (UI rethink D34, 15/24), so a prompt reads like the reply beside it.
+pub const TEXT: f32 = 15.0;
 /// The prompt's line box, in pt at the 16 px default.
-pub const LINE_HEIGHT: f32 = 22.0;
+pub const LINE_HEIGHT: f32 = 24.0;
 /// The widest a bubble grows, as a fraction of the content column.
 pub const MAX_WIDTH_FRACTION: f32 = 0.8;
 
@@ -41,7 +43,9 @@ pub struct BubbleStyle {
     /// separates on its own.
     pub edge: Option<Vec<BoxShadow>>,
     pub text: Hsla,
-    /// The width cap, usually the column width times `MAX_WIDTH_FRACTION`.
+    /// The width cap, usually the reading width times `MAX_WIDTH_FRACTION`.
+    /// A pane narrower than the cap bounds the plate at layout instead, so
+    /// a long prompt there uses the whole column.
     pub max_width: Pixels,
 }
 
