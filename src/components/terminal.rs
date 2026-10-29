@@ -9,7 +9,8 @@
 //! over `RESIZE`. The strip holds fixed 118 px tabs – a terminal glyph, the
 //! session's title (the shell's OSC title when it set one) and a close
 //! button on the active tab – that reorder by dragging and close on a
-//! middle click, then "+" and the collapse chevron.
+//! middle click, then "+" and the collapse chevron. The strip draws
+//! through the `pink-terminal-tabs` package, as Pink's does.
 //!
 //! The grid is Geist Mono 13/18 inside a 12 px inset on the terminal plate,
 //! in Pink's sixteen ANSI colors plus the xterm cube and grey ramp, palette
@@ -39,19 +40,17 @@ use std::{
 use web_time::{Duration, Instant};
 
 use gpui::{
-    AnimationExt, AnyElement, AnyView, App, BorderStyle, Bounds, ClipboardItem, Context, ElementId,
-    Entity, FocusHandle, Font, FontWeight, Hsla, IntoElement, KeyDownEvent, Modifiers, MouseButton,
+    AnimationExt, AnyView, App, BorderStyle, Bounds, ClipboardItem, Context, ElementId, Entity,
+    FocusHandle, Font, FontWeight, Hsla, IntoElement, KeyDownEvent, Modifiers, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point, Render, ScrollDelta,
     ScrollWheelEvent, ShapedLine, SharedString, Task, TextRun, Window, canvas, div, fill, font,
-    outline, point, prelude::*, px, size, svg,
+    outline, point, prelude::*, px, size,
 };
 
+use super::terminal_tabs as tabs;
 use crate::{
-    HoverFill,
     motion::{self, RESIZE, TAB_SLIDE},
-    pink::{
-        self, ButtonKind, ControlSize, FillTier, Pink, TextStyle, TypeStyleExt, chrome, layout,
-    },
+    pink::{self, ButtonKind, ControlSize, Pink, TextStyle, TypeStyleExt, chrome, layout},
     story,
 };
 
@@ -66,12 +65,11 @@ const ICON_RIGHT: &str = "icons/terminal/alt-arrow-right.svg";
 const ICON_FOLDER: &str = "icons/terminal/folder.svg";
 const ICON_PLAY: &str = "icons/terminal/play.svg";
 
-// Pink: terminal/panel.rs.
+// Pink: terminal/panel.rs; the strip is the `pink-terminal-tabs` package.
 /// Fixed tab width, so drag-reorder math stays analytic.
-const TAB_WIDTH: f32 = 118.0;
-const TAB_HEIGHT: f32 = 28.0;
-/// The shared header band height (`surface_chrome::HEADER_HEIGHT`).
-const TAB_BAR_HEIGHT: f32 = layout::TITLEBAR_HEIGHT;
+const TAB_WIDTH: f32 = tabs::TAB_WIDTH;
+// The strip is the shared header band height (`surface_chrome::HEADER_HEIGHT`).
+const _: () = assert!(tabs::BAR_HEIGHT == layout::TITLEBAR_HEIGHT);
 const SELECTION_SCROLL_TICK: Duration = Duration::from_millis(24);
 
 // Pink: terminal/view.rs.
@@ -1177,7 +1175,8 @@ struct TabDrag {
     title: SharedString,
 }
 
-/// The tab chip that follows the pointer (Pink `TabGhost`).
+/// The tab chip that follows the pointer (Pink `TabGhost`, drawn by
+/// `pink-terminal-tabs`).
 struct TabGhost {
     title: SharedString,
 }
@@ -1185,21 +1184,15 @@ struct TabGhost {
 impl Render for TabGhost {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = Pink::get(cx);
-        div()
-            .w(px(TAB_WIDTH))
-            .h(px(TAB_HEIGHT))
-            .px(px(pink::space::SM))
-            .flex()
-            .items_center()
-            .rounded(px(pink::radius::CONTROL))
-            .bg(t.surface_raised)
-            .border_1()
-            .border_color(t.border_strong)
-            .font_family(pink::SANS)
-            .text_size(px(12.0))
-            .text_color(t.text)
-            .opacity(0.85)
-            .child(div().truncate().child(self.title.clone()))
+        tabs::ghost(
+            &tabs::GhostStyle {
+                fill: t.surface_raised,
+                edge: t.border_strong,
+                text: t.text,
+            },
+            self.title.clone(),
+        )
+        .font_family(pink::SANS)
     }
 }
 
@@ -1544,107 +1537,54 @@ fn tab_bar(
         let selected = ix == active;
         let exited = tab.exited.is_some();
         let title = titles.get(ix).cloned().unwrap_or_else(|| tab.title.clone());
-        // Pink tab: `h-7 rounded-lg pl-2 pr-1 gap-1.5 text-xs`; the active
-        // tab sits on an ink(0.08) wash.
-        let (text_color, bg, glyph_alpha) = if selected {
-            (t.text, t.ink(0.08), 0.8)
-        } else {
-            (t.readable_muted(0.6), gpui::transparent_black(), 0.6)
-        };
-        let close: AnyElement = if selected {
-            let on_close = term.on_close.clone();
-            let close_key = format!("{key}-tab-close-{}", tab.id);
-            div()
-                .id(SharedString::from(close_key.clone()))
-                .size(px(chrome::MIN_HIT))
-                .flex_none()
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(chrome::RADIUS_M))
-                .cursor_pointer()
-                .hover_fill(
-                    close_key,
-                    gpui::transparent_black(),
-                    t.fill(FillTier::Secondary),
-                )
-                .on_click(move |_, window, cx| {
-                    cx.stop_propagation();
-                    if let Some(f) = &on_close {
-                        f(ix, window, cx);
-                    }
-                })
-                .child(
-                    svg()
-                        .path(ICON_CLOSE)
-                        .size(px(chrome::ICON_S))
-                        .text_color(t.readable_muted(0.8)),
-                )
-                .into_any_element()
-        } else {
-            // Pink keeps the slot (`invisible`) so labels never shift.
-            div()
-                .size(px(chrome::MIN_HIT))
-                .flex_none()
-                .into_any_element()
-        };
+        // Pink tab, drawn by `pink-terminal-tabs`: the active tab sits on an
+        // ink(0.08) wash; only it shows the close control, the others keep
+        // its room (`invisible`) so labels never shift.
+        let on_close = term.on_close.clone();
+        let close_key = format!("{key}-tab-close-{}", tab.id);
+        let close = tabs::close_button(&tabs::close_style(&close_key, selected, t), ICON_CLOSE)
+            .id(SharedString::from(close_key.clone()))
+            .on_hover(motion::hover_listener(close_key))
+            .on_click(move |_, window, cx| {
+                cx.stop_propagation();
+                if let Some(f) = &on_close {
+                    f(ix, window, cx);
+                }
+            });
         let on_select = term.on_select.clone();
         let middle_close = term.on_close.clone();
         let focus = state.read(cx).focus.clone();
         let hover_key = format!("{key}-tab-{}", tab.id);
-        let tab_el = div()
-            .id(SharedString::from(format!("{key}-tab-el-{}", tab.id)))
-            .w(px(TAB_WIDTH))
-            .h(px(TAB_HEIGHT))
-            .flex_none()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(6.0))
-            .pl(px(8.0))
-            .pr(px(4.0))
-            .rounded(px(pink::radius::MD))
-            .bg(motion::hover_blend(&hover_key, bg, t.element_hover))
-            .on_hover(motion::hover_listener(hover_key))
-            .text_size(px(12.0))
-            .text_color(text_color)
-            .cursor_pointer()
-            .on_click(move |_, window, cx| {
-                if let Some(f) = &on_select {
-                    f(ix, window, cx);
-                }
-                window.focus(&focus, cx);
-            })
-            .on_mouse_down(MouseButton::Middle, move |_, window, cx| {
-                if let Some(f) = &middle_close {
-                    f(ix, window, cx);
-                }
-            })
-            .on_drag(
-                TabDrag {
-                    from: ix,
-                    title: title.clone(),
-                },
-                |payload, _, _, cx| {
-                    cx.stop_propagation();
-                    let title = payload.title.clone();
-                    cx.new(|_| TabGhost { title })
-                },
-            )
-            .when(exited, |el| el.opacity(if t.dark { 0.55 } else { 0.8 }))
-            .child(
-                svg()
-                    .path(ICON_TERMINAL)
-                    .size(px(chrome::ICON_M))
-                    .flex_none()
-                    .text_color(if t.dark {
-                        text_color.opacity(glyph_alpha)
-                    } else {
-                        text_color
-                    }),
-            )
-            .child(div().flex_1().min_w_0().truncate().child(title))
-            .child(close);
+        let tab_el = tabs::tab(
+            &tabs::tab_style(&hover_key, selected, exited, t),
+            ICON_TERMINAL,
+            title.clone(),
+            close,
+        )
+        .id(SharedString::from(format!("{key}-tab-el-{}", tab.id)))
+        .on_hover(motion::hover_listener(hover_key))
+        .on_click(move |_, window, cx| {
+            if let Some(f) = &on_select {
+                f(ix, window, cx);
+            }
+            window.focus(&focus, cx);
+        })
+        .on_mouse_down(MouseButton::Middle, move |_, window, cx| {
+            if let Some(f) = &middle_close {
+                f(ix, window, cx);
+            }
+        })
+        .on_drag(
+            TabDrag {
+                from: ix,
+                title: title.clone(),
+            },
+            |payload, _, _, cx| {
+                cx.stop_propagation();
+                let title = payload.title.clone();
+                cx.new(|_| TabGhost { title })
+            },
+        );
         // While a sibling is dragged over, tabs slide between committed
         // offsets over 150 ms; the dragged tab leaves a spacer.
         match drag {
@@ -1660,77 +1600,39 @@ fn tab_bar(
                     ))
                     .into_any_element()
             }
-            Some(d) if ix == d.from => div()
-                .w(px(TAB_WIDTH))
-                .h(px(TAB_HEIGHT))
-                .flex_none()
-                .into_any_element(),
+            Some(d) if ix == d.from => tabs::drag_spacer().into_any_element(),
             _ => tab_el.into_any_element(),
         }
     });
 
     let on_new = term.on_new_tab.clone();
     let new_focus = state.read(cx).focus.clone();
-    let new_tab = div()
-        .id(SharedString::from(format!("{key}-new-tab")))
-        .size(px(chrome::CONTROL_M))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(pink::radius::MD))
-        .cursor_pointer()
-        .hover_wash(format!("{key}-new-tab"), t.ink(0.05))
+    let new_key = format!("{key}-new-tab");
+    let new_tab = tabs::add_button(&tabs::button_style(&new_key, 0.6, t), ICON_PLUS)
+        .id(SharedString::from(new_key.clone()))
+        .on_hover(motion::hover_listener(new_key))
         .on_click(move |_, window, cx| {
             if let Some(f) = &on_new {
                 f(window, cx);
             }
             window.focus(&new_focus, cx);
-        })
-        .child(
-            svg()
-                .path(ICON_PLUS)
-                .size(px(chrome::ICON_M))
-                .text_color(t.readable_muted(0.6)),
-        );
+        });
 
     let on_collapse = term.on_collapse.clone();
-    let collapse = div()
-        .id(SharedString::from(format!("{key}-collapse")))
-        .size(px(chrome::CONTROL_M))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(pink::radius::MD))
-        .cursor_pointer()
-        .hover_wash(format!("{key}-collapse"), t.ink(0.05))
+    let collapse_key = format!("{key}-collapse");
+    let collapse = tabs::collapse_button(&tabs::button_style(&collapse_key, 0.55, t), ICON_DOWN)
+        .id(SharedString::from(collapse_key.clone()))
+        .on_hover(motion::hover_listener(collapse_key))
         .on_click(move |_, window, cx| {
             if let Some(f) = &on_collapse {
                 f(window, cx);
             }
-        })
-        .child(
-            svg()
-                .path(ICON_DOWN)
-                .size(px(13.0))
-                .text_color(t.readable_muted(0.55)),
-        );
+        });
 
     // Pink: `flex h-10 items-center border-b border-white/[0.07] pl-2
     // pr-1.5` on the terminal plate, no fill of its own.
-    div()
+    tabs::bar(t.hairline(0.07))
         .id(SharedString::from(format!("{key}-tab-bar")))
-        .h(px(TAB_BAR_HEIGHT))
-        .flex_none()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(chrome::CONTROL_GAP))
-        .pl(px(8.0))
-        .pr(px(6.0))
-        .border_b_1()
-        .border_color(t.hairline(0.07))
         .on_drag_move::<TabDrag>(move |ev, _, cx| {
             let from = ev.drag(cx).from;
             let rel_x = f32::from(ev.event.position.x) - f32::from(ev.bounds.left());
@@ -1772,7 +1674,7 @@ fn tab_bar(
         })
         .children(tabs)
         .child(new_tab)
-        .child(div().flex_1())
+        .child(tabs::spacer())
         .child(collapse)
 }
 

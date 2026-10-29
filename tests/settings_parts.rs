@@ -5,7 +5,9 @@
 //! card moves it; option cards of unequal width; a strip whose padding or
 //! top space stays fixed while its copy grows, or whose icon leaves the
 //! first line; a meta line whose fragments overflow a narrow row instead of
-//! wrapping inside it.
+//! wrapping inside it; a page title or its count gap that stays fixed
+//! while the Interface size changes; a status badge that shrinks and wraps
+//! its label in a narrow controls column.
 
 use gpui::{
     AnyElement, Bounds, Context, IntoElement, Pixels, Render, SharedString, TestAppContext, Window,
@@ -14,10 +16,11 @@ use gpui::{
 use pink_ui::{
     Theme, ThemeMode,
     components::settings_parts::{
-        ERROR_STRIP_PAD_Y, ERROR_STRIP_TOP, OPTION_CARD_HEIGHT, OptionCardStyle, RING_GAP,
-        RING_WIDTH, STRIP_ICON_TOP, TILE_SIZE, WARNING_STRIP_ICON, WARNING_STRIP_PAD_Y,
-        WARNING_STRIP_TOP, error_strip, meta_line, option_card, option_card_row, row_tile,
-        strip_style, tile_style, warning_strip,
+        BADGE_PAD_Y, BADGE_TEXT, BadgeStyle, ERROR_STRIP_PAD_Y, ERROR_STRIP_TOP,
+        OPTION_CARD_HEIGHT, OptionCardStyle, PAGE_COUNT_GAP, PAGE_COUNT_SIZE, PAGE_TITLE_LINE,
+        PageHeaderStyle, RING_GAP, RING_WIDTH, STRIP_ICON_TOP, TILE_SIZE, WARNING_STRIP_ICON,
+        WARNING_STRIP_PAD_Y, WARNING_STRIP_TOP, badge, error_strip, meta_line, option_card,
+        option_card_row, page_header, row_tile, strip_style, tile_style, ui_rems, warning_strip,
     },
     pink::Pink,
 };
@@ -223,5 +226,128 @@ fn a_narrow_meta_line_wraps_inside_its_row(cx: &mut TestAppContext) {
     assert!(
         f32::from(meta.size.height) > 20.0 * 1.5,
         "the fragments wrap onto more lines: {meta:?}"
+    );
+}
+
+/// A page header over a narrow controls column holding a badge, as a
+/// settings page lays them out.
+struct HeaderHost {
+    ui: f32,
+    controls: f32,
+}
+
+impl Render for HeaderHost {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        window.set_rem_size(px(self.ui));
+        let t = Pink::get(cx);
+        let style = PageHeaderStyle {
+            title: t.text,
+            count: t.text_muted,
+        };
+        div()
+            .w(px(560.0))
+            .flex()
+            .flex_col()
+            .child(div().flex().flex_row().child(
+                page_header(&style, "Projects", None).debug_selector(|| "header-alone".into()),
+            ))
+            .child(
+                div().flex().flex_row().child(
+                    page_header(&style, "Projects", Some(SharedString::from("14")))
+                        .debug_selector(|| "header".into()),
+                ),
+            )
+            .child(
+                div().flex().flex_row().child(
+                    div()
+                        .text_size(ui_rems(PAGE_COUNT_SIZE))
+                        .child("14")
+                        .debug_selector(|| "count-text".into()),
+                ),
+            )
+            .child(
+                div().w(px(self.controls)).flex().flex_row().child(
+                    badge(
+                        &BadgeStyle {
+                            edge: Some(t.border),
+                            fill: None,
+                            text: t.text_muted,
+                        },
+                        "Overridden on this device",
+                    )
+                    .debug_selector(|| "badge".into()),
+                ),
+            )
+    }
+}
+
+#[gpui::test]
+fn the_page_header_and_badges_grow_with_the_interface_size(cx: &mut TestAppContext) {
+    cx.update(pink_ui::init);
+    for ui in [12.0_f32, 16.0, 20.0] {
+        let scale = ui / 16.0;
+        let mut cx = cx.clone();
+        cx.update(|cx| Theme::set_mode(ThemeMode::Dark, cx));
+        let (_, cx) = cx.add_window_view(|_, _| HeaderHost {
+            ui,
+            controls: 400.0,
+        });
+        cx.run_until_parked();
+
+        // The title's line follows the Interface size, and its count sits
+        // the scaled gap after it.
+        let alone = bounds(cx, "header-alone");
+        let header = bounds(cx, "header");
+        let count = bounds(cx, "count-text");
+        assert!(
+            near(f32::from(alone.size.height), PAGE_TITLE_LINE * scale),
+            "title line at {ui}: {:?}",
+            alone.size
+        );
+        assert!(
+            near(
+                f32::from(header.size.width) - f32::from(alone.size.width),
+                PAGE_COUNT_GAP * scale + f32::from(count.size.width)
+            ),
+            "count gap at {ui}: {header:?} vs {alone:?} and a {:?} count",
+            count.size
+        );
+
+        // A badge's padding grows with its label.
+        let badge = bounds(cx, "badge");
+        assert!(
+            f32::from(badge.size.height) >= 2.0 * BADGE_PAD_Y * scale + BADGE_TEXT * scale,
+            "badge height at {ui}: {:?}",
+            badge.size
+        );
+    }
+}
+
+#[gpui::test]
+fn a_narrow_controls_column_does_not_shrink_a_badge(cx: &mut TestAppContext) {
+    cx.update(pink_ui::init);
+    cx.update(|cx| Theme::set_mode(ThemeMode::Dark, cx));
+    let (_, roomy) = cx.add_window_view(|_, _| HeaderHost {
+        ui: 16.0,
+        controls: 400.0,
+    });
+    roomy.run_until_parked();
+    let natural = bounds(roomy, "badge");
+
+    let (_, narrow) = cx.add_window_view(|_, _| HeaderHost {
+        ui: 16.0,
+        controls: 48.0,
+    });
+    narrow.run_until_parked();
+    let squeezed = bounds(narrow, "badge");
+    assert!(
+        near(
+            f32::from(squeezed.size.width),
+            f32::from(natural.size.width)
+        ) && near(
+            f32::from(squeezed.size.height),
+            f32::from(natural.size.height)
+        ),
+        "the badge shrank or wrapped in a 48 px column: {squeezed:?} vs {natural:?}"
     );
 }
