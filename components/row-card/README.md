@@ -5,8 +5,8 @@ rethink decision 54): the bordered card a conversation shows for a helper
 agent or an automation, with the settings row anatomy. Like the other
 packages under `components/` it depends on crates.io `gpui = "=0.2.2"` in
 its own workspace. The pink-ui gallery compiles this same `src/lib.rs` in
-place (`src/components/row_card.rs`; the Subagent Cards story draws with
-it). PINK pins the package and patches `gpui` to its vendored runtime, so
+place (`src/components/row_card.rs`; the Subagent Cards story draws its
+cards with `agent_card`). PINK pins the package and patches `gpui` to its vendored runtime, so
 there is one GPUI type graph and no copied source.
 
 ## What it draws
@@ -26,6 +26,12 @@ there is one GPUI type graph and no copied source.
   status dot and its word, facts that never shrink, and a preview that alone
   truncates). Space sets the facts apart, never a separator glyph.
 - `actions(Layout)`: the trailing column of buttons.
+- `agent_card(&AgentCardStyle, tile, AgentCardText, actions)`: a helper
+  agent's whole card, as PINK's transcript and the gallery's Subagent Cards
+  draw it: the host's tile, the title with its type badge, then the status
+  dot and word, the time, the model and reasoning and a preview that alone
+  truncates, and the host's actions (`agent_actions()`), wrapping under the
+  text when narrow. `agent_text` is its text column alone.
 - `ui_rems(design)`: a design size (pt at the 16 px default) in rems. Padding,
   gaps and text grow with the host's Interface size; the corners stay fixed.
 
