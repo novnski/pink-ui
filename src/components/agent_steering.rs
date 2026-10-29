@@ -32,15 +32,16 @@ use std::{collections::HashMap, f32::consts::FRAC_PI_2, rc::Rc, sync::Arc};
 use web_time::{Duration, Instant};
 
 use gpui::{
-    AnimationExt, AnyElement, AnyView, App, BoxShadow, ClickEvent, Context, CursorStyle, Div,
-    DragMoveEvent, ElementId, EmptyView, Entity, FillOptions, FillRule, FontWeight, IntoElement,
-    KeyDownEvent, MouseButton, PathBuilder, PathStyle, Pixels, Point, Role, ScrollHandle,
-    SharedString, Stateful, Subscription, Task, Transformation, Window, canvas, div,
-    linear_color_stop, linear_gradient, phi, point, prelude::*, px, radians, svg,
+    AnimationExt, AnyElement, AnyView, App, BoxShadow, ClickEvent, Context, Div, DragMoveEvent,
+    ElementId, EmptyView, Entity, FillOptions, FillRule, FontWeight, IntoElement, KeyDownEvent,
+    MouseButton, PathBuilder, PathStyle, Pixels, Point, Role, ScrollHandle, SharedString, Stateful,
+    Subscription, Task, Transformation, Window, canvas, div, linear_color_stop, linear_gradient,
+    phi, point, prelude::*, px, radians, svg,
 };
 
 use crate::{
     HoverFill,
+    components::queue_row as queue,
     motion::{self, DISCLOSURE, GLYPH_SWAP, TAB_SLIDE, TOOL_CONNECTOR_REVEAL, TOOL_ROW_REVEAL},
     pink::{
         self, FillTier, Pink, layout,
@@ -93,14 +94,9 @@ const STACK_GAP: f32 = 8.;
 const TRAY_INSET: f32 = 16.;
 const TRAY_OVERLAP: f32 = 18.;
 
-/// Pink `queue.rs`: compact, borderless rows inside the tray.
-const ROW_HEIGHT: f32 = 36.;
-const QUEUE_TEXT_SIZE: f32 = 12.5;
-const ROW_PAD_X: f32 = 8.;
-const ROW_RADIUS: f32 = 8.;
-const QUEUE_ICON_SIZE: f32 = 13.;
-const QUEUE_ACTION_SIZE: f32 = 28.;
-const QUEUE_PRIMARY_W: f32 = 72.;
+/// Pink `queue.rs`: compact, borderless rows inside the tray, drawn by the
+/// `pink-queue-row` package.
+const ROW_HEIGHT: f32 = queue::ROW_HEIGHT;
 /// Rows shown before the tray scrolls.
 const QUEUE_VISIBLE_ROWS: f32 = 4.;
 
@@ -2103,70 +2099,66 @@ fn queue_tray(c: &Ctx) -> Stateful<Div> {
         .iter()
         .enumerate()
         .map(|(ix, note)| queue_row(c, ix, note));
-    div()
-        .id(SharedString::from(format!("{key}-queue")))
-        .role(Role::List)
-        .aria_label("Queued notes")
-        .occlude()
-        .rounded_t(px(radius::STACK_TRAY))
-        .bg(t.surface_bg())
-        .border_1()
-        .border_color(t.border)
-        .shadow(t.menu_shadows())
-        .pb(px(TRAY_OVERLAP))
-        .flex()
-        .flex_col()
-        .on_drag_move::<NoteDrag>({
-            let state = c.state.clone();
-            let owner = owner.clone();
-            move |event: &DragMoveEvent<NoteDrag>, _, cx| {
-                let (from, mine) = {
-                    let drag = event.drag(cx);
-                    (drag.from, drag.owner == owner)
-                };
-                if !mine {
-                    return;
+    queue::tray(&queue::TrayStyle {
+        background: t.surface_bg(),
+        border: t.border,
+        shadows: Some(t.menu_shadows()),
+        tucked: TRAY_OVERLAP,
+    })
+    .id(SharedString::from(format!("{key}-queue")))
+    .role(Role::List)
+    .aria_label("Queued notes")
+    .on_drag_move::<NoteDrag>({
+        let state = c.state.clone();
+        let owner = owner.clone();
+        move |event: &DragMoveEvent<NoteDrag>, _, cx| {
+            let (from, mine) = {
+                let drag = event.drag(cx);
+                (drag.from, drag.owner == owner)
+            };
+            if !mine {
+                return;
+            }
+            let rel_y = f32::from(event.event.position.y - event.bounds.top())
+                - f32::from(scroll.offset().y);
+            let over = drop_index(rel_y, ROW_HEIGHT, count);
+            state.update(cx, |s, cx| s.drag_over(from, over, cx));
+        }
+    })
+    .on_drop::<NoteDrag>({
+        let state = c.state.clone();
+        let owner = owner.clone();
+        move |payload: &NoteDrag, _, cx| {
+            state.update(cx, |s, cx| {
+                let to = s.drag.take().map_or(payload.from, |drag| drag.over);
+                if payload.owner == owner {
+                    s.move_note(payload.from, to, cx);
+                } else {
+                    cx.notify();
                 }
-                let rel_y = f32::from(event.event.position.y - event.bounds.top())
-                    - f32::from(scroll.offset().y);
-                let over = drop_index(rel_y, ROW_HEIGHT, count);
-                state.update(cx, |s, cx| s.drag_over(from, over, cx));
-            }
-        })
-        .on_drop::<NoteDrag>({
-            let state = c.state.clone();
-            let owner = owner.clone();
-            move |payload: &NoteDrag, _, cx| {
-                state.update(cx, |s, cx| {
-                    let to = s.drag.take().map_or(payload.from, |drag| drag.over);
-                    if payload.owner == owner {
-                        s.move_note(payload.from, to, cx);
-                    } else {
-                        cx.notify();
-                    }
-                })
-            }
-        })
-        .on_mouse_up_out(MouseButton::Left, {
-            let state = c.state.clone();
-            move |_, _, cx| {
-                state.update(cx, |s, cx| {
-                    if s.drag.take().is_some() {
-                        cx.notify();
-                    }
-                })
-            }
-        })
-        .child(
-            div()
-                .id(SharedString::from(format!("{key}-queue-rows")))
-                .max_h(px(ROW_HEIGHT * QUEUE_VISIBLE_ROWS))
-                .overflow_y_scroll()
-                .track_scroll(&s.queue_scroll)
-                .flex()
-                .flex_col()
-                .children(rows),
-        )
+            })
+        }
+    })
+    .on_mouse_up_out(MouseButton::Left, {
+        let state = c.state.clone();
+        move |_, _, cx| {
+            state.update(cx, |s, cx| {
+                if s.drag.take().is_some() {
+                    cx.notify();
+                }
+            })
+        }
+    })
+    .child(
+        div()
+            .id(SharedString::from(format!("{key}-queue-rows")))
+            .max_h(px(ROW_HEIGHT * QUEUE_VISIBLE_ROWS))
+            .overflow_y_scroll()
+            .track_scroll(&s.queue_scroll)
+            .flex()
+            .flex_col()
+            .children(rows),
+    )
 }
 
 /// One queued note (Pink `queue_row`): the drag marker, the text with its
@@ -2191,31 +2183,11 @@ fn queue_row(c: &Ctx, ix: usize, note: &Queued) -> AnyElement {
         None => primary.tooltip().into(),
     };
 
-    let marker = div()
-        .id(SharedString::from(format!("{row_key}-drag")))
-        .w(px(20.))
-        .h(px(28.))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(4.))
-        .cursor_pointer()
-        .when(claimed, |el| el.cursor(CursorStyle::Arrow).opacity(0.35))
-        .child(
-            svg()
-                .path(ICON_DRAG)
-                .size(px(QUEUE_ICON_SIZE))
-                .text_color(t.readable_muted(0.5)),
-        );
+    let marker = queue::drag_marker(ICON_DRAG, t.readable_muted(0.5), claimed)
+        .id(SharedString::from(format!("{row_key}-drag")));
 
     let actions = if editing {
-        div()
-            .flex_none()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(3.))
+        queue::actions()
             .child(queue_action(
                 &row_key,
                 "save",
@@ -2241,12 +2213,7 @@ fn queue_row(c: &Ctx, ix: usize, note: &Queued) -> AnyElement {
                 },
             ))
     } else {
-        div()
-            .flex_none()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(3.))
+        queue::actions()
             .child(queue_action(
                 &row_key,
                 "drop",
@@ -2284,59 +2251,49 @@ fn queue_row(c: &Ctx, ix: usize, note: &Queued) -> AnyElement {
             ))
     };
 
-    let row = div()
-        .id(SharedString::from(row_key.clone()))
-        .role(Role::ListItem)
-        .h(px(ROW_HEIGHT))
-        .flex_none()
-        .px(px(ROW_PAD_X))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(8.))
-        .rounded(px(ROW_RADIUS))
-        .cursor(CursorStyle::Arrow)
-        .when(editing, |el| el.bg(t.fill(FillTier::Tertiary)))
-        .when(!editing, |el| {
-            el.hover_wash(format!("{row_key}-row"), t.fill(FillTier::Tertiary))
-        })
-        // The marker hints that the row belongs to the queue; the whole row
-        // is the drag hitbox. Editing turns it off so selecting text never
-        // reorders.
-        .when(!editing && !claimed, |el| {
-            el.on_drag(
-                NoteDrag {
-                    owner: key.to_string().into(),
-                    from: ix,
-                },
-                |_, _, _, cx| {
-                    cx.stop_propagation();
-                    cx.new(|_| EmptyView)
-                },
-            )
-        })
-        .when(!editing, |el| el.child(marker))
-        // Keep the text on its column while the marker steps aside.
-        .when(editing, |el| el.child(div().w(px(14.)).flex_none()))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .text_size(px(QUEUE_TEXT_SIZE))
-                .line_height(px(16.))
-                .text_color(if editing {
-                    t.text_muted
-                } else {
-                    t.text.opacity(0.9)
-                })
-                .child(if editing {
-                    SharedString::from("Editing in composer")
-                } else {
-                    s.row_text(note)
-                }),
+    let wash = t.fill(FillTier::Tertiary);
+    let hover_key = format!("{row_key}-row");
+    let row = queue::row(&queue::RowStyle {
+        fill: if editing {
+            wash
+        } else {
+            motion::hover_blend(&hover_key, wash.opacity(0.), wash)
+        },
+        compact: false,
+        removing: false,
+    })
+    .id(SharedString::from(row_key.clone()))
+    .role(Role::ListItem)
+    .when(!editing, |el| {
+        el.on_hover(motion::hover_listener(hover_key))
+    })
+    // The marker hints that the row belongs to the queue; the whole row
+    // is the drag hitbox. Editing turns it off so selecting text never
+    // reorders.
+    .when(!editing && !claimed, |el| {
+        el.on_drag(
+            NoteDrag {
+                owner: key.to_string().into(),
+                from: ix,
+            },
+            |_, _, _, cx| {
+                cx.stop_propagation();
+                cx.new(|_| EmptyView)
+            },
         )
-        .child(actions);
+    })
+    .when(!editing, |el| el.child(marker))
+    // Keep the text on its column while the marker steps aside.
+    .when(editing, |el| el.child(queue::edit_spacer()))
+    .when(editing, |el| {
+        el.child(queue::editing_note(t.text_muted, "Editing in composer"))
+    })
+    .when(!editing, |el| {
+        el.child(queue::content().child(
+            queue::message_line(t.text.opacity(0.9)).child(queue::message(s.row_text(note))),
+        ))
+    })
+    .child(actions);
 
     let Some(drag) = s.drag.as_ref() else {
         return row.into_any_element();
@@ -2360,65 +2317,9 @@ fn queue_row(c: &Ctx, ix: usize, note: &Queued) -> AnyElement {
         .into_any_element()
 }
 
-/// A permanently visible row action (Pink `queue_action`): a 28px circle in
-/// `content_muted`, a Tertiary wash and `text` under the pointer, the 13px
-/// glyph in `readable_muted(0.8)`; disabled at 45%.
-fn queue_action_frame(
-    row_key: &str,
-    slot: &str,
-    label: &'static str,
-    enabled: bool,
-    t: &Pink,
-) -> Stateful<Div> {
-    let id = format!("{row_key}-{slot}");
-    let ring = t.focus_ring();
-    div()
-        .id(SharedString::from(id.clone()))
-        .role(Role::Button)
-        .aria_label(label)
-        .size(px(QUEUE_ACTION_SIZE))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded_full()
-        .text_color(t.content_muted)
-        .when(enabled, |el| {
-            el.cursor_pointer()
-                .hover_fill_fg(
-                    id,
-                    t.fill(FillTier::Tertiary).opacity(0.),
-                    t.fill(FillTier::Tertiary),
-                    t.content_muted,
-                    t.text,
-                )
-                .tab_index(0)
-                .focus_visible(move |style| pink::focus_ring(style, ring))
-                .on_key_down(pink::swallow_activation_key)
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        })
-        .when(!enabled, |el| el.cursor(CursorStyle::Arrow).opacity(0.45))
-        .tooltip(pink::text_tooltip(label))
-        .tooltip_show_delay(layout::TOOLTIP_DELAY)
-}
-
-fn queue_action_glyph(
-    row_key: &str,
-    slot: &str,
-    glyph: &'static str,
-    t: &Pink,
-) -> impl IntoElement {
-    let text = t.text;
-    svg()
-        .path(glyph)
-        .size(px(QUEUE_ICON_SIZE))
-        .text_color(t.readable_muted(0.8))
-        .group_hover(
-            SharedString::from(format!("{row_key}-{slot}-grp")),
-            move |s| s.text_color(text),
-        )
-}
-
+/// A permanently visible row action (Pink `queue_action`): the package's
+/// 28px disc in `content_muted`, a Tertiary wash and `text` under the
+/// pointer, the 13px glyph in `readable_muted(0.8)`; disabled at 45%.
 fn queue_action(
     row_key: &str,
     slot: &str,
@@ -2428,20 +2329,51 @@ fn queue_action(
     t: &Pink,
     on_click: impl Fn(&mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
-    queue_action_frame(row_key, slot, label, enabled, t)
-        .group(SharedString::from(format!("{row_key}-{slot}-grp")))
-        .when(enabled, |el| {
-            el.on_click(move |_: &ClickEvent, window, cx| {
+    let id = format!("{row_key}-{slot}");
+    let group = SharedString::from(format!("{id}-grp"));
+    let ring = t.focus_ring();
+    let wash = t.fill(FillTier::Tertiary);
+    let text = t.text;
+    queue::action(&queue::ActionStyle {
+        fill: if enabled {
+            motion::hover_blend(&id, wash.opacity(0.), wash)
+        } else {
+            wash.opacity(0.)
+        },
+        text: if enabled {
+            motion::hover_blend(&id, t.content_muted, t.text)
+        } else {
+            t.content_muted
+        },
+        enabled,
+    })
+    .id(SharedString::from(id.clone()))
+    .group(group.clone())
+    .role(Role::Button)
+    .aria_label(label)
+    .when(enabled, |el| {
+        el.on_hover(motion::hover_listener(id))
+            .tab_index(0)
+            .focus_visible(move |style| pink::focus_ring(style, ring))
+            .on_key_down(pink::swallow_activation_key)
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(move |_: &ClickEvent, window, cx| {
                 cx.stop_propagation();
                 on_click(window, cx);
             })
-        })
-        .child(queue_action_glyph(row_key, slot, glyph, t))
+    })
+    .tooltip(pink::text_tooltip(label))
+    .tooltip_show_delay(layout::TOOLTIP_DELAY)
+    .child(
+        queue::action_glyph(glyph, t.readable_muted(0.8))
+            .group_hover(group, move |s| s.text_color(text)),
+    )
 }
 
-/// The row's one delivery action (Pink `queue_primary_action_button`): a
-/// 72×28 capsule in 12 medium `text_muted`, `text` over a Tertiary wash
-/// under the pointer; 45% while blocked. Its tooltip explains it.
+/// The row's one delivery action (Pink `queue_primary_action_button`): the
+/// package's 72×28 capsule in 12 medium `text_muted`, `text` over a
+/// Tertiary wash under the pointer; 45% while blocked. Its tooltip explains
+/// it.
 fn queue_primary(
     row_key: &str,
     action: Primary,
@@ -2452,42 +2384,40 @@ fn queue_primary(
 ) -> Stateful<Div> {
     let id = format!("{row_key}-primary");
     let ring = t.focus_ring();
-    div()
-        .id(SharedString::from(id.clone()))
-        .role(Role::Button)
-        .aria_label(tooltip.clone())
-        .w(px(QUEUE_PRIMARY_W))
-        .h(px(QUEUE_ACTION_SIZE))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded_full()
-        .text_size(px(12.))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(t.text_muted)
-        .when(enabled, |el| {
-            el.cursor_pointer()
-                .tab_index(0)
-                .hover_fill_fg(
-                    id,
-                    t.fill(FillTier::Tertiary).opacity(0.),
-                    t.fill(FillTier::Tertiary),
-                    t.text_muted,
-                    t.text,
-                )
-                .focus_visible(move |style| pink::focus_ring(style, ring))
-                .on_key_down(pink::swallow_activation_key)
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .on_click(move |_: &ClickEvent, window, cx| {
-                    cx.stop_propagation();
-                    on_click(window, cx);
-                })
-        })
-        .when(!enabled, |el| el.opacity(0.45))
-        .tooltip(pink::text_tooltip(tooltip))
-        .tooltip_show_delay(layout::TOOLTIP_DELAY)
-        .child(action.label())
+    let wash = t.fill(FillTier::Tertiary);
+    queue::primary(
+        &queue::ActionStyle {
+            fill: if enabled {
+                motion::hover_blend(&id, wash.opacity(0.), wash)
+            } else {
+                wash.opacity(0.)
+            },
+            text: if enabled {
+                motion::hover_blend(&id, t.text_muted, t.text)
+            } else {
+                t.text_muted
+            },
+            enabled,
+        },
+        false,
+    )
+    .id(SharedString::from(id.clone()))
+    .role(Role::Button)
+    .aria_label(tooltip.clone())
+    .when(enabled, |el| {
+        el.on_hover(motion::hover_listener(id))
+            .tab_index(0)
+            .focus_visible(move |style| pink::focus_ring(style, ring))
+            .on_key_down(pink::swallow_activation_key)
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(move |_: &ClickEvent, window, cx| {
+                cx.stop_propagation();
+                on_click(window, cx);
+            })
+    })
+    .tooltip(pink::text_tooltip(tooltip))
+    .tooltip_show_delay(layout::TOOLTIP_DELAY)
+    .child(action.label())
 }
 
 // -- Composer ---------------------------------------------------------------------
