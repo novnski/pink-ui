@@ -1,6 +1,10 @@
-//! Tool activity disclosure. The host supplies factual event counts, lifecycle,
-//! theme tokens, icons, motion and actions. This component owns only presentation.
-use gpui::{AnyElement, Div, ElementId, FontWeight, Hsla, Stateful, div, prelude::*, px};
+// Tool activity: a verb-first sentence per call or group (UI rethink D63),
+// its disclosure header, and the failure line under a failed call. The host
+// supplies the sentence, the lifecycle, theme tokens, icons, motion and
+// actions. This component owns only presentation.
+use gpui::{
+    AnyElement, Div, ElementId, FontWeight, Hsla, SharedString, Stateful, div, prelude::*, px,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActivityState {
@@ -14,15 +18,17 @@ pub enum ActivityState {
 }
 
 impl ActivityState {
-    pub fn label(self) -> &'static str {
+    /// The visible state word, only for states the sentence cannot carry.
+    /// Running and thinking read in the sentence's own verb ("Running
+    /// `pwd`"), and a settled record shows no state word at all: "Recorded"
+    /// never meant the user's goal succeeded.
+    pub fn label(self) -> Option<&'static str> {
         match self {
-            Self::Running => "Running",
-            Self::Thinking => "Thinking",
-            Self::NeedsApproval => "Needs approval",
-            Self::NeedsInput => "Needs input",
-            Self::Recorded => "Recorded",
-            Self::Stopped => "Stopped",
-            Self::NeedsReview => "Needs review",
+            Self::Running | Self::Thinking | Self::Recorded => None,
+            Self::NeedsApproval => Some("Needs approval"),
+            Self::NeedsInput => Some("Needs input"),
+            Self::Stopped => Some("Stopped"),
+            Self::NeedsReview => Some("Needs review"),
         }
     }
 }
@@ -30,44 +36,112 @@ impl ActivityState {
 #[derive(Debug, Clone, Copy)]
 pub struct ActivitySummary {
     pub state: ActivityState,
-    /// Executable calls only, never reasoning segments or inferred phases.
-    pub calls: usize,
-    pub reasoning: bool,
-    pub running: usize,
+    /// Failed executable calls the sentence does not already name. A host
+    /// whose sentence is itself the failure ("Failed to run `pwd`") passes
+    /// zero, so the header never says it twice.
     pub failures: usize,
 }
 
 impl ActivitySummary {
-    pub fn status_label(self) -> String {
-        if self.state == ActivityState::Running && self.running > 1 {
-            format!("{} active", self.running)
-        } else {
-            self.state.label().into()
-        }
+    pub fn failure_label(self) -> Option<String> {
+        (self.failures > 0).then(|| format!("{} failed", self.failures))
     }
 
-    pub fn count_label(self) -> String {
-        format!(
-            "{} {}",
-            self.calls,
-            if self.calls == 1 { "call" } else { "calls" }
-        )
-    }
-
-    /// Full metadata for the host's accessible disclosure name.
-    pub fn description(self) -> String {
-        let mut parts = vec![self.status_label()];
-        if self.calls > 0 {
-            parts.push(self.count_label());
-        }
-        if self.reasoning && self.calls > 0 {
-            parts.push("includes reasoning".into());
-        }
-        if self.failures > 0 {
-            parts.push(format!("{} failed", self.failures));
-        }
+    /// The accessible name: the visible sentence, then any failure count and
+    /// state word, in the order they are drawn.
+    pub fn description(self, sentence: &str) -> String {
+        let mut parts = vec![sentence.to_owned()];
+        parts.extend(self.failure_label());
+        parts.extend(self.state.label().map(str::to_owned));
         parts.join(", ")
     }
+}
+
+/// One run of a sentence. Text is the verb and connecting words; Code is a
+/// command, pattern or tool name drawn as inline code; Object is a file,
+/// page or other noun in the primary tone. Code and Object shrink with an
+/// ellipsis when the line is short; Text never does, so the verb stays.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Segment {
+    Text(SharedString),
+    Code(SharedString),
+    Object(SharedString),
+}
+
+pub struct SentenceStyle {
+    pub scale: f32,
+    pub text_size: f32,
+    pub line_height: f32,
+    /// Verb and connecting words; `None` inherits the host's colour, so a
+    /// hover-blended control brightens them.
+    pub verb: Option<Hsla>,
+    /// Objects: paths, pages, counts.
+    pub object: Hsla,
+    pub code: Hsla,
+    pub code_fill: Hsla,
+    pub code_font: SharedString,
+    pub code_size: f32,
+}
+
+/// Inline code height inside the sentence's line box.
+pub const CODE_HEIGHT_FRACTION: f32 = 0.9;
+/// Inline code horizontal padding at the 16 px default.
+pub const CODE_PAD_X: f32 = 4.0;
+/// Inline code corner radius at the 16 px default.
+pub const CODE_RADIUS: f32 = 4.0;
+/// Gap between a sentence's runs at the 16 px default.
+pub const SEGMENT_GAP: f32 = 4.0;
+
+/// A single-line sentence: runs laid out left to right on one line box, the
+/// verb fixed and the objects truncating. The host may replace the leading
+/// text run's element (a shimmer) by drawing over it.
+pub fn sentence(segments: &[Segment], style: &SentenceStyle) -> Div {
+    let s = style.scale;
+    let line = style.line_height;
+    div()
+        .min_w_0()
+        .h(px(line))
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(SEGMENT_GAP * s))
+        .overflow_hidden()
+        .text_size(px(style.text_size))
+        .line_height(px(line))
+        .children(segments.iter().map(|segment| match segment {
+            Segment::Text(text) => div()
+                .flex_none()
+                .whitespace_nowrap()
+                .when_some(style.verb, |run, verb| run.text_color(verb))
+                .child(text.clone())
+                .into_any_element(),
+            Segment::Object(text) => div()
+                .min_w_0()
+                .truncate()
+                .text_color(style.object)
+                .child(text.clone())
+                .into_any_element(),
+            Segment::Code(text) => div()
+                .min_w_0()
+                .h(px(line * CODE_HEIGHT_FRACTION))
+                .flex()
+                .items_center()
+                .px(px(CODE_PAD_X * s))
+                .rounded(px(CODE_RADIUS * s))
+                .bg(style.code_fill)
+                .overflow_hidden()
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .font_family(style.code_font.clone())
+                        .text_size(px(style.code_size))
+                        .line_height(px(line * CODE_HEIGHT_FRACTION))
+                        .text_color(style.code)
+                        .child(text.clone()),
+                )
+                .into_any_element(),
+        }))
 }
 
 /// Host tokens keep this component inside the existing design system.
@@ -85,9 +159,10 @@ pub struct HeaderStyle {
     pub warning: Hsla,
 }
 
-/// A stable-height disclosure. Only the primary label shrinks; lifecycle and
-/// failures remain visible. The host adds semantics, focus and action handlers
-/// to the returned control, using the same identity as its detail disclosure.
+/// A stable-height disclosure. Only the sentence shrinks; failures and an
+/// attention state remain visible. The host adds semantics, focus and action
+/// handlers to the returned control, using the same identity as its detail
+/// disclosure, and names it with [`ActivitySummary::description`].
 pub fn activity_header(
     id: impl Into<ElementId>,
     title: AnyElement,
@@ -97,14 +172,6 @@ pub fn activity_header(
     style: HeaderStyle,
 ) -> Stateful<Div> {
     let s = style.scale;
-    let status_color = match summary.state {
-        ActivityState::Running | ActivityState::Thinking => style.active,
-        ActivityState::Stopped
-        | ActivityState::NeedsReview
-        | ActivityState::NeedsApproval
-        | ActivityState::NeedsInput => style.warning,
-        ActivityState::Recorded => style.muted,
-    };
     div()
         .id(id)
         .rounded(px(style.radius))
@@ -124,37 +191,94 @@ pub fn activity_header(
         .child(
             div()
                 .min_w_0()
-                .flex_shrink(1.0)
                 .h(px(style.line_height))
                 .flex()
                 .items_center()
-                .truncate()
-                .font_weight(FontWeight::MEDIUM)
+                .overflow_hidden()
                 .text_color(style.foreground)
                 .child(title),
         )
-        .when(summary.calls > 0, |row| {
-            row.child(
-                div()
-                    .flex_none()
-                    .text_color(style.muted)
-                    .child(summary.count_label()),
-            )
-        })
-        .child(
-            div()
-                .flex_none()
-                .text_color(status_color)
-                .child(summary.status_label()),
-        )
-        .when(summary.failures > 0, |row| {
+        .when_some(summary.failure_label(), |row, label| {
             row.child(
                 div()
                     .flex_none()
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(style.danger)
-                    .child(format!("{} failed", summary.failures)),
+                    .child(label),
+            )
+        })
+        .when_some(summary.state.label(), |row, label| {
+            row.child(
+                div()
+                    .flex_none()
+                    .text_color(match summary.state {
+                        ActivityState::Running | ActivityState::Thinking => style.active,
+                        ActivityState::Recorded => style.muted,
+                        _ => style.warning,
+                    })
+                    .child(label),
             )
         })
         .child(chevron)
+}
+
+pub struct FailureStyle {
+    pub scale: f32,
+    pub height: f32,
+    pub text_size: f32,
+    pub line_height: f32,
+    pub message: Hsla,
+}
+
+/// The line under a failed call: what the tool reported, then the host's
+/// recovery actions. The message truncates; the actions never do.
+pub fn failure_line(message: SharedString, actions: Vec<AnyElement>, style: &FailureStyle) -> Div {
+    let s = style.scale;
+    div()
+        .h(px(style.height))
+        .w_full()
+        .min_w_0()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(8.0 * s))
+        .text_size(px(style.text_size))
+        .line_height(px(style.line_height))
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .text_color(style.message)
+                .child(message),
+        )
+        .children(actions)
+}
+
+pub struct RecoveryStyle {
+    pub scale: f32,
+    pub height: f32,
+    pub radius: f32,
+    pub text: Hsla,
+}
+
+/// A text action on the failure line. The host adds the listener, role,
+/// accessible name, focus ring and hover fill.
+pub fn recovery_action(
+    id: impl Into<ElementId>,
+    label: SharedString,
+    style: &RecoveryStyle,
+) -> Stateful<Div> {
+    let s = style.scale;
+    div()
+        .id(id)
+        .flex_none()
+        .h(px(style.height))
+        .px(px(6.0 * s))
+        .flex()
+        .items_center()
+        .rounded(px(style.radius))
+        .cursor_pointer()
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(style.text)
+        .child(label)
 }
