@@ -21,10 +21,11 @@
 //! (`.window_map(false)` gives PINK's plain 280 pt menu): a field of 100
 //! cells (one per percent of the window) filled column by column by the
 //! instructions, tool definitions, attached files, the chat history and
-//! memory, with the reply reserve as hollow cells at the end and a rule
-//! where auto-compaction kicks in, and a breakdown whose rows light their
-//! cells. Files can be dropped from the breakdown. Compacting waves the chat
-//! history's cells on the pulse clock, then sweeps the freed cells clear.
+//! memory, with the reply reserve as hollow cells at the end where usage
+//! hasn't reached it and a rule where auto-compaction kicks in, and a
+//! breakdown whose rows light their cells. Files can be dropped from the
+//! breakdown. Compacting waves the chat history's cells on the pulse clock,
+//! then sweeps the freed cells clear.
 //!
 //! The ring shows only when the setting is on and the provider reports
 //! context usage ([`context_ring_shown`], PINK 0.31.3, D75); without it a

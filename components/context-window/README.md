@@ -13,8 +13,14 @@ graph and no copied source.
 - `cells(capacity, parts, reserve)`: lays a window out over `CELLS` (100)
   cells, one per percent, column by column: each part in order (a part with
   items gives each item its own run, then its tokens beyond them), free
-  room, then the reserve's cells at the end. A part with any tokens keeps at
-  least one cell; parts that overrun the window stop at the reserve.
+  room, then the reserve's hollow cells at the end. The occupied cells
+  always total the parts' share of the window, rounded as the host prints
+  its percentage (ties to even), so the map agrees with the ring; the runs
+  share them by largest remainder, and a run with any tokens keeps at least
+  one cell. Usage that runs into the reserve stays occupied: the reserve is
+  hollow only over the cells usage hasn't reached (novnski/pink#277), and an
+  overfull window fills every cell. The auto-compaction rule still marks
+  where compaction kicks in.
 - `cell(id, index, CellPaint)` and `field(id, cells, marker)`: the field of
   `CELL` cells `CELL_GAP` apart (`FIELD_W` x `FIELD_H`), each filled or, for
   the reserve, edged, at the host's opacity, and the auto-compaction rule in
@@ -50,5 +56,6 @@ pink-context-window = { git = "https://github.com/novnski/pink-ui", rev = "<merg
 - Alone: `cargo clippy --features gpui/runtime_shaders -- -D warnings` in this
   directory.
 - Fill and geometry: `tests/context_window.rs` in the pink-ui crate checks
-  the fill order, items, slivers and overflow, and the field, cells, rule,
-  rows and folded items at Interface sizes 12, 16 and 20.
+  the fill order, items, slivers and overflow, that filled cells equal the
+  rounded share at 25%, 80% and 95% (past where the reserve begins), and the
+  field, cells, rule, rows and folded items at Interface sizes 12, 16 and 20.
