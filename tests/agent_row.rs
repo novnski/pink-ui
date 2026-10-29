@@ -5,14 +5,14 @@
 //! line that no longer starts under the title; figures that trail the
 //! activity at a varying x instead of ending on one edge; a long activity
 //! that pushes the figures out, or long figures that overflow a narrow row
-//! instead of truncating.
+//! or crowd out the activity instead of truncating at half the line.
 
 use gpui::{Bounds, Context, IntoElement, Pixels, Render, TestAppContext, Window, div, prelude::*};
 use pink_ui::{
     Theme, ThemeMode,
     components::agent_row::{
-        META_INDENT, PAD_X, ROW_HEIGHT, RowStyle, dot, figures, meta_line, row, status_word,
-        title_line,
+        FIGURES_MAX, META_INDENT, PAD_X, ROW_HEIGHT, RowStyle, dot, figures, meta_line, row,
+        status_word, title_line,
     },
     pink::Pink,
 };
@@ -134,6 +134,16 @@ fn agent_rows_keep_their_height_columns_and_edges(cx: &mut TestAppContext) {
                 "{prefix} figures end on the row's trailing edge at {ui}"
             );
         }
+
+        // Long figures stop at half the line, so the activity keeps the
+        // rest of a narrow row.
+        let narrow_meta = bounds(cx, "narrow-meta");
+        let narrow_figures = bounds(cx, "narrow-figures");
+        assert!(
+            f32::from(narrow_figures.size.width)
+                <= FIGURES_MAX * f32::from(narrow_meta.size.width) + 0.05,
+            "long figures take more than half of a narrow row at {ui}"
+        );
 
         // A long activity gives way; the figures keep their width.
         let short = bounds(cx, "short-figures");

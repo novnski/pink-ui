@@ -4,7 +4,8 @@
 // while it runs), the title and a quiet status word; then, under the title,
 // what the agent is doing beside its figures (model, tokens, tool uses,
 // runtime) in a trailing column that ends on one edge. The activity gives
-// way first; the figures truncate only when the line can't hold them alone.
+// way first; the figures truncate at half the line, so a long list of
+// figures never hides what the agent is doing.
 // UI rethink decision 54: drawn here, consumed by PINK through a pinned
 // revision.
 //
@@ -37,6 +38,8 @@ pub const META_INDENT: f32 = MARK + LEAD_GAP;
 pub const TITLE_TEXT: f32 = 13.0;
 pub const STATUS_TEXT: f32 = 11.0;
 pub const META_TEXT: f32 = 11.5;
+// The figures' widest share of the meta line.
+pub const FIGURES_MAX: f32 = 0.5;
 // GPUI's default line height, set explicitly so a row's height is known:
 // 2 * PAD_Y + (TITLE_TEXT + META_TEXT) * LINE_HEIGHT + LINE_GAP.
 pub const LINE_HEIGHT: f32 = 1.618_034;
@@ -163,11 +166,13 @@ pub fn meta_line(color: Hsla, activity: impl Into<SharedString>) -> Div {
 }
 
 /// The meta line's trailing figures: they keep their width while the
-/// activity gives way, and truncate only when the line can't hold them
-/// alone. A host whose GPUI has font features may add tabular figures.
+/// activity gives way, up to `FIGURES_MAX` of the line, where they truncate
+/// so the activity always keeps the rest. A host whose GPUI has font
+/// features may add tabular figures.
 pub fn figures(color: Hsla, text: impl Into<SharedString>) -> Div {
     div()
         .min_w_0()
+        .max_w(relative(FIGURES_MAX))
         .truncate()
         .text_color(color)
         .child(text.into())
