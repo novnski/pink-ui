@@ -1,18 +1,64 @@
 # Building components
 
-Every component is **one Rust file**, `src/components/<slug>.rs`, drawn in
-the Pink app's design language. A file depends only on GPUI and the shared
-modules in this crate (`pink`, `motion`, `interaction`, `primitives`, `theme`,
-`story`), and exports `NAME`, `DESCRIPTION` and `story`. Icons live in
-`assets/icons/<slug>/`.
+pink-ui is the source of PINK's reusable components. A component the app uses
+lives here as a package; PINK pins a merged commit of it and picks up a change
+by moving that pin. Changes land here first and are never copied back into
+the app. PINK's side of the workflow (pinning, local overrides, verification
+and rollback) is in its
+[pink-ui guide](https://github.com/novnski/pink/blob/main/docs/reference/pink-ui.md).
+
+There are two kinds of component:
+
+- **Packages** under `components/<name>/` are what PINK consumes. See
+  [Packages PINK pins](#packages-pink-pins).
+- **Gallery components** are **one Rust file** each,
+  `src/components/<slug>.rs`, drawn in the Pink app's design language. A file
+  depends only on GPUI and the shared modules in this crate (`pink`, `motion`,
+  `interaction`, `primitives`, `theme`, `story`), and exports `NAME`,
+  `DESCRIPTION` and `story`. Icons live in `assets/icons/<slug>/`.
 
 Read [`docs/pink-design.md`](docs/pink-design.md) first: it is the design
 language (tokens, ladders, recipes, motion, what Pink avoids) with the kit call
-for each piece. When Pink already has the thing you are building, copy it: read
-its render code in the [Pink app](https://github.com/novnski/pink)
-(`crates/ui/src`) and reproduce it value for value, naming the Pink source in
-the doc comments. `src/components/thinking_loader.rs` (Pink's working line) and
-`src/components/tool_call_card.rs` (its tool group) are good references.
+for each piece. When the app still draws the thing you are building itself,
+read its render code in the [Pink app](https://github.com/novnski/pink)
+(`crates/ui/src`) for its states, sizes and interactions, and name that source
+in the comments. Once PINK pins your package, the package is the source and
+the app's local copy is deleted. `src/components/thinking_loader.rs` (Pink's
+working line) and `src/components/tool_call_card.rs` (its tool group) are good
+references.
+
+## Packages PINK pins
+
+Start a package by copying `components/menu-card/`.
+
+- **Its own workspace.** `Cargo.toml` has an empty `[workspace]` table and one
+  dependency, crates.io `gpui = "=0.2.2"`. PINK patches that `gpui` to its
+  vendored runtime, so no second GPUI enters the app. The package must compile
+  on 0.2.2, which has no `font_features`, no `aria` and no `flex_shrink(f32)`.
+- **Draw only.** The host passes resolved colours (already blended over its
+  hover fade), fonts, text and shadows in style structs. The package returns
+  `Div` or `Stateful<Div>` builders and exports its geometry constants. The
+  host adds the ids, roles and labels, focus, tooltips, listeners and app
+  state. Sizes that follow the Interface size use
+  `ui_rems(design) = rems(design / 16.0)`.
+- **One source file**, `src/lib.rs`, with plain `//` comments, because the
+  gallery compiles it in place: `src/components/<slug>.rs` wraps
+  `include!("../../components/<name>/src/lib.rs")` in a private module,
+  re-exports it and adds the story. Register it in `src/components/mod.rs`.
+- **A README** saying what the package draws, what the host adds and how PINK
+  pins it.
+- **A geometry test**, `tests/<slug>.rs`, laying it out at Interface sizes 12,
+  16 and 20 with `window.set_rem_size`.
+
+PINK pins a merge commit on `main`, never a branch commit, one line per
+package in its `crates/ui/Cargo.toml`:
+
+```toml
+pink-menu-card = { git = "https://github.com/novnski/pink-ui", rev = "<merge commit on main>", package = "pink-menu-card" }
+```
+
+A change to a package's API needs a matching change to PINK's adapter, made in
+the PINK pull request that moves the pin.
 
 ## API shape
 
@@ -191,6 +237,24 @@ a component declares is reachable from the keyboard. The Sidebar's shared
 columns are measured by `node scripts/site/sidebar-columns.mjs site/dist`
 (Playwright), which writes screenshots, measurements and a SHA-256 manifest.
 
+For a package, also run its own checks:
+
+```sh
+rustfmt --edition 2024 --check components/<name>/src/lib.rs
+(cd components/<name> && cargo clippy --features gpui/runtime_shaders -- -D warnings)
+cargo test --test <slug> --test stories
+```
+
+`runtime_shaders` builds GPUI's shaders at run time, so the package Clippy
+works on a Mac without the Metal toolchain. The gallery's tests need the same
+on such a Mac: append this to the root `Cargo.toml` for the test run only, then
+restore both files with `git checkout Cargo.toml Cargo.lock`.
+
+```toml
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+gpui-pre-apple = { version = "=0.3.9", features = ["runtime_shaders"] }
+```
+
 A new component shows up on the showcase site by itself: add it to
 `components::COMPONENTS` and the catalog, the player and the site pick it up.
 Check it in the browser with `scripts/build-site.sh` and
@@ -199,8 +263,10 @@ with `node scripts/site/thumbnails.mjs site/dist` and commit `site/thumbs/`.
 
 ## Before you open a pull request
 
-- Pink's source wins: if the app has the component, the pink-ui one matches it
-  value for value, and its doc comments name the Pink code it follows.
+- The library is the source. Once PINK pins a package, change the package
+  here, never a copy in the app; PINK then moves its pin, with before and after
+  captures of its own. A package the app does not pin yet may start from the
+  app's render code, named in its comments.
 - Labels never join facts with `·`, ` -- `, an em or en dash, ` | `, ` / ` or
   a fraction like `2/4`, in visible copy, tooltips, accessibility names,
   descriptions or stories. Use hierarchy, a chip, an icon or a plain phrase

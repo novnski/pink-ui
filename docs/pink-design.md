@@ -3,9 +3,11 @@
 This guide is for anyone writing a Pink component (`Kind::Pink`), whether a person or an agent.
 Follow it and the component will look like it belongs in the PINK desktop app. The kit in
 `src/pink.rs`, `src/pink/{controls,surfaces,loaders}.rs`, `src/motion.rs` and `src/interaction.rs`
-reproduces Pink's own UI crate (`pink/crates/ui/src`) value for value. Build from the kit. Don't
-re-derive colors or sizes. If this guide and Pink's source disagree, Pink's source wins. Fix the
-kit and this guide to match it.
+mirrors Pink's own tokens and ladders (`pink/crates/theme`, `pink/crates/ui/src`) value for value.
+Build from the kit. Don't re-derive colors or sizes. If this guide and Pink's tokens disagree, fix
+the kit and this guide to match Pink. Components go the other way: the packages under
+`components/` are the source of Pink's reusable components, and the app follows them by pinned
+revision (see [CONTRIBUTING.md](../CONTRIBUTING.md#packages-pink-pins)).
 
 ## 1. The idea
 
