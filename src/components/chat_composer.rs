@@ -1432,8 +1432,8 @@ fn stop_button(key: &str, scale: f32, t: &Pink) -> Stateful<Div> {
 /// radius 8, a `hairline(0.10)` edge, 8 apart inside `px 16 pt 12`. A
 /// picture fills its square; other files (a gallery demo: PINK attaches
 /// images only) show their kind on a resting plate. The package's 20 pt
-/// raised remove disc overhangs the corner and shows on hover or keyboard
-/// focus.
+/// raised remove disc overhangs the corner inside a 24 pt target and shows
+/// on hover or keyboard focus.
 fn attachment_strip(
     key: &str,
     attachments: &[Attachment],
@@ -1444,6 +1444,7 @@ fn attachment_strip(
         return None;
     }
     let ring = t.focus_ring();
+    let outset = pink::chrome::hit_outset(att_thumb::REMOVE_SIZE);
     Some(
         att_thumb::staged_strip().children(attachments.iter().enumerate().map(|(ix, file)| {
             let group: SharedString = format!("{key}-att-{ix}").into();
@@ -1465,6 +1466,7 @@ fn attachment_strip(
                         },
                     )
                     .id(ElementId::NamedInteger("cc-thumb".into(), ix as u64))
+                    .debug_selector(move || format!("cc-thumb-{ix}"))
                     .tooltip(pink::text_tooltip(format!(
                         "{}\n{}",
                         file.name, file.detail
@@ -1473,32 +1475,50 @@ fn attachment_strip(
                     .child(thumb),
                 )
                 .child(
-                    att_thumb::remove_disc(&att_thumb::RemoveStyle {
-                        fill: t.surface_raised,
-                        edge: t.border_strong,
-                    })
-                    .id(ElementId::NamedInteger("cc-thumb-x".into(), ix as u64))
-                    .role(Role::Button)
-                    .aria_label("Remove attachment")
-                    .tab_index(0)
-                    .on_key_down(pink::swallow_activation_key)
-                    .cursor_pointer()
-                    .group_hover(group, |s| s.opacity(1.))
-                    .focus_visible(move |s| pink::focus_ring(s.opacity(1.), ring))
-                    .on_click(move |_, window, cx| {
-                        // The disc overhangs the thumbnail: this click is the
-                        // disc's alone.
-                        cx.stop_propagation();
-                        if let Some(f) = &on_remove {
-                            f(ix, window, cx)
-                        }
-                    })
-                    .child(
-                        svg()
-                            .path(ICON_CLOSE)
-                            .size(px(att_thumb::REMOVE_GLYPH))
-                            .text_color(t.text),
-                    ),
+                    // The package's 20 pt disc, centred in a `MIN_HIT` target
+                    // that carries the action, so the hover-revealed button is
+                    // never under 24 pt; the target sits where the disc
+                    // overhangs the corner.
+                    div()
+                        .id(ElementId::NamedInteger("cc-thumb-x".into(), ix as u64))
+                        .debug_selector(move || format!("cc-thumb-x-{ix}"))
+                        .role(Role::Button)
+                        .aria_label("Remove attachment")
+                        .tab_index(0)
+                        .on_key_down(pink::swallow_activation_key)
+                        .absolute()
+                        .top(px(-att_thumb::REMOVE_OVERHANG - outset))
+                        .right(px(-att_thumb::REMOVE_OVERHANG - outset))
+                        .size(px(pink::chrome::MIN_HIT))
+                        .rounded_full()
+                        .cursor_pointer()
+                        .opacity(0.)
+                        .group_hover(group, |s| s.opacity(1.))
+                        .focus_visible(move |s| pink::focus_ring(s.opacity(1.), ring))
+                        .on_click(move |_, window, cx| {
+                            // The disc overhangs the thumbnail: this click is
+                            // the disc's alone.
+                            cx.stop_propagation();
+                            if let Some(f) = &on_remove {
+                                f(ix, window, cx)
+                            }
+                        })
+                        .child(
+                            att_thumb::remove_disc(&att_thumb::RemoveStyle {
+                                fill: t.surface_raised,
+                                edge: t.border_strong,
+                            })
+                            // Placed and shown by its target.
+                            .top(px(outset))
+                            .right(px(outset))
+                            .opacity(1.)
+                            .child(
+                                svg()
+                                    .path(ICON_CLOSE)
+                                    .size(px(att_thumb::REMOVE_GLYPH))
+                                    .text_color(t.text),
+                            ),
+                        ),
                 )
         })),
     )
