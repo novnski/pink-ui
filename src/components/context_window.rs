@@ -31,6 +31,10 @@
 //! host's model menu keeps Compact and Clear in [`context_tray`] (Pink: the
 //! model menu's `context_tray`).
 //!
+//! The map is the `pink-context-window` package
+//! (`components/context-window`), compiled here in place as PINK compiles
+//! it; this module keeps the demo's state, colours, motion and listeners.
+//!
 //! ```ignore
 //! ContextWindow::new("ctx", "lumen-4", 200_000)
 //!     .system(3_100)
@@ -53,6 +57,12 @@ use gpui::{
     Stateful, Task, Window, anchored, canvas, deferred, div, point, prelude::*, px, relative, svg,
     transparent_black,
 };
+
+#[allow(dead_code)]
+pub mod package {
+    include!("../../components/context-window/src/lib.rs");
+}
+use package::{CELLS, FillPart, ITEM_H};
 
 use crate::{
     HoverFill,
@@ -86,23 +96,6 @@ const RING_STROKE: f32 = 1.8;
 const CARD_PAD: f32 = 12.;
 const CARD_GAP: f32 = 8.;
 
-/// The field: 100 cells, so each one is a percent of the window.
-const COLS: usize = 20;
-const ROWS: usize = 5;
-const CELL: f32 = 12.;
-const CELL_GAP: f32 = 3.;
-const CELL_RADIUS: f32 = 3.;
-const PITCH: f32 = CELL + CELL_GAP;
-const FIELD_W: f32 = COLS as f32 * PITCH - CELL_GAP;
-const FIELD_H: f32 = ROWS as f32 * PITCH - CELL_GAP;
-/// The card hugs the field, as Pink's details card hugs its lines.
-const CARD_W: f32 = FIELD_W + 2. * CARD_PAD + 2.;
-/// Breakdown rows: parts (Pink: shell/activity_center.rs alert row, 28
-/// tall, gap 6), and the files under Attached files.
-const ROW_H: f32 = 28.;
-const ROW_GAP: f32 = 6.;
-const SWATCH: f32 = 8.;
-const FILE_H: f32 = 24.;
 /// The tray's action rows (Pink: `render_context_controls`).
 const TRAY_ROW_H: f32 = 30.;
 /// Share of the window at which the conversation compacts on its own.
@@ -431,53 +424,40 @@ impl Usage {
         }
     }
 
-    /// The field, filled column by column.
+    /// The field, filled column by column (the package's `cells`, over the
+    /// parts in their order with each live file its own run).
     fn cells(&self) -> Vec<Cell> {
-        let total = COLS * ROWS;
-        let per = (self.capacity as f32 / total as f32).max(1.);
-        let count = |tokens: u32| {
-            if tokens == 0 {
-                0
-            } else {
-                ((tokens as f32 / per).round() as usize).max(1)
-            }
-        };
-        let reserved = count(self.reserve).min(total);
-        let room = total - reserved;
-        let mut cells = Vec::with_capacity(total);
-        let push = |cell: Cell, n: usize, cells: &mut Vec<Cell>| {
-            for _ in 0..n {
-                if cells.len() < room {
-                    cells.push(cell);
+        const ORDER: [Part; 5] = [
+            Part::System,
+            Part::Tools,
+            Part::Files,
+            Part::Conversation,
+            Part::Memory,
+        ];
+        let live: Vec<usize> = self.live_files().map(|(i, _)| i).collect();
+        let fill = ORDER.map(|part| match part {
+            Part::Files => FillPart {
+                tokens: u64::from(self.files_total()),
+                items: live
+                    .iter()
+                    .map(|&i| u64::from(self.files[i].file.tokens))
+                    .collect(),
+            },
+            part => FillPart {
+                tokens: u64::from(self.tokens(Spot::Part(part))),
+                items: Vec::new(),
+            },
+        });
+        package::cells(u64::from(self.capacity), &fill, u64::from(self.reserve))
+            .into_iter()
+            .map(|cell| match cell {
+                package::Cell::Free => Cell::Free,
+                package::Cell::Reserved => Cell::Reserved,
+                package::Cell::Part(part, item) => {
+                    Cell::Part(ORDER[part], item.and_then(|item| live.get(item).copied()))
                 }
-            }
-        };
-        push(
-            Cell::Part(Part::System, None),
-            count(self.system),
-            &mut cells,
-        );
-        push(Cell::Part(Part::Tools, None), count(self.tools), &mut cells);
-        for (i, f) in self.live_files() {
-            push(
-                Cell::Part(Part::Files, Some(i)),
-                count(f.file.tokens),
-                &mut cells,
-            );
-        }
-        push(
-            Cell::Part(Part::Conversation, None),
-            count(self.conversation),
-            &mut cells,
-        );
-        push(
-            Cell::Part(Part::Memory, None),
-            count(self.memory),
-            &mut cells,
-        );
-        cells.resize(room, Cell::Free);
-        cells.resize(total, Cell::Reserved);
-        cells
+            })
+            .collect()
     }
 }
 
@@ -1368,7 +1348,11 @@ fn window_card(
     pink::popover_card_flush(t)
         .debug_selector(move || selector)
         .track_focus(&s.menu_focus)
-        .w(px(if window_map { CARD_W } else { layout::MENU_W_M }))
+        .w(px(if window_map {
+            package::CARD_W
+        } else {
+            layout::MENU_W_M
+        }))
         .flex()
         .flex_col()
         .gap_0()
@@ -1382,21 +1366,15 @@ fn window_card(
         .child(menu_header(&s.usage, note, t))
         .when(window_map, |card| {
             card.child(
-                div()
-                    .px(px(CARD_PAD))
-                    .pt(px(CARD_GAP))
-                    .pb(px(CARD_PAD))
-                    .flex()
-                    .flex_col()
-                    .gap(px(CARD_GAP))
+                package::section()
                     .child(field(key, s, tone, hover, wave, state, window, t, cx))
                     .child(breakdown(key, s, tone, hover, props, state, t))
-                    .child(card_note(
+                    .child(package::note(
                         format!(
                             "Compacts on its own at the marker, {:.0}% full.\nEach cell is 1% of the window.",
                             AUTO_COMPACT * 100.
                         ),
-                        t,
+                        t.text_faint,
                     )),
             )
         })
@@ -1487,7 +1465,7 @@ fn field(
         .iter()
         .enumerate()
         .map(|(i, &cell)| {
-            let (col, row) = (i / ROWS, i % ROWS);
+            let col = i / package::ROWS;
             let mut color = cell_color(cell, tone, t);
             let before = s.prev.get(i).copied().unwrap_or(cell);
             if before != cell
@@ -1517,63 +1495,49 @@ fn field(
             );
             let spot = Spot::of(cell);
             let hover_state = state.clone();
-            div()
-                .id(eid(format!("{key}-cell-{i}")))
-                .absolute()
-                .left(px(col as f32 * PITCH))
-                .top(px(row as f32 * PITCH))
-                .size(px(CELL))
-                .rounded(px(CELL_RADIUS))
-                .opacity(opacity)
-                .map(|d| {
-                    if cell == Cell::Reserved {
-                        d.border_1().border_color(edge)
-                    } else {
-                        d.bg(color)
-                    }
-                })
-                .on_hover(move |hovered, _, cx| {
+            let paint = if cell == Cell::Reserved {
+                package::CellPaint {
+                    fill: None,
+                    edge: Some(edge),
+                    opacity,
+                }
+            } else {
+                package::CellPaint {
+                    fill: Some(color),
+                    edge: None,
+                    opacity,
+                }
+            };
+            package::cell(eid(format!("{key}-cell-{i}")), i, paint).on_hover(
+                move |hovered, _, cx| {
                     hover_state.update(cx, |s, cx| {
                         s.hover(spot, HoverSource::Cell(i), *hovered);
                         cx.notify();
                     })
-                })
+                },
+            )
         })
         .collect();
+    debug_assert_eq!(children.len(), CELLS);
     if sweeping {
         window.request_animation_frame();
     }
 
     // Auto-compaction's rule, in the gap before its column.
-    let marker_col = (COLS as f32 * AUTO_COMPACT).round();
-    let marker = div()
-        .absolute()
-        .left(px(marker_col * PITCH - CELL_GAP + 1.))
-        .top(px(-4.))
-        .w(px(1.))
-        .h(px(FIELD_H + 8.))
-        .bg(t.border_strong);
-
-    div()
-        .flex_none()
-        .relative()
-        .w(px(FIELD_W))
-        .h(px(FIELD_H))
-        .children(children)
-        .child(marker)
+    package::field(
+        format!("{key}-field"),
+        children,
+        Some((package::marker_column(AUTO_COMPACT), t.border_strong)),
+    )
 }
 
 /// A breakdown row's swatch: a small cell in the part's color, or the
 /// reserve's hollow cell.
-fn swatch(color: Option<Hsla>, t: &Pink) -> Div {
-    div()
-        .flex_none()
-        .size(px(SWATCH))
-        .rounded(px(2.))
-        .map(|d| match color {
-            Some(c) => d.bg(c),
-            None => d.border_1().border_color(reserve_edge(t)),
-        })
+fn swatch(color: Option<Hsla>, t: &Pink) -> package::Swatch {
+    match color {
+        Some(c) => package::Swatch::Fill(c),
+        None => package::Swatch::Hollow(reserve_edge(t)),
+    }
 }
 
 /// The breakdown under the field. Rows follow Pink's quiet list rows (the
@@ -1600,40 +1564,27 @@ fn breakdown(
         };
         let hover_state = state.clone();
         let fade = motion::hover_listener(row_key.clone());
-        div()
-            .id(eid(row_key))
-            .h(px(ROW_H))
-            .px(px(8.))
-            .flex()
-            .items_center()
-            .gap(px(ROW_GAP))
-            .rounded(px(chrome::RADIUS_M))
-            .bg(motion::mix(wash.opacity(0.), wash, lift))
-            .on_hover(move |hovered, window, cx| {
-                fade(hovered, window, cx);
-                hover_state.update(cx, |s, cx| {
-                    s.hover(spot, HoverSource::Row(spot), *hovered);
-                    cx.notify();
-                })
+        package::part_row(
+            row_key,
+            swatch(color, t),
+            label,
+            meta.map(SharedString::from),
+            with_separators(usage.tokens(spot)),
+            package::RowStyle {
+                wash: motion::mix(wash.opacity(0.), wash, lift),
+                label: motion::mix(t.text.opacity(0.85), t.text, lift),
+                meta: t.readable_muted(0.55),
+                count: t.text_muted,
+            },
+        )
+        .on_hover(move |hovered, window, cx| {
+            fade(hovered, window, cx);
+            hover_state.update(cx, |s, cx| {
+                s.hover(spot, HoverSource::Row(spot), *hovered);
+                cx.notify();
             })
-            .child(swatch(color, t))
-            .child(
-                div()
-                    .flex_none()
-                    .text_size(px(12.))
-                    .text_color(motion::mix(t.text.opacity(0.85), t.text, lift))
-                    .child(label),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_size(px(11.))
-                    .text_color(t.readable_muted(0.55))
-                    .child(meta.unwrap_or_default()),
-            )
-            .child(count(usage.tokens(spot), t.text_muted))
+        })
+        .into_any_element()
     };
     let part = |p: Part| Some(tone.opacity(p.strength()));
 
@@ -1644,69 +1595,58 @@ fn breakdown(
         .enumerate()
         .filter_map(|(i, entry)| file_row(key, i, entry, hover, wash, props, state, t));
 
-    div()
-        .mx(px(-8.))
-        .flex()
-        .flex_col()
-        .when(usage.system > 0, |d| {
-            d.child(row(
-                Spot::Part(Part::System),
-                part(Part::System),
-                Part::System.label(),
-                None,
-            ))
-        })
-        .when(usage.tools > 0, |d| {
-            d.child(row(
-                Spot::Part(Part::Tools),
-                part(Part::Tools),
-                Part::Tools.label(),
-                None,
-            ))
-        })
-        .child(row(
-            Spot::Part(Part::Files),
-            part(Part::Files),
-            Part::Files.label(),
-            Some(match live {
-                0 => "none".into(),
-                1 => "1 file".into(),
-                n => format!("{n} files"),
-            }),
-        ))
-        .children(files)
-        .child(row(
-            Spot::Part(Part::Conversation),
-            part(Part::Conversation),
-            Part::Conversation.label(),
-            Some(match (usage.turns, usage.summarized) {
-                (0, _) => "empty".into(),
-                (n, true) => format!("summary of {n} turns"),
-                (1, false) => "1 turn".into(),
-                (n, false) => format!("{n} turns"),
-            }),
-        ))
-        .when(usage.memory > 0, |d| {
-            d.child(row(
-                Spot::Part(Part::Memory),
-                part(Part::Memory),
-                Part::Memory.label(),
-                None,
-            ))
-        })
-        .when(usage.reserve > 0, |d| {
-            d.child(row(Spot::Reserved, None, "Reply reserve", None))
-        })
-}
-
-/// A token count, grouped and tabular.
-fn count(tokens: u32, color: Hsla) -> Div {
-    div()
-        .flex_none()
-        .text_size(px(12.))
-        .font_features(pink::tabular_figures())
-        .text_color(color)
-        .child(with_separators(tokens))
+    let mut rows: Vec<AnyElement> = Vec::new();
+    if usage.system > 0 {
+        rows.push(row(
+            Spot::Part(Part::System),
+            part(Part::System),
+            Part::System.label(),
+            None,
+        ));
+    }
+    if usage.tools > 0 {
+        rows.push(row(
+            Spot::Part(Part::Tools),
+            part(Part::Tools),
+            Part::Tools.label(),
+            None,
+        ));
+    }
+    rows.push(row(
+        Spot::Part(Part::Files),
+        part(Part::Files),
+        Part::Files.label(),
+        Some(match live {
+            0 => "none".into(),
+            1 => "1 file".into(),
+            n => format!("{n} files"),
+        }),
+    ));
+    rows.extend(files.map(IntoElement::into_any_element));
+    rows.push(row(
+        Spot::Part(Part::Conversation),
+        part(Part::Conversation),
+        Part::Conversation.label(),
+        Some(match (usage.turns, usage.summarized) {
+            (0, _) => "empty".into(),
+            (n, true) => format!("summary of {n} turns"),
+            (1, false) => "1 turn".into(),
+            (n, false) => format!("{n} turns"),
+        }),
+    ));
+    if usage.memory > 0 {
+        rows.push(row(
+            Spot::Part(Part::Memory),
+            part(Part::Memory),
+            Part::Memory.label(),
+            None,
+        ));
+    }
+    if usage.reserve > 0 {
+        rows.push(row(Spot::Reserved, None, "Reply reserve", None));
+    }
+    // Counts are tabular so they line up.
+    package::breakdown(rows).font_features(pink::tabular_figures())
 }
 
 /// An attached file under Attached files: its name in mono (Pink keeps mono
@@ -1735,8 +1675,8 @@ fn file_row(
         {
             return None;
         }
-        Some(_) => motion::follow_from(&format!("{file_key}-h"), FILE_H, 0., motion::DISCLOSURE),
-        None => FILE_H,
+        Some(_) => motion::follow_from(&format!("{file_key}-h"), ITEM_H, 0., motion::DISCLOSURE),
+        None => ITEM_H,
     };
     let spot = Spot::File(ix);
     let lift = if hover == Some(spot) {
@@ -1744,7 +1684,7 @@ fn file_row(
     } else {
         motion::hover_t(&file_key)
     };
-    let group = SharedString::from(format!("{file_key}-group"));
+    let group = package::item_group(&file_key);
     let hover_state = state.clone();
     let remove_state = state.clone();
     let props = props.clone();
@@ -1785,67 +1725,29 @@ fn file_row(
                 f(&id, window, cx);
             }
         });
-    Some(
-        div()
-            .id(eid(file_key.clone()))
-            .group(group.clone())
-            .flex_none()
-            .h(px(height))
-            .opacity(height / FILE_H)
-            .overflow_hidden()
-            // Names start on the part labels' column.
-            .pl(px(8. + SWATCH + ROW_GAP))
-            .pr(px(8.))
-            .flex()
-            .items_center()
-            .gap(px(ROW_GAP))
-            .rounded(px(chrome::RADIUS_M))
-            .bg(motion::mix(wash.opacity(0.), wash, lift))
-            .when(entry.removed.is_none(), |d| {
-                let fade = motion::hover_listener(file_key.clone());
-                d.on_hover(move |hovered, window, cx| {
-                    fade(hovered, window, cx);
-                    hover_state.update(cx, |s, cx| {
-                        s.hover(spot, HoverSource::Row(spot), *hovered);
-                        cx.notify();
-                    })
-                })
+    let row = package::item_row(
+        file_key.clone(),
+        name,
+        with_separators(entry.file.tokens),
+        height / ITEM_H,
+        Some(remove.into_any_element()),
+        package::ItemStyle {
+            wash: motion::mix(wash.opacity(0.), wash, lift),
+            name: motion::mix(t.readable_muted(0.85), t.text, lift),
+            count: t.readable_muted(0.7),
+            font: pink::MONO.into(),
+        },
+    );
+    Some(row.when(entry.removed.is_none(), |d| {
+        let fade = motion::hover_listener(file_key.clone());
+        d.on_hover(move |hovered, window, cx| {
+            fade(hovered, window, cx);
+            hover_state.update(cx, |s, cx| {
+                s.hover(spot, HoverSource::Row(spot), *hovered);
+                cx.notify();
             })
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .font_family(pink::MONO)
-                    .text_size(px(11.))
-                    .text_color(motion::mix(t.readable_muted(0.85), t.text, lift))
-                    .child(name.clone()),
-            )
-            .child(
-                // Pink: shell.rs sidebar corner, where the time gives way to
-                // the row's actions on hover.
-                div()
-                    .flex_none()
-                    .relative()
-                    .h_full()
-                    .flex()
-                    .items_center()
-                    .child(
-                        count(entry.file.tokens, t.readable_muted(0.7))
-                            .group_hover(group.clone(), |s| s.opacity(0.)),
-                    )
-                    .child(
-                        div()
-                            .absolute()
-                            .top_0()
-                            .bottom_0()
-                            .right(px(-4.))
-                            .flex()
-                            .items_center()
-                            .child(remove),
-                    ),
-            ),
-    )
+        })
+    }))
 }
 
 /// One of the tray's actions (Pink: pickers.rs `render_context_controls`
