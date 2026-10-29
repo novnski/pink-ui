@@ -27,14 +27,14 @@
 //! needed. Sizes are px at Pink's default UI scale.
 
 use gpui::{
-    AnyElement, App, AppContext, Bounds, ContentMask, Context, Div, Entity, FontFeatures,
-    FontWeight, Hsla, IntoElement, ParentElement, PathBuilder, Render, RenderOnce, Role,
-    SharedString, StatefulInteractiveElement, StyleRefinement, Styled, TextAlign, TextRun, Window,
-    canvas, div, hsla, point, prelude::FluentBuilder, px, size,
+    AnyElement, App, AppContext, Bounds, ContentMask, Context, Div, Entity, FontFeatures, Hsla,
+    IntoElement, ParentElement, Render, RenderOnce, Role, SharedString, StatefulInteractiveElement,
+    StyleRefinement, Styled, TextAlign, TextRun, Window, canvas, div, point,
+    prelude::FluentBuilder, px, size,
 };
 use web_time::Instant;
 
-use crate::components::working_trailer;
+use crate::components::{loaders as package, working_trailer};
 use crate::motion::{
     self, GRADIENT_SPIN, ORB_BREATH, PINK_PULSE, PULSE_STAGGER, STATUS_SHIMMER, speed_scale,
 };
@@ -197,12 +197,13 @@ impl RenderOnce for BreathingOrb {
 
 /// The phase offset of a gradient-spinner cell (Pink `gradient_spinner`):
 /// its distance from the wave origin at the bottom center, `(2 - row) +
-/// |col - 1|`, over 4. Row 0 is the top.
-pub fn gradient_cell_phase(row: usize, col: usize) -> f32 {
-    let center = (MATRIX_SIDE as f32 - 1.0) / 2.0;
-    let max = MATRIX_SIDE as f32 - 1.0 + center;
-    let d = MATRIX_SIDE as f32 - 1.0 - row as f32 + (col as f32 - center).abs();
-    if max == 0.0 { 0.0 } else { d / (max + 1.0) }
+/// |col - 1|`, over 4. Row 0 is the top. The `pink-loaders` package's.
+pub use package::gradient_cell_phase;
+
+/// Pink's gradient-spin curve over a cell's phase, the `pulse` the
+/// `pink-loaders` spinners take (Pink passes the same from `pink_proto`).
+fn gspin_pulse(t: f32) -> f32 {
+    motion::gspin_opacity(t, GSPIN_DIM)
 }
 
 /// The gradient matrix spinner (Pink `gradient_spinner`, the
@@ -213,6 +214,7 @@ pub fn gradient_cell_phase(row: usize, col: usize) -> f32 {
 /// the per-cell phase enters at the bottom edge and converges on the top
 /// center, so the wave reads as travelling upward. Runs at 15Hz. Pink sizes:
 /// 2.5 (boot splash, empty panes), 3 (history, settings), 2 (workbench).
+/// Drawn by the `pink-loaders` package.
 pub fn gradient_spinner(cell_px: f32, tints: [Hsla; 3]) -> GradientSpinner {
     GradientSpinner { cell_px, tints }
 }
@@ -226,29 +228,8 @@ pub struct GradientSpinner {
 
 impl RenderOnce for GradientSpinner {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let (cell_px, tints) = (self.cell_px, self.tints);
         let delta = motion::pulse_phase_slow(&GRADIENT_SPIN, window, cx);
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(cell_px / 2.0))
-            .children((0..MATRIX_SIDE).map(move |row| {
-                let tint = tints[row];
-                div()
-                    .flex()
-                    .flex_row()
-                    .gap(px(cell_px / 2.0))
-                    .children((0..MATRIX_SIDE).map(move |col| {
-                        div()
-                            .size(px(cell_px))
-                            .rounded(px(cell_px / 2.0))
-                            .bg(tint)
-                            .opacity(motion::gspin_opacity(
-                                delta + gradient_cell_phase(row, col),
-                                GSPIN_DIM,
-                            ))
-                    }))
-            }))
+        package::gradient_spinner(self.cell_px, self.tints, delta, gspin_pulse)
     }
 }
 
@@ -259,7 +240,8 @@ impl RenderOnce for GradientSpinner {
 /// Clockwise ring position of each `(row, col)` cell of the mini spinner,
 /// top-left first: (0,0) → (0,1) → (1,1) → (2,1) → (2,0) → (1,0) (Pink
 /// `mini_spinner_cells` `RING`). A cell's phase is its position over 6.
-pub const MINI_RING: [[usize; 2]; 3] = [[0, 1], [5, 2], [4, 3]];
+/// The `pink-loaders` package's.
+pub use package::MINI_RING;
 
 /// The 2×3 activity glyph for compact status slots (Pink
 /// `mini_glyph_spinner`, Pink's default "running item" mark): three rows of
@@ -270,7 +252,8 @@ pub const MINI_RING: [[usize; 2]; 3] = [[0, 1], [5, 2], [4, 3]];
 /// Each spinner renders as its own cached view keyed by `key`, so only its
 /// six cells re-render per tick; keep `key` unique among siblings. Pink
 /// sizes: cell 2 (running tool rows, sidebar rows, tabs), 1.75 and 1.5
-/// (history), 3 (attachment sending).
+/// (history), 3 (attachment sending). The cells are drawn by the
+/// `pink-loaders` package.
 pub fn mini_glyph_spinner(
     key: impl Into<SharedString>,
     cell_px: f32,
@@ -320,12 +303,8 @@ impl RenderOnce for MiniSpinner {
                 (view.clone(), view)
             })
         });
-        view.cached(
-            StyleRefinement::default()
-                .flex_none()
-                .w(px(self.cell_px * 2.5))
-                .h(px(self.cell_px * 4.0)),
-        )
+        let (w, h) = package::mini_spinner_box(self.cell_px);
+        view.cached(StyleRefinement::default().flex_none().w(px(w)).h(px(h)))
     }
 }
 
@@ -336,27 +315,8 @@ struct MiniSpinnerView {
 
 impl Render for MiniSpinnerView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let (cell_px, row_tints) = (self.cell_px, self.row_tints);
         let delta = motion::pulse_delta(&GRADIENT_SPIN, cx.entity_id(), cx);
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(cell_px / 2.0))
-            .children((0..3).map(move |row| {
-                let tint = row_tints[row];
-                div()
-                    .flex()
-                    .flex_row()
-                    .gap(px(cell_px / 2.0))
-                    .children((0..2).map(move |col| {
-                        let phase = MINI_RING[row][col] as f32 / 6.0;
-                        div()
-                            .size(px(cell_px))
-                            .rounded(px(cell_px / 2.0))
-                            .bg(tint)
-                            .opacity(motion::gspin_opacity(delta + phase, GSPIN_DIM))
-                    }))
-            }))
+        package::mini_spinner(self.cell_px, self.row_tints, delta, gspin_pulse)
     }
 }
 
@@ -364,71 +324,16 @@ impl Render for MiniSpinnerView {
 // Upload progress ring
 // ---------------------------------------------------------------------------
 
-/// Stroke width of [`upload_progress_ring`] (Pink `RING_STROKE`).
-const RING_STROKE: f32 = 2.5;
-/// Polyline segments for a full circle (Pink `RING_SEGMENTS`).
-const RING_SEGMENTS: f32 = 64.0;
-/// The percent label's size as a share of the diameter: 9 in the 34 ring
-/// (Pink `RING_LABEL_RATIO`).
-const RING_LABEL_RATIO: f32 = 9.0 / 34.0;
-
 /// Radial upload progress with the percent centered (Pink
 /// `upload_progress_ring`), overlaid on an attachment thumbnail while it
 /// uploads: a faint full track (white 22%) and a bright arc (white 95%)
 /// growing clockwise from 12 o'clock, 2.5px strokes; the label is
-/// `diameter * 9/34` SEMIBOLD white 95%. Fixed white-on-wash: the caller
-/// dims the image behind it. Pink uses a 34px ring.
+/// `diameter * 9/34` SEMIBOLD white 95%. `diameter` is pt at the 16 px
+/// default, in rems as in Pink. Fixed white-on-wash: the caller dims the
+/// image behind it. Pink uses a 34pt ring. Drawn by the `pink-loaders`
+/// package.
 pub fn upload_progress_ring(percent: u8, diameter: f32) -> AnyElement {
-    let frac = f32::from(percent.min(100)) / 100.0;
-    let ring = canvas(
-        |_, _, _| (),
-        move |bounds, _, window, _| {
-            let center = bounds.center();
-            let radius = f32::from(bounds.size.width.min(bounds.size.height)) / 2.0 - RING_STROKE;
-            let mut paint_arc = |sweep: f32, color: Hsla| {
-                if sweep <= 0.0 {
-                    return;
-                }
-                let steps = ((RING_SEGMENTS * sweep).ceil() as usize).max(2);
-                let at = |i: usize| {
-                    // Clockwise from 12 o'clock.
-                    let theta = -std::f32::consts::FRAC_PI_2
-                        + std::f32::consts::TAU * sweep * (i as f32 / steps as f32);
-                    point(
-                        center.x + px(radius * theta.cos()),
-                        center.y + px(radius * theta.sin()),
-                    )
-                };
-                let mut builder = PathBuilder::stroke(px(RING_STROKE));
-                builder.move_to(at(0));
-                for i in 1..=steps {
-                    builder.line_to(at(i));
-                }
-                if let Ok(path) = builder.build() {
-                    window.paint_path(path, color);
-                }
-            };
-            paint_arc(1.0, hsla(0.0, 0.0, 1.0, 0.22));
-            paint_arc(frac, hsla(0.0, 0.0, 1.0, 0.95));
-        },
-    )
-    .absolute()
-    .inset_0();
-    div()
-        .relative()
-        .size(px(diameter))
-        .flex()
-        .items_center()
-        .justify_center()
-        .child(ring)
-        .child(
-            div()
-                .text_size(px(diameter * RING_LABEL_RATIO))
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(hsla(0.0, 0.0, 1.0, 0.95))
-                .child(SharedString::from(format!("{percent}%"))),
-        )
-        .into_any_element()
+    package::upload_progress_ring(percent, diameter).into_any_element()
 }
 
 // ---------------------------------------------------------------------------
@@ -437,9 +342,10 @@ pub fn upload_progress_ring(percent: u8, diameter: f32) -> AnyElement {
 
 /// Pink's full-window boot splash (Pink `splash_overlay`): an absolute
 /// `inset_0` layer of `bg` (Pink: the glass tint; pass `t.chrome_surface()`,
-/// the glass baked over the canvas) with a [`gradient_spinner`] at cell 2.5 above a 12px
-/// `label` in `label_color` (Pink: "Setting up PINK environment" in
-/// `readable_muted(0.7)`), 12px apart, centered. While `fading` it plays
+/// the glass baked over the canvas) with a [`gradient_spinner`] at cell 2.5
+/// above a 12pt `label` in `label_color` (Pink: "Setting up PINK
+/// environment" in `readable_muted(0.7)`), 12px apart, centered. Drawn by
+/// the `pink-loaders` package. While `fading` it plays
 /// [`motion::splash_out`]: 150ms hold, then a 500ms fade and 6px lift.
 pub fn splash_overlay(
     bg: Hsla,
@@ -448,26 +354,42 @@ pub fn splash_overlay(
     label_color: Hsla,
     fading: bool,
 ) -> AnyElement {
-    let content = div()
-        .absolute()
-        .inset_0()
-        .bg(bg)
-        .flex()
-        .flex_col()
-        .items_center()
-        .justify_center()
-        .gap(px(12.0))
-        .child(gradient_spinner(2.5, tints))
-        .child(
-            div()
-                .text_size(px(12.0))
-                .text_color(label_color)
-                .child(label.into()),
+    SplashOverlay {
+        bg,
+        tints,
+        label: label.into(),
+        label_color,
+        fading,
+    }
+    .into_any_element()
+}
+
+/// See [`splash_overlay`]: reads the pulse clock's phase as it renders.
+#[derive(IntoElement)]
+struct SplashOverlay {
+    bg: Hsla,
+    tints: [Hsla; 3],
+    label: SharedString,
+    label_color: Hsla,
+    fading: bool,
+}
+
+impl RenderOnce for SplashOverlay {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let delta = motion::pulse_phase_slow(&GRADIENT_SPIN, window, cx);
+        let content = package::splash_overlay(
+            self.bg,
+            self.tints,
+            delta,
+            gspin_pulse,
+            self.label,
+            self.label_color,
         );
-    if fading {
-        motion::splash_out("boot-splash-out", content).into_any_element()
-    } else {
-        content.into_any_element()
+        if self.fading {
+            motion::splash_out("boot-splash-out", content).into_any_element()
+        } else {
+            content.into_any_element()
+        }
     }
 }
 
@@ -976,7 +898,7 @@ impl RenderOnce for WorkingStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::TestAppContext;
+    use gpui::{TestAppContext, hsla};
 
     #[test]
     fn elapsed_and_ellipsis_match_pink() {

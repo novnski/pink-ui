@@ -17,12 +17,26 @@
 //! Everything loops on the shared pulse clock; under reduced motion each
 //! loader rests on its still frame.
 //!
+//! The gradient matrix, the glyph and mono spinners, the upload ring and the
+//! boot splash are the `pink-loaders` package (`components/loaders`), PINK's
+//! loaders as a single-GPUI package the app pins (UI rethink decision 54).
+//! The gallery compiles the package's own source here, unchanged, against
+//! its GPUI; PINK compiles the same file against its patched one. The kit's
+//! [`crate::pink::loaders`] builders draw through it, passing the pulse
+//! clock's phase and the gradient-spin curve as PINK's adapters do.
+//!
 //! ```ignore
 //! Loaders::new("loaders")
 //!     .working(WorkingSample::new("Reading").object("ci.yml").secs(12))
 //!     .upload_percent(64)
 //!     .on_select(|kind, _, _| println!("{}", kind.symbol()))
 //! ```
+
+#[allow(dead_code)]
+mod package {
+    include!("../../components/loaders/src/lib.rs");
+}
+pub use package::*;
 
 use std::{rc::Rc, sync::Arc, time::Duration};
 
