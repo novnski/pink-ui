@@ -50,7 +50,11 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    components::commit_row as cr,
+    components::{
+        commit_row as cr,
+        icon_button::{IconButtonStyle, icon_button},
+        surface_toolbar as st,
+    },
     interaction::HoverColors,
     motion::{self, COLLAPSE, HOVER_FADE, MENU_OUT, MENU_RISE_DOWN, RESIZE},
     pink::{self, FillTier, Pink, chrome, layout, loaders, radius},
@@ -76,8 +80,7 @@ const ICON_CHECK: &str = "icons/commit-history/check.svg";
 // Pink: history.rs constants.
 const ROW_HEIGHT: f32 = cr::ROW_HEIGHT;
 const LANE_SPACING: f32 = 12.0;
-const NODE_RADIUS: f32 = 3.0;
-const HEAD_RING_PADDING: f32 = 2.0;
+const NODE_RADIUS: f32 = cr::NODE_RADIUS;
 const STROKE_WIDTH: f32 = 1.5;
 const GRAPH_SATURATION: f32 = 0.72;
 /// The first lane's center sits on the header's text gutter.
@@ -105,10 +108,6 @@ const SEARCH_IDLE_DISMISS: Duration = Duration::from_millis(1_500);
 const COMPARISON_MIN_WIDTH: f32 = 260.0;
 /// Pink: `copy_sha` shows "Copied" for 1.2 s.
 const COPIED_FOR: Duration = Duration::from_millis(1_200);
-/// Pink: `render_column_header_cell`'s header strip.
-const HEADER_HEIGHT: f32 = 24.0;
-/// Pink: the toolbar (`surface_chrome::HEADER_HEIGHT`, the titlebar height).
-const TOOLBAR_HEIGHT: f32 = layout::TITLEBAR_HEIGHT;
 /// Pink: the column and author menus (`render_column_menu` /
 /// `render_author_menu`): radius 9 with rows at 9 − the card inset.
 const COLUMN_MENU_RADIUS: f32 = 9.0;
@@ -2333,211 +2332,160 @@ fn toolbar(
     let search_el: AnyElement = if search == SearchMode::Collapsed {
         let state = state.clone();
         let id = format!("{key}-search-trigger");
-        div()
-            .id(SharedString::from(id.clone()))
-            .size(px(chrome::CONTROL_M))
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(px(chrome::RADIUS_M))
-            .cursor_pointer()
-            .hover_wash(id, t.wash(0.14))
-            .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
-            .on_click(move |_, window, cx| {
-                cx.stop_propagation();
-                state.update(cx, |s, cx| s.expand_search(window, cx));
-            })
-            .child(
-                svg()
-                    .path(ICON_SEARCH)
-                    .size(px(chrome::ICON_M))
-                    .flex_none()
-                    .text_color(t.text_muted),
-            )
-            .tooltip(ref_tooltip(vec!["Search commits".into()]))
-            .tooltip_show_delay(layout::TOOLTIP_DELAY)
-            .into_any_element()
+        icon_button(
+            id.clone(),
+            st::control_glyph(svg().path(ICON_SEARCH).flex_none(), t.text_muted).into_any_element(),
+            &IconButtonStyle {
+                size: st::CONTROL_SIZE,
+                radius: st::CONTROL_RADIUS,
+                wash: gpui::transparent_black(),
+                enabled: true,
+            },
+        )
+        .hover_wash(id, t.wash(0.14))
+        .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+        .on_click(move |_, window, cx| {
+            cx.stop_propagation();
+            state.update(cx, |s, cx| s.expand_search(window, cx));
+        })
+        .tooltip(ref_tooltip(vec!["Search commits".into()]))
+        .tooltip_show_delay(layout::TOOLTIP_DELAY)
+        .into_any_element()
     } else {
         let closing = search == SearchMode::Collapsing;
         let clear_state = state.clone();
         let close_id = format!("{key}-search-close");
-        div()
-            .id(SharedString::from(format!("{key}-search")))
-            .h(px(chrome::CONTROL_M))
-            .w(px(SEARCH_WIDTH))
-            .min_w(px(80.0))
-            .flex_shrink(1.0)
-            .overflow_hidden()
-            .flex()
-            .items_center()
-            .gap(px(6.0))
-            .pl(px(chrome::EDGE_INSET))
-            .pr(px(2.0))
-            .rounded(px(chrome::RADIUS_M))
-            .bg(t.ink(0.035))
-            .child(
-                div()
-                    .size(px(14.0))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(
-                        svg()
-                            .path(ICON_SEARCH)
-                            .size(px(11.0))
-                            .flex_none()
-                            .text_color(t.text_faint),
-                    ),
+        st::compact_field(
+            SharedString::from(format!("{key}-search")),
+            SEARCH_WIDTH,
+            t.ink(0.035),
+        )
+        .child(st::compact_field_status(st::compact_field_glyph(
+            svg().path(ICON_SEARCH),
+            t.text_faint,
+        )))
+        .child(st::compact_field_input(
+            div()
+                .w_full()
+                .text_size(px(11.0))
+                .line_height(px(14.0))
+                .text_color(t.text)
+                .child(input),
+        ))
+        .child(
+            st::compact_close(
+                SharedString::from(close_id.clone()),
+                gpui::transparent_black(),
             )
-            .child(
-                div()
-                    .h(px(14.0))
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .items_center()
-                    .overflow_hidden()
-                    .text_size(px(11.0))
-                    .line_height(px(14.0))
-                    .text_color(t.text)
-                    .child(input),
-            )
-            .child(
-                // A 24 pt hit box in a 16 pt footprint.
-                div()
-                    .id(SharedString::from(close_id.clone()))
-                    .size(px(24.0))
-                    .m(px(-4.0))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(radius::SM))
-                    .cursor_pointer()
-                    .hover_wash(close_id, t.fill(FillTier::Tertiary))
-                    .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
-                    .on_click(move |_, _, cx| {
-                        cx.stop_propagation();
-                        clear_state.update(cx, |s, cx| s.clear_search(cx));
-                    })
-                    .child(
-                        svg()
-                            .path(ICON_CLOSE)
-                            .size(px(9.0))
-                            .text_color(t.text_faint),
-                    ),
-            )
-            .with_animation(
-                SharedString::from(format!(
-                    "{key}-search-morph-{search_epoch}-{}",
-                    if closing { "out" } else { "in" }
-                )),
-                RESIZE.animation(),
-                move |el, progress| {
-                    let amount = if closing { 1.0 - progress } else { progress };
-                    el.w(px(24.0 + (SEARCH_WIDTH - 24.0) * amount))
-                        .opacity(0.45 + 0.55 * amount)
-                },
-            )
-            .into_any_element()
+            .hover_wash(close_id, t.fill(FillTier::Tertiary))
+            .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+            .on_click(move |_, _, cx| {
+                cx.stop_propagation();
+                clear_state.update(cx, |s, cx| s.clear_search(cx));
+            })
+            .child(st::compact_close_glyph(
+                svg().path(ICON_CLOSE),
+                t.text_faint,
+            )),
+        )
+        .with_animation(
+            SharedString::from(format!(
+                "{key}-search-morph-{search_epoch}-{}",
+                if closing { "out" } else { "in" }
+            )),
+            RESIZE.animation(),
+            move |el, progress| {
+                let amount = if closing { 1.0 - progress } else { progress };
+                el.w(px(24.0 + (SEARCH_WIDTH - 24.0) * amount))
+                    .opacity(0.45 + 0.55 * amount)
+            },
+        )
+        .into_any_element()
     };
 
     // Pink `GitHistoryFetchButton`.
     let fetch_id = format!("{key}-fetch-all");
-    let fetch = div()
-        .id(SharedString::from(fetch_id.clone()))
-        .h(px(chrome::CONTROL_M))
-        .px(px(8.0))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .gap(px(6.0))
-        .rounded(px(chrome::RADIUS_M))
-        .map(|el| {
-            if fetching {
-                el.bg(t.wash(0.05))
+    let fetch = st::labeled_control(
+        SharedString::from(fetch_id.clone()),
+        &st::LabeledControlStyle {
+            wash: if fetching {
+                t.wash(0.05)
             } else {
-                let on_fetch = on_fetch.clone();
-                el.cursor_pointer()
-                    .hover_wash(fetch_id.clone(), t.wash(0.14))
-                    .on_click(move |_, window, cx| {
-                        cx.stop_propagation();
-                        if let Some(f) = &on_fetch {
-                            f(window, cx);
-                        }
-                    })
-            }
-        })
-        .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
-        .child(if fetching {
-            loaders::mini_glyph_spinner(format!("{key}-fetch-spin"), 1.75, t.glyph)
-                .into_any_element()
+                gpui::transparent_black()
+            },
+            enabled: !fetching,
+        },
+    )
+    .map(|el| {
+        if fetching {
+            el
         } else {
-            svg()
-                .path(ICON_CLOUD)
-                .size(px(chrome::ICON_M))
-                .flex_none()
-                .text_color(t.readable_muted(0.75))
-                .into_any_element()
-        })
-        .child(
-            div()
-                .whitespace_nowrap()
-                .text_size(px(11.0))
-                .text_color(if fetching { t.text_faint } else { t.text_muted })
-                .child(if fetching { "Fetching…" } else { "Fetch all" }),
-        );
+            let on_fetch = on_fetch.clone();
+            el.hover_wash(fetch_id.clone(), t.wash(0.14))
+                .on_click(move |_, window, cx| {
+                    cx.stop_propagation();
+                    if let Some(f) = &on_fetch {
+                        f(window, cx);
+                    }
+                })
+        }
+    })
+    .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+    .child(if fetching {
+        loaders::mini_glyph_spinner(format!("{key}-fetch-spin"), 1.75, t.glyph).into_any_element()
+    } else {
+        st::control_glyph(svg().path(ICON_CLOUD).flex_none(), t.readable_muted(0.75))
+            .into_any_element()
+    })
+    .child(st::control_label(
+        if fetching { "Fetching…" } else { "Fetch all" },
+        if fetching { t.text_faint } else { t.text_muted },
+    ));
 
     // Pink `GitHistoryViewButton`: latched accent wash while showing tips.
     let tips = mode == ViewMode::BranchTips;
     let view_id = format!("{key}-view-toggle");
     let view_state = state.clone();
-    let view = div()
-        .id(SharedString::from(view_id.clone()))
-        .size(px(chrome::CONTROL_M))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(chrome::RADIUS_M))
-        .cursor_pointer()
-        .map(|el| {
-            if tips {
-                el.bg(t.accent.opacity(0.12))
-            } else {
-                el.hover_wash(view_id, t.wash(0.14))
-            }
-        })
-        .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
-        .on_click(move |_, _, cx| {
-            cx.stop_propagation();
-            view_state.update(cx, |s, cx| {
-                let next = if s.mode == ViewMode::BranchTips {
-                    ViewMode::AllCommits
-                } else {
-                    ViewMode::BranchTips
-                };
-                s.set_view_mode(next, cx);
-            });
-        })
-        .child(
-            svg()
-                .path(ICON_FOLD)
-                .size(px(chrome::ICON_M))
-                .text_color(if tips { t.accent } else { t.text_muted }),
+    let view = icon_button(
+        view_id.clone(),
+        st::control_glyph(
+            svg().path(ICON_FOLD),
+            if tips { t.accent } else { t.text_muted },
         )
-        .tooltip(ref_tooltip(vec![
-            if tips {
-                "Show all commits"
+        .into_any_element(),
+        &IconButtonStyle {
+            size: st::CONTROL_SIZE,
+            radius: st::CONTROL_RADIUS,
+            wash: if tips {
+                t.accent.opacity(0.12)
             } else {
-                "Show branch tips"
-            }
-            .into(),
-        ]))
-        .tooltip_show_delay(layout::TOOLTIP_DELAY);
+                gpui::transparent_black()
+            },
+            enabled: true,
+        },
+    )
+    .when(!tips, |el| el.hover_wash(view_id, t.wash(0.14)))
+    .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+    .on_click(move |_, _, cx| {
+        cx.stop_propagation();
+        view_state.update(cx, |s, cx| {
+            let next = if s.mode == ViewMode::BranchTips {
+                ViewMode::AllCommits
+            } else {
+                ViewMode::BranchTips
+            };
+            s.set_view_mode(next, cx);
+        });
+    })
+    .tooltip(ref_tooltip(vec![
+        if tips {
+            "Show all commits"
+        } else {
+            "Show branch tips"
+        }
+        .into(),
+    ]))
+    .tooltip_show_delay(layout::TOOLTIP_DELAY);
 
     // Pink `Changes::header_button`: a focusable 28 pt icon button.
     let ring = t.focus_ring();
@@ -2571,28 +2519,18 @@ fn toolbar(
         .tooltip_show_delay(layout::TOOLTIP_DELAY);
 
     // Pink `surface_chrome::toolbar`: 38 tall, 8 in, controls 4 apart.
-    div()
-        .h(px(TOOLBAR_HEIGHT))
-        .w_full()
-        .flex_none()
-        .px(px(chrome::EDGE_INSET))
-        .flex()
-        .items_center()
-        .gap(px(chrome::CONTROL_GAP))
-        .child(title)
-        .child(count_view)
-        .child(
-            div()
-                .min_w_0()
-                .flex_shrink(1.0)
-                .flex()
-                .items_center()
-                .gap(px(chrome::CONTROL_GAP))
-                .child(search_el)
-                .child(fetch)
-                .child(view)
-                .child(refresh),
-        )
+    st::toolbar().child(title).child(count_view).child(
+        div()
+            .min_w_0()
+            .flex_shrink(1.0)
+            .flex()
+            .items_center()
+            .gap(px(chrome::CONTROL_GAP))
+            .child(search_el)
+            .child(fetch)
+            .child(view)
+            .child(refresh),
+    )
 }
 
 /// Column header, graph and rows, laid out for the pane's width (Pink: the
@@ -2803,14 +2741,7 @@ fn column_header(c: &BodyCx, geometry: GraphGeometry) -> gpui::Stateful<gpui::Di
         let down_state = state.clone();
         let up_state = state.clone();
         let hover = t.border_strong;
-        let handle = div()
-            .id(SharedString::from(handle_key.clone()))
-            .absolute()
-            .left(px(-3.0))
-            .top_0()
-            .bottom_0()
-            .w(px(6.0))
-            .cursor_col_resize()
+        let handle = cr::resize_handle(SharedString::from(handle_key.clone()), hover.opacity(0.0))
             .hover_fill(handle_key, hover.opacity(0.0), hover.opacity(0.7))
             .on_mouse_down(MouseButton::Left, move |ev: &MouseDownEvent, window, cx| {
                 window.prevent_default();
@@ -2842,68 +2773,49 @@ fn column_header(c: &BodyCx, geometry: GraphGeometry) -> gpui::Stateful<gpui::Di
         let indicator = c
             .column_drag
             .filter(|d| d.over == index && d.from != d.over)
-            .map(|d| {
-                let after = d.from < d.over;
-                div()
-                    .absolute()
-                    .top(px(3.0))
-                    .bottom(px(3.0))
-                    .w(px(2.0))
-                    .rounded_full()
-                    .bg(t.accent)
-                    .when(after, |el| el.right_0())
-                    .when(!after, |el| el.left_0())
-            });
+            .map(|d| cr::drop_line(d.from < d.over, t.accent));
         let menu_state = state.clone();
         cells.push(
-            div()
-                .id(SharedString::from(format!("{key}-header-{column:?}")))
-                .relative()
-                .w(px(width))
-                .min_w(px(min_width))
-                .h_full()
-                .flex_shrink(1.0)
-                .flex()
-                .items_center()
-                .cursor_pointer()
-                .when(column == HistoryColumn::Author, |el| {
-                    el.justify_center().on_mouse_down(
-                        MouseButton::Right,
-                        move |ev: &MouseDownEvent, window, cx| {
-                            window.prevent_default();
-                            cx.stop_propagation();
-                            let at = ev.position;
-                            menu_state.update(cx, |s, cx| s.open_menu(Menu::Author, at, cx));
-                        },
-                    )
-                })
-                .on_drag(
-                    ColumnDrag {
-                        column,
-                        label: label.into(),
-                    },
-                    |payload, _, _, cx| {
+            cr::header_cell(
+                SharedString::from(format!("{key}-header-{column:?}")),
+                width,
+                min_width,
+                column == HistoryColumn::Author,
+            )
+            .when(column == HistoryColumn::Author, |el| {
+                el.on_mouse_down(
+                    MouseButton::Right,
+                    move |ev: &MouseDownEvent, window, cx| {
+                        window.prevent_default();
                         cx.stop_propagation();
-                        let label = payload.label.clone();
-                        cx.new(|_| ColumnGhost { label })
+                        let at = ev.position;
+                        menu_state.update(cx, |s, cx| s.open_menu(Menu::Author, at, cx));
                     },
                 )
-                .children(indicator)
-                .child(label)
-                // Painted last so the narrow divider wins over the drag.
-                .child(handle),
+            })
+            .on_drag(
+                ColumnDrag {
+                    column,
+                    label: label.into(),
+                },
+                |payload, _, _, cx| {
+                    cx.stop_propagation();
+                    let label = payload.label.clone();
+                    cx.new(|_| ColumnGhost { label })
+                },
+            )
+            .children(indicator)
+            .child(label)
+            // Painted last so the narrow divider wins over the drag.
+            .child(handle),
         );
         previous = data;
     }
 
     let move_state = state.clone();
     let drop_state = state.clone();
-    let optional = div()
+    let optional = cr::cells()
         .id(SharedString::from(format!("{key}-optional-headers")))
-        .h_full()
-        .flex()
-        .flex_row()
-        .flex_shrink(1.0)
         .on_drag_move::<ColumnDrag>(move |ev, _, cx| {
             let dragged = ev.drag(cx).column;
             let position = ev.event.position;
@@ -2945,50 +2857,33 @@ fn column_header(c: &BodyCx, geometry: GraphGeometry) -> gpui::Stateful<gpui::Di
 
     let button_id = format!("{key}-columns-button");
     let open_state = state.clone();
-    let column_button = div()
-        .id(SharedString::from(button_id.clone()))
-        .absolute()
-        .right(px(3.0))
-        .top(px(2.0))
-        .size(px(20.0))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(5.0))
-        .cursor_pointer()
-        .opacity(0.0)
-        .group_hover(format!("{key}-column-header"), |s| s.opacity(1.0))
-        .when(c.columns_menu_open, |el| el.opacity(1.0))
-        .hover_wash(button_id, t.fill(FillTier::Tertiary))
-        .on_mouse_down(MouseButton::Left, move |ev: &MouseDownEvent, window, cx| {
-            window.prevent_default();
-            cx.stop_propagation();
-            let at = ev.position;
-            open_state.update(cx, |s, cx| s.open_menu(Menu::Columns, at, cx));
-        })
-        .child(
-            svg()
-                .path(ICON_COLUMNS)
-                .size(px(12.0))
-                .text_color(t.text_muted),
-        );
+    let column_button = cr::columns_button(
+        SharedString::from(button_id.clone()),
+        format!("{key}-column-header"),
+        c.columns_menu_open,
+        gpui::transparent_black(),
+    )
+    .hover_wash(button_id, t.fill(FillTier::Tertiary))
+    .on_mouse_down(MouseButton::Left, move |ev: &MouseDownEvent, window, cx| {
+        window.prevent_default();
+        cx.stop_propagation();
+        let at = ev.position;
+        open_state.update(cx, |s, cx| s.open_menu(Menu::Columns, at, cx));
+    })
+    .child(cr::columns_glyph(svg().path(ICON_COLUMNS), t.text_muted));
 
-    div()
-        .id(SharedString::from(format!("{key}-column-header")))
-        .group(format!("{key}-column-header"))
-        .relative()
-        .h(px(HEADER_HEIGHT))
-        .flex_none()
-        .flex()
-        .items_center()
-        .border_b_1()
-        .border_color(t.hairline(0.06))
-        .text_size(px(11.0))
-        .text_color(t.text_faint)
-        .child(div().w(px(geometry.width)).flex_none())
-        .child(div().flex_1().min_w(px(SUBJECT_MIN_WIDTH)).child("Commit"))
-        .child(optional)
-        .child(column_button)
+    cr::column_header(
+        SharedString::from(format!("{key}-column-header")),
+        format!("{key}-column-header"),
+        &cr::ColumnHeaderStyle {
+            rule: t.hairline(0.06),
+            text: t.text_faint,
+        },
+    )
+    .child(div().w(px(geometry.width)).flex_none())
+    .child(cr::commit_header("Commit"))
+    .child(optional)
+    .child(column_button)
 }
 
 /// Every lane, painted in one stroked path per color under the rows; with a
@@ -3216,91 +3111,63 @@ fn history_row(
             format!("Collapse {}", reference.label).into()
         };
         let fold_state = state.clone();
-        div()
-            .id(SharedString::from(format!("{key}-fold-{sha}")))
-            .absolute()
-            .left(px(node_x + NODE_RADIUS + 3.0))
-            .top(px((ROW_HEIGHT - 16.0) / 2.0))
-            .size(px(16.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_full()
-            .border_1()
-            .border_color(color.opacity(0.32))
-            .bg(t.bg.opacity(0.96))
-            .cursor_pointer()
-            .opacity(if collapsed { 1.0 } else { 0.0 })
-            .group_hover(group.clone(), |s| s.opacity(1.0))
-            .on_mouse_down(MouseButton::Left, |_, window, cx| {
-                window.prevent_default();
-                cx.stop_propagation();
-            })
-            .on_click(move |_, _, cx| {
-                cx.stop_propagation();
-                fold_state.update(cx, |s, cx| s.toggle_branch_ref(&reference, cx));
-            })
-            .child(
-                svg()
-                    .path(if collapsed { ICON_EXPAND } else { ICON_FOLD })
-                    .size(px(9.0))
-                    .text_color(t.readable_tone(color, 0.9)),
-            )
-            .tooltip(ref_tooltip(vec![tip]))
-            .tooltip_show_delay(layout::TOOLTIP_DELAY)
+        cr::fold_control(
+            SharedString::from(format!("{key}-fold-{sha}")),
+            group.clone(),
+            node_x,
+            collapsed,
+            &cr::FoldStyle {
+                edge: color.opacity(0.32),
+                fill: t.bg.opacity(0.96),
+            },
+        )
+        .on_mouse_down(MouseButton::Left, |_, window, cx| {
+            window.prevent_default();
+            cx.stop_propagation();
+        })
+        .on_click(move |_, _, cx| {
+            cx.stop_propagation();
+            fold_state.update(cx, |s, cx| s.toggle_branch_ref(&reference, cx));
+        })
+        .child(cr::fold_glyph(
+            svg().path(if collapsed { ICON_EXPAND } else { ICON_FOLD }),
+            t.readable_tone(color, 0.9),
+        ))
+        .tooltip(ref_tooltip(vec![tip]))
+        .tooltip_show_delay(layout::TOOLTIP_DELAY)
     });
-    let node = div()
-        .absolute()
-        .left(px(node_x - node_radius))
-        .top(px(ROW_HEIGHT / 2.0 - node_radius))
-        .size(px(node_radius * 2.0))
-        .rounded_full()
-        .bg(color);
     let move_state = state.clone();
     let leave_state = state.clone();
     let hit_row = graph_row.clone();
     let hit_origin = origin.clone();
-    let graph_cell = div()
-        .id(SharedString::from(format!("{key}-graph-{sha}")))
-        .relative()
-        .group(group)
-        .w(px(geometry.width))
-        .h(px(ROW_HEIGHT))
-        .flex_none()
-        .on_mouse_move(move |ev: &MouseMoveEvent, _, cx| {
-            let o = hit_origin.get();
-            let x = f32::from(ev.position.x - o.x);
-            let y = f32::from(ev.position.y - o.y) - top;
-            let path = hovered_graph_path(&hit_row, x, y, geometry);
-            move_state.update(cx, |s, cx| {
-                if s.hover_suppressed.replace(false) {
-                    cx.notify();
-                }
-                s.set_graph_hover(path, cx)
-            });
-        })
-        .on_hover(move |hovered, _, cx| {
-            if !*hovered {
-                leave_state.update(cx, |s, cx| s.set_graph_hover(None, cx));
+    let graph_cell = cr::graph_cell(
+        SharedString::from(format!("{key}-graph-{sha}")),
+        group,
+        geometry.width,
+    )
+    .on_mouse_move(move |ev: &MouseMoveEvent, _, cx| {
+        let o = hit_origin.get();
+        let x = f32::from(ev.position.x - o.x);
+        let y = f32::from(ev.position.y - o.y) - top;
+        let path = hovered_graph_path(&hit_row, x, y, geometry);
+        move_state.update(cx, |s, cx| {
+            if s.hover_suppressed.replace(false) {
+                cx.notify();
             }
-        })
-        .when(graph_row.is_head, |el| {
-            // HEAD wears a ring 2 px outside its node.
-            let ring = node_radius + HEAD_RING_PADDING;
-            el.child(
-                div()
-                    .absolute()
-                    .left(px(node_x - ring))
-                    .top(px(ROW_HEIGHT / 2.0 - ring))
-                    .size(px(ring * 2.0))
-                    .rounded_full()
-                    .border_1()
-                    .border_color(color)
-                    .bg(t.bg),
-            )
-        })
-        .child(node)
-        .children(fold_control);
+            s.set_graph_hover(path, cx)
+        });
+    })
+    .on_hover(move |hovered, _, cx| {
+        if !*hovered {
+            leave_state.update(cx, |s, cx| s.set_graph_hover(None, cx));
+        }
+    })
+    .when(graph_row.is_head, |el| {
+        // HEAD wears a ring 2 px outside its node.
+        el.child(cr::head_ring(node_x, node_radius, color, t.bg))
+    })
+    .child(cr::graph_node(node_x, node_radius, color))
+    .children(fold_control);
 
     // -- Commit column ----------------------------------------------------
     let subject: SharedString = if commit.subject.is_empty() {

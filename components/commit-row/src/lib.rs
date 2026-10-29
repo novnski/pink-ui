@@ -1,13 +1,16 @@
 // PINK's commit history rows (history.rs `render_row`, `render_ref`,
 // `render_ref_area`, `render_author_cell`, `render_date_cell`,
 // `render_sha_cell` and the Load more row): one commit as a `ROW_HEIGHT` row
-// after the host's graph cell, with its subject and ref badges (branch,
+// after its graph cell, with its subject and ref badges (branch,
 // remote, tag; an overflow count past the room), then the optional author
 // (avatar or name), date and short-sha cells; and the button that loads
-// older commits. UI rethink decision 54: drawn here, consumed by PINK through
-// a pinned revision.
+// older commits; the column header over them (names, resize dividers, the
+// drop line and the columns button) and each row's graph cell (the node,
+// HEAD's ring and a branch tip's fold control). UI rethink decision 54: drawn
+// here, consumed by PINK through a pinned revision.
 //
-// The package draws only. The host supplies the graph cell, the glyphs and
+// The package draws only. The host supplies the lane graph's strokes and its
+// geometry (lane positions, node radius under focus), the glyphs and
 // avatar images (its own assets), every colour already resolved (the row's
 // and the sha's washes blended over their hover fades, the graph focus's
 // dimming as an opacity), the families and the text; it adds the ids'
@@ -348,4 +351,242 @@ pub fn load_more(
                 .child(glyph.size(px(11.0)).flex_none().text_color(style.glyph))
         })
         .child(label.into())
+}
+
+// The column header (PINK history.rs `render_column_header_cell`,
+// `column_resize_handle` and the header strip in `GitHistory::render`): a
+// strip over the rows naming each column, a divider on each optional
+// column's leading edge that resizes it, a line where a dragged header will
+// land and the checklist button that shows while the strip is pointed at.
+
+/// The header strip's height, in fixed pixels.
+pub const HEADER_HEIGHT: f32 = 24.0;
+/// The divider's hit width, in fixed pixels, centred on the column's edge.
+pub const RESIZE_HANDLE: f32 = 6.0;
+/// The drop line's width and its inset from the strip's edges, in fixed
+/// pixels.
+pub const DROP_LINE: f32 = 2.0;
+pub const DROP_LINE_INSET: f32 = 3.0;
+/// The columns button's side, corner and glyph, in fixed pixels.
+pub const COLUMNS_BUTTON: f32 = 20.0;
+pub const COLUMNS_BUTTON_RADIUS: f32 = 5.0;
+pub const COLUMNS_GLYPH: f32 = 12.0;
+
+/// What the header strip draws, resolved by the host.
+pub struct ColumnHeaderStyle {
+    /// The rule under the strip (PINK `hairline(0.06)`).
+    pub rule: Hsla,
+    /// The column names (PINK `text_faint`).
+    pub text: Hsla,
+}
+
+/// The header strip, `HEADER_HEIGHT` tall over a rule. `group` names it for
+/// the columns button. The host adds the graph's spacer, `commit_header`,
+/// the optional headers in `cells` and `columns_button`.
+pub fn column_header(
+    id: impl Into<ElementId>,
+    group: impl Into<SharedString>,
+    style: &ColumnHeaderStyle,
+) -> Stateful<Div> {
+    div()
+        .id(id)
+        .group(group)
+        .relative()
+        .h(px(HEADER_HEIGHT))
+        .flex_none()
+        .flex()
+        .items_center()
+        .border_b_1()
+        .border_color(style.rule)
+        .text_size(ui_rems(ROW_TEXT))
+        .text_color(style.text)
+}
+
+/// The subject column's name, taking the free width like the subject.
+pub fn commit_header(text: impl Into<SharedString>) -> Div {
+    div()
+        .flex_1()
+        .min_w(px(SUBJECT_MIN_WIDTH))
+        .child(text.into())
+}
+
+/// An optional column's header, `width` wide (never under `min_width`),
+/// sized like its `cell`; `centered` for the avatar column. The host adds
+/// the `drop_line`, the name and the `resize_handle` (last, so its narrow
+/// hitbox wins over the header's drag).
+pub fn header_cell(
+    id: impl Into<ElementId>,
+    width: f32,
+    min_width: f32,
+    centered: bool,
+) -> Stateful<Div> {
+    shrink(
+        div()
+            .id(id)
+            .relative()
+            .w(px(width))
+            .min_w(px(min_width))
+            .h_full(),
+        1.0,
+    )
+    .flex()
+    .items_center()
+    .cursor_pointer()
+    .when(centered, |el| el.justify_center())
+}
+
+/// Where a dragged header will land: a line on the cell's trailing edge
+/// (`after`) or its leading one.
+pub fn drop_line(after: bool, color: Hsla) -> Div {
+    div()
+        .absolute()
+        .top(px(DROP_LINE_INSET))
+        .bottom(px(DROP_LINE_INSET))
+        .w(px(DROP_LINE))
+        .rounded_full()
+        .bg(color)
+        .when(after, |line| line.right_0())
+        .when(!after, |line| line.left_0())
+}
+
+/// The divider on a header's leading edge, `RESIZE_HANDLE` wide with the
+/// column-resize cursor, on `fill` (already blended over its hover fade).
+pub fn resize_handle(id: impl Into<ElementId>, fill: Hsla) -> Stateful<Div> {
+    div()
+        .id(id)
+        .absolute()
+        .left(px(-RESIZE_HANDLE / 2.0))
+        .top_0()
+        .bottom_0()
+        .w(px(RESIZE_HANDLE))
+        .cursor_col_resize()
+        .bg(fill)
+}
+
+/// The checklist button at the strip's trailing end. It shows while the
+/// strip named `group` is pointed at, or while its menu is `open`, on
+/// `wash` (already blended over its hover fade); the host adds
+/// `columns_glyph`.
+pub fn columns_button(
+    id: impl Into<ElementId>,
+    group: impl Into<SharedString>,
+    open: bool,
+    wash: Hsla,
+) -> Stateful<Div> {
+    div()
+        .id(id)
+        .absolute()
+        .right(px(3.0))
+        .top(px(2.0))
+        .size(px(COLUMNS_BUTTON))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(COLUMNS_BUTTON_RADIUS))
+        .cursor_pointer()
+        .opacity(if open { 1.0 } else { 0.0 })
+        .group_hover(group, |style| style.opacity(1.0))
+        .bg(wash)
+}
+
+/// The columns button's glyph.
+pub fn columns_glyph(glyph: Svg, color: Hsla) -> Svg {
+    glyph.size(px(COLUMNS_GLYPH)).text_color(color)
+}
+
+// The graph cell (PINK history.rs `graph_cell`): the row's slice of the lane
+// graph. The host paints the strokes across every row and places the
+// node on its lane; the cell draws the node, HEAD's ring and a branch tip's
+// fold control.
+
+/// A commit node's radius, in fixed pixels (PINK `HISTORY_NODE_RADIUS`);
+/// the host grows it while its lane holds the focus.
+pub const NODE_RADIUS: f32 = 3.0;
+/// The gap between HEAD's node and its ring, in fixed pixels.
+pub const HEAD_RING_PADDING: f32 = 2.0;
+/// The fold control's side, glyph and gap after the node, in fixed pixels.
+pub const FOLD_SIZE: f32 = 16.0;
+pub const FOLD_GLYPH: f32 = 9.0;
+pub const FOLD_GAP: f32 = 3.0;
+
+/// The graph cell: `width` wide and `ROW_HEIGHT` tall, named `group` so a
+/// branch tip's fold control shows while the cell is pointed at.
+pub fn graph_cell(
+    id: impl Into<ElementId>,
+    group: impl Into<SharedString>,
+    width: f32,
+) -> Stateful<Div> {
+    div()
+        .id(id)
+        .relative()
+        .group(group)
+        .w(px(width))
+        .h(px(ROW_HEIGHT))
+        .flex_none()
+}
+
+/// The commit's node: a `radius` disc centred at `x` on the row's middle.
+pub fn graph_node(x: f32, radius: f32, color: Hsla) -> Div {
+    div()
+        .absolute()
+        .left(px(x - radius))
+        .top(px(ROW_HEIGHT / 2.0 - radius))
+        .size(px(radius * 2.0))
+        .rounded_full()
+        .bg(color)
+}
+
+/// HEAD's ring, `HEAD_RING_PADDING` outside a `radius` node at `x`: an
+/// `edge` circle over `fill` (the pane's surface), drawn before the node.
+pub fn head_ring(x: f32, radius: f32, edge: Hsla, fill: Hsla) -> Div {
+    div()
+        .absolute()
+        .left(px(x - radius - HEAD_RING_PADDING))
+        .top(px(ROW_HEIGHT / 2.0 - radius - HEAD_RING_PADDING))
+        .size(px((radius + HEAD_RING_PADDING) * 2.0))
+        .rounded_full()
+        .border_1()
+        .border_color(edge)
+        .bg(fill)
+}
+
+/// What a fold control draws, resolved by the host from its lane's colour.
+pub struct FoldStyle {
+    /// The ring (PINK: the colour at 0.32).
+    pub edge: Hsla,
+    /// The plate (PINK: the pane's surface at 0.96).
+    pub fill: Hsla,
+}
+
+/// A branch tip's fold control, `FOLD_GAP` after the node at `x`. It shows
+/// while the cell named `group` is pointed at, and stays while its branch is
+/// `collapsed`; the host adds `fold_glyph`.
+pub fn fold_control(
+    id: impl Into<ElementId>,
+    group: impl Into<SharedString>,
+    x: f32,
+    collapsed: bool,
+    style: &FoldStyle,
+) -> Stateful<Div> {
+    div()
+        .id(id)
+        .absolute()
+        .left(px(x + NODE_RADIUS + FOLD_GAP))
+        .top(px((ROW_HEIGHT - FOLD_SIZE) / 2.0))
+        .size(px(FOLD_SIZE))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded_full()
+        .border_1()
+        .border_color(style.edge)
+        .bg(style.fill)
+        .cursor_pointer()
+        .opacity(if collapsed { 1.0 } else { 0.0 })
+        .group_hover(group, |style| style.opacity(1.0))
+}
+
+/// The fold control's glyph (fold, or expand while collapsed).
+pub fn fold_glyph(glyph: Svg, color: Hsla) -> Svg {
+    glyph.size(px(FOLD_GLYPH)).text_color(color)
 }
