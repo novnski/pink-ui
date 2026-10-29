@@ -44,6 +44,17 @@
 //! thread's branch and PRs on a row of their own so PRs never squeeze it;
 //! the mic and the submit disc stay in the row.
 //!
+//! The parts are the packages PINK pins, called the way PINK's adapters
+//! call them: the pill (`pink-composer-pill`), Attach, the mic, the tray
+//! button, Send and Stop (`pink-composer-disc`), the staged squares
+//! (`pink-attachment-thumb`), the model, access and search chips
+//! (`pink-trigger-chip`, at the kit's px baseline), the context ring
+//! (`pink-context-ring`), the menus and their rows (`pink-menu-card`, the
+//! model rows `pink-model-picker`'s), the PR chips (`pink-pr-badge`) and the
+//! notice (`pink-notice`). The checkout chip, the mic and the voice field
+//! are the gallery's own: PINK draws the checkout chip in the app and has no
+//! dictation.
+//!
 //! ```ignore
 //! ChatComposer::new("composer")
 //!     .pane(pane_width)
@@ -65,18 +76,22 @@ use web_time::{Duration, Instant};
 
 use gpui::{
     Anchor, AnyElement, AnyView, App, Bounds, Context, Div, ElementId, Entity, FocusHandle,
-    FontWeight, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ObjectFit, Pixels, Role,
-    SharedString, Stateful, Subscription, Toggled, Window, anchored, canvas, deferred, div, img,
-    point, prelude::*, px, svg,
+    FontWeight, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, Pixels, Role, SharedString,
+    Stateful, Subscription, Toggled, Window, anchored, canvas, deferred, div, point, prelude::*,
+    px, svg,
 };
 
 use crate::{
     HoverFill,
-    components::context_window::{
-        ContextControls, ContextWindow, context_ring_shown, context_tray,
+    components::{
+        attachment_thumb::{self as att_thumb, Kind},
+        composer_disc as disc, composer_pill,
+        context_window::{ContextControls, ContextWindow, context_ring_shown, context_tray},
+        model_picker::menu as picker,
+        trigger_chip::{ChipLabel, TriggerChipContent},
     },
     motion::{self, AnimationExt},
-    pink::{self, FillTier, Pink, TextStyle, TypeStyleExt, layout, loaders, radius},
+    pink::{self, FillTier, Pink, TextStyle, TypeStyleExt, layout, loaders},
     primitives::{InputEvent, TextInput},
     story,
 };
@@ -133,11 +148,6 @@ const ROW_BUTTON: f32 = layout::COMPOSER_CONTROL;
 const STOP_MIN: f32 = 28.0;
 /// Between Stop and the submit disc (Pink `STOP_GAP`, `space::ICON_LABEL`).
 const STOP_GAP: f32 = pink::space::ICON_LABEL;
-/// `STRIP_THUMB`, `STRIP_GAP`, `STRIP_PAD_TOP`, `STRIP_PAD_X`.
-const STRIP_THUMB: f32 = 56.0;
-const STRIP_GAP: f32 = 8.0;
-const STRIP_PAD_TOP: f32 = 12.0;
-const STRIP_PAD_X: f32 = 16.0;
 /// `CONTEXT_ROW_HEIGHT`: the checkout row above the pill.
 const CONTEXT_ROW_HEIGHT: f32 = 24.0;
 /// Column gap between the checkout row and the pill (`Theme::SPACE_SM`).
@@ -1253,9 +1263,9 @@ impl ChatComposer {
 // Pieces
 // ---------------------------------------------------------------------------
 
-/// A 28 pt round utility button (Pink: `Composer::render` attach): clear at
-/// rest, `ink(0.10)` on hover or while `open`, a 16 pt glyph in
-/// `text_muted`.
+/// A 28 pt round utility button (Pink: `Composer::render` attach), drawn by
+/// the `pink-composer-disc` package: clear at rest, `ink(0.10)` on hover or
+/// while `open`, a 16 pt glyph in `text_muted`, no pressed dim.
 fn row_button(
     id: impl Into<SharedString>,
     icon: &'static str,
@@ -1268,37 +1278,37 @@ fn row_button(
     let key = id.to_string();
     let ring = t.focus_ring();
     let wash = t.ink(0.10);
-    div()
-        .id(id)
-        .role(Role::Button)
-        .aria_label(label)
-        .tab_index(0)
-        .focus_visible(move |s| pink::focus_ring(s, ring))
-        .on_key_down(pink::swallow_activation_key)
-        .size(px(ROW_BUTTON))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded_full()
-        .cursor_pointer()
-        .bg(if open {
-            wash
-        } else {
-            motion::hover_blend(&key, gpui::transparent_black(), wash)
-        })
-        .on_hover(motion::hover_listener(key))
-        .tooltip(pink::text_tooltip(label))
-        .tooltip_show_delay(layout::TOOLTIP_DELAY)
-        .child(
-            svg()
-                .path(icon)
-                .size(px(16.))
-                // The paperclip's ink sits left of its viewbox center.
-                .relative()
-                .left(px(nudge))
-                .text_color(if open { t.text } else { t.text_muted }),
-        )
+    let ink = if open { t.text } else { t.text_muted };
+    disc::disc(
+        id,
+        svg()
+            .path(icon)
+            .size(px(16.))
+            // The paperclip's ink sits left of its viewbox center.
+            .relative()
+            .left(px(nudge))
+            .text_color(ink)
+            .into_any_element(),
+        &disc::DiscStyle {
+            size: px(ROW_BUTTON).into(),
+            fill: if open {
+                wash
+            } else {
+                motion::hover_blend(&key, gpui::transparent_black(), wash)
+            },
+            glyph: ink,
+            actionable: true,
+            press_dim: false,
+        },
+    )
+    .role(Role::Button)
+    .aria_label(label)
+    .tab_index(0)
+    .focus_visible(move |s| pink::focus_ring(s, ring))
+    .on_key_down(pink::swallow_activation_key)
+    .on_hover(motion::hover_listener(key))
+    .tooltip(pink::text_tooltip(label))
+    .tooltip_show_delay(layout::TOOLTIP_DELAY)
 }
 
 /// The submit disc (Pink `Composer::render_send_button`): one stable 28 pt
@@ -1308,7 +1318,8 @@ fn row_button(
 /// Solid `text` with a `bg` glyph when it can act (hover 0.88, press 0.76);
 /// recessed `ink(0.08)` with the glyph at 35% while there is nothing to
 /// send, the arrow taking the accent when the field is focused and empty.
-/// Only the glyph changes between modes, fading in over `GLYPH_SWAP`.
+/// Only the glyph changes between modes, fading in over `GLYPH_SWAP`. The
+/// disc is the `pink-composer-disc` package's.
 fn send_disc(key: &str, mode: SendMode, recessed: bool, focused: bool, t: &Pink) -> Stateful<Div> {
     let ready = recessed && focused;
     let glyph_color = if ready {
@@ -1332,27 +1343,18 @@ fn send_disc(key: &str, mode: SendMode, recessed: bool, focused: bool, t: &Pink)
         SendMode::Steer => "Steer this turn (⏎)",
         SendMode::Send => "Send (⏎)",
     };
+    let arrow = |path| {
+        svg()
+            .path(path)
+            .size(px(disc::GLYPH))
+            .text_color(glyph_color)
+            .into_any_element()
+    };
     let glyph: AnyElement = match mode {
-        SendMode::Stop => div()
-            .size(px(11.))
-            .rounded(px(3.))
-            .bg(glyph_color)
-            .into_any_element(),
-        SendMode::Queue => svg()
-            .path(ICON_QUEUE_SEND)
-            .size(px(14.))
-            .text_color(glyph_color)
-            .into_any_element(),
-        SendMode::Steer => svg()
-            .path(ICON_ARROW_UP_RIGHT)
-            .size(px(14.))
-            .text_color(glyph_color)
-            .into_any_element(),
-        SendMode::Send => svg()
-            .path(ICON_ARROW_UP)
-            .size(px(14.))
-            .text_color(glyph_color)
-            .into_any_element(),
+        SendMode::Stop => disc::stop_glyph(glyph_color).into_any_element(),
+        SendMode::Queue => arrow(ICON_QUEUE_SEND),
+        SendMode::Steer => arrow(ICON_ARROW_UP_RIGHT),
+        SendMode::Send => arrow(ICON_ARROW_UP),
     };
     let glyph = div()
         .flex()
@@ -1366,71 +1368,72 @@ fn send_disc(key: &str, mode: SendMode, recessed: bool, focused: bool, t: &Pink)
         );
     let fade = format!("{key}-send");
     let ring = t.focus_ring();
-    let selector = fade.clone();
-    let disc = div()
-        .id(SharedString::from(fade.clone()))
-        .debug_selector(move || selector)
-        .role(Role::Button)
-        .aria_label(label)
-        .tab_index(0)
-        .focus_visible(move |s| pink::focus_ring(s, ring))
-        .on_key_down(pink::swallow_activation_key)
-        .size(px(ROW_BUTTON))
-        .flex_none()
-        .rounded_full()
-        .flex()
-        .items_center()
-        .justify_center()
-        .tooltip(pink::text_tooltip(label))
-        .tooltip_show_delay(layout::TOOLTIP_DELAY)
-        .child(glyph);
+    let submit = disc::disc(
+        fade.clone(),
+        glyph.into_any_element(),
+        &disc::DiscStyle {
+            size: px(ROW_BUTTON).into(),
+            fill: if recessed {
+                t.ink(0.08)
+            } else {
+                motion::hover_blend(&fade, t.text, t.text.opacity(0.88))
+            },
+            glyph: glyph_color,
+            actionable: !recessed,
+            press_dim: true,
+        },
+    )
+    .role(Role::Button)
+    .aria_label(label)
+    .tab_index(0)
+    .focus_visible(move |s| pink::focus_ring(s, ring))
+    .on_key_down(pink::swallow_activation_key)
+    .tooltip(pink::text_tooltip(label))
+    .tooltip_show_delay(layout::TOOLTIP_DELAY);
     if recessed {
-        disc.bg(t.ink(0.08))
+        submit
     } else {
-        disc.cursor_pointer()
-            .bg(motion::hover_blend(&fade, t.text, t.text.opacity(0.88)))
-            .on_hover(motion::hover_listener(fade))
-            .active(|s| s.opacity(0.76))
+        submit.on_hover(motion::hover_listener(fade))
     }
 }
 
 /// The separate Stop shown beside Queue or Steer while a run is live (Pink
-/// `Composer::render_stop_button`, UI rethink D70): the secondary action, a
-/// quiet `ink(0.08)` fill easing to 0.14 with the 11 pt stop square in
-/// `text`; at least 28 pt at every Interface size, named, and reachable by
-/// Tab and Return or Space. Stopping keeps the draft.
+/// `Composer::render_stop_button`, UI rethink D70), drawn by the
+/// `pink-composer-disc` package: the secondary action, a quiet `ink(0.08)`
+/// fill easing to 0.14 with the 11 pt stop square in `text`; at least 28 pt
+/// at every Interface size, named, and reachable by Tab and Return or Space.
+/// Stopping keeps the draft.
 fn stop_button(key: &str, scale: f32, t: &Pink) -> Stateful<Div> {
     let fade = format!("{key}-stop");
     let ring = t.focus_ring();
-    let selector = fade.clone();
-    div()
-        .id(SharedString::from(fade.clone()))
-        .debug_selector(move || selector)
-        .role(Role::Button)
-        .aria_label("Stop")
-        .tab_index(0)
-        .focus_visible(move |s| pink::focus_ring(s, ring))
-        .on_key_down(pink::swallow_activation_key)
-        .size(px(stop_size(scale)))
-        .flex_none()
-        .rounded_full()
-        .flex()
-        .items_center()
-        .justify_center()
-        .cursor_pointer()
-        .bg(motion::hover_blend(&fade, t.ink(0.08), t.ink(0.14)))
-        .on_hover(motion::hover_listener(fade))
-        .active(|s| s.opacity(0.76))
-        .tooltip(pink::text_tooltip("Stop"))
-        .tooltip_show_delay(layout::TOOLTIP_DELAY)
-        .child(div().size(px(11.)).rounded(px(3.)).bg(t.text))
+    disc::disc(
+        fade.clone(),
+        disc::stop_glyph(t.text).into_any_element(),
+        &disc::DiscStyle {
+            size: px(stop_size(scale)).into(),
+            fill: motion::hover_blend(&fade, t.ink(0.08), t.ink(0.14)),
+            glyph: t.text,
+            actionable: true,
+            press_dim: true,
+        },
+    )
+    .role(Role::Button)
+    .aria_label("Stop")
+    .tab_index(0)
+    .focus_visible(move |s| pink::focus_ring(s, ring))
+    .on_key_down(pink::swallow_activation_key)
+    .on_hover(motion::hover_listener(fade))
+    .tooltip(pink::text_tooltip("Stop"))
+    .tooltip_show_delay(layout::TOOLTIP_DELAY)
 }
 
-/// The staged-attachment strip (Pink `Composer::render_attachment_strip`):
-/// wrapping 56 pt thumbnails, radius 8, a `hairline(0.10)` edge, 8 apart
-/// inside `px 16 pt 12`. A picture fills its thumbnail; other files show
-/// their kind on a resting plate. The 20 pt raised remove disc overhangs the
-/// corner and shows on hover or keyboard focus.
+/// The staged-attachment strip (Pink `Composer::render_attachment_strip`),
+/// drawn by the `pink-attachment-thumb` package: wrapping 56 pt squares,
+/// radius 8, a `hairline(0.10)` edge, 8 apart inside `px 16 pt 12`. A
+/// picture fills its square; other files (a gallery demo: PINK attaches
+/// images only) show their kind on a resting plate. The package's 20 pt
+/// raised remove disc overhangs the corner and shows on hover or keyboard
+/// focus.
 fn attachment_strip(
     key: &str,
     attachments: &[Attachment],
@@ -1442,91 +1445,62 @@ fn attachment_strip(
     }
     let ring = t.focus_ring();
     Some(
-        div()
-            .w_full()
-            .flex_none()
-            .flex()
-            .flex_row()
-            .flex_wrap()
-            .gap(px(STRIP_GAP))
-            .px(px(STRIP_PAD_X))
-            .pt(px(STRIP_PAD_TOP))
-            .children(attachments.iter().enumerate().map(|(ix, file)| {
-                let group: SharedString = format!("{key}-att-{ix}").into();
-                let on_remove = on_remove.clone();
-                let thumb = match &file.preview {
-                    // 56 − 2: the frame minus its 1 pt edge; 7 = 8 − edge.
-                    Some(source) => img(source.clone())
-                        .w(px(STRIP_THUMB - 2.))
-                        .h(px(STRIP_THUMB - 2.))
-                        .rounded(px(radius::MD - 1.))
-                        .object_fit(ObjectFit::Cover)
-                        .into_any_element(),
-                    None => file_plate(file, t).into_any_element(),
-                };
-                div()
-                    .group(group.clone())
-                    .flex_none()
-                    .relative()
-                    .child(
-                        div()
-                            .id(ElementId::NamedInteger("cc-thumb".into(), ix as u64))
-                            .size(px(STRIP_THUMB))
-                            .rounded(px(radius::MD))
-                            .overflow_hidden()
-                            .border_1()
-                            .border_color(t.hairline(0.10))
-                            .tooltip(pink::text_tooltip(format!(
-                                "{}\n{}",
-                                file.name, file.detail
-                            )))
-                            .tooltip_show_delay(layout::TOOLTIP_DELAY)
-                            .child(thumb),
+        att_thumb::staged_strip().children(attachments.iter().enumerate().map(|(ix, file)| {
+            let group: SharedString = format!("{key}-att-{ix}").into();
+            let on_remove = on_remove.clone();
+            let thumb = match &file.preview {
+                Some(source) => att_thumb::image(Kind::Staged, source.clone()).into_any_element(),
+                None => file_plate(file, t).into_any_element(),
+            };
+            div()
+                .group(group.clone())
+                .flex_none()
+                .relative()
+                .child(
+                    att_thumb::plate(
+                        Kind::Staged,
+                        &att_thumb::PlateStyle {
+                            edge: t.hairline(0.10),
+                            fill: gpui::transparent_black(),
+                        },
                     )
+                    .id(ElementId::NamedInteger("cc-thumb".into(), ix as u64))
+                    .tooltip(pink::text_tooltip(format!(
+                        "{}\n{}",
+                        file.name, file.detail
+                    )))
+                    .tooltip_show_delay(layout::TOOLTIP_DELAY)
+                    .child(thumb),
+                )
+                .child(
+                    att_thumb::remove_disc(&att_thumb::RemoveStyle {
+                        fill: t.surface_raised,
+                        edge: t.border_strong,
+                    })
+                    .id(ElementId::NamedInteger("cc-thumb-x".into(), ix as u64))
+                    .role(Role::Button)
+                    .aria_label("Remove attachment")
+                    .tab_index(0)
+                    .on_key_down(pink::swallow_activation_key)
+                    .cursor_pointer()
+                    .group_hover(group, |s| s.opacity(1.))
+                    .focus_visible(move |s| pink::focus_ring(s.opacity(1.), ring))
+                    .on_click(move |_, window, cx| {
+                        // The disc overhangs the thumbnail: this click is the
+                        // disc's alone.
+                        cx.stop_propagation();
+                        if let Some(f) = &on_remove {
+                            f(ix, window, cx)
+                        }
+                    })
                     .child(
-                        div()
-                            .id(ElementId::NamedInteger("cc-thumb-x".into(), ix as u64))
-                            .role(Role::Button)
-                            .aria_label("Remove attachment")
-                            .tab_index(0)
-                            .on_key_down(pink::swallow_activation_key)
-                            .absolute()
-                            // A 20 px disc 7 px over the corner, in a
-                            // `MIN_HIT` box so the target is never under 24.
-                            .top(px(-7. - pink::chrome::hit_outset(20.)))
-                            .right(px(-7. - pink::chrome::hit_outset(20.)))
-                            .size(px(pink::chrome::MIN_HIT))
-                            .rounded_full()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .cursor_pointer()
-                            .opacity(0.)
-                            .group_hover(group, |s| s.opacity(1.))
-                            .focus_visible(move |s| pink::focus_ring(s.opacity(1.), ring))
-                            .on_click(move |_, window, cx| {
-                                // The disc overhangs the thumbnail: this click
-                                // is the disc's alone.
-                                cx.stop_propagation();
-                                if let Some(f) = &on_remove {
-                                    f(ix, window, cx)
-                                }
-                            })
-                            .child(
-                                div()
-                                    .size(px(20.))
-                                    .rounded_full()
-                                    .bg(t.surface_raised)
-                                    .border_1()
-                                    .border_color(t.border_strong)
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .shadow(pink::shadow_sm())
-                                    .child(svg().path(ICON_CLOSE).size(px(10.)).text_color(t.text)),
-                            ),
-                    )
-            })),
+                        svg()
+                            .path(ICON_CLOSE)
+                            .size(px(att_thumb::REMOVE_GLYPH))
+                            .text_color(t.text),
+                    ),
+                )
+        })),
     )
 }
 
@@ -1822,16 +1796,22 @@ fn menu_card(
 }
 
 /// A popover's section label (Pink `render_permission_popover` header):
-/// `px 10 pt 8 pb 6`, 11 SEMIBOLD `text_muted`, sentence case.
+/// `px 10 pt 8 pb 6`, 11 SEMIBOLD `text_muted`, sentence case, in rems like
+/// the menu card's rows.
 fn menu_label(label: &'static str, t: &Pink) -> Div {
     div()
-        .px(px(10.))
-        .pt(px(8.))
-        .pb(px(6.))
-        .text_size(px(11.))
+        .px(menu_rems(10.))
+        .pt(menu_rems(8.))
+        .pb(menu_rems(6.))
+        .text_size(menu_rems(11.))
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(t.text_muted)
         .child(label)
+}
+
+/// A design size in rems, as the menu card sizes its rows.
+fn menu_rems(design: f32) -> gpui::AbsoluteLength {
+    crate::components::menu_card::ui_rems(design)
 }
 
 fn set_highlight(state: &Entity<State>, ix: usize, cx: &mut App) {
@@ -1843,10 +1823,12 @@ fn set_highlight(state: &Entity<State>, ix: usize, cx: &mut App) {
     })
 }
 
-/// A model row (Pink `Pickers::render_model_row`, two-line layout): `px 8
-/// py 6`, radius 8; the current model wears the selected wash and its inset
-/// ring, the cursor row `ink(0.05)`. A 12.5 MEDIUM name over the model's
-/// 11 pt glyph and description, and its ⌘ digit.
+/// A model row (Pink `Pickers::render_model_row`, two-line layout), drawn by
+/// the `pink-model-picker` package: `px 8 py 6`, radius 8; the current
+/// model wears the selected wash and its inset ring, the cursor row
+/// `ink(0.05)`. A 12.5 MEDIUM name over the model's 11 pt glyph and
+/// description, and its ⌘ digit. The composer's short list keeps no
+/// favourites, so the star's slot stays empty.
 fn model_row(
     ix: usize,
     model: &ComposerModel,
@@ -1857,77 +1839,53 @@ fn model_row(
 ) -> Div {
     let hover = state.clone();
     let pick = state.clone();
-    let row = div()
-        .id(ElementId::NamedInteger("cc-model-row".into(), ix as u64))
-        .role(Role::ListBoxOption)
-        .aria_label(model.name.clone())
-        .px(px(8.))
-        .py(px(6.))
-        .rounded(px(radius::MENU_ITEM))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(10.))
-        .cursor_pointer()
-        .map(|row| {
-            if selected {
-                row.bg(t.card_selected_bg())
-                    .shadow(t.card_selected_shadows())
+    let row = picker::model_row(
+        ElementId::NamedInteger("cc-model-row".into(), ix as u64),
+        picker::ModelRow {
+            name: model.name.clone(),
+            badge: None,
+            attribution: None,
+            provider: Some(picker::ProviderLine {
+                mark: svg()
+                    .path(model.icon.clone())
+                    .size(picker::ui_rems(picker::META_MARK))
+                    .flex_none()
+                    .text_color(t.text_muted)
+                    .into_any_element(),
+                name: model.description.clone(),
+            }),
+            shortcut: (ix < 9)
+                .then(|| pink::kbd_hint(format!("⌘{}", ix + 1), t).into_any_element()),
+            // Out of the flow, so the row ends at its key cap.
+            star: div().absolute().into_any_element(),
+        },
+        &picker::ModelRowStyle {
+            text: t.text,
+            muted: t.text_muted,
+            faint: t.text_faint,
+            fill: if selected {
+                Some(t.card_selected_bg())
             } else if active {
-                row.bg(t.ink(0.05))
+                Some(t.ink(0.05))
             } else {
-                row
-            }
-        })
-        .on_hover(move |hovered, _, cx| {
-            if *hovered {
-                set_highlight(&hover, ix, cx)
-            }
-        })
-        .on_click(move |_, window, cx| choose(&pick, Menu::Model, ix, window, cx))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .gap(px(2.))
-                .child(
-                    div()
-                        .min_w_0()
-                        .truncate()
-                        .text_size(px(12.5))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(t.text)
-                        .child(model.name.clone()),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .flex_row()
-                        .items_center()
-                        .gap(px(6.))
-                        .child(
-                            svg()
-                                .path(model.icon.clone())
-                                .size(px(11.))
-                                .flex_none()
-                                .text_color(t.text_muted),
-                        )
-                        .child(
-                            div()
-                                .min_w_0()
-                                .truncate()
-                                .text_size(px(11.))
-                                .text_color(t.text_muted)
-                                .child(model.description.clone()),
-                        ),
-                ),
-        )
-        .when(ix < 9, |row| {
-            row.child(pink::kbd_hint(format!("⌘{}", ix + 1), t))
-        });
-    div().pb(px(2.)).child(row)
+                None
+            },
+            shadows: if selected {
+                t.card_selected_shadows()
+            } else {
+                Vec::new()
+            },
+        },
+    )
+    .role(Role::ListBoxOption)
+    .aria_label(model.name.clone())
+    .on_hover(move |hovered, _, cx| {
+        if *hovered {
+            set_highlight(&hover, ix, cx)
+        }
+    })
+    .on_click(move |_, window, cx| choose(&pick, Menu::Model, ix, window, cx));
+    picker::row_slot().child(row)
 }
 
 /// The access choices (Pink pickers.rs `PERMISSION_OPTIONS`, PINK 0.30.4):
@@ -2163,7 +2121,6 @@ fn controls_tray(
     cx: &App,
 ) -> Stateful<Div> {
     let id = format!("{key}-tray");
-    let selector = id.clone();
     let ring = t.focus_ring();
     let toggler = state.clone();
     let measurer = state.clone();
@@ -2172,45 +2129,51 @@ fn controls_tray(
     } else {
         gpui::transparent_black()
     };
-    let button = div()
-        .id(SharedString::from(id.clone()))
-        .debug_selector(move || selector)
-        .role(Role::Button)
-        .aria_label("Composer controls")
-        .aria_expanded(open)
-        .track_focus(&state.read(cx).tray_focus)
-        .focus_visible(move |style| pink::focus_ring(style, ring))
-        .relative()
-        .size(px(COMPACT_BUTTON * CHIP_SCALE))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded_full()
-        .cursor_pointer()
-        .hover_fill(id.clone(), rest, t.ink(0.10))
-        .when(!open, |d| {
-            d.tooltip(pink::text_tooltip("Composer controls"))
-                .tooltip_show_delay(layout::TOOLTIP_DELAY)
-        })
-        .on_click(move |_, window, cx| {
-            cx.stop_propagation();
-            let focus = toggler.update(cx, |s, cx| {
-                s.tray_open = !s.tray_open;
-                cx.notify();
-                s.tray_focus.clone()
-            });
-            window.focus(&focus, cx);
-        })
-        .child(svg().path(ICON_MORE).size(px(16.)).text_color(t.text_muted))
-        .child(
-            canvas(
-                move |bounds, _, cx| measurer.update(cx, |s, _| s.tray_button = bounds),
-                |_, _, _, _| {},
-            )
-            .absolute()
-            .size_full(),
-        );
+    // Pink `render_controls_tray`: the `pink-composer-disc` package's quiet
+    // disc with the ⋯ glyph, washed while open or under the pointer.
+    let button = disc::disc(
+        id.clone(),
+        svg()
+            .path(ICON_MORE)
+            .size(px(16.))
+            .text_color(t.text_muted)
+            .into_any_element(),
+        &disc::DiscStyle {
+            size: px(COMPACT_BUTTON * CHIP_SCALE).into(),
+            fill: motion::hover_blend(&id, rest, t.ink(0.10)),
+            glyph: t.text_muted,
+            actionable: true,
+            press_dim: false,
+        },
+    )
+    .role(Role::Button)
+    .aria_label("Composer controls")
+    .aria_expanded(open)
+    .track_focus(&state.read(cx).tray_focus)
+    .focus_visible(move |style| pink::focus_ring(style, ring))
+    .relative()
+    .on_hover(motion::hover_listener(id.clone()))
+    .when(!open, |d| {
+        d.tooltip(pink::text_tooltip("Composer controls"))
+            .tooltip_show_delay(layout::TOOLTIP_DELAY)
+    })
+    .on_click(move |_, window, cx| {
+        cx.stop_propagation();
+        let focus = toggler.update(cx, |s, cx| {
+            s.tray_open = !s.tray_open;
+            cx.notify();
+            s.tray_focus.clone()
+        });
+        window.focus(&focus, cx);
+    })
+    .child(
+        canvas(
+            move |bounds, _, cx| measurer.update(cx, |s, _| s.tray_button = bounds),
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .size_full(),
+    );
     if !open {
         return button;
     }
@@ -2672,7 +2635,7 @@ impl RenderOnce for ChatComposer {
             model_full,
             model_name_only,
             Some(search_widths),
-            ring.as_ref().map(|ring| ring.chip_widths(window)),
+            ring.as_ref().map(|ring| ring.chip_widths(window, cx)),
             access_widths,
             CHIP_SCALE,
         );
@@ -2692,66 +2655,71 @@ impl RenderOnce for ChatComposer {
             d.on_click(move |_, window, cx| f(window, cx))
         });
 
-        // The model chip (Pink `model_chip_content`): glyph, name and the
-        // effort as a muted suffix while the row has room; the tooltip always
-        // names both, "Balanced, Medium".
-        let model_selector = format!("{key}-model");
-        let model_chip =
-            pink::trigger_chip(format!("{key}-model"), true, menu == Some(Menu::Model), &t)
-                .debug_selector(move || model_selector)
-                .relative()
-                .on_click({
-                    let state = state.clone();
-                    move |_, window, cx| toggle_menu(&state, Menu::Model, window, cx)
+        // The model chip (Pink `model_chip_content`, drawn by the
+        // `pink-trigger-chip` package): glyph, name and the effort as a muted
+        // suffix while the row has room; the tooltip always names both,
+        // "Balanced, Medium".
+        let model_label = model.as_ref().map(|m| m.label());
+        let model_content = TriggerChipContent {
+            icon: model.as_ref().map(|m| {
+                svg()
+                    .path(m.icon.clone())
+                    .size(px(16.))
+                    .flex_none()
+                    .text_color(t.text_muted)
+                    .into_any_element()
+            }),
+            label: model.as_ref().map(|m| ChipLabel::Text(m.name.clone())),
+            suffix: model
+                .as_ref()
+                .and_then(|m| m.effort.clone())
+                .filter(|_| fit.model == ModelFit::Full),
+            icon_only: fit.model == ModelFit::IconOnly,
+            ..Default::default()
+        };
+        let model_chip = pink::trigger_chip_with(
+            format!("{key}-model"),
+            model_content,
+            true,
+            menu == Some(Menu::Model),
+            &t,
+        )
+        .relative()
+        .on_click({
+            let state = state.clone();
+            move |_, window, cx| toggle_menu(&state, Menu::Model, window, cx)
+        })
+        .when_some(model_label, |d, label| {
+            d.aria_label(label.clone())
+                .when(menu != Some(Menu::Model), |d| {
+                    d.tooltip(pink::text_tooltip(label))
+                        .tooltip_show_delay(layout::TOOLTIP_DELAY)
                 })
-                .when(fit.model == ModelFit::IconOnly, |d| {
-                    d.flex_none().w(px(ROW_BUTTON)).px(px(0.)).justify_center()
-                })
-                .when_some(model, |d, m| {
-                    let label = m.label();
-                    d.aria_label(label.clone())
-                        .when(menu != Some(Menu::Model), |d| {
-                            d.tooltip(pink::text_tooltip(label))
-                                .tooltip_show_delay(layout::TOOLTIP_DELAY)
-                        })
-                        .child(
-                            svg()
-                                .path(m.icon)
-                                .size(px(16.))
-                                .flex_none()
-                                .text_color(t.text_muted),
-                        )
-                        .when(fit.model != ModelFit::IconOnly, |d| {
-                            d.child(div().min_w_0().truncate().child(m.name))
-                        })
-                        .when_some(m.effort.filter(|_| fit.model == ModelFit::Full), |d, e| {
-                            d.child(div().flex_none().text_color(t.readable_muted(0.7)).child(e))
-                        })
-                })
-                .when_some(model_menu, |d, exit| {
-                    let card = menu_card(
-                        Menu::Model,
-                        self.models.len(),
-                        layout::MENU_W_L,
-                        exit.is_none(),
-                        &menu_focus,
-                        &state,
-                        &t,
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .p(px(layout::CARD_INSET))
-                            .child(menu_label("Model", &t))
-                            .children(self.models.iter().enumerate().map(|(ix, m)| {
-                                model_row(ix, m, ix == model_ix, ix == highlight, &state, &t)
-                            })),
-                    )
-                    // A thread with no ring keeps Compact and Clear here.
-                    .children(model_context_tray);
-                    d.child(menu_above("cc-model-menu", card.into_any_element(), exit))
-                });
+        })
+        .when_some(model_menu, |d, exit| {
+            let card = menu_card(
+                Menu::Model,
+                self.models.len(),
+                layout::MENU_W_L,
+                exit.is_none(),
+                &menu_focus,
+                &state,
+                &t,
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .p(menu_rems(layout::CARD_INSET))
+                    .child(menu_label("Model", &t))
+                    .children(self.models.iter().enumerate().map(|(ix, m)| {
+                        model_row(ix, m, ix == model_ix, ix == highlight, &state, &t)
+                    })),
+            )
+            // A thread with no ring keeps Compact and Clear here.
+            .children(model_context_tray);
+            d.child(menu_above("cc-model-menu", card.into_any_element(), exit))
+        });
 
         // The access chip names its mode in words beside its glyph (Pink
         // pickers.rs `access_chip_content`, PINK 0.30.4): Approve for me a
@@ -2762,20 +2730,35 @@ impl RenderOnce for ChatComposer {
         } else {
             (ACCESS[1].0, ACCESS[1].1, ICON_UNLOCKED, t.warning)
         };
-        let access_selector = format!("{key}-access");
         let access_label_selector = format!("{key}-access-label");
-        let access_chip = pink::trigger_chip(
+        let access_content = TriggerChipContent {
+            icon: Some(
+                svg()
+                    .path(access_icon)
+                    .size(px(16.))
+                    .flex_none()
+                    .text_color(access_tint)
+                    .into_any_element(),
+            ),
+            label: Some(ChipLabel::Element(
+                div()
+                    .debug_selector(move || access_label_selector)
+                    .flex_none()
+                    .child(access_title)
+                    .into_any_element(),
+            )),
+            icon_only: fit.access_icon_only,
+            ..Default::default()
+        };
+        let access_chip = pink::trigger_chip_with(
             format!("{key}-access"),
+            access_content,
             true,
             menu == Some(Menu::Access),
             &t,
         )
-        .debug_selector(move || access_selector)
         .relative()
         .flex_none()
-        .when(fit.access_icon_only, |d| {
-            d.w(px(ROW_BUTTON)).px(px(0.)).justify_center()
-        })
         // VoiceOver reads what the mode allows, as the tooltip's detail does
         // in Pink (pickers.rs `trigger_chip`, PINK 0.31.5).
         .aria_label(access_title)
@@ -2787,21 +2770,6 @@ impl RenderOnce for ChatComposer {
         .on_click({
             let state = state.clone();
             move |_, window, cx| toggle_menu(&state, Menu::Access, window, cx)
-        })
-        .child(
-            svg()
-                .path(access_icon)
-                .size(px(16.))
-                .flex_none()
-                .text_color(access_tint),
-        )
-        .when(!fit.access_icon_only, |d| {
-            d.child(
-                div()
-                    .debug_selector(move || access_label_selector)
-                    .flex_none()
-                    .child(access_title),
-            )
         })
         .when_some(access_menu, |d, exit| {
             let selected = usize::from(!ask_first);
@@ -2818,7 +2786,7 @@ impl RenderOnce for ChatComposer {
                 div()
                     .flex()
                     .flex_col()
-                    .p(px(layout::CARD_INSET))
+                    .p(menu_rems(layout::CARD_INSET))
                     .child(menu_label("Permission mode", &t))
                     .children(
                         (0..ACCESS.len())
@@ -3013,31 +2981,33 @@ impl RenderOnce for ChatComposer {
         let focus_input = input.clone();
         let focus_state = state.clone();
         let pill_selector = format!("{key}-pill");
-        let pill = div()
-            .id(SharedString::from(format!("{key}-pill")))
-            .debug_selector(move || pill_selector)
-            .relative()
-            .w_full()
-            .flex_none()
-            .rounded(px(radius::COMPOSER_PILL))
-            .border_1()
-            .border_color(t.border)
-            .bg(t.surface_bg())
-            .shadow(pink::shadow_lg())
-            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                // Padding and controls belong to the text; an open menu keeps
-                // its own focus.
-                if focus_state.read(cx).menu.is_none() {
-                    TextInput::focus(&focus_input, window, cx)
-                }
-            })
-            .map(|pill| match height {
-                Some(h) => pill
-                    .h(px(h + 2.))
-                    .overflow_hidden()
-                    .child(body.absolute().left_0().right_0().bottom_0()),
-                None => pill.child(body),
-            });
+        // The `pink-composer-pill` package's surface (Pink
+        // `composer_surface`), floating and lifted on the kit's opaque plate.
+        let pill = composer_pill::pill(&composer_pill::PillStyle {
+            radius: composer_pill::radius(0.0),
+            border: t.border,
+            background: t.surface_bg(),
+            lifted: true,
+        })
+        .id(SharedString::from(format!("{key}-pill")))
+        .debug_selector(move || pill_selector)
+        .relative()
+        .w_full()
+        .flex_none()
+        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            // Padding and controls belong to the text; an open menu keeps
+            // its own focus.
+            if focus_state.read(cx).menu.is_none() {
+                TextInput::focus(&focus_input, window, cx)
+            }
+        })
+        .map(|pill| match height {
+            Some(h) => pill
+                .h(px(h + 2.))
+                .overflow_hidden()
+                .child(body.absolute().left_0().right_0().bottom_0()),
+            None => pill.child(body),
+        });
 
         // Escape closes the tray once no menu from it is open (Pink: the
         // shell's capture chain, `close_controls_tray`); an open menu takes
@@ -3171,24 +3141,26 @@ fn notice_chip(
 /// hover, label and 15 pt glyph in `readable_tone(accent)`.
 fn search_chip(id: String, on: bool, icon_only: bool, t: &Pink) -> Stateful<Div> {
     if !on {
-        return pink::trigger_chip(id, false, false, t)
-            .flex_none()
-            .aria_label("Search the web")
-            .when(icon_only, |d| {
-                d.w(px(ROW_BUTTON)).px(px(0.)).justify_center()
-            })
-            .role(Role::Switch)
-            .aria_toggled(Toggled::False)
-            .tooltip(pink::text_tooltip("Search the web"))
-            .tooltip_show_delay(layout::TOOLTIP_DELAY)
-            .child(
+        let content = TriggerChipContent {
+            icon: Some(
                 svg()
                     .path(ICON_GLOBE)
                     .size(px(16.))
                     .flex_none()
-                    .text_color(t.text_muted),
-            )
-            .when(!icon_only, |d| d.child("Search"));
+                    .text_color(t.text_muted)
+                    .into_any_element(),
+            ),
+            label: Some(ChipLabel::Text("Search".into())),
+            icon_only,
+            ..Default::default()
+        };
+        return pink::trigger_chip_with(id, content, false, false, t)
+            .flex_none()
+            .aria_label("Search the web")
+            .role(Role::Switch)
+            .aria_toggled(Toggled::False)
+            .tooltip(pink::text_tooltip("Search the web"))
+            .tooltip_show_delay(layout::TOOLTIP_DELAY);
     }
     let tone = t.readable_tone(t.accent, 0.95);
     let ring = t.focus_ring();

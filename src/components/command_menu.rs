@@ -6,11 +6,13 @@
 //! row: the 16px palette glyph, a 14px field and a ⌘K hint over a 0.06
 //! hairline. Below it the results: ungrouped actions first, then each group
 //! under an 11px heading with a rule above it. A footer of key hints closes
-//! the card. Rows are Pink's `menu_row` at radius 8 with a 16px glyph in
-//! `text_muted`. The keyboard's row wears the selected wash and the pointer a
-//! lighter one. Typed words light up in `code_text` on rounded `code_wash`
-//! plates. The list stops at the window height minus 180 (100–360) and fades
-//! whichever edge has more to scroll.
+//! the card. The rows, headings, rules and key hints are the
+//! `pink-command-row` package PINK pins, each row on the `pink-menu-card`
+//! row (radius 8, a 16px glyph in `text_muted`), sized in rems like PINK's,
+//! so the palette grows with the Interface size. The keyboard's row wears
+//! the selected wash and the pointer a lighter one. Typed words light up in
+//! `code_text` on rounded `code_wash` plates. The list stops at the window
+//! height minus 180 (100–360) and fades whichever edge has more to scroll.
 //!
 //! Quick actions are an app's commands, named beside their label like Pink's
 //! extension commands. They come first and run with ⌘1–⌘9 from anywhere in
@@ -38,6 +40,7 @@ use gpui::{
 };
 
 use crate::{
+    components::command_row::{self as palette, RowKind, ui_rems},
     motion,
     pink::{self, ButtonKind, ControlSize, Pink, radius},
     primitives::{InputEvent, TextInput},
@@ -83,8 +86,6 @@ const LIST_MAX: f32 = 360.;
 /// Pink: `RESULTS_FADE_BAND`.
 const RESULTS_FADE_BAND: f32 = 18.;
 /// Pink: the action row's `min_h`, and the two-line result row's.
-const ROW_MIN_H: f32 = 32.;
-const RESULT_ROW_MIN_H: f32 = 44.;
 /// Quick actions with a ⌘ digit.
 const QUICK_SLOTS: usize = 9;
 
@@ -597,13 +598,13 @@ impl RenderOnce for CommandMenu {
 
         // Pink: the search row.
         let search_row = div()
-            .min_h(px(FIELD_MIN_H))
+            .min_h(ui_rems(FIELD_MIN_H))
             .flex_none()
-            .px(px(16.))
-            .py(px(8.))
+            .px(ui_rems(16.))
+            .py(ui_rems(8.))
             .flex()
             .items_center()
-            .gap(px(10.))
+            .gap(ui_rems(10.))
             .border_b_1()
             .border_color(t.hairline(0.06))
             .child(palette_search_icon(&t))
@@ -611,8 +612,8 @@ impl RenderOnce for CommandMenu {
                 div()
                     .flex_1()
                     .min_w_0()
-                    .text_size(px(FIELD_TEXT))
-                    .line_height(px(FIELD_LINE_HEIGHT))
+                    .text_size(ui_rems(FIELD_TEXT))
+                    .line_height(ui_rems(FIELD_LINE_HEIGHT))
                     .child(input),
             )
             .child(pink::kbd_hint(combo(false, "K"), &t));
@@ -622,21 +623,24 @@ impl RenderOnce for CommandMenu {
         for (ix, entry) in entries.iter().enumerate() {
             // Pink: end spacing belongs to the content, so it scrolls out of
             // the fade instead of leaving a gutter beside the chrome.
-            let mut row = div()
-                .id(("command-result", ix))
-                .flex_none()
-                .when(ix == 0, |row| row.pt(px(8.)))
-                .when(ix + 1 == entries.len(), |row| row.pb(px(8.)));
+            let mut row =
+                palette::slot(ix == 0, ix + 1 == entries.len()).id(("command-result", ix));
             if let Some(group) = entry.command.group.as_ref()
                 && previous_group != Some(group)
             {
                 if ix > 0 {
-                    row = row.child(group_rule(&t));
+                    row = row.child(palette::separator(group_rule(&t)));
                 }
-                row = row.child(group_heading(group.clone(), &t));
+                row = row.child(
+                    palette::heading(t.text_faint)
+                        .id(SharedString::from(format!("{key}-section-{group}")))
+                        .role(gpui::Role::Heading)
+                        .aria_label(group.clone())
+                        .child(group.clone()),
+                );
                 previous_group = Some(group);
             }
-            rows.push(row.child(div().px(px(8.)).child(command_row(
+            rows.push(row.child(palette::inset(command_row(
                 &key,
                 entry,
                 active == Some(ix),
@@ -669,19 +673,20 @@ impl RenderOnce for CommandMenu {
         // Pink: the footer of key hints.
         let footer = div()
             .flex_none()
-            .px(px(16.))
-            .py(px(7.))
+            .px(ui_rems(16.))
+            .py(ui_rems(7.))
             .border_t_1()
             .border_color(t.hairline(0.06))
             .flex()
             .flex_wrap()
             .items_center()
-            .gap(px(12.))
+            .gap(ui_rems(12.))
             .child(key_hint("↑ ↓", "Navigate", &t))
             .child(key_hint("↵", "Select", &t))
             .child(key_hint("Esc", "Close", &t));
 
-        let width = px(WIDTH).min(viewport.width - px(WINDOW_CLEARANCE));
+        // Pink: `560 * ui_scale`, inside the window.
+        let width = px(WIDTH * pink::ui_scale(cx)).min(viewport.width - px(WINDOW_CLEARANCE));
         let card = div()
             .id(self.id)
             .w(width)
@@ -717,30 +722,17 @@ fn palette_search_icon(t: &Pink) -> gpui::Div {
     crate::components::menu_card::search_glyph(ICON_SEARCH, t.text_muted)
 }
 
-/// Pink: `spaces::sidebar_separator` at `my 7`, the rule above a group.
+/// Pink: `spaces::sidebar_separator`, the rule above a group; the
+/// package's `separator` spaces it.
 fn group_rule(t: &Pink) -> gpui::Div {
-    div()
-        .h(px(1.))
-        .w_full()
-        .my(px(7.))
-        .bg(t.border.opacity(0.6))
+    div().h(px(1.)).bg(t.border.opacity(0.6))
 }
 
-/// Pink: a result group's heading, 11 medium `text_faint`, sentence case.
-fn group_heading(label: SharedString, t: &Pink) -> gpui::Div {
-    div()
-        .px(px(10.))
-        .pb(px(4.))
-        .text_size(px(11.))
-        .font_weight(gpui::FontWeight::MEDIUM)
-        .text_color(t.text_faint)
-        .child(label)
-}
-
-/// One row. Pink: the action row of `render_command_palette` (a 16px glyph,
-/// the highlighted label and a `kbd_hint`), `render_contributed_command_row`
-/// for the faint name at its end, and `render_command_history_row` for a
-/// command with a detail line.
+/// One row. Pink: the action row of `render_command_palette` (the package's
+/// glyph, the highlighted label and a `kbd_hint`),
+/// `render_contributed_command_row` for the faint name at its end, and
+/// `render_command_history_row` for a command with a detail line (its
+/// summary over its attribution, unhighlighted as in PINK).
 fn command_row(
     key: &str,
     entry: &Entry,
@@ -756,74 +748,57 @@ fn command_row(
     };
     let runner = state.clone();
     let run = command.clone();
-    let label = search_highlight(command.label.clone(), query, t);
-    let two_line = command.detail.is_some();
+    let kind = if command.detail.is_some() {
+        RowKind::Detail
+    } else {
+        RowKind::Action
+    };
 
-    pink::menu_row(format!("{key}-row-{}", command.id), active, t)
-        .rounded(px(radius::PALETTE_ITEM))
-        .min_h(px(if two_line {
-            RESULT_ROW_MIN_H
-        } else {
-            ROW_MIN_H
-        }))
-        .py(px(if two_line { 5. } else { 4. }))
-        .on_click(move |_, window, cx| {
-            let command = run.clone();
-            runner.update(cx, |s, cx| s.run(command, window, cx));
-        })
-        .child(
-            svg()
-                .path(command.icon.clone())
-                .size(px(16.))
-                .flex_none()
-                .text_color(t.text_muted),
+    palette::row(
+        pink::menu_row(format!("{key}-row-{}", command.id), active, t),
+        kind,
+    )
+    .role(gpui::Role::Button)
+    .aria_label(command.label.clone())
+    .on_click(move |_, window, cx| {
+        let command = run.clone();
+        runner.update(cx, |s, cx| s.run(command, window, cx));
+    })
+    .child(palette::glyph(
+        svg().path(command.icon.clone()),
+        t.text_muted,
+    ))
+    .child(match &command.detail {
+        None => palette::label()
+            .child(search_highlight(command.label.clone(), query, t))
+            .into_any_element(),
+        Some(detail) => palette::detail(
+            command.label.clone(),
+            detail.clone(),
+            &palette::DetailStyle {
+                summary: t.text,
+                meta: t.text_faint,
+            },
         )
-        .child(match &command.detail {
-            None => div().flex_1().min_w_0().child(label),
-            Some(detail) => div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .gap(px(2.))
-                .child(
-                    div()
-                        .truncate()
-                        .text_size(px(12.))
-                        .text_color(t.text)
-                        .child(label),
-                )
-                .child(
-                    div()
-                        .truncate()
-                        .text_size(px(11.))
-                        .text_color(t.text_faint)
-                        .child(detail.clone()),
-                ),
-        })
-        .when_some(command.hint.clone(), |row, hint| {
-            row.child(
-                div()
-                    .flex_none()
-                    .text_size(px(11.))
-                    .text_color(t.text_faint)
-                    .child(hint),
-            )
-        })
-        .when_some(keys, |row, keys| row.child(pink::kbd_hint(keys, t)))
+        .into_any_element(),
+    })
+    .when_some(command.hint.clone(), |row, hint| {
+        row.child(palette::note(hint, t.text_faint))
+    })
+    .when_some(keys, |row, keys| row.child(pink::kbd_hint(keys, t)))
 }
 
 /// Pink: the palette's "No results" line and its muted hint.
 fn no_results(t: &Pink) -> impl IntoElement {
     div()
         .w_full()
-        .py(px(24.))
-        .px(px(16.))
+        .py(ui_rems(24.))
+        .px(ui_rems(16.))
         .flex()
         .flex_col()
         .items_center()
-        .gap(px(6.))
-        .text_size(px(13.))
+        .gap(ui_rems(6.))
+        .text_size(ui_rems(13.))
         .child("No results")
         .child(
             div()
@@ -832,19 +807,9 @@ fn no_results(t: &Pink) -> impl IntoElement {
         )
 }
 
-/// Pink: `command_key_hint`, a `kbd_hint` and its 11px verb.
+/// Pink: `command_key_hint`, the package's key hint around a `kbd_hint`.
 fn key_hint(keys: &'static str, label: &'static str, t: &Pink) -> gpui::Div {
-    div()
-        .flex()
-        .items_center()
-        .gap(px(5.))
-        .child(pink::kbd_hint(keys, t))
-        .child(
-            div()
-                .text_size(px(11.))
-                .text_color(t.text_muted)
-                .child(label),
-        )
+    palette::key_hint(pink::kbd_hint(keys, t), label, t.text_muted)
 }
 
 /// Pink: `popover::search_highlight`. Matched words are recolored

@@ -49,6 +49,11 @@
 //! Sizes are px at Pink's default interface size: Pink writes them as
 //! `ui_rems(n)` = `rems(n / 16)` with the window rem at the 16 px default, so
 //! `ui_rems(13.)` paints 13 px. Corners and hairlines are px in Pink too.
+//! The parts the kit draws through PINK's pinned packages keep the package's
+//! units: the menu card and its rows (`pink-menu-card`) and the segmented
+//! control (`pink-segmented-control`) are rems, so they grow with the
+//! Interface size as PINK's do; the trigger chip (`pink-trigger-chip`) draws
+//! at the kit's px baseline (`Units::Pixels`).
 //!
 //! ```ignore
 //! let t = Pink::get(cx);

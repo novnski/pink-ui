@@ -17,12 +17,12 @@ use super::{
     FillTier, Pink, SANS, TextStyle, TypeStyleExt, controls::glyphs, controls::line_glyph, layout,
     radius, shadow_lg,
 };
-use crate::HoverFill;
 use crate::components::empty_state as empty;
 use crate::components::menu_card as menu;
 use crate::components::overlay_card as overlay;
 use crate::components::settings_parts as parts;
 use crate::components::settings_section as section;
+use crate::motion;
 
 // ---------------------------------------------------------------------------
 // In-flow cards
@@ -189,24 +189,20 @@ pub fn surface_state(
 // ---------------------------------------------------------------------------
 
 /// The popover / menu card (Pink `popover::popover_card` in its frosted
-/// mount): 1 px `border`, radius 12, the popover plate (`surface_bg()`, the
-/// frosted tint over the canvas: #060606 / #fafcfe), Pink's frost elevation
-/// rings over `menu_shadows()`, `p 4`, gap 2, clipped, 13 Geist in `text`.
-/// Chain `.flex().flex_col()` for a menu, and a width from
+/// mount), drawn by the `pink-menu-card` package: 1 px `border`, radius 12,
+/// the popover plate (`surface_bg()`, the frosted tint over the canvas:
+/// #060606 / #fafcfe), Pink's frost elevation rings over `menu_shadows()`,
+/// `p 4`, gap 2, clipped, 13 Geist in `text` (in rems, so it grows with the
+/// Interface size). Chain `.flex().flex_col()` for a menu, and a width from
 /// `layout::MENU_W_*`. Text inside reads `t.for_popup()` tones.
 pub fn popover_card(t: &Pink) -> Div {
-    div()
-        .border_1()
-        .border_color(t.border)
-        .rounded(px(radius::POPOVER))
-        .shadow(floating_shadows(t.menu_shadows(), t))
-        .bg(t.surface_bg())
-        .p(px(layout::CARD_INSET))
-        .gap(px(layout::MENU_GAP))
-        .overflow_hidden()
-        .text_size(px(13.0))
-        .font_family(SANS)
-        .text_color(t.text)
+    menu::card(&menu::CardStyle {
+        border: t.border,
+        background: t.surface_bg(),
+        text: t.text,
+        font_family: SANS.into(),
+        shadows: Some(floating_shadows(t.menu_shadows(), t)),
+    })
 }
 
 /// [`popover_card`] without its inset, for popovers with their own panes.
@@ -226,68 +222,65 @@ pub fn stack_popup_card(t: &Pink) -> Div {
     overlay::stack_popup(popover_card(t))
 }
 
-/// One pointer menu row (Pink `popover::menu_row`): gap 10, `px 8 / py 6`,
-/// radius 8, 13. Active: `card_selected_bg()` and `text`. At rest the label
-/// is `text @ 0.9` and the wash `wash(0)`, easing to `text` and
+/// One pointer menu row (Pink `popover::menu_row`), drawn by the
+/// `pink-menu-card` package: gap 10, `px 8 / py 6`, radius 8, 13, in rems.
+/// Active: `card_selected_bg()` and `text`. At rest the label is
+/// `text @ 0.9` and the wash `wash(0)`, easing to `text` and
 /// `menu_hover_bg()` (60% of the selected wash) under the pointer. A leading
 /// icon is 16 px in `text_muted`.
 pub fn menu_row(id: impl Into<SharedString>, active: bool, t: &Pink) -> Stateful<Div> {
     let id: SharedString = id.into();
-    let row = div()
-        .id(id.clone())
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(10.0))
-        .px(px(8.0))
-        .py(px(6.0))
-        .rounded(px(radius::MENU_ITEM))
-        .text_size(px(13.0))
-        .cursor_pointer();
     if active {
-        row.bg(t.card_selected_bg()).text_color(t.text)
-    } else {
-        row.hover_fill_fg(
-            format!("pink-menu-{id}"),
-            t.wash(0.0),
-            t.menu_hover_bg(),
-            t.text.opacity(0.9),
-            t.text,
-        )
+        return menu::row(&menu::RowStyle {
+            text: t.text,
+            fill: t.card_selected_bg(),
+        })
+        .id(id);
     }
+    let key = format!("pink-menu-{id}");
+    menu::row(&menu::RowStyle {
+        text: motion::hover_blend(&key, t.text.opacity(0.9), t.text),
+        fill: motion::hover_blend(&key, t.wash(0.0), t.menu_hover_bg()),
+    })
+    .id(id)
+    .on_hover(motion::hover_listener(key))
 }
 
-/// A row of a keyboard-navigable menu (Pink `popover::menu_row_nav`): one
-/// highlight that arrows and pointer share (`card_selected_bg()` on the
-/// cursor row only, no separate hover wash), and a trailing 14 px check in
-/// `text` on the current choice, in the 28 px check column. Move the cursor
-/// from `.on_mouse_move`.
-pub fn menu_row_nav(selected: bool, highlighted: bool, t: &Pink) -> Div {
-    div()
-        .relative()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(10.0))
-        .pl(px(8.0))
-        .pr(px(layout::MENU_CHECK_COLUMN))
-        .py(px(6.0))
-        .rounded(px(radius::MENU_ITEM))
-        .text_size(px(13.0))
-        .cursor_pointer()
-        .text_color(if highlighted || selected {
+/// The text and wash of a [`menu_row_nav`] row (Pink
+/// `popover::menu_row_nav_style`): only the cursor row is washed, and the
+/// cursor and the current choice read at full strength.
+fn menu_row_nav_style(selected: bool, highlighted: bool, t: &Pink) -> menu::RowStyle {
+    menu::RowStyle {
+        text: if highlighted || selected {
             t.text
         } else {
             t.text.opacity(0.9)
-        })
-        .when(highlighted, |row| row.bg(t.card_selected_bg()))
+        },
+        fill: if highlighted {
+            t.card_selected_bg()
+        } else {
+            gpui::transparent_black()
+        },
+    }
+}
+
+/// A row of a keyboard-navigable menu (Pink `popover::menu_row_nav`), drawn
+/// by the `pink-menu-card` package: one highlight that arrows and pointer
+/// share (`card_selected_bg()` on the cursor row only, no separate hover
+/// wash), and a trailing 14 px check in `text` on the current choice, in
+/// the 28 px check column. Move the cursor from `.on_mouse_move`.
+pub fn menu_row_nav(selected: bool, highlighted: bool, t: &Pink) -> Div {
+    menu::row(&menu_row_nav_style(selected, highlighted, t))
+        .relative()
+        // The trailing check column replaces the row's right padding.
+        .pr(menu::ui_rems(layout::MENU_CHECK_COLUMN))
         .when(selected, |row| {
             row.child(
                 div()
                     .absolute()
                     .top_0()
                     .bottom_0()
-                    .right(px(8.0))
+                    .right(menu::ui_rems(8.0))
                     .flex()
                     .items_center()
                     .child(line_glyph(glyphs::CHECK, 14.0, t.text)),
@@ -296,11 +289,11 @@ pub fn menu_row_nav(selected: bool, highlighted: bool, t: &Pink) -> Div {
 }
 
 /// [`menu_row_nav`] for a list with a cursor but no current choice (the
-/// composer's completions): no check column, radius 14.
+/// composer's completions), Pink `popover::menu_row_cursor`: no check
+/// column, on the stacked popup's row (`pink-menu-card` `stack_row`, radius
+/// 14).
 pub fn menu_row_cursor(highlighted: bool, t: &Pink) -> Div {
-    menu_row_nav(false, highlighted, t)
-        .pr(px(8.0))
-        .rounded(px(radius::STACK_POPUP_ROW))
+    menu::stack_row(&menu_row_nav_style(false, highlighted, t))
 }
 
 /// A submenu chevron for the end of a menu row: `alt-arrow-right` 14 in

@@ -45,17 +45,13 @@
 //!     .on_compact(|_, _| {})
 //! ```
 
-use std::{
-    f32::consts::{FRAC_PI_2, TAU},
-    rc::Rc,
-    sync::Arc,
-};
+use std::{rc::Rc, sync::Arc};
 use web_time::{Duration, Instant};
 
 use gpui::{
     Anchor, AnyElement, AnyView, App, Bounds, Context, Div, ElementId, Entity, FocusHandle,
-    FontWeight, Hsla, KeyDownEvent, MouseDownEvent, PathBuilder, Pixels, Role, SharedString,
-    Stateful, Task, Window, anchored, canvas, deferred, div, point, prelude::*, px, relative, svg,
+    FontWeight, Hsla, KeyDownEvent, MouseDownEvent, Pixels, Role, SharedString, Stateful, Task,
+    Window, anchored, canvas, deferred, div, point, prelude::*, px, relative, svg,
     transparent_black,
 };
 
@@ -84,14 +80,6 @@ const ICON_CLEAR: &str = "icons/context-window/refresh.svg";
 const ICON_REMOVE: &str = "icons/context-window/close.svg";
 const ICON_PAPERCLIP: &str = "icons/context-window/paperclip.svg";
 const ICON_ARROW_UP: &str = "icons/context-window/arrow-up.svg";
-
-/// The chip (Pink: context_usage.rs `CHIP_PAD_X`, `RING`, `RING_GAP` and the
-/// ring's radius and stroke).
-const CHIP_PAD_X: f32 = 6.;
-const RING: f32 = 16.;
-const RING_GAP: f32 = 5.;
-const RING_RADIUS: f32 = 6.;
-const RING_STROKE: f32 = 1.8;
 
 /// The details card's padding and rhythm (Pink: `UsageCard::render`).
 const CARD_PAD: f32 = 12.;
@@ -895,11 +883,13 @@ impl ContextWindow {
     /// context_usage.rs `chip_widths`), for a host fitting its controls
     /// row: both paddings, the ring, the gap and the share's 12 px run. A
     /// window with nothing reported shows the ring alone either way.
-    pub fn chip_widths(&self, window: &Window) -> (f32, f32) {
-        let ring = 2. * CHIP_PAD_X + RING;
+    pub fn chip_widths(&self, window: &Window, cx: &App) -> (f32, f32) {
+        use crate::components::context_ring as ring;
+        let scale = pink::ui_scale(cx);
         let compacting = self.compact == CompactState::Running;
         if !self.usage.reported && !compacting {
-            return (ring, ring);
+            let (_, alone) = ring::chip_widths(0., scale);
+            return (alone, alone);
         }
         let text = label(compacting, self.usage.percent());
         let run = gpui::TextRun {
@@ -910,11 +900,14 @@ impl ContextWindow {
             underline: None,
             strikethrough: None,
         };
-        let line = window
-            .text_system()
-            .shape_line(SharedString::from(text), px(12.), &[run], None);
+        let line = window.text_system().shape_line(
+            SharedString::from(text),
+            px(ring::TEXT * scale),
+            &[run],
+            None,
+        );
         // One pixel of slack absorbs subpixel rounding.
-        (ring + RING_GAP + f32::from(line.width) + 1., ring)
+        ring::chip_widths(f32::from(line.width) + 1., scale)
     }
 
     /// Starts with the Context menu open.
@@ -1151,10 +1144,12 @@ fn above(card: impl IntoElement) -> Div {
     )
 }
 
-/// The context chip (Pink: context_usage.rs `render`): the ring, and the
-/// share in tabular digits, both in the state tone floored on the composer
-/// plate; the `element_hover` wash under the pointer, and here also while
-/// its card is open. Resting on it shows Pink's details card.
+/// The context chip (Pink: context_usage.rs `render`), drawn by the
+/// `pink-context-ring` package in rems: the ring, and the share in tabular
+/// digits, both in the state tone floored on the composer plate; the
+/// `element_hover` wash under the pointer, and here also while its card is
+/// open. Nothing reported yet shows the bare track. Resting on it shows
+/// Pink's details card.
 fn chip(
     key: &str,
     s: &WindowState,
@@ -1164,6 +1159,7 @@ fn chip(
     t: &Pink,
     state: &Entity<WindowState>,
 ) -> Stateful<Div> {
+    use crate::components::context_ring as ring_chip;
     let compacting = s.is_compacting();
     let color = t.readable_on_composer(tone, TEXT_CONTRAST_TARGET);
     let ring_color = t.readable_on_composer(tone, NON_TEXT_CONTRAST_TARGET);
@@ -1182,83 +1178,40 @@ fn chip(
     } else {
         transparent_black()
     };
-    let selector = hover_key.clone();
-    div()
-        .id(eid(hover_key.clone()))
-        .debug_selector(move || selector)
-        .role(Role::Button)
-        .aria_label(accessible)
-        .aria_expanded(s.open)
-        .track_focus(&s.focus)
-        .focus_visible(move |style| pink::focus_ring(style, ring))
-        .relative()
-        .flex_none()
-        .flex()
-        .items_center()
-        .gap(px(RING_GAP))
-        .h(px(layout::COMPOSER_CONTROL))
-        .px(px(CHIP_PAD_X))
-        .rounded_full()
-        .text_size(px(12.))
-        .text_color(color)
-        .cursor_pointer()
-        .bg(motion::hover_blend(&hover_key, rest, t.element_hover))
-        .on_hover(move |hovered, window, cx| {
-            fade(hovered, window, cx);
-            peeker.update(cx, |s, cx| s.hover_chip(*hovered, cx));
-        })
-        .on_click(move |_, window, cx| toggler.update(cx, |s, cx| s.toggle(window, cx)))
-        .child(occupancy_ring(fraction, ring_color, track))
-        // Nothing reported yet: the ring alone, never a dash placeholder.
-        .when(show_label && (reported || compacting), |el| {
-            el.font_features(pink::tabular_figures()).child(text)
-        })
-        .child(
-            canvas(
-                move |bounds, _, cx| measurer.update(cx, |s, _| s.trigger = bounds),
-                |_, _, _, _| {},
-            )
-            .absolute()
-            .size_full(),
-        )
-}
-
-/// The chip's 16 px ring (Pink: context_usage.rs `render`'s canvas): the
-/// full track, then the occupied arc from twelve o'clock, radius 6 at a
-/// 1.8 px stroke.
-fn occupancy_ring(fraction: f32, color: Hsla, track: Hsla) -> impl IntoElement {
-    canvas(
-        |_, _, _| (),
-        move |bounds, _, window, _| {
-            let center = bounds.center();
-            let mut arc = |fraction: f32, color: Hsla| {
-                if fraction <= 0. {
-                    return;
-                }
-                let steps = (64. * fraction).ceil().max(2.) as usize;
-                let mut path = PathBuilder::stroke(px(RING_STROKE));
-                for i in 0..=steps {
-                    let angle = -FRAC_PI_2 + TAU * fraction * i as f32 / steps as f32;
-                    let p = point(
-                        center.x + px(RING_RADIUS * angle.cos()),
-                        center.y + px(RING_RADIUS * angle.sin()),
-                    );
-                    if i == 0 {
-                        path.move_to(p);
-                    } else {
-                        path.line_to(p);
-                    }
-                }
-                if let Ok(path) = path.build() {
-                    window.paint_path(path, color);
-                }
-            };
-            arc(1., track);
-            arc(fraction.clamp(0., 1.), color);
+    // Nothing reported yet: the ring alone, never a dash placeholder.
+    let shown = (show_label && (reported || compacting)).then(|| SharedString::from(text));
+    let tabular = shown.is_some();
+    ring_chip::context_ring(
+        hover_key.clone(),
+        reported.then_some(fraction),
+        shown,
+        &ring_chip::ContextRingStyle {
+            text: color,
+            arc: ring_color,
+            track,
+            wash: motion::hover_blend(&hover_key, rest, t.element_hover),
         },
     )
-    .flex_none()
-    .size(px(RING))
+    .role(Role::Button)
+    .aria_label(accessible)
+    .aria_expanded(s.open)
+    .track_focus(&s.focus)
+    .focus_visible(move |style| pink::focus_ring(style, ring))
+    .relative()
+    .when(tabular, |el| el.font_features(pink::tabular_figures()))
+    .on_hover(move |hovered, window, cx| {
+        fade(hovered, window, cx);
+        peeker.update(cx, |s, cx| s.hover_chip(*hovered, cx));
+    })
+    .on_click(move |_, window, cx| toggler.update(cx, |s, cx| s.toggle(window, cx)))
+    .child(
+        canvas(
+            move |bounds, _, cx| measurer.update(cx, |s, _| s.trigger = bounds),
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .size_full(),
+    )
 }
 
 /// Pink: context_usage.rs `UsageCard`, the chip's hover card: "Context

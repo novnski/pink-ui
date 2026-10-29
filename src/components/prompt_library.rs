@@ -11,6 +11,12 @@
 //! like the composer's inline chips), a hint line, Copy, and one Primary
 //! "Use prompt" that wakes up once nothing is missing.
 //!
+//! The parts are the packages PINK pins: the menu is the `pink-overlay-card`
+//! stack popup with `pink-menu-card` rows, the surface the
+//! `pink-composer-pill` pill, and the header, body and footer the
+//! `pink-question-card` wizard's, all in rems like PINK's. Only the blanks
+//! and their sentence are the gallery's own.
+//!
 //! Keys: menu rows are tab stops (Enter opens one); in a blank Tab moves on,
 //! Enter uses the prompt when it is complete (or jumps to the next empty
 //! blank), Escape closes the menu.
@@ -30,13 +36,14 @@ use std::{
 };
 
 use gpui::{
-    AnyElement, AnyView, App, ClipboardItem, Context, ElementId, Entity, FontWeight, IntoElement,
-    KeyDownEvent, MouseButton, Role, SharedString, Subscription, Task, TextRun, Window, deferred,
-    div, font, prelude::*, px, svg,
+    AnyElement, AnyView, App, ClipboardItem, Context, ElementId, Entity, IntoElement, KeyDownEvent,
+    MouseButton, Role, SharedString, Subscription, Task, TextRun, Window, deferred, div, font,
+    prelude::*, px, svg,
 };
 use web_time::Instant;
 
 use crate::{
+    components::question_card::{self as card, ui_rems},
     motion::{self, HOVER_FADE, MENU_OUT, MENU_RISE_UP, TRANSCRIPT_IN, TRANSCRIPT_IN_RISE},
     pink::{self, ButtonKind, ControlSize, FillTier, Pink, layout, loaders, radius},
     primitives::{InputEvent, TextInput},
@@ -644,15 +651,16 @@ fn stash_menu(
     let busy = loading || exit.is_some();
     let visible = s.visible();
     let ring = t.focus_ring();
+    let popup = t.for_popup();
 
     let mut rows: Vec<AnyElement> = Vec::new();
     if visible.is_empty() {
         rows.push(
             div()
-                .px(px(8.))
-                .py(px(8.))
-                .text_size(px(12.))
-                .text_color(t.text_muted)
+                .px(ui_rems(8.))
+                .py(ui_rems(8.))
+                .text_size(ui_rems(12.))
+                .text_color(popup.text_muted)
                 .child(if loading {
                     "Loading saved prompts…"
                 } else {
@@ -686,8 +694,8 @@ fn stash_menu(
                     row.child(
                         div()
                             .flex_none()
-                            .text_size(px(11.))
-                            .text_color(t.text_muted)
+                            .text_size(ui_rems(11.))
+                            .text_color(popup.text_muted)
                             .child(format!(
                                 "{blanks} blank{}",
                                 if blanks == 1 { "" } else { "s" }
@@ -720,7 +728,7 @@ fn stash_menu(
     let card = pink::stack_popup_card(t).w_full().child(
         div()
             .id(SharedString::from(format!("{key}-stash-list")))
-            .max_h(px(STASH_LIST_MAX_H))
+            .max_h(ui_rems(STASH_LIST_MAX_H))
             .overflow_y_scroll()
             .flex()
             .flex_col()
@@ -822,39 +830,16 @@ fn composer(
     let filled = values.iter().filter(|(_, v)| !v.trim().is_empty()).count();
     let total = values.len();
     let complete = current.is_some() && filled == total;
-    let muted = t.readable_muted(0.6);
 
-    // Header (Pink wizard): tracked uppercase 11 medium + a counter chip.
+    // Header (Pink wizard): the question card's tracked title and counter.
     let title = current
         .as_ref()
         .map_or("Saved prompts".into(), |c| c.title.clone());
-    let header = div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(10.))
-        .child(
-            div()
-                .text_size(px(11.))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(muted)
-                .child(SharedString::from(pink::tracked_upper(&title))),
-        )
-        .when(total > 0, |el| {
-            el.child(
-                div()
-                    .h(px(20.))
-                    .px(px(6.))
-                    .flex()
-                    .items_center()
-                    .rounded(px(6.))
-                    .bg(t.ink(0.06))
-                    .text_size(px(11.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(muted)
-                    .child(format!("{filled} of {total} filled")),
-            )
-        });
+    let header = card::header(
+        &card::palette(t),
+        pink::tracked_upper(&title),
+        (total > 0).then(|| format!("{filled} of {total} filled").into()),
+    );
 
     let sentence = match &current {
         Some(template) => {
@@ -916,30 +901,20 @@ fn composer(
             .into_any_element(),
     };
 
-    let body = div()
-        .px(px(16.))
-        .pt(px(16.))
-        .flex()
-        .flex_col()
-        .child(header)
-        .child(
-            div()
-                .mt(px(6.))
-                .text_size(px(INPUT_TEXT_SIZE))
-                .line_height(px(INPUT_LINE_HEIGHT))
-                .child(sentence),
-        );
+    let body = card::body().child(header).child(
+        div()
+            .mt(ui_rems(card::QUESTION_GAP))
+            .text_size(px(INPUT_TEXT_SIZE))
+            .line_height(px(INPUT_LINE_HEIGHT))
+            .child(sentence),
+    );
 
-    div()
+    // Pink composer.rs `composer_surface`: the question card's pill.
+    card::surface(t)
         .id(SharedString::from(format!("{key}-pill")))
         .w_full()
         .flex()
         .flex_col()
-        .rounded(px(radius::COMPOSER_PILL))
-        .border_1()
-        .border_color(t.border)
-        .bg(t.surface_bg())
-        .shadow(pink::shadow_lg())
         .child(body)
         .child(footer(
             key,
@@ -1087,37 +1062,22 @@ fn footer(
         complete,
         t,
     )
-    .px(px(16.))
+    .px(ui_rems(card::ACTION_PAD_X))
     .when(complete, |el| {
         el.on_click(move |_, window, cx| user.update(cx, |s, cx| s.use_prompt(window, cx)))
     })
     .child("Use prompt");
 
-    div()
-        .flex()
-        .flex_row()
-        .justify_between()
-        .items_center()
-        .gap(px(12.))
-        .px(px(16.))
-        .pt(px(12.))
-        .pb(px(16.))
-        .child(
-            div()
-                .flex()
-                .flex_1()
-                .min_w_0()
-                .items_center()
-                .gap(px(8.))
-                .child(trigger)
-                .child(hint),
-        )
+    // Pink wizard: the question card's footer, notes leading and the
+    // actions on the trailing edge.
+    card::footer()
+        .child(card::notes().child(trigger).child(hint))
         .child(
             div()
                 .flex()
                 .flex_none()
                 .items_center()
-                .gap(px(8.))
+                .gap(ui_rems(card::NOTES_GAP))
                 .child(copy)
                 .child(use_prompt),
         )

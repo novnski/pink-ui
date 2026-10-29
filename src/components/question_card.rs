@@ -16,7 +16,7 @@ use gpui::{AnyView, App, Div, Hsla, IntoElement, SharedString, Window, div, prel
 
 use crate::{
     motion,
-    pink::{self, ButtonKind, ControlSize, Pink, radius},
+    pink::{self, ButtonKind, ControlSize, Pink},
     story,
 };
 
@@ -62,13 +62,17 @@ pub fn option_rest(t: &Pink, hover_key: &str) -> Hsla {
 
 /// The pill the card sits on (PINK composer.rs `composer_surface`, on the
 /// frosted composer plate).
+/// The card's surface: the composer's pill (`pink-composer-pill`, Pink
+/// composer.rs `composer_surface`), floating and lifted on the kit's opaque
+/// plate.
 pub fn surface(t: &Pink) -> Div {
-    div()
-        .rounded(px(radius::COMPOSER_PILL))
-        .border_1()
-        .border_color(t.border)
-        .bg(t.surface_bg())
-        .shadow(pink::shadow_lg())
+    use crate::components::composer_pill as pill;
+    pill::pill(&pill::PillStyle {
+        radius: pill::radius(0.0),
+        border: t.border,
+        background: t.surface_bg(),
+        lifted: true,
+    })
 }
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {

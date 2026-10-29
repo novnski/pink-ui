@@ -450,12 +450,29 @@ pub fn selection_ring(selected: bool, inner_radius: f32, t: &Pink, child: impl I
         .child(child)
 }
 
-/// A composer trigger chip, Pink's "ghost pill" (model, branch, access):
-/// 28 tall, fully rounded, `px 10`, gap 6, 12 medium; no border, no caret.
-/// The label rests at `text @ 0.9` when the choice is `set` (else
-/// `text_muted`) and brightens to `text`; the wash is `element_hover` under
-/// the pointer and while `open`. Icons inside are 16.
+/// A composer trigger chip, Pink's "ghost pill" (model, branch, access),
+/// drawn by the `pink-trigger-chip` package at the kit's 16 pt baseline
+/// (`Units::Pixels`): 28 tall, fully rounded, `px 10`, gap 6, 12 medium; no
+/// border, no caret. The label rests at `text @ 0.9` when the choice is
+/// `set` (else `text_muted`) and brightens to `text`; the wash is
+/// `element_hover` under the pointer and while `open`. Icons inside are 16.
+/// The caller chains the icon and label; [`trigger_chip_with`] hands the
+/// package its icon, label, badge and suffix, as Pink's chips do.
 pub fn trigger_chip(id: impl Into<SharedString>, set: bool, open: bool, t: &Pink) -> Stateful<Div> {
+    trigger_chip_with(id, Default::default(), set, open, t)
+}
+
+/// [`trigger_chip`] drawing `content` (Pink `Pickers::trigger_chip`): the
+/// leading icon, the label, a badge after it, the effort as a muted
+/// `readable_muted(0.7)` suffix, or the square icon-only form.
+pub fn trigger_chip_with(
+    id: impl Into<SharedString>,
+    content: crate::components::trigger_chip::TriggerChipContent,
+    set: bool,
+    open: bool,
+    t: &Pink,
+) -> Stateful<Div> {
+    use crate::components::trigger_chip as chip;
     let id: SharedString = id.into();
     let key = format!("pink-trigger-{id}");
     let ring = t.focus_ring();
@@ -464,36 +481,28 @@ pub fn trigger_chip(id: impl Into<SharedString>, set: bool, open: bool, t: &Pink
     } else {
         t.text_muted
     };
-    div()
-        .id(id)
-        .role(Role::Button)
-        .tab_index(0)
-        .focus_visible(move |style| focus_ring(style, ring))
-        .on_key_down(swallow_activation_key)
-        .h(px(28.0))
-        .min_w_0()
-        .max_w(px(280.0))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(6.0))
-        .px(px(10.0))
-        .rounded_full()
-        .text_size(px(12.0))
-        .font_weight(FontWeight::MEDIUM)
-        .cursor_pointer()
-        .aria_expanded(open)
-        .hover_fill_fg(
-            key,
-            if open {
-                t.element_hover
-            } else {
-                t.element_hover.opacity(0.0)
-            },
-            t.element_hover,
-            rest_fg,
-            t.text,
-        )
+    let hover = motion::hover_t(&key);
+    let rest_wash = if open {
+        t.element_hover
+    } else {
+        t.element_hover.opacity(0.0)
+    };
+    chip::trigger_chip(
+        id,
+        content,
+        &chip::TriggerChipStyle {
+            units: chip::Units::Pixels,
+            label: motion::mix(rest_fg, t.text, hover),
+            suffix: t.readable_muted(0.7),
+            wash: motion::mix(rest_wash, t.element_hover, hover),
+        },
+    )
+    .role(Role::Button)
+    .tab_index(0)
+    .focus_visible(move |style| focus_ring(style, ring))
+    .on_key_down(swallow_activation_key)
+    .aria_expanded(open)
+    .on_hover(motion::hover_listener(key))
 }
 
 /// A notice's capsule action (Pink `notice::notice_action`), drawn by the
@@ -542,16 +551,21 @@ impl Segment {
     }
 }
 
-/// Track inset around the thumb (Pink `SEGMENT_INSET`).
-const SEGMENT_INSET: f32 = 2.0;
-
-/// A segmented control (Pink `button::segmented`): equal-width options on a
+/// A segmented control (Pink `button::segmented`), drawn by the
+/// `pink-segmented-control` package: equal-width options on a
 /// `fill(Quaternary)` track with a `separator(false)` edge, and one thumb
 /// that slides to the chosen option over [`motion::QUICK`] (160 ms). The thumb
 /// is `fill(Primary)` on dark; white with a hairline edge and a
 /// `0 1 2 black 8%` shadow on light. The chosen label is medium `text`, the
 /// others `readable_muted(0.9)` brightening on hover. `width` is the whole
-/// control's width; `on_select` receives the chosen index.
+/// control's width in design pt; like the height and the labels it is in
+/// rems, so the control grows with the Interface size. `on_select` receives
+/// the chosen index.
+///
+/// Every option is a tab stop chosen with Space, Enter or a click; the arrow
+/// keys move the choice and the focus together, wrapping at the ends, and
+/// Home and End jump to the first and last option (Pink
+/// `segment_key_target`).
 pub fn segmented(
     id: impl Into<SharedString>,
     segments: Vec<Segment>,
@@ -561,16 +575,12 @@ pub fn segmented(
     t: &Pink,
     on_select: impl Fn(&usize, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
+    use crate::components::segmented_control::tray;
+
     let id: SharedString = id.into();
     let count = segments.len().max(1);
     let selected = selected.min(count - 1);
     let position = motion::follow(&format!("pink-seg-{id}-thumb"), selected as f32, QUICK);
-    let thumb_radius = radius::inner(size.radius(), SEGMENT_INSET);
-    let thumb_fill = if t.dark {
-        t.fill(FillTier::Primary)
-    } else {
-        gpui::white()
-    };
     let on_select = Rc::new(on_select);
     let ring = t.focus_ring();
     let muted = t.readable_muted(0.9);
@@ -579,86 +589,95 @@ pub fn segmented(
         .enumerate()
         .map(|(ix, segment)| {
             let chosen = ix == selected;
+            let on_key = on_select.clone();
             let on_select = on_select.clone();
             let key = format!("pink-seg-{id}-{}", segment.key);
             let tone = if chosen { t.text } else { muted };
-            div()
-                .id(SharedString::from(key.clone()))
+            tray::option(SharedString::from(key.clone()), chosen, size.radius())
                 .role(Role::RadioButton)
                 .aria_label(segment.label.clone())
                 .aria_toggled(toggled(chosen))
                 .tab_index(0)
-                .relative()
-                .flex_1()
-                .min_w_0()
-                .h_full()
-                .px(px(6.0))
-                .flex()
-                .flex_row()
-                .items_center()
-                .justify_center()
-                .gap(px(5.0))
-                .rounded(px(thumb_radius))
-                .cursor_pointer()
                 .focus_visible(move |style| focus_ring(style, ring))
                 .on_key_down(swallow_activation_key)
-                .hover_fg(key, tone, t.text)
-                .font_weight(if chosen {
-                    FontWeight::MEDIUM
-                } else {
-                    FontWeight::NORMAL
+                .on_key_down(move |event, window, cx| {
+                    let Some(target) = segment_key_target(event, ix, count) else {
+                        return;
+                    };
+                    cx.stop_propagation();
+                    if target != selected {
+                        on_key(&target, window, cx);
+                    }
+                    // The options are consecutive tab stops, so the focus
+                    // walks from this one to the target's.
+                    for _ in ix.min(target)..ix.max(target) {
+                        if target > ix {
+                            window.focus_next(cx);
+                        } else {
+                            window.focus_prev(cx);
+                        }
+                    }
                 })
+                .hover_fg(key, tone, t.text)
                 .on_click(move |_, window, cx| on_select(&ix, window, cx))
                 .when_some(segment.glyph, |el, path| {
                     el.child(glyph(path, ControlSize::Sm).text_color(tone))
                 })
-                .child(div().min_w_0().truncate().child(segment.label))
+                .child(tray::label(segment.label))
                 .into_any_element()
         })
         .collect();
-    let thumb = div()
-        .absolute()
-        .top_0()
-        .bottom_0()
-        .left(gpui::relative(position / count as f32))
-        .w(gpui::relative(1.0 / count as f32))
-        .rounded(px(thumb_radius))
-        .bg(thumb_fill)
-        .when(!t.dark, |el| {
-            el.border_1()
-                .border_color(t.separator(false))
-                .shadow(vec![gpui::BoxShadow {
-                    color: gpui::hsla(0.0, 0.0, 0.0, 0.08),
-                    offset: point(px(0.0), px(1.0)),
-                    blur_radius: px(2.0),
-                    spread_radius: px(0.0),
-                    inset: false,
-                }])
-        });
-    div()
-        .id(id)
-        .role(Role::RadioGroup)
-        .flex_none()
-        .w(px(width))
-        .h(px(size.height()))
-        .p(px(SEGMENT_INSET))
-        .rounded(px(size.radius()))
-        .bg(t.fill(FillTier::Quaternary))
-        .border_1()
-        .border_color(t.separator(false))
-        .text_size(px(size.text()))
-        .text_color(t.text)
-        .child(
-            // The content box the thumb's fractions are taken against.
-            div().relative().size_full().child(thumb).child(
-                div()
-                    .relative()
-                    .size_full()
-                    .flex()
-                    .flex_row()
-                    .children(options),
-            ),
-        )
+    let thumb = tray::thumb(
+        position,
+        count,
+        size.radius(),
+        if t.dark {
+            t.fill(FillTier::Primary)
+        } else {
+            gpui::white()
+        },
+        (!t.dark).then(|| tray::Lift {
+            edge: t.separator(false),
+            shadows: vec![gpui::BoxShadow {
+                color: gpui::hsla(0.0, 0.0, 0.0, 0.08),
+                offset: point(px(0.0), px(1.0)),
+                blur_radius: px(2.0),
+                spread_radius: px(0.0),
+                inset: false,
+            }],
+        }),
+    );
+    tray::tray(
+        &tray::Track {
+            width: Some(width),
+            height: size.height(),
+            radius: size.radius(),
+            text: size.text(),
+            fill: t.fill(FillTier::Quaternary),
+            edge: t.separator(false),
+        },
+        Some(thumb),
+        options,
+    )
+    .text_color(t.text)
+    .id(id)
+    .role(Role::RadioGroup)
+}
+
+/// The option an unmodified arrow, Home or End key picks from the focused
+/// option `from` among `count` options, wrapping at the ends (Pink
+/// `segment_key_target`); `None` for any other key.
+fn segment_key_target(event: &KeyDownEvent, from: usize, count: usize) -> Option<usize> {
+    if event.keystroke.modifiers.modified() {
+        return None;
+    }
+    match event.keystroke.key.as_str() {
+        "left" | "up" => Some((from + count - 1) % count),
+        "right" | "down" => Some((from + 1) % count),
+        "home" => Some(0),
+        "end" => Some(count - 1),
+        _ => None,
+    }
 }
 
 // ---------------------------------------------------------------------------
