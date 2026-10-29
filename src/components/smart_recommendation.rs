@@ -10,7 +10,8 @@
 //!   (Pink `git_step_button`): Accept wears the Git card's accent plate while
 //!   the recommendation is the shown option, and turns back into the plain
 //!   card button once an alternative is picked. Both are the Git card's 26 px
-//!   buttons (Pink `git_button` / `git_primary_button`).
+//!   buttons (Pink `git_button` / `git_primary_button`), drawn by the
+//!   `pink-git-card` package PINK pins.
 //!
 //! The rest is Pink's language around them: the card is the settings card
 //! surface with the Git card's insets; its header folds the line away on the
@@ -39,6 +40,8 @@ use gpui::{
 };
 use web_time::Instant;
 
+use crate::components::git_card as git;
+
 use crate::{
     HoverFill,
     motion::{self, FOLD_TWEEN_WINDOW, MENU_RISE_UP, TOOL_BODY_RISE},
@@ -52,11 +55,9 @@ pub const DESCRIPTION: &str = "A suggested next step with its reason and a confi
 /// The header strip: Pink's file-header height (`surface_chrome::HEADER_HEIGHT`,
 /// the 38 pt titlebar).
 const HEAD_HEIGHT: f32 = layout::TITLEBAR_HEIGHT;
-/// The Git card's buttons (Pink `git_button_base`): `ui_rems(26)` tall,
-/// `px 10`, 12 px.
-const GIT_BUTTON_HEIGHT: f32 = 26.0;
-const GIT_BUTTON_PAD_X: f32 = 10.0;
-const GIT_BUTTON_TEXT: f32 = 12.0;
+/// The Git card's buttons' height (`pink-git-card` `BUTTON_HEIGHT`), which
+/// the accepted line keeps.
+const GIT_BUTTON_HEIGHT: f32 = git::BUTTON_HEIGHT;
 /// The Git card's row gap (Pink `render_git_card`: `gap ui_rems(6)`), also
 /// the next-step line's label → reason gap and the commit row's button gap.
 const GIT_GAP: f32 = space::S6;
@@ -493,14 +494,16 @@ impl RenderOnce for SmartRecommendation {
 
         if options.len() > 1 && !done {
             let alt_key = format!("{key}-alt");
-            let trigger = git_button_base("alternatives", "Alternatives", &t)
+            let style = git::ButtonStyle {
+                fill: motion::hover_blend(&alt_key, t.surface_raised, t.surface_raised_hover),
+                border: t.border,
+                text: t.text,
+                weight: None,
+            };
+            // Its hover listener also notes the pointer for the menu.
+            let trigger = git_button_base("alternatives", "Alternatives", &style, &t)
                 .track_focus(&focus_alt)
                 .aria_expanded(s.menu)
-                .bg(motion::hover_blend(
-                    &alt_key,
-                    t.surface_raised,
-                    t.surface_raised_hover,
-                ))
                 .on_hover({
                     let state = state.clone();
                     move |hovered, window, cx| {
@@ -719,32 +722,26 @@ fn signal_badge(signal: Signal, label: &'static str, t: &Pink) -> Div {
         .child(label)
 }
 
-/// The Git card's button body without a fill (Pink `git_button_base`):
-/// 26 tall, `px 10`, `CONTROL_RADIUS`, a 1 px `border`, 12 px `text`, the
-/// inset focus ring.
-fn git_button_base(id: &'static str, label: impl Into<SharedString>, t: &Pink) -> Stateful<Div> {
+/// The Git card's button body (Pink `Changes::git_button_base`), drawn by
+/// the `pink-git-card` package: 26 tall, `px 10`, `CONTROL_RADIUS`, a 1 px
+/// edge, 12 px text; `style` carries the recipe's plate already blended over
+/// its hover fade. This adds the name, the tab stop and the inset focus ring;
+/// the caller adds the hover listener.
+fn git_button_base(
+    id: &'static str,
+    label: impl Into<SharedString>,
+    style: &git::ButtonStyle,
+    t: &Pink,
+) -> Stateful<Div> {
     let label = label.into();
     let ring = t.focus_ring();
-    div()
-        .id(id)
+    git::button(id, label.clone(), style)
         .role(Role::Button)
-        .aria_label(label.clone())
+        .aria_label(label)
         .tab_index(0)
-        .h(px(GIT_BUTTON_HEIGHT))
-        .px(px(GIT_BUTTON_PAD_X))
         .flex_none()
-        .flex()
-        .items_center()
-        .rounded(px(radius::CONTROL))
-        .border_1()
-        .border_color(t.border)
-        .text_size(px(GIT_BUTTON_TEXT))
-        .line_height(px(TextStyle::Footnote.line_height()))
         .whitespace_nowrap()
-        .text_color(t.text)
-        .cursor_pointer()
         .focus_visible(move |style| pink::focus_ring(style, ring))
-        .child(label)
 }
 
 /// A plain Git card button (Pink `git_button`): `surface_raised`, easing to
@@ -755,7 +752,13 @@ fn git_button(
     label: impl Into<SharedString>,
     t: &Pink,
 ) -> Stateful<Div> {
-    git_button_base(id, label, t).hover_fill(hover_key, t.surface_raised, t.surface_raised_hover)
+    let style = git::ButtonStyle {
+        fill: motion::hover_blend(&hover_key, t.surface_raised, t.surface_raised_hover),
+        border: t.border,
+        text: t.text,
+        weight: None,
+    };
+    git_button_base(id, label, &style, t).on_hover(motion::hover_listener(hover_key))
 }
 
 /// The button that performs the shown step (Pink `git_step_button`): the
@@ -771,11 +774,13 @@ fn git_step_button(
 ) -> Stateful<Div> {
     if accents {
         let fill = t.accent_strong;
-        git_button_base(id, label, t)
-            .border_color(gpui::transparent_black())
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(t.on_accent)
-            .hover_fill(hover_key, fill, fill.opacity(0.88))
+        let style = git::ButtonStyle {
+            fill: motion::hover_blend(&hover_key, fill, fill.opacity(0.88)),
+            border: gpui::transparent_black(),
+            text: t.on_accent,
+            weight: Some(FontWeight::MEDIUM),
+        };
+        git_button_base(id, label, &style, t).on_hover(motion::hover_listener(hover_key))
     } else {
         git_button(id, hover_key, label, t)
     }

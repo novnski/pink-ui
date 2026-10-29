@@ -39,7 +39,10 @@ use gpui::{
 };
 
 use crate::{
-    components::empty_state::{NoteStyle, note},
+    components::{
+        empty_state::{NoteStyle, note},
+        question_card as card,
+    },
     motion::{self, TOOL_ROW_REVEAL, TRANSCRIPT_IN, TRANSCRIPT_IN_RISE},
     pink::{self, ButtonKind, ControlSize, Pink, layout, radius, space},
     story,
@@ -610,18 +613,22 @@ fn decision_card(
 }
 
 /// The pill chrome the composer and the question panel share (Pink:
-/// composer.rs `composer_surface`). Here the panel sits in the list's flow
-/// rather than floating over a transcript, so it goes without the opaque
-/// treatment's `shadow_lg`, as Pink's frosted pill does.
+/// composer.rs `composer_surface`), drawn by the `pink-composer-pill`
+/// package. Here the panel sits in the list's flow rather than floating over
+/// a transcript, so it goes without the opaque treatment's `shadow_lg`, as
+/// Pink's frosted pill does.
 fn composer_surface(t: &Pink) -> Div {
-    div()
-        .rounded(px(radius::COMPOSER_PILL))
-        .border_1()
-        .border_color(t.border)
-        .bg(t.surface_bg())
+    use crate::components::composer_pill as pill;
+    pill::pill(&pill::PillStyle {
+        radius: pill::radius(0.0),
+        border: t.border,
+        background: t.surface_bg(),
+        lifted: false,
+    })
 }
 
-/// One numbered option (Pink: composer.rs `render_wizard` option rows).
+/// One numbered option (Pink: composer.rs `render_wizard` option rows),
+/// drawn by the `pink-question-card` package.
 fn option_row(
     key: &str,
     d: &Decision,
@@ -635,87 +642,34 @@ fn option_row(
     let accent = t.accent;
     let state = state.clone();
     let label = d.label(answer);
-    div()
-        .id(eid(hover_key.clone()))
-        .role(Role::RadioButton)
-        .aria_label(label.clone())
-        .aria_toggled(if picked {
-            Toggled::True
-        } else {
-            Toggled::False
-        })
-        .tab_index(0)
-        .focus_visible(move |style| style.border_color(accent))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(12.))
-        .px(px(14.))
-        .py(px(10.))
-        .rounded(px(12.))
-        .border_1()
-        .border_color(if picked {
-            t.ink(0.16)
-        } else {
-            gpui::transparent_black()
-        })
-        .bg(if picked {
-            t.ink(0.09)
-        } else {
-            motion::hover_blend(&hover_key, t.ink(0.025), t.ink(0.06))
-        })
-        .on_hover(motion::hover_listener(hover_key))
-        .cursor_pointer()
-        // The pick rides GPUI's key-up keyboard click.
-        .on_key_down(pink::swallow_activation_key)
-        .on_click(move |_, window, cx| {
-            state.update(cx, |s, cx| s.select(answer, window, cx));
-        })
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .text_size(px(13.5))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(if picked { t.text } else { t.text.opacity(0.9) })
-                .flex()
-                .flex_col()
-                .gap(px(3.))
-                .child(label)
-                .when_some(d.descriptions[ix].clone(), |el, description| {
-                    el.child(
-                        div()
-                            .text_size(px(11.5))
-                            .font_weight(FontWeight::NORMAL)
-                            .text_color(t.readable_muted(0.65))
-                            .child(description),
-                    )
-                }),
-        )
-        .child(
-            // Number kbd chip: `size-[22px] rounded-md text-[11px]`.
-            div()
-                .flex_none()
-                .size(px(22.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(6.))
-                .bg(if picked { t.ink(0.16) } else { t.ink(0.05) })
-                .text_size(px(11.))
-                .text_color(if picked {
-                    t.text
-                } else {
-                    t.readable_muted(0.6)
-                })
-                .child(format!("{}", ix + 1)),
-        )
+    card::option(
+        &card::option_style(t, picked, card::option_rest(t, &hover_key)),
+        label.clone(),
+        d.descriptions[ix].clone(),
+        Some(ix + 1),
+    )
+    .id(eid(hover_key.clone()))
+    .role(Role::RadioButton)
+    .aria_label(label)
+    .aria_toggled(if picked {
+        Toggled::True
+    } else {
+        Toggled::False
+    })
+    .tab_index(0)
+    .focus_visible(move |style| style.border_color(accent))
+    .on_hover(motion::hover_listener(hover_key))
+    // The pick rides GPUI's key-up keyboard click.
+    .on_key_down(pink::swallow_activation_key)
+    .on_click(move |_, window, cx| {
+        state.update(cx, |s, cx| s.select(answer, window, cx));
+    })
 }
 
 /// The current decision in the question panel (Pink: composer.rs
-/// `render_wizard`): header and counter, the question, its detail, the two
-/// options, then "Answer later" and Send. `paging` is the decision's place
-/// among the ones that need you.
+/// `render_wizard`), drawn by the `pink-question-card` package: header and
+/// counter, the question, its detail, the two options, then "Answer later"
+/// and Send. `paging` is the decision's place among the ones that need you.
 #[allow(clippy::too_many_arguments)]
 fn question_panel(
     key: &str,
@@ -727,66 +681,19 @@ fn question_panel(
     focus: &FocusHandle,
     t: &Pink,
 ) -> Stateful<Div> {
-    let header = div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(10.))
-        .child(
-            div()
-                .text_size(px(11.))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(t.readable_muted(0.6))
-                .child(pink::tracked_upper(&d.header)),
-        )
-        .when(paging.1 > 1, |el| {
-            // Pink `Wizard::counter`, shown while paged.
-            el.child(
-                div()
-                    .h(px(20.))
-                    .px(px(6.))
-                    .flex()
-                    .items_center()
-                    .rounded(px(6.))
-                    .bg(t.ink(0.06))
-                    .text_size(px(11.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(t.readable_muted(0.6))
-                    .child(format!("{}/{}", paging.0, paging.1)),
-            )
-        });
-
-    let question = div()
-        .id(eid(format!("{key}-question")))
-        .max_h(px(160.))
-        .overflow_y_scroll()
-        .mt(px(6.))
-        .text_size(px(15.))
-        .line_height(px(20.))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(t.text)
-        .child(d.title.clone());
-
+    let p = card::palette(t);
+    // Pink `Wizard::counter`, shown while paged.
+    let header = card::header(
+        &p,
+        pink::tracked_upper(&d.header),
+        (paging.1 > 1).then(|| format!("{}/{}", paging.0, paging.1).into()),
+    );
+    let question = card::question(eid(format!("{key}-question")), &p, d.title.clone());
     // The note under a question (Pink's multi-select hint line).
-    let detail = d.detail.clone().map(|detail| {
-        div()
-            .mt(px(4.))
-            .text_size(px(12.))
-            .text_color(t.readable_muted(0.65))
-            .child(detail)
-    });
-
-    let options = div()
-        .id(eid(format!("{key}-options")))
-        .max_h(px(220.))
-        .overflow_y_scroll()
-        .mt(px(12.))
-        .flex()
-        .flex_col()
-        .gap(px(4.))
-        .children(
-            Answer::ALL.map(|answer| option_row(key, d, answer, picked == Some(answer), state, t)),
-        );
+    let detail = d.detail.clone().map(|detail| card::hint(&p, detail));
+    let options = card::options(eid(format!("{key}-options"))).children(
+        Answer::ALL.map(|answer| option_row(key, d, answer, picked == Some(answer), state, t)),
+    );
 
     // A settled decision reopened from its card (Pink's async note).
     let note = answers
@@ -794,32 +701,10 @@ fn question_panel(
         .map(|last| format!("You answered {}. Send again to change it.", d.label(*last)));
     let later_state = state.clone();
     let send_state = state.clone();
-    let footer = div()
-        .flex()
-        .flex_row()
-        .justify_between()
-        .items_center()
-        .gap(px(12.))
-        .px(px(16.))
-        .pb(px(16.))
-        .pt(px(4.))
+    let footer = card::footer()
         .child(
-            div()
-                .flex()
-                .flex_1()
-                .min_w_0()
-                .items_center()
-                .gap(px(8.))
-                .when_some(note, |el, note| {
-                    el.child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .text_size(px(12.))
-                            .text_color(t.readable_muted(0.7))
-                            .child(note),
-                    )
-                })
+            card::notes()
+                .when_some(note, |el, note| el.child(card::note(&p, note).flex_1()))
                 .child(
                     pink::button(
                         format!("{key}-later"),
@@ -842,7 +727,7 @@ fn question_panel(
                 t,
             )
             .aria_label("Send")
-            .px(px(16.))
+            .px(px(card::ACTION_PAD_X))
             .when(picked.is_none(), |el| el.opacity(0.4))
             .child("Send")
             .on_click(move |_, window, cx| {
@@ -856,11 +741,7 @@ fn question_panel(
         eid(format!("{key}-body-{}-{}", d.id, answers.len())),
         TRANSCRIPT_IN,
         TRANSCRIPT_IN_RISE,
-        div()
-            .px(px(16.))
-            .pt(px(16.))
-            .flex()
-            .flex_col()
+        card::body()
             .child(header)
             .child(question)
             .children(detail)
