@@ -6,7 +6,9 @@
 //! the card's inset instead of running border to border, or that thickens
 //! with the Interface size; a search field, heading, trailing section or
 //! key cap whose padding stays fixed while its text grows; a heading that
-//! loses its hair-space tracking.
+//! loses its hair-space tracking. A stacked popup's row (the composer's
+//! completions) that keeps a check column's right padding instead of the
+//! row's own, or whose padding stays fixed while its text grows.
 
 use gpui::{Bounds, Context, IntoElement, Pixels, Render, TestAppContext, Window, div, prelude::*};
 use pink_ui::{
@@ -14,7 +16,7 @@ use pink_ui::{
     components::menu_card::{
         CARD_INSET, CardStyle, KEY_CAP_HEIGHT, KeyHintStyle, MENU_GAP, ROW_PAD_X, ROW_PAD_Y,
         RowStyle, SEARCH_MARGIN, SEARCH_PAD_X, SEARCH_PAD_Y, SECTION_SPACE, card, heading, key_cap,
-        key_hint_text, row, search_frame, section, separator, tracked_upper, ui_rems,
+        key_hint_text, row, search_frame, section, separator, stack_row, tracked_upper, ui_rems,
     },
     pink::Pink,
 };
@@ -277,6 +279,66 @@ fn chrome_grows_with_the_interface_size_and_rules_run_border_to_border(cx: &mut 
         assert!(
             (height - base * scale).abs() <= 1.0,
             "heading height {height} at scale {scale}, {base} at 16"
+        );
+    }
+}
+
+/// A completion popup's row, its text filling the row.
+struct Stacked {
+    ui: f32,
+}
+
+impl Render for Stacked {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        window.set_rem_size(gpui::px(self.ui));
+        let t = Pink::get(cx);
+        div().w(gpui::px(240.0)).child(
+            card(&CardStyle {
+                border: t.border,
+                background: t.surface_raised,
+                text: t.text,
+                font_family: pink_ui::pink::SANS.into(),
+                shadows: None,
+            })
+            .flex()
+            .flex_col()
+            .child(
+                stack_row(&RowStyle {
+                    text: t.text,
+                    fill: t.element_active,
+                })
+                .debug_selector(|| "stacked".into())
+                .child(
+                    div()
+                        .debug_selector(|| "stacked-text".into())
+                        .flex_1()
+                        .h(ui_rems(MARK)),
+                ),
+            ),
+        )
+    }
+}
+
+#[gpui::test]
+fn stacked_rows_keep_the_row_padding_on_both_sides(cx: &mut TestAppContext) {
+    cx.update(pink_ui::init);
+    for ui in [12.0_f32, 16.0, 20.0] {
+        let scale = ui / 16.0;
+        let mut cx = cx.clone();
+        cx.update(|cx| Theme::set_mode(ThemeMode::Dark, cx));
+        let (_, cx) = cx.add_window_view(|_, _| Stacked { ui });
+        cx.run_until_parked();
+
+        let row = bounds(cx, "stacked");
+        let text = bounds(cx, "stacked-text");
+        assert!(
+            near(f32::from(text.origin.x - row.origin.x), ROW_PAD_X * scale)
+                && near(f32::from(row.right() - text.right()), ROW_PAD_X * scale),
+            "stacked row padding at {ui}: {text:?} in {row:?}"
+        );
+        assert!(
+            near(f32::from(row.size.height), (MARK + 2.0 * ROW_PAD_Y) * scale),
+            "stacked row height at {ui}"
         );
     }
 }

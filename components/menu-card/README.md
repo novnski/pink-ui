@@ -15,6 +15,10 @@ its vendored runtime, so there is one GPUI type graph and no copied source.
 - `row(&RowStyle)`: one item, its parts in a line `ROW_GAP` apart, padded
   `ROW_PAD_X` by `ROW_PAD_Y` and rounded to `ITEM_RADIUS` so it sits
   concentric in the card. Text and fill come from the host.
+- `stack_row(&RowStyle)`: a row of a full-width popup stacked above the
+  composer (the `@`, `/` and `#` completions), padded like `row` and
+  rounded to `STACK_ITEM_RADIUS`, concentric with that popup's corner
+  across its inset.
 - `heading(color, label)`: a small uppercase heading over a group of rows,
   tracked with hair spaces (`tracked_upper`).
 - `separator(color)`: the 1 px rule between groups, border to border across

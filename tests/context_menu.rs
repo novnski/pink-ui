@@ -12,8 +12,16 @@
 //! the ring shown for a provider that reports no usage; the model menu
 //! dropping Compact and Clear when there is no ring, or keeping them beside
 //! one.
+//!
+//! The menu rises into place over `MENU_IN` through `with_animation`, which
+//! reads the wall clock, not the test executor's: advancing the test clock
+//! does not finish it. Every geometry check reads the menu after it has come
+//! to rest (`open` waits for that, with a bound), and compares rows only
+//! within one frame.
 
 use std::{cell::Cell, rc::Rc, time::Duration};
+
+use web_time::Instant;
 
 use gpui::{
     Bounds, Context, IntoElement, Modifiers, Pixels, Render, TestAppContext, VisualTestContext,
@@ -77,8 +85,36 @@ fn open(cx: &mut VisualTestContext) -> (Bounds<Pixels>, Bounds<Pixels>) {
     let chip = cx.debug_bounds("cw-chip").expect("the ring");
     cx.simulate_click(chip.center(), Modifiers::none());
     settle(cx);
-    let menu = cx.debug_bounds("cw-menu").expect("the Context menu");
-    (chip, menu)
+    (chip, at_rest(cx, "cw-menu"))
+}
+
+/// The wall-clock gap between the two frames `at_rest` compares. The rise
+/// eases out, so it moves the menu less than the half-pixel layout grid over
+/// this gap only in its last fraction of a pixel: two equal reads mean it has
+/// arrived.
+const REST_GAP: Duration = Duration::from_millis(50);
+/// How long `at_rest` waits for the element to stop moving.
+const REST_LIMIT: Duration = Duration::from_secs(2);
+
+/// The element's bounds once two frames `REST_GAP` apart lay it out in the
+/// same place; panics if it is still moving after `REST_LIMIT`.
+fn at_rest(cx: &mut VisualTestContext, selector: &'static str) -> Bounds<Pixels> {
+    let deadline = Instant::now() + REST_LIMIT;
+    let mut last = cx.debug_bounds(selector).expect(selector);
+    loop {
+        std::thread::sleep(REST_GAP);
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        let now = cx.debug_bounds(selector).expect(selector);
+        if now == last {
+            return now;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "{selector} still moving after {REST_LIMIT:?}: {last:?} to {now:?}"
+        );
+        last = now;
+    }
 }
 
 #[gpui::test]
@@ -169,12 +205,15 @@ fn compact_waits_when_the_provider_cant(cx: &mut TestAppContext) {
                 counts: counts.clone(),
             },
         );
-        let (_, menu) = open(cx);
+        open(cx);
         let row = cx.debug_bounds("cw-compact").expect("Compact");
         cx.simulate_click(row.center(), Modifiers::none());
         cx.simulate_keystrokes("down enter");
         settle(cx);
         assert_eq!(counts.compacted.get(), 0, "{compact:?} compacted");
+        // The reason, its row and the menu, all from the same frame.
+        let row = cx.debug_bounds("cw-compact").expect("Compact");
+        let menu = cx.debug_bounds("cw-menu").expect("the Context menu");
         let reason = cx.debug_bounds("cw-compact-reason");
         assert_eq!(
             reason.is_some(),

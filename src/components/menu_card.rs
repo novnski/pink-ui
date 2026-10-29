@@ -21,7 +21,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Menu Card";
-pub const DESCRIPTION: &str = "PINK's floating card as a package the app pins: the bordered, lifted surface every menu, picker and popover opens on, the one row shape its items share, concentric with the card, washed when selected and a step lighter under the pointer, and the chrome around them: the search field, small tracked headings, edge-to-edge rules, a trailing section, accelerator chips and the key legends in a picker's footer";
+pub const DESCRIPTION: &str = "PINK's floating card as a package the app pins: the bordered, lifted surface every menu, picker and popover opens on, the one row shape its items share, concentric with the card, washed when selected and a step lighter under the pointer, and the chrome around them: the search field, small tracked headings, edge-to-edge rules, a trailing section, accelerator chips and the key legends in a picker's footer. Below it, the completion popup stacked above the composer, its rows rounded to the popup's larger corner";
 
 const ICON_ARROW_UP: &str = "icons/combobox/arrow-up.svg";
 const ICON_ARROW_DOWN: &str = "icons/combobox/arrow-down.svg";
@@ -39,7 +39,29 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
         let item = |label: &'static str, fill: gpui::Hsla, text: gpui::Hsla| {
             row(&RowStyle { text, fill }).child(div().flex_1().child(label))
         };
-        div().w(px(260.0)).child(
+        let completion = |label: &'static str, cursor: bool| {
+            let (fill, text) = if cursor {
+                (t.element_active, t.text)
+            } else {
+                (gpui::transparent_black(), t.text.opacity(0.9))
+            };
+            stack_row(&RowStyle { text, fill }).child(div().flex_1().child(label))
+        };
+        let completions = crate::components::overlay_card::stack_popup(
+            card(&CardStyle {
+                border: t.border,
+                background: t.surface_raised,
+                text: t.text,
+                font_family: crate::pink::SANS.into(),
+                shadows: None,
+            })
+            .flex()
+            .flex_col(),
+        )
+        .child(completion("/compact", true))
+        .child(completion("/clear", false))
+        .child(completion("/model", false));
+        let menu = div().w(px(260.0)).child(
             card(&CardStyle {
                 border: t.border,
                 background: t.surface_raised,
@@ -85,6 +107,12 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                     ))
                     .child(key_hint_text(&keys, "esc", "Close")),
             ),
-        )
+        );
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(16.0))
+            .child(menu)
+            .child(div().w(px(360.0)).child(completions))
     })
 }

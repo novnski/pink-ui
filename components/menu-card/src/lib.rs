@@ -1,12 +1,13 @@
 // PINK's floating card, its rows and the chrome around them (popover.rs
-// `popover_card`, `menu_row`, `menu_heading`, `menu_separator`,
-// `menu_section`, `search_input_frame`, `palette_card`,
+// `popover_card`, `menu_row`, `menu_row_cursor`, `menu_heading`,
+// `menu_separator`, `menu_section`, `search_input_frame`, `palette_card`,
 // `palette_search_icon` and the key hints `key_cap`, `key_hint`,
 // `key_hint_text`, `key_hint_pair`, `kbd_hint`): the surface every menu,
-// picker and popover opens on, the one row shape its items share, the
-// headings, rules and search field that divide and lead them, and the key
-// legends in their rows and footers. UI rethink decision 54: drawn here,
-// consumed by PINK through a pinned revision.
+// picker and popover opens on, the one row shape its items share (rounded
+// to the stacked popup's corner above the composer), the headings, rules
+// and search field that divide and lead them, and the key legends in their
+// rows and footers. UI rethink decision 54: drawn here, consumed by PINK
+// through a pinned revision.
 //
 // The package draws only. The host supplies the colours, the card's shadow
 // (none on a frosted surface), the fonts, the glyph paths and each row's
@@ -95,6 +96,19 @@ pub fn row(style: &RowStyle) -> Div {
         .cursor_pointer()
         .bg(style.fill)
         .text_color(style.text)
+}
+
+/// A row's corner radius in a full-width popup stacked above the composer:
+/// concentric with that popup's 20 pt corner across its 6 pt inset (the
+/// stack ladder's popup step, pink-overlay-card's `STACK_POPUP_ROW_RADIUS`).
+pub const STACK_ITEM_RADIUS: f32 = 14.0;
+
+/// One row of a full-width popup stacked above the composer (PINK's `@`,
+/// `/` and `#` completions): `row`, with the row's own padding on both
+/// sides, rounded to `STACK_ITEM_RADIUS`. The host resolves the cursor
+/// row's wash and text into `style`, and adds the id and the listeners.
+pub fn stack_row(style: &RowStyle) -> Div {
+    row(style).rounded(px(STACK_ITEM_RADIUS))
 }
 
 // ---------------------------------------------------------------------------
