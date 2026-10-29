@@ -38,9 +38,13 @@ use gpui::{
 use super::scroll_rail;
 use crate::{
     HoverFill,
-    components::file_row,
+    components::{
+        file_row,
+        icon_button::{IconButtonStyle, icon_button},
+        surface_toolbar,
+    },
     motion,
-    pink::{self, FillTier, Pink, chrome, layout, loaders, radius},
+    pink::{self, FillTier, Pink, layout, loaders, radius},
     primitives::{InputEvent, TextInput},
     story,
 };
@@ -2043,9 +2047,11 @@ fn centered_message(message: impl Into<SharedString>, color: Hsla) -> AnyElement
         .into_any_element()
 }
 
-/// A toolbar control (Pink: files/mod.rs `toolbar_button`): 28 square,
-/// radius 6, a quiet wash under the pointer, the inset focus ring, a
-/// tooltip; pressing it keeps focus where it was. On: `wash(0.1)`.
+/// A toolbar control (Pink: files/mod.rs `toolbar_button`): a 28 px
+/// `pink-icon-button` square with the toolbar's glyph
+/// ([`surface_toolbar::control_glyph`]), a quiet wash under the pointer, the
+/// inset focus ring, a tooltip; pressing it keeps focus where it was. On:
+/// `wash(0.1)`.
 fn toolbar_button(
     id: String,
     label: &'static str,
@@ -2054,34 +2060,32 @@ fn toolbar_button(
     t: &Pink,
 ) -> Stateful<Div> {
     let ring = t.focus_ring();
-    div()
-        .id(ElementId::Name(id.clone().into()))
-        .size(px(chrome::CONTROL_M))
-        .flex_none()
-        .rounded(px(chrome::RADIUS_M))
-        .flex()
-        .items_center()
-        .justify_center()
-        .cursor_pointer()
-        .role(Role::Button)
-        .aria_label(label)
-        .aria_toggled(if on { Toggled::True } else { Toggled::False })
-        .tab_index(0)
-        .focus_visible(move |s| pink::focus_ring(s, ring))
-        .occlude()
-        .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
-        .hover_wash(id, t.fill(FillTier::Tertiary))
-        .when(on, |el| el.bg(t.wash(0.1)))
-        .tooltip(pink::text_tooltip(label))
-        .tooltip_show_delay(layout::TOOLTIP_DELAY)
-        .on_key_down(pink::swallow_activation_key)
-        .child(
-            svg()
-                .path(glyph)
-                .size(px(chrome::ICON_M))
-                .flex_none()
-                .text_color(if on { t.text } else { t.text_muted }),
+    icon_button(
+        id.clone(),
+        surface_toolbar::control_glyph(
+            svg().path(glyph).flex_none(),
+            if on { t.text } else { t.text_muted },
         )
+        .into_any_element(),
+        &IconButtonStyle {
+            size: surface_toolbar::CONTROL_SIZE,
+            radius: surface_toolbar::CONTROL_RADIUS,
+            wash: t.fill(FillTier::Tertiary).opacity(0.0),
+            enabled: true,
+        },
+    )
+    .role(Role::Button)
+    .aria_label(label)
+    .aria_toggled(if on { Toggled::True } else { Toggled::False })
+    .tab_index(0)
+    .focus_visible(move |s| pink::focus_ring(s, ring))
+    .occlude()
+    .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+    .hover_wash(id, t.fill(FillTier::Tertiary))
+    .when(on, |el| el.bg(t.wash(0.1)))
+    .tooltip(pink::text_tooltip(label))
+    .tooltip_show_delay(layout::TOOLTIP_DELAY)
+    .on_key_down(pink::swallow_activation_key)
 }
 
 /// The floating rail over the tree (Pink: popover.rs `rail` /
@@ -2438,32 +2442,20 @@ impl RenderOnce for FileTree {
         let toolbar = self.toolbar.then(|| {
             let mode_state = state.clone();
             let eye_state = state.clone();
-            div()
-                .h(px(layout::TITLEBAR_HEIGHT))
-                .w_full()
-                .flex_none()
-                .px(px(chrome::EDGE_INSET))
-                .flex()
-                .items_center()
-                .gap(px(chrome::CONTROL_GAP))
+            surface_toolbar::toolbar()
                 .child(
-                    pink::toolbar_input(&t)
-                        .child(
-                            svg()
-                                .path(ICON_SEARCH)
-                                .size(px(12.0))
-                                .flex_none()
-                                .text_color(t.text_faint),
-                        )
-                        .child(
+                    surface_toolbar::field(t.ink(0.035))
+                        .child(surface_toolbar::field_glyph(
+                            svg().path(ICON_SEARCH),
+                            t.text_faint,
+                        ))
+                        .child(surface_toolbar::field_input(
                             div()
-                                .min_w_0()
-                                .flex_1()
                                 .text_size(px(11.0))
                                 .line_height(px(16.0))
                                 .text_color(t.text)
                                 .child(input.clone()),
-                        ),
+                        )),
                 )
                 .child(
                     toolbar_button(
