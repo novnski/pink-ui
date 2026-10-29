@@ -39,6 +39,7 @@ use gpui::{
 };
 
 use crate::{
+    components::empty_state::{NoteStyle, note},
     motion::{self, TOOL_ROW_REVEAL, TRANSCRIPT_IN, TRANSCRIPT_IN_RISE},
     pink::{self, ButtonKind, ControlSize, Pink, layout, radius, space},
     story,
@@ -494,29 +495,16 @@ fn section_heading(id: String, label: &'static str, count: usize, first: bool, t
 }
 
 /// Nothing open (Pink: shell.rs Activity's empty list): a centred title and
-/// the next step under it.
+/// the next step under it, the `pink-empty-state` note.
 fn empty_state(t: &Pink) -> Div {
-    div()
-        .px(px(space::SM))
-        .py(px(space::LG))
-        .flex()
-        .flex_col()
-        .items_center()
-        .gap(px(2.))
-        .text_center()
-        .child(
-            div()
-                .text_size(px(13.))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(t.readable_muted(0.9))
-                .child("Nothing needs attention"),
-        )
-        .child(
-            div()
-                .text_size(px(12.))
-                .text_color(t.readable_faint(0.9))
-                .child("New decisions appear here."),
-        )
+    note(
+        &NoteStyle {
+            title: t.readable_muted(0.9),
+            hint: t.readable_faint(0.9),
+        },
+        "Nothing needs attention",
+        "New decisions appear here.",
+    )
 }
 
 /// A decision outside the panel (Pink: transcript.rs `async_question_card`):
