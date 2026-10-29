@@ -40,7 +40,7 @@ use web_time::{Duration, Instant};
 
 use gpui::{
     Anchor, AnyElement, AnyView, App, Context, DispatchPhase, DragMoveEvent, ElementId, EmptyView,
-    Entity, Font, FontWeight, Hsla, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, Role,
+    Entity, Font, Hsla, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, Role,
     ScrollHandle, SharedString, Stateful, StyledText, Subscription, Task, TextRun, Window,
     anchored, canvas, deferred, div, font, img, point, prelude::*, px, svg,
 };
@@ -49,12 +49,12 @@ use super::scroll_rail;
 use crate::{
     HoverFill as _,
     components::{
-        diff_header as dh, diff_rows,
+        comment_card as cc, diff_header as dh, diff_rows,
         icon_button::{IconButtonStyle, icon_button},
         surface_toolbar,
     },
     motion::{self, DISCLOSURE, MENU_OUT, MENU_RISE_DOWN},
-    pink::{self, Pink, Syntax, TEXT_CONTRAST_TARGET, chrome, layout, loaders, radius},
+    pink::{self, Pink, Syntax, TEXT_CONTRAST_TARGET, layout, loaders, radius},
     primitives::{InputEvent, TextInput},
     story,
 };
@@ -69,7 +69,6 @@ const ICON_SPLIT: &str = "icons/diff-viewer/columns-2.svg";
 const ICON_WRAP: &str = "icons/diff-viewer/wrap-text.svg";
 const ICON_FOLD_ALL: &str = "icons/diff-viewer/fold-vertical.svg";
 const ICON_PLUS: &str = "icons/diff-viewer/plus.svg";
-const ICON_NOTE: &str = "icons/diff-viewer/chat-round-line.svg";
 const ICON_PEN: &str = "icons/diff-viewer/pen.svg";
 const ICON_REMOVE: &str = "icons/diff-viewer/close-circle.svg";
 
@@ -84,8 +83,8 @@ const BODY_BOTTOM_PAD: f32 = 8.0;
 /// One line-number column, never narrower than this (`GUTTER_WIDTH`).
 const GUTTER_WIDTH: f32 = diff_rows::GUTTER_WIDTH;
 const GUTTER_PAD_RIGHT: f32 = diff_rows::GUTTER_PAD_RIGHT;
-/// A comment card's accent bar matches the rows' bar column.
-const ACCENT_BAR_WIDTH: f32 = diff_rows::ACCENT_BAR_WIDTH;
+// A comment card's accent bar matches the rows' bar column.
+const _: () = assert!(cc::ACCENT_BAR_WIDTH == diff_rows::ACCENT_BAR_WIDTH);
 const DIFF_TEXT_SIZE: f32 = diff_rows::TEXT_SIZE;
 const DIFF_TAB_SIZE: usize = 4;
 const UNIFIED_CODE_PADDING_LEFT: f32 = 12.0;
@@ -93,17 +92,12 @@ const SPLIT_CODE_PADDING_LEFT: f32 = 6.0;
 /// Breathing room after the widest line when scrolled fully right.
 const CODE_PADDING_RIGHT: f32 = 24.0;
 
-// Review comments (Pink: comments.rs, comment_ui.rs).
-const COMMENT_ADDER_SIZE: f32 = 16.0;
-const CARD_PAD_V: f32 = 20.0;
-const CARD_HEADER_HEIGHT: f32 = 22.0;
-const CARD_LINE_HEIGHT: f32 = 18.0;
-const CARD_GAP: f32 = 6.0;
+// Review comments (Pink: comments.rs, comment_ui.rs), drawn by the
+// `pink-comment-card` package.
+const COMMENT_ADDER_SIZE: f32 = cc::ADDER;
 const CARD_WRAP_COLUMNS: usize = 64;
 const CARD_MAX_LINES: usize = 8;
-const DRAFT_CARD_HEIGHT: f32 = 116.0;
-const DRAFT_INPUT_HEIGHT: f32 = 46.0;
-const DRAFT_ACTIONS_HEIGHT: f32 = 28.0;
+const DRAFT_CARD_HEIGHT: f32 = cc::DRAFT_HEIGHT;
 /// Pink's composer input type, which its draft and search fields keep
 /// (composer.rs `INPUT_TEXT_SIZE`, `INPUT_LINE_HEIGHT`).
 const INPUT_TEXT_SIZE: f32 = 14.0;
@@ -910,7 +904,7 @@ fn card_body_lines(body: &str) -> usize {
 
 /// A staged comment card's height (Pink: comments.rs `card_height_for`).
 fn card_height(body: &str) -> f32 {
-    CARD_PAD_V + CARD_GAP + CARD_HEADER_HEIGHT + card_body_lines(body) as f32 * CARD_LINE_HEIGHT
+    cc::card_height(card_body_lines(body), 16.0)
 }
 
 /// The expanded body's height, worked out rather than measured so a fold
@@ -3578,18 +3572,11 @@ fn comment_adder(fc: &FileCx, side: CommentSide, line: u32) -> Stateful<gpui::Di
         CommentSide::Old => "L",
         CommentSide::New => "R",
     };
-    div()
+    cc::adder(t.solid, svg().path(ICON_PLUS), t.on_solid)
         .id(SharedString::from(format!(
             "{}-cmt-add-{}-{tag}-{line}",
             c.key, fc.ix
         )))
-        .size(px(COMMENT_ADDER_SIZE))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(radius::XS))
-        .bg(t.solid)
-        .cursor_pointer()
         .role(Role::Button)
         .aria_label("Add comment")
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -3598,7 +3585,6 @@ fn comment_adder(fc: &FileCx, side: CommentSide, line: u32) -> Stateful<gpui::Di
             let target = target.clone();
             state.update(cx, |s, cx| s.open_draft(target, None, window, cx));
         })
-        .child(svg().path(ICON_PLUS).size(px(11.)).text_color(t.on_solid))
 }
 
 /// The staged cards and the open draft anchored to one line.
@@ -3620,39 +3606,6 @@ fn cards_at(fc: &FileCx, anchor: (CommentSide, u32)) -> Vec<AnyElement> {
     out
 }
 
-/// The comment glyph and mono `path:line` heading a card (22 tall, gap 6).
-fn card_heading(location: SharedString, t: &Pink) -> gpui::Div {
-    div()
-        .h(px(CARD_HEADER_HEIGHT))
-        .flex_none()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(6.))
-        .child(
-            svg()
-                .path(ICON_NOTE)
-                .size(px(12.))
-                .flex_none()
-                .text_color(t.text_faint),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .font_family(pink::MONO)
-                .text_size(px(11.))
-                .text_color(t.text_faint)
-                .child(location),
-        )
-}
-
-/// A 3 px bar, not a border, so the card's edge stays on the row's column.
-fn accent_bar(color: Hsla) -> gpui::Div {
-    div().w(px(ACCENT_BAR_WIDTH)).h_full().flex_none().bg(color)
-}
-
 /// A staged review comment (Pink: comment_ui.rs `render_comment_card`): an
 /// `ink(0.05)` band with a `solid @ 0.35` bar, the heading, the note at
 /// 12/18 in `text_dim`, and edit / remove that show on hover.
@@ -3666,82 +3619,33 @@ fn comment_card(c: &Ctx, ix: usize, comment: &DiffComment) -> AnyElement {
         side: comment.side,
         line: comment.line,
     };
-    let edit_button = div()
+    let edit_button = cc::edit(svg().path(ICON_PEN), t.text_muted, group.clone())
         .id(SharedString::from(format!("{}-cmt-edit-{ix}", c.key)))
-        .flex_none()
-        .size(px(chrome::MIN_HIT))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(radius::XS))
-        .cursor_pointer()
         .role(Role::Button)
         .aria_label("Edit comment")
-        .opacity(0.0)
-        .group_hover(group.clone(), |s| s.opacity(1.0))
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(move |_, window, cx| {
             cx.stop_propagation();
             let target = target.clone();
             edit.update(cx, |s, cx| s.open_draft(target, Some(ix), window, cx));
-        })
-        .child(svg().path(ICON_PEN).size(px(12.)).text_color(t.text_muted));
-    // A 24 pt hit box with a 16 pt footprint.
-    let remove_button = div()
+        });
+    let remove_button = cc::remove(svg().path(ICON_REMOVE), t.text_muted, group.clone())
         .id(SharedString::from(format!("{}-cmt-remove-{ix}", c.key)))
-        .flex_none()
-        .size(px(24.))
-        .m(px(-4.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(radius::XS))
-        .cursor_pointer()
         .role(Role::Button)
         .aria_label("Remove comment")
-        .opacity(0.0)
-        .group_hover(group.clone(), |s| s.opacity(1.0))
         .on_click(move |_, window, cx| {
             remove.update(cx, |s, cx| s.remove_comment(ix, window, cx));
-        })
-        .child(
-            svg()
-                .path(ICON_REMOVE)
-                .size(px(12.))
-                .text_color(t.text_muted),
-        );
-    div()
+        });
+    cc::card(&cc::posted_style(t), card_height(&comment.body), None)
         .group(group)
-        .h(px(card_height(&comment.body)))
-        .w_full()
-        .flex_none()
-        .flex()
-        .flex_row()
-        .bg(t.ink(0.05))
-        .child(accent_bar(t.solid.opacity(0.35)))
         .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .px(px(pink::space::S16))
-                .py(px(CARD_PAD_V / 2.0))
+            cc::content(None)
                 .child(
-                    card_heading(comment.location(), t)
+                    cc::heading(comment.location(), t)
                         .child(edit_button)
                         .child(remove_button),
                 )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_h_0()
-                        .overflow_hidden()
-                        .text_size(px(12.))
-                        .line_height(px(CARD_LINE_HEIGHT))
-                        .text_color(t.text_dim)
-                        .child(comment.body.clone()),
-                ),
+                .child(cc::body(comment.body.clone(), t.text_dim)),
         )
         .into_any_element()
 }
@@ -3759,43 +3663,21 @@ fn draft_card(c: &Ctx, draft: &DraftView) -> AnyElement {
         };
         format!("{path}:{}", draft.target.line).into()
     };
-    div()
+    cc::draft(&cc::draft_style(t), None)
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .h(px(DRAFT_CARD_HEIGHT))
-        .w_full()
-        .flex_none()
-        .flex()
-        .flex_row()
-        .bg(t.ink(0.08))
-        .child(accent_bar(t.solid.opacity(0.7)))
         .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .px(px(pink::space::S16))
-                .py(px(10.))
-                .child(card_heading(location, t))
-                .child(
+            cc::content(None)
+                .child(cc::heading(location, t))
+                // Pink's composer input type, which its draft keeps.
+                .child(cc::field(
                     div()
-                        .h(px(DRAFT_INPUT_HEIGHT))
-                        .flex_none()
-                        .overflow_hidden()
                         .text_size(px(INPUT_TEXT_SIZE))
                         .line_height(px(INPUT_LINE_HEIGHT))
                         .text_color(t.text)
                         .child(draft.input.clone()),
-                )
+                ))
                 .child(
-                    div()
-                        .h(px(DRAFT_ACTIONS_HEIGHT))
-                        .flex_none()
-                        .flex()
-                        .flex_row()
-                        .items_center()
-                        .justify_end()
-                        .gap(px(6.))
+                    cc::actions()
                         .child(comment_action(c, "cancel", "Cancel", false).on_click(
                             move |_, _, cx| {
                                 cancel.update(cx, |s, cx| {
@@ -3820,33 +3702,17 @@ fn draft_card(c: &Ctx, draft: &DraftView) -> AnyElement {
         .into_any_element()
 }
 
-/// A draft action (Pink `comment_action`): h 22 `px 10` r6, 11 medium; the
-/// primary on the `solid` plate, the other a quiet ghost.
+/// A draft action (Pink `comment_action`): the primary on the `solid`
+/// plate, the other a quiet ghost brightening under the pointer.
 fn comment_action(c: &Ctx, name: &str, label: &'static str, primary: bool) -> Stateful<gpui::Div> {
-    let t = c.t;
     let id = format!("{}-cmt-{name}", c.key);
-    let el = div()
+    let el = cc::action(&cc::action_style(&id, primary, c.t), label)
         .id(SharedString::from(id.clone()))
-        .role(Role::Button)
-        .h(px(22.))
-        .px(px(10.))
-        .flex()
-        .items_center()
-        .rounded(px(radius::SM))
-        .text_size(px(11.))
-        .font_weight(FontWeight::MEDIUM)
-        .cursor_pointer()
-        .child(label);
+        .role(Role::Button);
     if primary {
-        el.bg(t.solid).text_color(t.on_solid)
+        el
     } else {
-        el.hover_fill_fg(
-            id,
-            gpui::transparent_black(),
-            t.element_hover,
-            t.text_muted,
-            t.text,
-        )
+        el.on_hover(motion::hover_listener(id))
     }
 }
 

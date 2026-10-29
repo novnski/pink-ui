@@ -1,7 +1,8 @@
 //! Comment Thread – a Pink component.
 //!
 //! An inline review comment grown into a conversation. The thread is Pink's
-//! comment card (Pink: comment_ui.rs `render_comment_card`): a flat band
+//! comment card (Pink: comment_ui.rs `render_comment_card`, drawn by the
+//! `pink-comment-card` package, [`comment_card`]): a flat band
 //! with a 3px bar, the anchor it is pinned to in the header, and every
 //! message under it with its author. An assistant's reply carries Pink's
 //! tool-group summary plate; it folds open onto the activity rail to list
@@ -38,6 +39,7 @@ use gpui::{
 
 use crate::{
     HoverFill,
+    components::comment_card,
     motion::{self, MotionSpec},
     pink::{self, FillTier, Pink, loaders, radius, space},
     primitives::{InputEvent, TextInput},
@@ -54,27 +56,15 @@ pub const EDIT_GLYPH: &str = "icons/comment-thread/file-pen.svg";
 /// Status glyph for mixed work, the default (Pink `icons::LAYERS_MINIMALISTIC`).
 pub const STEPS_GLYPH: &str = "icons/comment-thread/layers-minimalistic.svg";
 
-const ICON_COMMENT: &str = "icons/comment-thread/chat-round-line.svg";
-const ICON_REMOVE: &str = "icons/comment-thread/close-circle.svg";
+const ICON_REMOVE: &str = comment_card::ICON_REMOVE;
 const ICON_CHEVRON: &str = "icons/comment-thread/alt-arrow-right.svg";
 
-/// Pink changes.rs `ACCENT_BAR_WIDTH`: the card's bar, not a border.
-const ACCENT_BAR_WIDTH: f32 = 3.0;
-/// Pink comments.rs card geometry: vertical padding (split top and bottom),
-/// header row, body line, and the slack below the body.
-const CARD_PAD_V: f32 = 20.0;
-const CARD_HEADER_HEIGHT: f32 = 22.0;
-const CARD_LINE_HEIGHT: f32 = 18.0;
-const CARD_GAP: f32 = 6.0;
-/// Pink comments.rs `DRAFT_CARD_HEIGHT`, fixed so the draft never jumps.
-const DRAFT_CARD_HEIGHT: f32 = 116.0;
-/// Pink `render_comment_draft`: the input slot, the action row and its padding.
-const DRAFT_INPUT_HEIGHT: f32 = 46.0;
-const DRAFT_ACTIONS_HEIGHT: f32 = 28.0;
-const DRAFT_PAD_V: f32 = 10.0;
-/// Pink `comment_action`: 22px buttons, px 10.
-const ACTION_HEIGHT: f32 = 22.0;
-const ACTION_PAD_X: f32 = 10.0;
+/// Pink comments.rs card geometry, from the `pink-comment-card` package:
+/// the vertical padding (split top and bottom), a body line and the slack
+/// below the body.
+const CARD_PAD_V: f32 = comment_card::PAD_V;
+const CARD_LINE_HEIGHT: f32 = comment_card::LINE_HEIGHT;
+const CARD_GAP: f32 = comment_card::GAP;
 
 /// Pink transcript.rs tool group and activity rail geometry.
 const TOOL_GROUP_HEADER_HEIGHT: f32 = 26.0;
@@ -682,48 +672,26 @@ impl RenderOnce for CommentThread {
             )
             .when_some(self.on_close.clone(), |d, on_close| {
                 d.child(
-                    div()
+                    // Pink's remove: a 24 pt hit box, 16 pt footprint (DS-19)
+                    comment_card::remove(svg().path(ICON_REMOVE), t.text_muted, group.clone())
                         .id(eid(format!("{key}-close")))
                         .role(Role::Button)
                         .aria_label("Close thread")
                         .tab_index(0)
-                        .flex_none()
-                        // 24 pt hit box, 16 pt footprint (Pink DS-19)
-                        .size(px(24.))
-                        .m(px(-4.))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded(px(radius::XS))
-                        .cursor_pointer()
-                        .opacity(0.)
-                        .group_hover(group.clone(), |s| s.opacity(1.))
                         .focus_visible(move |s| pink::focus_ring(s.opacity(1.), ring))
-                        .on_click(move |_, window, cx| on_close(window, cx))
-                        .child(
-                            svg()
-                                .path(ICON_REMOVE)
-                                .size(px(pink::icon_size::XS))
-                                .text_color(t.text_muted),
-                        ),
+                        .on_click(move |_, window, cx| on_close(window, cx)),
                 )
             });
-        let thread = div()
+        let thread = comment_card::band(&comment_card::posted_style(&t), None)
             .id(eid(format!("{key}-band")))
             .group(group)
-            .w_full()
-            .flex_none()
-            .flex()
-            .flex_row()
-            .bg(t.ink(0.05))
-            .child(accent_bar(t.solid.opacity(0.35)))
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
                     .flex()
                     .flex_col()
-                    .px(px(space::S16))
+                    .px(px(comment_card::PAD_X))
                     .pt(px(CARD_PAD_V / 2.))
                     .child(header)
                     .child(morph),
@@ -742,52 +710,28 @@ impl RenderOnce for CommentThread {
                 state.update(cx, |s, cx| s.send(cx))
             }
         };
-        let draft = div()
-            .h(px(DRAFT_CARD_HEIGHT))
-            .w_full()
-            .flex_none()
-            .flex()
-            .flex_row()
-            .bg(t.ink(0.08))
-            .child(accent_bar(t.solid.opacity(0.7)))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .px(px(space::S16))
-                    .py(px(DRAFT_PAD_V))
-                    .child(card_header(self.anchor.clone(), self.title.clone(), &t))
-                    .child(
-                        div()
-                            .h(px(DRAFT_INPUT_HEIGHT))
-                            .flex_none()
-                            .overflow_hidden()
-                            .text_size(px(pink::text::FOOTNOTE))
-                            .line_height(px(CARD_LINE_HEIGHT))
-                            .text_color(t.text)
-                            .child(input),
-                    )
-                    .child(
-                        div()
-                            .h(px(DRAFT_ACTIONS_HEIGHT))
-                            .flex_none()
-                            .flex()
-                            .flex_row()
-                            .items_center()
-                            .justify_end()
-                            .gap(px(space::S6))
-                            .child(
-                                comment_action(format!("{key}-cancel"), "Cancel", false, &t)
-                                    .on_click(cancel),
-                            )
-                            .child(
-                                comment_action(format!("{key}-commit"), "Comment", true, &t)
-                                    .on_click(commit),
-                            ),
-                    ),
-            );
+        let draft = comment_card::draft(&comment_card::draft_style(&t), None).child(
+            comment_card::content(None)
+                .child(card_header(self.anchor.clone(), self.title.clone(), &t))
+                .child(comment_card::field(
+                    div()
+                        .text_size(px(pink::text::FOOTNOTE))
+                        .line_height(px(CARD_LINE_HEIGHT))
+                        .text_color(t.text)
+                        .child(input),
+                ))
+                .child(
+                    comment_card::actions()
+                        .child(
+                            comment_action(format!("{key}-cancel"), "Cancel", false, &t)
+                                .on_click(cancel),
+                        )
+                        .child(
+                            comment_action(format!("{key}-commit"), "Comment", true, &t)
+                                .on_click(commit),
+                        ),
+                ),
+        );
 
         if moving {
             window.request_animation_frame();
@@ -829,73 +773,29 @@ impl RenderOnce for CommentThread {
     }
 }
 
-/// Pink comment_ui.rs `comment_accent_bar`: 3px of `solid` at the card's
-/// strength (0.35 posted, 0.7 drafting), stretched to the band's height.
-fn accent_bar(color: Hsla) -> gpui::Div {
-    div().w(px(ACCENT_BAR_WIDTH)).flex_none().bg(color)
-}
-
-/// Pink comment_ui.rs card header: a 12px comment glyph and the location in
-/// mono 11 `text_faint` (a plain title in sans when there's no anchor).
+/// Pink comment_ui.rs card header: the comment glyph and the location in
+/// mono (a plain title in sans when there's no anchor).
 fn card_header(anchor: Option<SharedString>, title: SharedString, t: &Pink) -> gpui::Div {
-    let label = div()
-        .flex_1()
-        .min_w_0()
-        .truncate()
-        .text_size(px(pink::text::CAPTION))
-        .line_height(px(pink::TextStyle::Caption.line_height()))
-        .text_color(t.text_faint);
     let label = match anchor {
-        Some(anchor) => label.font_family(pink::MONO).child(anchor),
-        None => label.child(title),
+        Some(anchor) => comment_card::location(anchor, t.text_faint, pink::MONO),
+        None => comment_card::location(title, t.text_faint, pink::SANS),
     };
-    div()
-        .h(px(CARD_HEADER_HEIGHT))
-        .flex_none()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(space::S6))
-        .child(
-            svg()
-                .path(ICON_COMMENT)
-                .flex_none()
-                .size(px(pink::icon_size::XS))
-                .text_color(t.text_faint),
-        )
-        .child(label)
+    comment_card::header(svg().path(comment_card::ICON_COMMENT), t.text_faint).child(label)
 }
 
-/// Pink comment_ui.rs `comment_action`: 22px, px 10, radius 6, 11 medium.
-/// The primary is the `solid` plate; the other is a ghost whose label and
-/// wash brighten under the pointer.
+/// Pink comment_ui.rs `comment_action`: the primary is the `solid` plate;
+/// the other is a ghost whose label and wash brighten under the pointer.
 fn comment_action(id: String, label: &'static str, primary: bool, t: &Pink) -> Stateful<gpui::Div> {
     let ring = t.focus_ring();
-    let action = div()
+    let action = comment_card::action(&comment_card::action_style(&id, primary, t), label)
         .id(eid(id.clone()))
         .role(Role::Button)
         .tab_index(0)
-        .h(px(ACTION_HEIGHT))
-        .px(px(ACTION_PAD_X))
-        .flex()
-        .items_center()
-        .rounded(px(radius::SM))
-        .text_size(px(pink::text::CAPTION))
-        .line_height(px(pink::TextStyle::Caption.line_height()))
-        .font_weight(FontWeight::MEDIUM)
-        .cursor_pointer()
-        .focus_visible(move |s| pink::focus_ring(s, ring))
-        .child(label);
+        .focus_visible(move |s| pink::focus_ring(s, ring));
     if primary {
-        action.bg(t.solid).text_color(t.on_solid)
+        action
     } else {
-        action.hover_fill_fg(
-            id,
-            t.element_hover.opacity(0.),
-            t.element_hover,
-            t.text_muted,
-            t.text,
-        )
+        action.on_hover(motion::hover_listener(id))
     }
 }
 

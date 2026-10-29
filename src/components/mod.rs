@@ -27,6 +27,7 @@ pub mod code_block;
 pub mod combobox;
 pub mod command_menu;
 pub mod command_row;
+pub mod comment_card;
 pub mod comment_thread;
 pub mod comments_panel;
 pub mod commit_history;
@@ -222,6 +223,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Chat",
         description: cited_answer::DESCRIPTION,
         story: cited_answer::story,
+    },
+    ComponentEntry {
+        slug: "comment-card",
+        name: comment_card::NAME,
+        category: "Chat",
+        description: comment_card::DESCRIPTION,
+        story: comment_card::story,
     },
     ComponentEntry {
         slug: "comment-thread",

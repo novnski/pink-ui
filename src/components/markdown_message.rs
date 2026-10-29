@@ -11,7 +11,9 @@
 //! discs, tinted numbers, or task checkboxes. Quotes get an accent rail and a
 //! whisper of the same hue, tables are frameless with hairline rules, and code
 //! fences sit on Pink's code surface with a language header, a Fit-content
-//! toggle and Copy, colored by Pink's syntax palette.
+//! toggle and Copy, colored by Pink's syntax palette. A paragraph that is one
+//! link to a workspace file wears the file-type artwork in a well beside it,
+//! drawn by the `pink-file-badge` package (see [`MarkdownMessage::file_links`]).
 //!
 //! While a reply streams, newly arrived text dissolves in under Pink's opacity
 //! veil (`markdown/veil.rs`) and hanging markers (`**bold`, `` `code ``,
@@ -40,13 +42,13 @@ use gpui::{
     Font, FontStyle, FontWeight, GlobalElementId, Hsla, InspectorElementId, IntoElement, LayoutId,
     MouseButton, Pixels, Point, Render, Role, ScrollHandle, ScrollWheelEvent, SharedString,
     StrikethroughStyle, StyledText, Task, TextLayout, TextRun, Toggled, UnderlineStyle, WeakEntity,
-    Window, anchored, canvas, deferred, div, point, prelude::*, px, quad, size, svg,
+    Window, anchored, canvas, deferred, div, img, point, prelude::*, px, quad, size, svg,
     transparent_black,
 };
 
 use crate::{
     HoverFill,
-    components::code_block,
+    components::{code_block, file_badge},
     motion,
     pink::{self, Pink, Syntax, radius},
     story,
@@ -2536,6 +2538,7 @@ impl Render for CodeTooltip {
 // ---------------------------------------------------------------------------
 
 type TaskHandler = Rc<dyn Fn(usize, bool, &mut Window, &mut App)>;
+type FileArtHandler = Rc<dyn Fn(&str) -> Option<SharedString>>;
 type CopyHandler = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
 
 /// An assistant reply rendered from markdown (Pink: `markdown/render.rs`).
@@ -2549,6 +2552,7 @@ pub struct MarkdownMessage {
     on_task_toggle: Option<TaskHandler>,
     on_link: Option<LinkHandler>,
     on_copy: Option<CopyHandler>,
+    file_art: Option<FileArtHandler>,
 }
 
 impl MarkdownMessage {
@@ -2562,6 +2566,7 @@ impl MarkdownMessage {
             on_task_toggle: None,
             on_link: None,
             on_copy: None,
+            file_art: None,
         }
     }
 
@@ -2604,6 +2609,15 @@ impl MarkdownMessage {
         handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_link = Some(Rc::new(handler));
+        self
+    }
+
+    /// Pink's file links (`markdown/render.rs`): `art` returns the file-type
+    /// artwork for a link destination that is a workspace file, or `None`.
+    /// A paragraph that is only that link shows the artwork in a well beside
+    /// it; mixed prose keeps the inline layout.
+    pub fn file_links(mut self, art: impl Fn(&str) -> Option<SharedString> + 'static) -> Self {
+        self.file_art = Some(Rc::new(art));
         self
     }
 
@@ -2652,9 +2666,29 @@ struct Renderer<'a> {
     on_task: Option<TaskHandler>,
     on_link: Option<LinkHandler>,
     on_copy: Option<CopyHandler>,
+    file_art: Option<FileArtHandler>,
 }
 
 impl Renderer<'_> {
+    /// The artwork when the paragraph's visible text is one workspace-file
+    /// link (Pink `sole_workspace_file_link`).
+    fn sole_file_art(&self, runs: &[Run]) -> Option<SharedString> {
+        let art = self.file_art.as_ref()?;
+        let mut target: Option<&str> = None;
+        for run in runs {
+            if run.text.trim().is_empty() {
+                continue;
+            }
+            let link = run.style.link.as_deref()?;
+            match target {
+                None => target = Some(link),
+                Some(seen) if seen == link => {}
+                Some(_) => return None,
+            }
+        }
+        target.filter(|t| *t != PENDING_LINK).and_then(|t| art(t))
+    }
+
     fn veil_spans(&mut self, text: &str) -> (usize, Vec<VeilSpan>) {
         let elem = self.elem;
         self.elem += 1;
@@ -2668,7 +2702,22 @@ impl Renderer<'_> {
     fn block(&mut self, block: &Block) -> AnyElement {
         match block {
             Block::Paragraph(runs) => {
-                self.text(runs, MD_TEXT_SIZE, MD_LINE_HEIGHT, FontWeight::NORMAL)
+                let text = self.text(runs, MD_TEXT_SIZE, MD_LINE_HEIGHT, FontWeight::NORMAL);
+                match self.sole_file_art(runs) {
+                    // Pink: the file-type well beside a sole workspace-file
+                    // link, in Interface-scaled units
+                    Some(art) => file_badge::file_link(
+                        file_badge::scaled_well(
+                            pink::grey(if self.t.dark { 0 } else { 255 }).opacity(0.16),
+                            img(art)
+                                .flex_none()
+                                .size(file_badge::ui_rems(file_badge::GLYPH)),
+                        ),
+                        text,
+                    )
+                    .into_any_element(),
+                    None => text,
+                }
             }
             Block::Heading(level, runs) => {
                 let (size, line) = heading_metrics(*level);
@@ -3360,6 +3409,7 @@ impl RenderOnce for MarkdownMessage {
             on_task: self.on_task_toggle.clone(),
             on_link: self.on_link.clone(),
             on_copy: self.on_copy.clone(),
+            file_art: self.file_art.clone(),
         };
         let mut children = Vec::with_capacity(blocks.len());
         for (ix, block) in blocks.iter().enumerate() {
@@ -3409,7 +3459,7 @@ impl RenderOnce for MarkdownMessage {
 
 const DEMO_WIDTH: f32 = 640.;
 /// The settled reply's height: the stage holds still while it streams.
-const MESSAGE_HEIGHT: f32 = 975.;
+const MESSAGE_HEIGHT: f32 = 1009.;
 const DEMO_QUESTION: &str = "How do I stop our request logs from printing session tokens?";
 
 /// The tasks at the end of the demo reply, toggled by the reader.
@@ -3428,6 +3478,8 @@ The leak comes from `RequestLogger`, which prints the header map verbatim. Wrap 
 1. Add the `Redacted` wrapper below.
 2. Log `Redacted(&headers)` instead of `headers` in *log_request*.
 3. Rotate anything that already reached ~~stdout~~ the log files.
+
+[src/logging/redact.rs](src/logging/redact.rs)
 
 ```rust
 const SENSITIVE: [&str; 2] = ["authorization", "cookie"];
@@ -3564,6 +3616,19 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             source[..shown].to_string(),
         )
         .streaming(live)
+        // Pink's file links: a relative Rust path is a workspace file here
+        .file_links({
+            let dark = t.dark;
+            move |target| {
+                (target.ends_with(".rs") && !target.contains("://")).then(|| {
+                    SharedString::from(if dark {
+                        "icons/tool-call-card/file-rust-dark.svg"
+                    } else {
+                        "icons/tool-call-card/file-rust.svg"
+                    })
+                })
+            }
+        })
         .on_task_toggle({
             let demo = demo.clone();
             move |index, checked, _, cx| {

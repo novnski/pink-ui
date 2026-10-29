@@ -1,7 +1,8 @@
 //! Comments Panel – a Pink component.
 //!
 //! The review comments on one document, in a side pane. Every comment is
-//! Pink's inline comment card (Pink: comment_ui.rs `render_comment_card`): a
+//! Pink's inline comment card (Pink: comment_ui.rs `render_comment_card`,
+//! drawn by the `pink-comment-card` package, [`comment_card`]): a
 //! flat band with a 3px bar, the line it is pinned to in the header and the
 //! note under it; here the note also names its author. A comment that starts
 //! with a slash command (`/rewrite`, `/translate`, …) carries Pink's tool
@@ -29,7 +30,8 @@ use gpui::{
 };
 
 use crate::{
-    HoverFill, motion,
+    components::comment_card,
+    motion,
     pink::{
         self, ControlSize, Pink, Segment, chrome, icon_size, layout, loaders, radius, space, text,
     },
@@ -40,8 +42,6 @@ use crate::{
 pub const NAME: &str = "Comments Panel";
 pub const DESCRIPTION: &str = "A document's review comments in a side pane: flat note cards pinned to a line, slash-command notes that run as an edit and show the change as a diff with an Undo, resolving that folds a note away into Resolved, and a draft card where typing a slash opens command completion";
 
-/// Pink `icons::CHAT_ROUND_LINE`, the comment card's glyph.
-const ICON_COMMENT: &str = "icons/comments-panel/chat-round-line.svg";
 /// Pink `icons::COMMAND`, the slash completion's row glyph.
 const ICON_COMMAND: &str = "icons/comments-panel/command.svg";
 /// Pink `icons::FILE_PEN`, the edit tool's glyph.
@@ -50,25 +50,13 @@ const ICON_EDIT: &str = "icons/comments-panel/file-pen.svg";
 const ICON_RESOLVE: &str = "icons/comments-panel/check.svg";
 const ICON_REOPEN: &str = "icons/comments-panel/undo-left.svg";
 
-/// Pink changes.rs `ACCENT_BAR_WIDTH`: the card's bar, not a border.
-const ACCENT_BAR_WIDTH: f32 = 3.0;
-/// Pink comments.rs card geometry: vertical padding (split top and bottom),
-/// the header row, a body line and the slack under the body.
-const CARD_PAD_V: f32 = 20.0;
-const CARD_HEADER_HEIGHT: f32 = 22.0;
-const CARD_LINE_HEIGHT: f32 = 18.0;
-const CARD_GAP: f32 = 6.0;
-/// Pink comment_ui.rs: the remove button's 24pt hit box over a 16pt footprint.
-const CARD_ACTION_HIT: f32 = 24.0;
-/// Pink comments.rs `DRAFT_CARD_HEIGHT` and `render_comment_draft`'s input
-/// slot, action row and padding.
-const DRAFT_CARD_HEIGHT: f32 = 116.0;
-const DRAFT_INPUT_HEIGHT: f32 = 46.0;
-const DRAFT_ACTIONS_HEIGHT: f32 = 28.0;
-const DRAFT_PAD_V: f32 = 10.0;
-/// Pink comment_ui.rs `comment_action`: 22px buttons, px 10.
-const ACTION_HEIGHT: f32 = 22.0;
-const ACTION_PAD_X: f32 = 10.0;
+/// Pink changes.rs `ACCENT_BAR_WIDTH` and comments.rs card geometry, from
+/// the `pink-comment-card` package: the bar, the vertical padding (split top
+/// and bottom), a body line and the slack under the body.
+const ACCENT_BAR_WIDTH: f32 = comment_card::ACCENT_BAR_WIDTH;
+const CARD_PAD_V: f32 = comment_card::PAD_V;
+const CARD_LINE_HEIGHT: f32 = comment_card::LINE_HEIGHT;
+const CARD_GAP: f32 = comment_card::GAP;
 /// Pink markdown/render.rs inline code plate.
 const INLINE_CODE_RADIUS: f32 = 4.5;
 const INLINE_CODE_PAD_X: f32 = 2.0;
@@ -635,66 +623,30 @@ impl RenderOnce for CommentsPanel {
             let cid = c.id.clone();
             let label = if resolved { "Reopen" } else { "Resolve" };
             let ring = t.focus_ring();
-            let action = div()
-                .id(ElementId::Name(format!("{key}-resolve-{}", c.id).into()))
-                .role(Role::Button)
-                .aria_label(label)
-                .tab_index(0)
-                .flex_none()
-                .size(px(CARD_ACTION_HIT))
-                .m(px(-4.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(radius::XS))
-                .cursor_pointer()
-                .opacity(0.)
-                .group_hover(group.clone(), |s| s.opacity(1.))
-                .focus_visible(move |s| pink::focus_ring(s.opacity(1.), ring))
-                .tooltip(pink::text_tooltip(label))
-                .tooltip_show_delay(layout::TOOLTIP_DELAY)
-                .on_click(move |_, window, cx| {
-                    let Some(f) = &on_resolve else { return };
-                    let from = if resolved { Tab::Resolved } else { Tab::Open };
-                    resolve_state.update(cx, |s, cx| {
-                        s.leaving.insert(cid.clone(), (Instant::now(), from));
-                        cx.notify();
-                    });
-                    f(cid.clone(), window, cx);
-                })
-                .child(
-                    svg()
-                        .path(if resolved { ICON_REOPEN } else { ICON_RESOLVE })
-                        .size(px(icon_size::XS))
-                        .text_color(t.text_muted),
-                );
+            let action = comment_card::remove(
+                svg().path(if resolved { ICON_REOPEN } else { ICON_RESOLVE }),
+                t.text_muted,
+                group.clone(),
+            )
+            .id(ElementId::Name(format!("{key}-resolve-{}", c.id).into()))
+            .role(Role::Button)
+            .aria_label(label)
+            .tab_index(0)
+            .focus_visible(move |s| pink::focus_ring(s.opacity(1.), ring))
+            .tooltip(pink::text_tooltip(label))
+            .tooltip_show_delay(layout::TOOLTIP_DELAY)
+            .on_click(move |_, window, cx| {
+                let Some(f) = &on_resolve else { return };
+                let from = if resolved { Tab::Resolved } else { Tab::Open };
+                resolve_state.update(cx, |s, cx| {
+                    s.leaving.insert(cid.clone(), (Instant::now(), from));
+                    cx.notify();
+                });
+                f(cid.clone(), window, cx);
+            });
 
             // Pink: comment card header – the glyph and where it's pinned
-            let header = div()
-                .h(px(CARD_HEADER_HEIGHT))
-                .flex_none()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(space::S6))
-                .child(
-                    svg()
-                        .path(ICON_COMMENT)
-                        .flex_none()
-                        .size(px(icon_size::XS))
-                        .text_color(t.text_faint),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .font_family(pink::MONO)
-                        .text_size(px(text::CAPTION))
-                        .text_color(t.text_faint)
-                        .child(location.clone()),
-                )
-                .child(action);
+            let header = card_header(location.clone(), &t).child(action);
 
             // Who wrote it and when (the sidebar's 11px tabular stamp)
             let byline = div()
@@ -750,21 +702,15 @@ impl RenderOnce for CommentsPanel {
 
             let cell = heights.get(&c.id).cloned().unwrap_or_default();
             let natural = cell.get();
-            let band = div()
+            let band = comment_card::band(&comment_card::posted_style(&t), None)
                 .group(group)
-                .w_full()
-                .flex_none()
-                .flex()
-                .flex_row()
-                .bg(t.ink(0.05))
-                .child(accent_bar(t.solid.opacity(0.35)))
                 .child(
                     div()
                         .flex_1()
                         .min_w_0()
                         .flex()
                         .flex_col()
-                        .px(px(space::S16))
+                        .px(px(comment_card::PAD_X))
                         .pt(px(CARD_PAD_V / 2.))
                         .pb(px(CARD_PAD_V / 2. + CARD_GAP))
                         .child(header)
@@ -843,7 +789,7 @@ impl RenderOnce for CommentsPanel {
                 d.child(
                     pink::surface_state(
                         svg()
-                            .path(ICON_COMMENT)
+                            .path(comment_card::ICON_COMMENT)
                             .size(px(28.))
                             .text_color(t.text_faint),
                         title,
@@ -862,45 +808,29 @@ impl RenderOnce for CommentsPanel {
         let commit_state = state.clone();
         let draft = div()
             .relative()
-            .h(px(DRAFT_CARD_HEIGHT))
+            .h(comment_card::ui_rems(comment_card::DRAFT_HEIGHT))
             .w_full()
             .flex_none()
             .flex()
             .flex_row()
-            .bg(t.ink(0.08))
+            .bg(comment_card::draft_style(&t).background)
             // The pane's bottom corners round the band (GPUI clips square),
             // so the bar is the band's left edge here.
             .rounded_b(px(radius::PANEL - 1.))
             .border_l(px(ACCENT_BAR_WIDTH))
-            .border_color(t.solid.opacity(0.7))
+            .border_color(comment_card::draft_style(&t).accent)
             .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .px(px(space::S16))
-                    .py(px(DRAFT_PAD_V))
+                comment_card::content(None)
                     .child(card_header(self.document.clone(), &t))
-                    .child(
+                    .child(comment_card::field(
                         div()
-                            .h(px(DRAFT_INPUT_HEIGHT))
-                            .flex_none()
-                            .overflow_hidden()
                             .text_size(px(text::FOOTNOTE))
                             .line_height(px(CARD_LINE_HEIGHT))
                             .text_color(t.text)
                             .child(input.clone()),
-                    )
+                    ))
                     .child(
-                        div()
-                            .h(px(DRAFT_ACTIONS_HEIGHT))
-                            .flex_none()
-                            .flex()
-                            .flex_row()
-                            .items_center()
-                            .justify_end()
-                            .gap(px(space::S6))
+                        comment_card::actions()
                             .child(
                                 comment_action(format!("{key}-cancel"), "Cancel", false, true, &t)
                                     .on_click(move |_, _, cx| {
@@ -1067,44 +997,15 @@ fn slash_popup(
     }
 }
 
-/// Pink comment_ui.rs `comment_accent_bar`: 3px of `solid` at the card's
-/// strength, stretched to the band's height.
-fn accent_bar(color: Hsla) -> gpui::Div {
-    div().w(px(ACCENT_BAR_WIDTH)).flex_none().bg(color)
-}
-
-/// Pink comment_ui.rs draft header: the 12px comment glyph and the path in
-/// mono 11 `text_faint`.
+/// Pink comment_ui.rs card header: the comment glyph and the path in mono.
 fn card_header(location: SharedString, t: &Pink) -> gpui::Div {
-    div()
-        .h(px(CARD_HEADER_HEIGHT))
-        .flex_none()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(space::S6))
-        .child(
-            svg()
-                .path(ICON_COMMENT)
-                .flex_none()
-                .size(px(icon_size::XS))
-                .text_color(t.text_faint),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .font_family(pink::MONO)
-                .text_size(px(text::CAPTION))
-                .text_color(t.text_faint)
-                .child(location),
-        )
+    comment_card::header(svg().path(comment_card::ICON_COMMENT), t.text_faint)
+        .child(comment_card::location(location, t.text_faint, pink::MONO))
 }
 
-/// Pink comment_ui.rs `comment_action`: 22px, px 10, radius 6, 11 medium.
-/// The primary is the `solid` plate; the other is a ghost whose label and
-/// `element_hover` wash ease in under the pointer. Disabled is Pink's 0.45.
+/// Pink comment_ui.rs `comment_action`: the primary is the `solid` plate;
+/// the other is a ghost whose label and `element_hover` wash ease in under
+/// the pointer. Disabled is Pink's 0.45.
 fn comment_action(
     id: String,
     label: &'static str,
@@ -1113,41 +1014,31 @@ fn comment_action(
     t: &Pink,
 ) -> Stateful<gpui::Div> {
     let ring = t.focus_ring();
-    let action = div()
+    let style = if primary || enabled {
+        comment_card::action_style(&id, primary, t)
+    } else {
+        comment_card::ActionStyle {
+            background: t.element_hover.opacity(0.),
+            text: t.text_muted,
+        }
+    };
+    let action = comment_card::action(&style, label)
         .id(ElementId::Name(id.clone().into()))
         .role(Role::Button)
         .aria_label(label)
         .flex_none()
-        .h(px(ACTION_HEIGHT))
-        .px(px(ACTION_PAD_X))
-        .flex()
-        .items_center()
-        .rounded(px(radius::SM))
-        .text_size(px(text::CAPTION))
-        .line_height(px(pink::TextStyle::Caption.line_height()))
-        .font_weight(FontWeight::MEDIUM)
-        .on_key_down(pink::swallow_activation_key)
-        .child(label);
+        .on_key_down(pink::swallow_activation_key);
     let action = if enabled {
         action
             .tab_index(0)
-            .cursor_pointer()
             .focus_visible(move |s| pink::focus_ring(s, ring))
     } else {
-        action.opacity(0.45)
+        action.cursor_default().opacity(0.45)
     };
-    if primary {
-        action.bg(t.solid).text_color(t.on_solid)
-    } else if enabled {
-        action.hover_fill_fg(
-            id,
-            t.element_hover.opacity(0.),
-            t.element_hover,
-            t.text_muted,
-            t.text,
-        )
+    if primary || !enabled {
+        action
     } else {
-        action.text_color(t.text_muted)
+        action.on_hover(motion::hover_listener(id))
     }
 }
 
