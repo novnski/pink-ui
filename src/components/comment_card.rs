@@ -20,7 +20,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Comment Card";
-pub const DESCRIPTION: &str = "PINK's review comment cards as a package the app pins: the 16px plus a line shows to start a note, the posted card (a flat band with a 3px bar, the cited path:line in mono, edit and remove on hover, the note at 12/18), the same card centred under a document column, the fixed-height draft with Cancel and Comment, and the code editor's floating card";
+pub const DESCRIPTION: &str = "PINK's review comment cards as a package the app pins: the 16px plus a line shows to start a note, the posted card (a flat band with a 3px bar, the cited path:line in mono, edit and remove on hover, and the note), the same card centred under a document column, the fixed-height draft with Cancel and Comment, and the code editor's floating card";
 
 /// The comment glyph (PINK `icons::CHAT_ROUND_LINE`).
 pub const ICON_COMMENT: &str = "icons/comment-card/chat-round-line.svg";
