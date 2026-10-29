@@ -28,6 +28,7 @@ use gpui::{
 };
 
 use crate::{
+    components::usage_meter::package as meter,
     motion,
     pink::{
         self, ControlSize, FillTier, Pink, Segment, TextStyle, TypeStyleExt, icon_size, layout,
@@ -41,15 +42,6 @@ pub const DESCRIPTION: &str = "A total and its parts laid out like Pink's usage 
 
 /// The card's width: Pink's settings column (720) inside its 32 px gutters.
 const WIDTH: f32 = layout::PAGE_MAX_WIDTH - 2. * 32.;
-/// The split bar's width: the card's content box inside the row padding.
-const BAR_W: f32 = WIDTH - 2. - 2. * layout::ROW_PAD_X;
-/// The split bar's capsule (Pink: usage.rs `usage_meter`, 6 pt) and the
-/// taller strip around it that catches the pointer.
-const BAR_H: f32 = 6.;
-const BAR_HIT: f32 = 12.;
-/// Parts below this share draw nothing on the bar (Pink's meter: "nothing
-/// drawn below 0.5%, no false stub").
-const BAR_MIN_SHARE: f64 = 0.005;
 /// A part row's height (Pink `card_row` around a 13/18 title and a 12/16
 /// description 2 apart, plus its 1 px top hairline): the resort glide moves
 /// a row this far per rank.
@@ -299,23 +291,17 @@ impl RenderOnce for CompactBreakdown {
             )),
             None => previous_total.map(|p| total_change(total / p - 1.)),
         };
-        let drawn: Vec<usize> = order
-            .iter()
-            .copied()
-            .filter(|&i| share_of(i) >= BAR_MIN_SHARE)
-            .collect();
-        let drawn_total: f64 = drawn.iter().map(|&i| share_of(i)).sum();
+        // The package keeps the parts holding at least 0.5% of the total
+        // and shares the bar between them (Pink's meter: "nothing drawn
+        // below 0.5%, no false stub").
+        let values: Vec<f64> = order.iter().map(|&i| value_of(i)).collect();
         let bar = split_bar(
             &key,
-            drawn
-                .iter()
-                .map(|&i| {
-                    (
-                        i,
-                        self.parts[i].id.clone(),
-                        share_of(i) / drawn_total,
-                        tones[i],
-                    )
+            meter::split_shares(&values)
+                .into_iter()
+                .map(|(rank, share)| {
+                    let i = order[rank];
+                    (i, self.parts[i].id.clone(), share as f64, tones[i])
                 })
                 .collect(),
             &state,
@@ -431,11 +417,12 @@ fn part_tile(icon: SharedString, t: &Pink) -> Div {
         )
 }
 
-/// The split bar: Pink's 6 pt usage meter capsule (usage.rs
-/// `usage_meter_with`) carrying the parts in rank order, each in its series
-/// color with 2 px between them, on the meter's `fill(Secondary)` track when
-/// there is nothing to split. `segments` are `(part, id, share, tone)` with
-/// the shares summing to one. Hovering a part reads it out beside the total.
+/// The split bar, drawn by the `pink-usage-meter` package (the Usage Meter
+/// story's `package`, PINK's Usage summary card): the parts in rank order,
+/// each in its series color with 2 px between them, on the meter's
+/// `fill(Secondary)` track when there is nothing to split. `segments` are
+/// `(part, id, share, tone)` with the shares summing to one. Hovering a part
+/// reads it out beside the total.
 fn split_bar(
     key: &str,
     segments: Vec<(usize, SharedString, f64, Hsla)>,
@@ -443,23 +430,10 @@ fn split_bar(
     t: &Pink,
 ) -> Stateful<Div> {
     let n = segments.len();
-    let avail = BAR_W - space::S2 * n.saturating_sub(1) as f32;
-    div()
+    meter::split_bar()
         .id(SharedString::from(format!("{key}-bar")))
-        .w_full()
-        .h(px(BAR_HIT))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(space::S2))
         .when(n == 0, |bar| {
-            bar.child(
-                div()
-                    .w_full()
-                    .h(px(BAR_H))
-                    .rounded_full()
-                    .bg(t.fill(FillTier::Secondary)),
-            )
+            bar.child(meter::split_empty(t.fill(FillTier::Secondary)))
         })
         .children(
             segments
@@ -467,13 +441,8 @@ fn split_bar(
                 .enumerate()
                 .map(|(pos, (i, id, share, tone))| {
                     let state = state.clone();
-                    div()
+                    meter::split_segment(share as f32, tone, pos == 0, pos + 1 == n)
                         .id(SharedString::from(format!("{key}-bar-{id}")))
-                        .flex_none()
-                        .w(px(avail * share as f32))
-                        .h_full()
-                        .flex()
-                        .items_center()
                         .on_hover(move |hovered, _, cx| {
                             state.update(cx, |s, cx| {
                                 let next = match (*hovered, s.hovered) {
@@ -487,14 +456,6 @@ fn split_bar(
                                 }
                             })
                         })
-                        .child(
-                            div()
-                                .w_full()
-                                .h(px(BAR_H))
-                                .bg(tone)
-                                .when(pos == 0, |d| d.rounded_l(px(BAR_H / 2.)))
-                                .when(pos + 1 == n, |d| d.rounded_r(px(BAR_H / 2.))),
-                        )
                 }),
         )
 }
