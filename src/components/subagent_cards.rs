@@ -6,7 +6,7 @@
 //! posts back. A card follows the Settings row anatomy: the provider mark in
 //! a 28px tile, centred against two lines – the title with a quiet
 //! "Fresh side chat" type badge, then a status dot and status, the live or
-//! settled elapsed time, model · reasoning and a one-line preview of the
+//! settled elapsed time, model and reasoning and a one-line preview of the
 //! prompt or of the helper's latest message – and its actions in one trailing
 //! column: Show in split beside Open chat. At narrow widths the actions wrap
 //! under the text; only the preview truncates. Statuses read like Pink's
@@ -15,6 +15,9 @@
 //! second; a settled one freezes it. Once the helper's result is posted in
 //! the chat (its own notice below), the card goes back to saying what was
 //! asked.
+//!
+//! The card is the `pink-row-card` package's `agent_card`, which PINK pins:
+//! this story adds the demo, the statuses and the result notices.
 //!
 //! ```ignore
 //! SubagentCards::new("helpers")
@@ -462,8 +465,8 @@ fn card_title(card: &SubagentCard) -> SharedString {
     }
 }
 
-/// Pink: `AgentCard::render`, drawn by the `pink-row-card` package's
-/// wrapping layout: tile, text and actions in one row that wraps.
+/// Pink: `AgentCard::render`, drawn by the `pink-row-card` package's agent
+/// card: tile, text and actions in one row that wraps.
 fn render_card(
     key: &str,
     card: &SubagentCard,
@@ -477,7 +480,6 @@ fn render_card(
     let status_color = card.status.color(t);
     let duration = card.duration_text(now);
     let preview = card.preview();
-    let shape = rc::Layout::Wrapping;
 
     // The provider mark in the shared 28px row tile (`pink-settings-parts`);
     // its label carries provider and status so neither is shape- or
@@ -495,21 +497,10 @@ fn render_card(
         "{provider_name} provider, {NEW_THREAD}, {status_label}"
     )));
 
-    // Line 1: the title and the quiet type badge.
-    let title = rc::title_line()
-        .child(rc::title(t.text, card_title(card)))
-        .child(rc::type_badge(
-            &rc::BadgeStyle {
-                background: t.ink(0.06),
-                text: t.content_muted,
-            },
-            NEW_THREAD,
-        ));
-
-    // Line 2: the status (a coloured dot and quiet words; only a failure
-    // tints them), the live or frozen time, model and reasoning and the
-    // preview, which alone gives way when the line runs out. Facts sit
-    // apart on the line's gap: no separator glyph.
+    // The title with its quiet type badge, then the status (a coloured dot
+    // and quiet words; only a failure tints them), the live or frozen time,
+    // model and reasoning and the preview, which alone gives way when the
+    // line runs out. Drawn by `pink-row-card`'s agent card.
     let detail = [card.model.clone(), card.reasoning.clone()]
         .into_iter()
         .flatten()
@@ -517,18 +508,29 @@ fn render_card(
         .collect::<Vec<_>>();
     let detail = (!detail.is_empty()).then(|| detail.join(" "));
     let failed = card.status == AgentStatus::Failed;
-    let meta = rc::meta_line(t.content_muted)
-        .child(rc::status(
-            status_color,
-            failed.then(|| t.readable_tone(t.danger, 1.0)),
-            status_label,
-        ))
-        .when_some(duration, |meta, duration| meta.child(rc::fact(duration)))
-        .when_some(detail, |meta, detail| meta.child(rc::fact(detail)))
-        .when(!preview.is_empty(), |meta| {
-            meta.child(rc::preview(t.readable_muted(0.8), preview))
-        });
-    let text = rc::text_column(shape).child(title).child(meta);
+    let style = rc::AgentCardStyle {
+        card: rc::CardStyle {
+            border: t.hairline(0.07),
+            background: t.ink(0.03),
+        },
+        badge: rc::BadgeStyle {
+            background: t.ink(0.06),
+            text: t.content_muted,
+        },
+        title: t.text,
+        meta: t.content_muted,
+        status_dot: status_color,
+        status_tone: failed.then(|| t.readable_tone(t.danger, 1.0)),
+        preview: t.readable_muted(0.8),
+    };
+    let text = rc::AgentCardText {
+        title: card_title(card),
+        badge: NEW_THREAD.into(),
+        status: status_label.into(),
+        duration: duration.map(SharedString::from),
+        detail: detail.map(SharedString::from),
+        preview: preview.into(),
+    };
 
     // The actions in one trailing column: Show in split as a kit icon
     // button beside the Open chat button. Ids carry the card id, so two
@@ -553,20 +555,11 @@ fn render_card(
         let id = id.clone();
         el.on_click(move |_, window, cx| handler(&id, OpenMode::Chat, window, cx))
     });
-    let actions = rc::actions(shape).child(split).child(open);
+    let actions = rc::agent_actions().child(split).child(open);
 
-    rc::card(
-        shape,
-        &rc::CardStyle {
-            border: t.hairline(0.07),
-            background: t.ink(0.03),
-        },
-    )
-    .id(SharedString::from(format!("{key}-card-{id}")))
-    .child(tile)
-    .child(text)
-    .child(actions)
-    .into_any_element()
+    rc::agent_card(&style, tile, text, actions)
+        .id(SharedString::from(format!("{key}-card-{id}")))
+        .into_any_element()
 }
 
 /// Pink: `child_notices.rs` `display_entry` – the helper's result as the

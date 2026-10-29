@@ -8,7 +8,9 @@
 // Two layouts. `Layout::Wrapping` is the agent card: when the card is too
 // narrow for the actions beside a readable title they wrap under the text,
 // still at the right. `Layout::Inline` is the automation card, one line
-// whose text gives way.
+// whose text gives way. `agent_card` composes the whole helper agent card
+// (the gallery's Subagent Cards): the host's tile, the title with its type
+// badge over the status, time, detail and preview, and the host's actions.
 //
 // The package draws only. The host supplies the resolved colours, the tile,
 // the copy and the buttons; it adds the ids, roles and accessible names,
@@ -238,4 +240,71 @@ pub fn actions(layout: Layout) -> Div {
             .flex_row()
             .gap(ui_rems(INLINE_ACTION_GAP)),
     }
+}
+
+/// A helper agent's card (PINK transcript/agent_cards.rs `AgentCard`, the
+/// gallery's Subagent Cards): what its text column says.
+pub struct AgentCardText {
+    pub title: SharedString,
+    /// The quiet type badge after the title ("Fresh side chat").
+    pub badge: SharedString,
+    /// The status word beside its dot.
+    pub status: SharedString,
+    /// The live or settled elapsed time; none when nothing reliable is known.
+    pub duration: Option<SharedString>,
+    /// The model and reasoning, already joined by the host.
+    pub detail: Option<SharedString>,
+    /// The one-line preview of the ask or the latest reply; empty for none.
+    pub preview: SharedString,
+}
+
+/// The resolved colours of a helper agent's card.
+pub struct AgentCardStyle {
+    pub card: CardStyle,
+    pub badge: BadgeStyle,
+    pub title: Hsla,
+    /// The meta line: status word, time and detail.
+    pub meta: Hsla,
+    pub status_dot: Hsla,
+    /// Tints the status word; a failure only.
+    pub status_tone: Option<Hsla>,
+    pub preview: Hsla,
+}
+
+/// A helper agent's card, wrapping: the host's tile (`pink-settings-parts`
+/// `row_tile` with its accessible name), the title with its type badge over
+/// the status, time, detail and preview, then the host's actions. Only the
+/// preview truncates; the actions wrap under the text when narrow. The host
+/// adds the card's id.
+pub fn agent_card(
+    style: &AgentCardStyle,
+    tile: impl IntoElement,
+    text: AgentCardText,
+    actions: impl IntoElement,
+) -> Div {
+    card(Layout::Wrapping, &style.card)
+        .child(tile)
+        .child(agent_text(style, text))
+        .child(actions)
+}
+
+/// The agent card's text column: the title line, then the status, the time,
+/// the detail and the preview, set apart by space.
+pub fn agent_text(style: &AgentCardStyle, text: AgentCardText) -> Div {
+    let title = title_line()
+        .child(self::title(style.title, text.title))
+        .child(type_badge(&style.badge, text.badge));
+    let meta = meta_line(style.meta)
+        .child(status(style.status_dot, style.status_tone, text.status))
+        .when_some(text.duration, |meta, duration| meta.child(fact(duration)))
+        .when_some(text.detail, |meta, detail| meta.child(fact(detail)))
+        .when(!text.preview.is_empty(), |meta| {
+            meta.child(preview(style.preview, text.preview))
+        });
+    text_column(Layout::Wrapping).child(title).child(meta)
+}
+
+/// The agent card's trailing actions, wrapping with the card.
+pub fn agent_actions() -> Div {
+    actions(Layout::Wrapping)
 }

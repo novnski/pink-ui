@@ -28,51 +28,40 @@ const ICON_CLOCK: &str = "icons/automation-editor/clock-circle.svg";
 
 /// A helper agent's card as PINK's transcript draws it (agent_cards.rs
 /// `AgentCard::render`).
-fn agent_card(key: &'static str, t: &Pink) -> impl IntoElement {
-    let shape = Layout::Wrapping;
-    card(
-        shape,
-        &CardStyle {
-            border: t.hairline(0.07),
-            background: t.ink(0.03),
+fn helper_card(key: &'static str, t: &Pink) -> impl IntoElement {
+    package::agent_card(
+        &AgentCardStyle {
+            card: CardStyle {
+                border: t.hairline(0.07),
+                background: t.ink(0.03),
+            },
+            badge: BadgeStyle {
+                background: t.ink(0.06),
+                text: t.content_muted,
+            },
+            title: t.text,
+            meta: t.content_muted,
+            status_dot: t.accent,
+            status_tone: None,
+            preview: t.readable_muted(0.8),
         },
-    )
-    .id(key)
-    .role(Role::Group)
-    .child(parts::row_tile(
-        &parts::TileStyle {
-            border: t.hairline(0.07),
-            background: t.fill(FillTier::Quaternary),
-            icon: t.content_muted,
+        parts::row_tile(
+            &parts::TileStyle {
+                border: t.hairline(0.07),
+                background: t.fill(FillTier::Quaternary),
+                icon: t.content_muted,
+            },
+            ICON_HELIX,
+        ),
+        AgentCardText {
+            title: "Audit webhook retries".into(),
+            badge: "Fresh side chat".into(),
+            status: "Running".into(),
+            duration: Some("1m 12s".into()),
+            detail: Some("Helix 4 Pro High".into()),
+            preview: "List every webhook handler that is not idempotent.".into(),
         },
-        ICON_HELIX,
-    ))
-    .child(
-        text_column(shape)
-            .child(
-                title_line()
-                    .child(title(t.text, "Audit webhook retries"))
-                    .child(type_badge(
-                        &BadgeStyle {
-                            background: t.ink(0.06),
-                            text: t.content_muted,
-                        },
-                        "Fresh side chat",
-                    )),
-            )
-            .child(
-                meta_line(t.content_muted)
-                    .child(status(t.accent, None, "Running"))
-                    .child(fact("1m 12s"))
-                    .child(fact("Helix 4 Pro High"))
-                    .child(preview(
-                        t.readable_muted(0.8),
-                        "List every webhook handler that is not idempotent.",
-                    )),
-            ),
-    )
-    .child(
-        actions(shape)
+        agent_actions()
             .child(
                 pink::icon_button(format!("{key}-split"), ICON_SPLIT, ControlSize::Sm, t)
                     .aria_label("Show agent chat in split"),
@@ -87,6 +76,8 @@ fn agent_card(key: &'static str, t: &Pink) -> impl IntoElement {
                 .child("Open chat"),
             ),
     )
+    .id(key)
+    .role(Role::Group)
 }
 
 /// An automation's card as PINK's transcript draws it (automations.rs
@@ -146,12 +137,12 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .child(
                 div()
                     .w(px(560.0))
-                    .child(agent_card("story-row-card-agent", &t)),
+                    .child(helper_card("story-row-card-agent", &t)),
             )
             .child(
                 div()
                     .w(px(340.0))
-                    .child(agent_card("story-row-card-agent-narrow", &t)),
+                    .child(helper_card("story-row-card-agent-narrow", &t)),
             )
             .child(
                 div()

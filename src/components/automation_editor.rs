@@ -16,6 +16,12 @@
 //! the next runs, where and with what it runs) and only then enables Save.
 //! Any edit after a review asks for another.
 //!
+//! The editor's own layout parts (groups, captioned fields and their frames,
+//! settings, the schedule in words, the More options disclosure, the select
+//! menu's captions and the review column) are the `pink-automation-editor`
+//! package (`components/automation-editor`), which PINK pins; this module
+//! adds the form's state, the menus and the story.
+//!
 //! The host is builder data: `on_review` answers a review, `on_save` applies
 //! the change (an `Err` is a refusal the footer shows), both after a short
 //! simulated round trip. Escape closes an open menu, then the editor.
@@ -35,9 +41,9 @@ use web_time::Instant;
 
 use gpui::{
     Anchor, AnyElement, AnyView, App, ClickEvent, Context, DispatchPhase, Div, ElementId, Entity,
-    FocusHandle, FontWeight, Hsla, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
-    MouseMoveEvent, Role, SharedString, Stateful, Subscription, Task, Toggled, Window, anchored,
-    canvas, deferred, div, prelude::*, px, svg,
+    FocusHandle, Hsla, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
+    Role, SharedString, Stateful, Subscription, Task, Toggled, Window, anchored, canvas, deferred,
+    div, prelude::*, px, svg,
 };
 
 use crate::{
@@ -46,6 +52,12 @@ use crate::{
     primitives::{InputEvent, TextInput},
     story,
 };
+
+#[allow(dead_code)]
+mod package {
+    include!("../../components/automation-editor/src/lib.rs");
+}
+pub use package::*;
 
 pub const NAME: &str = "Automation Editor";
 pub const DESCRIPTION: &str = "The form behind a scheduled prompt on a Pink settings card: a name and message, a schedule picked from five kinds with weekday chips and the cadence spelled out beside a clock, where each run goes, the model, folded extra options, and a host review that has to pass before Save";
@@ -58,20 +70,6 @@ const ICON_BOT: &str = "icons/automation-editor/bot.svg";
 
 /// Pink's settings column: `max_w 720` less its 32 px gutters.
 const CARD_W: f32 = 656.;
-/// A setting's label column (Pink `setting`: `w 112`).
-const SETTING_LABEL_W: f32 = 112.;
-/// The pop-up buttons (Pink `render_select`: `min_w 180`, `max_w 320`) and
-/// their menus (`w 320`, the list `max_h 280`).
-const SELECT_MIN_W: f32 = 180.;
-const SELECT_MAX_W: f32 = 320.;
-const MENU_W: f32 = 320.;
-const MENU_LIST_MAX_H: f32 = 280.;
-/// A menu row's caption (Pink: `max_w 200`, 11 in `readable_muted(0.8)`).
-const MENU_CAPTION_MAX_W: f32 = 200.;
-/// "Each run" segmented track (Pink: 220 wide, Sm).
-const FRESH_TRACK_W: f32 = 220.;
-/// The lateness field (Pink: `w 72`).
-const LATENESS_W: f32 = 72.;
 /// The model chip (Pink pickers.rs: 28 tall, icon 16).
 const CHIP_ICON: f32 = 16.;
 /// A field's text line inside its frame.
@@ -1528,34 +1526,26 @@ struct Ctx {
     t: Pink,
 }
 
-/// A group: its caption over its controls, one hairline above (Pink
-/// `group`: a card row, column, gap 10; the caption 12/16 semibold in
-/// `readable_muted(0.9)`).
-fn group(id: String, title: Option<&'static str>, t: &Pink) -> Stateful<Div> {
-    pink::card_row(false, t)
-        .id(SharedString::from(id))
-        .flex_col()
-        .items_start()
-        .gap(px(10.))
-        .when_some(title, |group, title| group.child(group_caption(title, t)))
+/// The package's colours from the theme (Pink `render_editor`: labels in
+/// `text`, headings `readable_muted(0.9)`, captions `readable_muted(0.85)`,
+/// the clock in the accent).
+fn editor_style(t: &Pink) -> EditorStyle {
+    EditorStyle {
+        text: t.text,
+        heading: t.readable_muted(0.9),
+        caption: t.readable_muted(0.85),
+        accent: t.accent,
+    }
 }
 
-fn group_caption(title: &'static str, t: &Pink) -> Div {
-    div()
-        .text_size(px(12.))
-        .line_height(px(16.))
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(t.readable_muted(0.9))
-        .child(title)
-}
-
-/// A field's caption (Pink `caption`): 11/14 in `readable_muted(0.85)`.
-fn caption(label: impl Into<SharedString>, t: &Pink) -> Div {
-    div()
-        .text_size(px(11.))
-        .line_height(px(14.))
-        .text_color(t.readable_muted(0.85))
-        .child(label.into())
+/// A group (Pink `group`): a card row with its heading over its controls.
+fn group_card(id: String, title: Option<&'static str>, t: &Pink) -> Stateful<Div> {
+    group(
+        pink::card_row(false, t),
+        &editor_style(t),
+        title.map(SharedString::from),
+    )
+    .id(SharedString::from(id))
 }
 
 /// A line of copy under the controls (Pink `note`).
@@ -1572,60 +1562,44 @@ fn input_frame(ctx: &Ctx, field: Field, cx: &App) -> Stateful<Div> {
     let FieldInput { input, stop } = s.field(field);
     let (input, stop) = (input.clone(), stop.clone());
     let focus = input.clone();
-    pink::input_frame(&ctx.t)
-        .id(SharedString::from(format!("{}-{}", ctx.key, field.key())))
-        .track_focus(&stop)
-        .line_height(px(FIELD_LINE))
-        .cursor_text()
-        .overflow_hidden()
-        .on_click(move |_, window, cx| TextInput::focus(&focus, window, cx))
-        .on_key_down({
-            let stop = stop.clone();
-            move |event: &KeyDownEvent, window, cx| {
-                if event.keystroke.key == "tab" && event.keystroke.modifiers.shift {
-                    window.focus(&stop, cx);
-                    window.focus_prev(cx);
-                    cx.stop_propagation();
-                }
+    frame(&FrameStyle {
+        border: ctx.t.separator(true),
+        background: ctx.t.fill(FillTier::Quaternary),
+    })
+    .id(SharedString::from(format!("{}-{}", ctx.key, field.key())))
+    .track_focus(&stop)
+    .line_height(px(FIELD_LINE))
+    .cursor_text()
+    .overflow_hidden()
+    .on_click(move |_, window, cx| TextInput::focus(&focus, window, cx))
+    .on_key_down({
+        let stop = stop.clone();
+        move |event: &KeyDownEvent, window, cx| {
+            if event.keystroke.key == "tab" && event.keystroke.modifiers.shift {
+                window.focus(&stop, cx);
+                window.focus_prev(cx);
+                cx.stop_propagation();
             }
-        })
-        .child(input)
+        }
+    })
+    .child(input)
 }
 
-/// A labelled input (Pink `field`): the caption over the frame, gap 4;
-/// fields share a line and wrap below `min`.
-fn field(ctx: &Ctx, label: &'static str, which: Field, min: f32, cx: &App) -> Div {
-    div()
-        .flex_1()
-        .min_w(px(min))
-        .flex()
-        .flex_col()
-        .gap(px(space::S4))
-        .child(caption(label, &ctx.t))
-        .child(input_frame(ctx, which, cx))
+/// A labelled input (Pink `field`): the caption over the frame; fields
+/// share a line and wrap below `min`.
+fn labelled(ctx: &Ctx, label: &'static str, which: Field, min: f32, cx: &App) -> Div {
+    field(
+        &editor_style(&ctx.t),
+        label,
+        min,
+        input_frame(ctx, which, cx),
+    )
 }
 
-/// A setting inside a group (Pink `setting`): its 12/16 label on a 112
-/// column, the control beside it; both wrap in a narrow pane.
-fn setting(label: &'static str, control: impl IntoElement, t: &Pink) -> Div {
-    div()
-        .w_full()
-        .flex()
-        .flex_row()
-        .flex_wrap()
-        .items_center()
-        .gap_x(px(space::S12))
-        .gap_y(px(space::S6))
-        .child(
-            div()
-                .flex_none()
-                .w(px(SETTING_LABEL_W))
-                .text_size(px(12.))
-                .line_height(px(16.))
-                .text_color(t.text)
-                .child(label),
-        )
-        .child(div().min_w_0().child(control))
+/// A setting inside a group (Pink `setting`): its label on a fixed column,
+/// the control beside it; both wrap in a narrow pane.
+fn setting_row(label: &'static str, control: impl IntoElement, t: &Pink) -> Div {
+    setting(&editor_style(t), label, control)
 }
 
 /// A choice chip (Pink `choice`: a Sm chip with its role).
@@ -1639,14 +1613,14 @@ fn choice(id: String, label: &'static str, on: bool, role: Role, t: &Pink) -> St
 
 /// Name and message.
 fn essentials(ctx: &Ctx, cx: &App) -> Stateful<Div> {
-    group(format!("{}-essentials", ctx.key), None, &ctx.t)
+    group_card(format!("{}-essentials", ctx.key), None, &ctx.t)
         .child(
             div()
                 .w_full()
                 .flex()
-                .child(field(ctx, "Name", Field::Name, 160., cx)),
+                .child(labelled(ctx, "Name", Field::Name, 160., cx)),
         )
-        .child(div().w_full().flex().child(field(
+        .child(div().w_full().flex().child(labelled(
             ctx,
             "Message each run sends",
             Field::Prompt,
@@ -1664,7 +1638,7 @@ fn schedule_group(ctx: &Ctx, draft: &AutomationDraft, cx: &App) -> Stateful<Div>
         let s = ctx.state.read(cx);
         (s.schedule, s.weekdays)
     };
-    let mut kinds = pink::row_block().gap(px(space::S6));
+    let mut kinds = pink::row_block().gap(ui_rems(CHOICE_GAP));
     for k in ScheduleKind::ALL {
         let state = ctx.state.clone();
         kinds = kinds.child(
@@ -1684,21 +1658,21 @@ fn schedule_group(ctx: &Ctx, draft: &AutomationDraft, cx: &App) -> Stateful<Div>
         );
     }
     let row = || pink::row_block().items_start();
-    let mut schedule = group(format!("{key}-schedule"), Some("Schedule"), t).child(kinds);
+    let mut schedule = group_card(format!("{key}-schedule"), Some("Schedule"), t).child(kinds);
     schedule = match kind {
         ScheduleKind::Once => schedule.child(
             row()
-                .child(field(ctx, "Date (YYYY-MM-DD)", Field::Date, 120., cx))
-                .child(field(ctx, "Time (HH:MM)", Field::Time, 96., cx))
-                .child(field(ctx, "Time zone", Field::Timezone, 160., cx)),
+                .child(labelled(ctx, "Date (YYYY-MM-DD)", Field::Date, 120., cx))
+                .child(labelled(ctx, "Time (HH:MM)", Field::Time, 96., cx))
+                .child(labelled(ctx, "Time zone", Field::Timezone, 160., cx)),
         ),
         ScheduleKind::Interval => schedule.child(
             row()
-                .child(field(ctx, "Every (minutes)", Field::Every, 96., cx))
-                .child(field(ctx, "Time zone", Field::Timezone, 160., cx)),
+                .child(labelled(ctx, "Every (minutes)", Field::Every, 96., cx))
+                .child(labelled(ctx, "Time zone", Field::Timezone, 160., cx)),
         ),
         ScheduleKind::Calendar => {
-            let mut days = pink::row_block().gap(px(space::S6));
+            let mut days = pink::row_block().gap(ui_rems(CHOICE_GAP));
             for (ix, day) in WEEKDAYS.into_iter().enumerate() {
                 let state = ctx.state.clone();
                 days = days.child(
@@ -1720,8 +1694,8 @@ fn schedule_group(ctx: &Ctx, draft: &AutomationDraft, cx: &App) -> Stateful<Div>
             schedule
                 .child(
                     row()
-                        .child(field(ctx, "Time (HH:MM)", Field::Time, 96., cx))
-                        .child(field(ctx, "Time zone", Field::Timezone, 160., cx)),
+                        .child(labelled(ctx, "Time (HH:MM)", Field::Time, 96., cx))
+                        .child(labelled(ctx, "Time zone", Field::Timezone, 160., cx)),
                 )
                 .child(
                     div()
@@ -1729,17 +1703,21 @@ fn schedule_group(ctx: &Ctx, draft: &AutomationDraft, cx: &App) -> Stateful<Div>
                         .flex()
                         .flex_col()
                         .gap(px(space::S6))
-                        .child(caption("Days (none chosen: every day)", t))
+                        .child(caption(
+                            t.readable_muted(0.85),
+                            "Days (none chosen: every day)",
+                        ))
                         .child(days),
                 )
         }
         ScheduleKind::Custom => schedule
-            .child(
-                div()
-                    .w_full()
-                    .flex()
-                    .child(field(ctx, "Rule (RRULE)", Field::Rule, 160., cx)),
-            )
+            .child(div().w_full().flex().child(labelled(
+                ctx,
+                "Rule (RRULE)",
+                Field::Rule,
+                160.,
+                cx,
+            )))
             .when(draft.rule.trim().is_empty(), |schedule| {
                 schedule.child(pink::row_description(
                     "Fields separated by semicolons: FREQ (DAILY, WEEKLY, MONTHLY or YEARLY; \
@@ -1750,32 +1728,32 @@ fn schedule_group(ctx: &Ctx, draft: &AutomationDraft, cx: &App) -> Stateful<Div>
             })
             .child(
                 row()
-                    .child(field(ctx, "Starts on (optional)", Field::Date, 120., cx))
-                    .child(field(ctx, "At (optional)", Field::Time, 96., cx))
-                    .child(field(ctx, "Time zone", Field::Timezone, 160., cx)),
+                    .child(labelled(ctx, "Starts on (optional)", Field::Date, 120., cx))
+                    .child(labelled(ctx, "At (optional)", Field::Time, 96., cx))
+                    .child(labelled(ctx, "Time zone", Field::Timezone, 160., cx)),
             ),
         ScheduleKind::PullRequest => schedule
             .child(
                 row()
-                    .child(field(
+                    .child(labelled(
                         ctx,
                         "Repository (owner/repo)",
                         Field::Repository,
                         160.,
                         cx,
                     ))
-                    .child(field(ctx, "Pull request", Field::Number, 96., cx)),
+                    .child(labelled(ctx, "Pull request", Field::Number, 96., cx)),
             )
             .child(
                 row()
-                    .child(field(
+                    .child(labelled(
                         ctx,
                         "Check every (1 to 1440 min)",
                         Field::Poll,
                         120.,
                         cx,
                     ))
-                    .child(field(
+                    .child(labelled(
                         ctx,
                         "Wake budget (1 to 100)",
                         Field::Budget,
@@ -1788,31 +1766,10 @@ fn schedule_group(ctx: &Ctx, draft: &AutomationDraft, cx: &App) -> Stateful<Div>
                 t,
             )),
     };
-    // The schedule in words, settling in as it changes (Pink: a 14 clock in
-    // the accent and the words 13/18 medium).
+    // The schedule in words beside a clock (Pink: a 14 clock in the accent
+    // and the words 13/18 medium), or the first field that can't be read.
     let summary = match schedule_words(draft) {
-        Ok(words) => div()
-            .w_full()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(space::S6))
-            .child(
-                svg()
-                    .path(ICON_CLOCK)
-                    .size(px(14.))
-                    .flex_none()
-                    .text_color(t.accent),
-            )
-            .child(
-                div()
-                    .min_w_0()
-                    .text_size(px(13.))
-                    .line_height(px(18.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(t.text)
-                    .child(words),
-            ),
+        Ok(words) => schedule_line(&editor_style(t), ICON_CLOCK, words),
         Err(reason) => div()
             .w_full()
             .child(note(reason, t.readable_muted(0.85), t)),
@@ -1855,9 +1812,9 @@ fn destination_group(
     let fresh = draft.fresh;
     let chat_label: SharedString = chat_title.unwrap_or_else(|| "Choose a chat".into());
     let state = ctx.state.clone();
-    let mut target = group(format!("{}-destination", ctx.key), Some("Where it runs"), t)
+    let mut target = group_card(format!("{}-destination", ctx.key), Some("Where it runs"), t)
         .child(note(destination, t.text, t))
-        .child(setting(
+        .child(setting_row(
             "Project",
             select(
                 ctx,
@@ -1869,7 +1826,7 @@ fn destination_group(
             ),
             t,
         ))
-        .child(setting(
+        .child(setting_row(
             "Each run",
             pink::segmented(
                 format!("{}-fresh", ctx.key),
@@ -1878,7 +1835,7 @@ fn destination_group(
                     Segment::new("existing", "Existing chat"),
                 ],
                 usize::from(!fresh),
-                FRESH_TRACK_W,
+                SEGMENTED_WIDTH,
                 ControlSize::Sm,
                 t,
                 move |ix: &usize, _, cx| {
@@ -1891,7 +1848,7 @@ fn destination_group(
             t,
         ));
     if !fresh {
-        target = target.child(setting(
+        target = target.child(setting_row(
             "Chat",
             select(ctx, Menu::Chat, chat_label, ICON_CHAT, window, cx),
             t,
@@ -1943,7 +1900,7 @@ fn model_group(ctx: &Ctx, window: &mut Window, cx: &App) -> Stateful<Div> {
         });
     let chip = menu_trigger(ctx, Menu::Model, chip, Anchor::TopLeft, window, cx);
     let warning = picked.and_then(|m| m.note);
-    group(format!("{}-model-group", ctx.key), Some("Model"), t)
+    group_card(format!("{}-model-group", ctx.key), Some("Model"), t)
         .child(
             div()
                 .id(SharedString::from(format!("{}-model-pickers", ctx.key)))
@@ -1976,48 +1933,38 @@ fn options_group(
     let ring = t.focus_ring();
     let disclosure = {
         let state = ctx.state.clone();
-        div()
-            .id(SharedString::from(format!("{key}-more-toggle")))
-            .role(Role::Button)
-            .aria_label("More options")
-            .aria_expanded(more)
-            .tab_index(0)
-            .rounded(px(pink::radius::XS))
-            .focus_visible(move |s| pink::focus_ring(s, ring))
-            .w_full()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(space::S8))
-            .cursor_pointer()
-            .on_key_down(pink::swallow_activation_key)
-            .child(group_caption("More options", t))
-            .child(pink::line_glyph(
+        disclosure(
+            &editor_style(t),
+            "More options",
+            pink::line_glyph(
                 if more {
                     pink::glyphs::ALT_ARROW_UP
                 } else {
                     pink::glyphs::ALT_ARROW_DOWN
                 },
-                12.,
+                DISCLOSURE_ICON,
                 t.readable_muted(0.85),
-            ))
-            .on_click(move |_, _, cx| {
-                state.update(cx, |s, cx| {
-                    s.more = !s.more;
-                    cx.notify();
-                })
+            ),
+        )
+        .id(SharedString::from(format!("{key}-more-toggle")))
+        .role(Role::Button)
+        .aria_label("More options")
+        .aria_expanded(more)
+        .tab_index(0)
+        .focus_visible(move |s| pink::focus_ring(s, ring))
+        .on_key_down(pink::swallow_activation_key)
+        .on_click(move |_, _, cx| {
+            state.update(cx, |s, cx| {
+                s.more = !s.more;
+                cx.notify();
             })
+        })
     };
-    let mut options = pink::card_row(false, t)
-        .id(SharedString::from(format!("{key}-more")))
-        .flex_col()
-        .items_start()
-        .gap(px(10.))
-        .child(disclosure);
+    let mut options = group_card(format!("{key}-more"), None, t).child(disclosure);
     if more {
         let policy = draft.notifications;
         options = options
-            .child(setting(
+            .child(setting_row(
                 "Notifications",
                 select(
                     ctx,
@@ -2032,13 +1979,9 @@ fn options_group(
             .child(note(policy.caption(), t.readable_muted(0.85), t));
         if fresh {
             let state = ctx.state.clone();
-            options = options.child(setting(
+            options = options.child(setting_row(
                 "Archive run chats",
-                div()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap(px(space::S8))
+                inline()
                     .child(
                         pink::switch_control(
                             format!("{key}-archive"),
@@ -2060,18 +2003,10 @@ fn options_group(
                 t,
             ));
         }
-        options = options.child(setting(
+        options = options.child(setting_row(
             "Skip if late by",
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(space::S8))
-                .child(
-                    div()
-                        .w(px(LATENESS_W))
-                        .child(input_frame(ctx, Field::Lateness, cx)),
-                )
+            inline()
+                .child(lateness(input_frame(ctx, Field::Lateness, cx)))
                 .child(pink::row_description("minutes (0 to 1440)", t)),
             t,
         ));
@@ -2158,13 +2093,7 @@ fn review_footer(ctx: &Ctx, draft: &AutomationDraft, paused: bool, cx: &App) -> 
             t,
         )),
     }
-    let review_lines = div()
-        .flex_1()
-        .min_w(px(layout::ROW_TEXT_MIN))
-        .flex()
-        .flex_col()
-        .gap(px(space::S2))
-        .children(lines);
+    let review_lines = review(layout::ROW_TEXT_MIN).children(lines);
 
     let busy = s.busy();
     let mut buttons = pink::row_controls();
@@ -2292,8 +2221,8 @@ fn select(
     let id = format!("{}-{}", ctx.key, menu_key(menu));
     let trigger = pink::select_frame(id, ControlSize::Md, open, enabled, t)
         .relative()
-        .min_w(px(SELECT_MIN_W))
-        .max_w(px(SELECT_MAX_W))
+        .min_w(ui_rems(SELECT_MIN_WIDTH))
+        .max_w(ui_rems(SELECT_MAX_WIDTH))
         .aria_label(SharedString::from(format!(
             "{}: {label}",
             match menu {
@@ -2479,21 +2408,13 @@ fn menu_card(ctx: &Ctx, menu: Menu, cx: &App) -> Div {
                     click_state.update(cx, |s, cx| s.pick(menu, option.clone(), cx));
                 })
                 .child(div().flex_1().min_w_0().truncate().child(title))
-                .children(caption.map(|caption| {
-                    div()
-                        .flex_none()
-                        .max_w(px(MENU_CAPTION_MAX_W))
-                        .truncate()
-                        .text_size(px(11.))
-                        .text_color(t.readable_muted(0.8))
-                        .child(caption)
-                }))
+                .children(caption.map(|caption| menu_caption(t.readable_muted(0.8), caption)))
                 .into_any_element()
         })
         .collect();
     let state = ctx.state.clone();
     pink::popover_card(t)
-        .w(px(MENU_W))
+        .w(ui_rems(MENU_WIDTH))
         .on_mouse_down_out(move |_, _, cx| state.update(cx, |s, cx| s.close_menu(cx)))
         .flex()
         .flex_col()
@@ -2505,7 +2426,7 @@ fn menu_card(ctx: &Ctx, menu: Menu, cx: &App) -> Div {
                     ctx.key,
                     menu_key(menu)
                 )))
-                .max_h(px(MENU_LIST_MAX_H))
+                .max_h(ui_rems(MENU_LIST_MAX_HEIGHT))
                 .overflow_y_scroll()
                 .flex()
                 .flex_col()

@@ -1,7 +1,8 @@
 //! The `pink-row-card` package's geometry at Interface sizes 12, 16 and 20,
-//! as PINK lays out its agent and automation cards. Failure modes: a
-//! wrapping card whose actions squeeze the title instead of wrapping under
-//! the text when the card is narrow, or wrap even when there is room; wrapped
+//! as PINK lays out its agent and automation cards. Failure modes: an agent
+//! card whose actions squeeze the title instead of wrapping under the text
+//! when the card is narrow, or wrap even when there is room (a long preview
+//! that refuses to truncate pushes them under); wrapped
 //! actions that drift off the trailing edge; padding or a tile that stays at
 //! its 16 px size while the text grows; an inline card that wraps.
 
@@ -10,8 +11,8 @@ use pink_ui::{
     Theme, ThemeMode,
     components::{
         row_card::{
-            CardStyle, Layout, PAD_X, PAD_Y, actions, card, detail, fact, meta_line, preview,
-            status, text_column, title, title_line,
+            AgentCardStyle, AgentCardText, BadgeStyle, CardStyle, Layout, PAD_X, PAD_Y, actions,
+            agent_actions, agent_card, card, detail, text_column, title,
         },
         settings_parts::{TILE_SIZE, row_tile, tile_style},
     },
@@ -26,31 +27,41 @@ struct Host {
 
 fn agent(width: f32, prefix: &'static str, t: &Pink) -> impl IntoElement {
     div().w(gpui::px(width)).child(
-        card(
-            Layout::Wrapping,
-            &CardStyle {
-                border: t.border,
-                background: t.surface,
+        agent_card(
+            &AgentCardStyle {
+                card: CardStyle {
+                    border: t.border,
+                    background: t.surface,
+                },
+                badge: BadgeStyle {
+                    background: t.surface,
+                    text: t.text_muted,
+                },
+                title: t.text,
+                meta: t.text_muted,
+                status_dot: t.accent,
+                status_tone: None,
+                preview: t.text_muted,
             },
-        )
-        .debug_selector(move || format!("{prefix}-card"))
-        .child(row_tile(&tile_style(t), ICON).debug_selector(move || format!("{prefix}-tile")))
-        .child(
-            text_column(Layout::Wrapping)
-                .debug_selector(move || format!("{prefix}-text"))
-                .child(title_line().child(title(t.text, "Audit webhook retries")))
-                .child(
-                    meta_line(t.text_muted)
-                        .child(status(t.accent, None, "Running"))
-                        .child(fact("1m 12s"))
-                        .child(preview(t.text_muted, "List every webhook handler.")),
-                ),
-        )
-        .child(
-            actions(Layout::Wrapping)
+            row_tile(&tile_style(t), ICON).debug_selector(move || format!("{prefix}-tile")),
+            AgentCardText {
+                title: "Audit webhook retries".into(),
+                badge: "Fresh side chat".into(),
+                status: "Running".into(),
+                duration: Some("1m 12s".into()),
+                detail: Some("Helix 4 Pro High".into()),
+                // Long enough to overflow any card here: only the preview
+                // gives way, so the actions stay beside a wide card's text.
+                preview: "List every webhook handler that is not idempotent, then \
+                          group them by the queue that retries them and say which \
+                          ones can double-charge a customer."
+                    .into(),
+            },
+            agent_actions()
                 .debug_selector(move || format!("{prefix}-actions"))
                 .child(div().w(gpui::px(96.0)).h(gpui::px(24.0))),
-        ),
+        )
+        .debug_selector(move || format!("{prefix}-card")),
     )
 }
 
@@ -131,17 +142,19 @@ fn row_cards_wrap_their_actions_only_when_narrow(cx: &mut TestAppContext) {
             );
         }
 
-        let wide_text = bounds(cx, "wide-text");
+        // The tile centres on the text line, so actions beside the text
+        // start above the tile's bottom and wrapped ones below it.
+        let wide_tile = bounds(cx, "wide-tile");
         let wide_actions = bounds(cx, "wide-actions");
         assert!(
-            wide_actions.origin.y < wide_text.origin.y + wide_text.size.height,
+            wide_actions.origin.y < wide_tile.origin.y + wide_tile.size.height,
             "a wide card keeps its actions beside the text at {ui}"
         );
         let narrow_card = bounds(cx, "narrow-card");
-        let narrow_text = bounds(cx, "narrow-text");
+        let narrow_tile = bounds(cx, "narrow-tile");
         let narrow_actions = bounds(cx, "narrow-actions");
         assert!(
-            narrow_actions.origin.y >= narrow_text.origin.y + narrow_text.size.height,
+            narrow_actions.origin.y >= narrow_tile.origin.y + narrow_tile.size.height,
             "a narrow card wraps its actions under the text at {ui}"
         );
         assert!(
