@@ -14,6 +14,7 @@ pub mod agent_tree;
 pub mod ai_answer;
 pub mod appearance_picker;
 pub mod approval_card;
+pub mod attachment_thumb;
 pub mod automation_editor;
 pub mod autonomy_dial;
 pub mod billing_schedule;
@@ -490,6 +491,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Data display",
         description: usage_meter::DESCRIPTION,
         story: usage_meter::story,
+    },
+    ComponentEntry {
+        slug: "attachment-thumb",
+        name: attachment_thumb::NAME,
+        category: "Data display",
+        description: attachment_thumb::DESCRIPTION,
+        story: attachment_thumb::story,
     },
     ComponentEntry {
         slug: "image-lightbox",

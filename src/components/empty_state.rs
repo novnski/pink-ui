@@ -3,7 +3,9 @@
 //! rethink decision 54). The gallery compiles the package's own source here,
 //! unchanged, against its GPUI; PINK compiles the same file against its
 //! patched one. The Sidebar, Agent Inbox and Decision Inbox draw their empty
-//! lists with its note; this module adds only the story.
+//! lists with its note; this module adds only the story: the Browser pane
+//! state, a right-rail place with nothing open, the Related place's guide,
+//! an empty model list and the sidebar's list notes.
 
 #[allow(dead_code)]
 mod package {
@@ -15,7 +17,7 @@ use gpui::{AnyView, App, IntoElement, Role, SharedString, Window, div, prelude::
 
 use crate::{
     HoverFill,
-    pink::{self, FillTier, Pink},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink},
     story,
 };
 
@@ -24,6 +26,15 @@ pub const DESCRIPTION: &str = "PINK's empty and error states as a package the ap
 
 /// Pink: `icons::GLOBE`, the Browser place's glyph.
 const ICON_GLOBE: &str = "icons/empty-state/globe.svg";
+/// Pink: `icons::GIT_DIFF`, the Changes place's glyph.
+const ICON_GIT_DIFF: &str = "icons/empty-state/git-diff.svg";
+/// Pink: `icons::TERMINAL`, the Terminal place's glyph.
+const ICON_TERMINAL: &str = "icons/empty-state/terminal.svg";
+/// Pink: `icons::BOT` and `icons::FORK`, the related kinds' glyphs.
+const ICON_BOT: &str = "icons/empty-state/bot.svg";
+const ICON_FORK: &str = "icons/empty-state/arrow-fork.svg";
+/// Pink: `icons::PLUS`.
+const ICON_PLUS: &str = "icons/empty-state/plus.svg";
 
 /// One pane state as PINK's Browser surface draws it (browser view.rs
 /// `empty_body`): before a page, or after one failed to load.
@@ -100,6 +111,85 @@ fn list_note(
     .aria_label(format!("{heading}. {hint}"))
 }
 
+/// A right-rail place with nothing open, as PINK draws it (right_rail.rs
+/// `render_place_empty`): the place's glyph, why it is empty, the notice
+/// PINK adds when the place could not fill, and the button that opens one.
+fn rail_place(
+    key: &'static str,
+    glyph: &'static str,
+    message: &'static str,
+    notice: Option<&'static str>,
+    action: &'static str,
+    t: &Pink,
+) -> impl IntoElement {
+    place()
+        .id(key)
+        .child(place_glyph(svg().path(glyph), t.readable_faint(0.8)))
+        .child(place_message(t.text_muted).child(message))
+        .when_some(notice, |el, notice| {
+            el.child(place_notice(t.readable_muted(0.8)).child(notice))
+        })
+        .child(
+            pink::button(
+                format!("{key}-open"),
+                ButtonKind::Secondary,
+                ControlSize::Sm,
+                t,
+            )
+            .aria_label(action)
+            .child(pink::glyph(ICON_PLUS, ControlSize::Sm))
+            .child(action),
+        )
+}
+
+/// The Related place before any related chat exists, as PINK draws it
+/// (related_chats.rs `render_related_empty`): what each kind is, then the
+/// one the user can start.
+fn related_guide(t: &Pink) -> impl IntoElement {
+    let style = GuideStyle {
+        title: t.text,
+        text: t.text_muted,
+    };
+    guide(&style)
+        .id("story-empty-related")
+        .child(guide_title(&style).child("No related chats yet"))
+        .child(guide_line(
+            &style,
+            svg().path(ICON_BOT),
+            "Fresh side chats don't carry this chat's conversation. Start one with + (Side chat, Fresh), or this chat's agent may start one.",
+        ))
+        .child(guide_line(
+            &style,
+            svg().path(ICON_FORK),
+            "Side chats with context carry this chat's context, captured when you start one; later messages here are not copied.",
+        ))
+        .child(
+            guide_action().child(
+                pink::button(
+                    "story-empty-related-new",
+                    ButtonKind::Ghost,
+                    ControlSize::Sm,
+                    t,
+                )
+                .aria_label("Side chat with context")
+                .child(pink::glyph(ICON_PLUS, ControlSize::Sm))
+                .child("Side chat with context"),
+            ),
+        )
+}
+
+/// A popover list with no rows, as PINK's model picker draws a search that
+/// matched nothing (pickers.rs `empty_list_note`).
+fn empty_menu(t: &Pink) -> impl IntoElement {
+    let popup = t.for_popup();
+    pink::popover_card(t).w(px(260.0)).flex().flex_col().child(
+        popup_note(popup.text_muted, "No models found")
+            .id("story-empty-models")
+            .role(Role::Status)
+            .aria_label("No models found"),
+    )
+}
+
 /// A bordered stand-in for the surface a state fills.
 fn surface(width: f32, height: f32, t: &Pink) -> gpui::Div {
     div()
@@ -156,6 +246,32 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                         "Running and waiting threads appear here.",
                         &t,
                     ))),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .flex_wrap()
+                    .items_start()
+                    .gap(px(16.0))
+                    .child(surface(300.0, 240.0, &t).child(rail_place(
+                        "story-empty-changes",
+                        ICON_GIT_DIFF,
+                        "No diff open.",
+                        None,
+                        "Diff the working tree",
+                        &t,
+                    )))
+                    .child(surface(300.0, 240.0, &t).child(rail_place(
+                        "story-empty-terminal",
+                        ICON_TERMINAL,
+                        "No terminals open.",
+                        Some("Saved terminals couldn’t be restored. Start a new one."),
+                        "New terminal",
+                        &t,
+                    )))
+                    .child(surface(300.0, 240.0, &t).child(related_guide(&t)))
+                    .child(empty_menu(&t)),
             )
     })
 }

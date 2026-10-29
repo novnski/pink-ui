@@ -11,9 +11,11 @@
 //! retry backoff. Files over the size limit or of a type that isn't accepted
 //! never join the strip; Pink's error strip says why.
 //!
-//! The veil is the `pink-dropzone` package (`components/dropzone`), compiled
-//! here in place; PINK pins the same source for its chat's veil. This module
-//! adds the card, the thumbnails and the story.
+//! The veil is the `pink-dropzone` package (`components/dropzone`) and the
+//! thumbnails' tiles the `pink-attachment-thumb` package, both compiled here
+//! in place; PINK pins the same sources for its chat's veil and its
+//! attachment tiles. This module adds the card, the captions, the Remove and
+//! Retry buttons and the story.
 //!
 //! Transfers are simulated (a steady per-file speed) so the component can be
 //! shown on its own; `on_files` hands the real paths to your uploader.
@@ -39,11 +41,12 @@ use web_time::{Duration, Instant};
 
 use gpui::{
     AnyElement, AnyView, App, Context, Div, ElementId, Entity, ExternalPaths, FontWeight,
-    IntoElement, PathPromptOptions, Pixels, SharedString, Task, Window, div, hsla, img, prelude::*,
-    px, svg,
+    IntoElement, PathPromptOptions, Pixels, SharedString, Task, Window, div, img, prelude::*, px,
+    svg,
 };
 
 use crate::{
+    components::attachment_thumb as thumb,
     motion,
     pink::{self, ButtonKind, ControlSize, Pink, icon_size, layout, loaders, radius, space, text},
     story,
@@ -71,14 +74,10 @@ const FILE_DOCUMENT_DARK: &str = "icons/dropzone/file-document-dark.svg";
 
 /// Pink: `attachments::MAX_ATTACHMENT_BYTES`.
 const DEFAULT_MAX_SIZE: u64 = 24 * MB;
-/// Pink: `transcript::ATT_THUMB_W` / `ATT_THUMB_H` (also the brief editor's
-/// `THUMB_W` / `THUMB_H`).
-const THUMB_W: f32 = 112.;
-const THUMB_H: f32 = 80.;
-/// Pink: the sending overlay's `upload_progress_ring(pct, 34.0)`.
-const RING: f32 = 34.;
-/// Pink: the indeterminate sending spinner's cell (`mini_glyph_spinner(.., 3.0, ..)`).
-const SPINNER_CELL: f32 = 3.;
+/// Pink: the sent attachment tile (`pink-attachment-thumb`), also the brief
+/// editor's `THUMB_W` / `THUMB_H`.
+const THUMB_W: f32 = thumb::SENT_WIDTH;
+const THUMB_H: f32 = thumb::SENT_HEIGHT;
 /// The file artwork at its own 24 box.
 const FILE_ICON: f32 = 24.;
 
@@ -657,57 +656,65 @@ fn thumbnail(
     t: &Pink,
 ) -> impl IntoElement {
     let tkey = format!("{key}-file-{}", upload.key);
-    let frame = div()
-        .size_full()
-        .rounded(px(radius::MD))
-        .overflow_hidden()
-        .border_1();
-
     let frame = match upload.status {
         // Pink: the loading skeleton (the popover skeletons' wash and pulse).
-        Status::Reading { .. } => frame
-            .border_color(t.hairline(0.08))
-            .bg(t.ink(0.055))
-            .opacity(0.35 + 0.4 * pulse),
+        Status::Reading { .. } => thumb::skeleton(
+            thumb::Kind::Sent,
+            &thumb::PlateStyle {
+                edge: t.hairline(0.08),
+                fill: t.ink(0.055),
+            },
+            pulse,
+        ),
         // Pink: the dashed "missing" thumb, holding the inline Retry.
         Status::Failed => {
             let state = state.clone();
             let id = upload.key;
-            frame
-                .border_dashed()
-                .border_color(t.hairline(0.14))
-                .bg(t.ink(0.025))
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(
-                    pink::button(
-                        format!("{tkey}-retry"),
-                        ButtonKind::Secondary,
-                        ControlSize::Sm,
-                        t,
-                    )
-                    .aria_label(format!("Retry {}", upload.file.name))
-                    .child("Retry")
-                    .on_click(move |_, _, cx| state.update(cx, |s, cx| s.retry(id, cx))),
+            thumb::missing(
+                thumb::Kind::Sent,
+                &thumb::PlateStyle {
+                    edge: t.hairline(0.14),
+                    fill: t.ink(0.025),
+                },
+            )
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(
+                pink::button(
+                    format!("{tkey}-retry"),
+                    ButtonKind::Secondary,
+                    ControlSize::Sm,
+                    t,
                 )
+                .aria_label(format!("Retry {}", upload.file.name))
+                .child("Retry")
+                .on_click(move |_, _, cx| state.update(cx, |s, cx| s.retry(id, cx))),
+            )
         }
         status => {
-            let plate = frame
-                .relative()
-                .border_color(t.hairline(0.11))
-                .bg(t.ink(0.035))
-                .flex()
-                .items_center()
-                .justify_center();
+            let plate = thumb::plate(
+                thumb::Kind::Sent,
+                &thumb::PlateStyle {
+                    edge: t.hairline(0.11),
+                    fill: t.ink(0.035),
+                },
+            )
+            .flex()
+            .items_center()
+            .justify_center();
             let indicator: Option<AnyElement> = match status {
                 Status::Uploading => Some(loaders::upload_progress_ring(
                     (upload.fraction() * 100.).floor().clamp(0., 100.) as u8,
-                    RING,
+                    thumb::RING,
                 )),
                 Status::Retrying { .. } => Some(
-                    loaders::mini_glyph_spinner(format!("{tkey}-spin"), SPINNER_CELL, t.glyph)
-                        .into_any_element(),
+                    loaders::mini_glyph_spinner(
+                        format!("{tkey}-spin"),
+                        thumb::SPINNER_CELL,
+                        t.glyph,
+                    )
+                    .into_any_element(),
                 ),
                 _ => None,
             };
@@ -718,19 +725,11 @@ fn thumbnail(
                     .flex_none()
                     .size(px(FILE_ICON))
             });
-            // Pink: the sending overlay – the plate dimmed to black 38%,
+            // Pink: the sending overlay, the plate dimmed to black 38%,
             // breathing 5% on the pulse, a fixed white ring on top.
-            plate.children(artwork).children(indicator.map(|indicator| {
-                div()
-                    .absolute()
-                    .inset_0()
-                    .rounded(px(radius::MD))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .bg(hsla(0., 0., 0., 0.38 + 0.05 * pulse))
-                    .child(indicator)
-            }))
+            plate
+                .children(artwork)
+                .children(indicator.map(|indicator| thumb::sending(pulse).child(indicator)))
         }
     };
 

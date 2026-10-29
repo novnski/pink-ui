@@ -6,13 +6,22 @@
 //! long file name that pushes the caption wider than the frame instead of
 //! cutting it to one line; a caption that stops scaling with the setting; a
 //! close capsule that scales or drifts from its 16 px top right inset.
+//!
+//! The view geometry PINK's viewer and the story's place the image with:
+//! a fit that upscales a small image or distorts a large one; a zoom that
+//! lets the image slide out from under the pointer; a zoom or pan that runs
+//! past its bounds (32x, the 0.01 floor, the image's overhang) or takes a
+//! NaN; a resize that loses a zoom, or refits an image the user zoomed.
 
-use gpui::{Bounds, Context, IntoElement, Pixels, Render, TestAppContext, Window, div, prelude::*};
+use gpui::{
+    Bounds, Context, IntoElement, Pixels, Render, TestAppContext, Window, div, point, prelude::*,
+    size,
+};
 use pink_ui::{
     Theme, ThemeMode,
     components::image_lightbox::{
-        CLOSE_INSET, CLOSE_SIZE, FRAME_HEIGHT, FRAME_WIDTH, GAP, LightboxStyle, caption,
-        close_button, frame, layer, place,
+        CLOSE_INSET, CLOSE_SIZE, FRAME_HEIGHT, FRAME_WIDTH, GAP, LightboxStyle, MAX_ZOOM, MIN_ZOOM,
+        ViewGeometry, caption, close_button, frame, layer, place,
     },
     pink::Pink,
 };
@@ -110,4 +119,57 @@ fn lightbox_frame_follows_the_window_and_the_caption_the_interface_size(cx: &mut
         caption_heights[0] < caption_heights[1] && caption_heights[1] < caption_heights[2],
         "the caption is one line that grows with the Interface size: {caption_heights:?}"
     );
+}
+
+/// A 1000x500 image in a 500x300 viewer.
+fn geometry() -> ViewGeometry {
+    let mut g = ViewGeometry::default();
+    g.resize(size(1000.0, 500.0), size(500.0, 300.0));
+    g
+}
+
+#[test]
+fn view_fit_keeps_the_aspect_ratio_and_never_upscales() {
+    let mut g = geometry();
+    assert_eq!(g.scale, 0.5);
+    assert_eq!(g.image_origin(), point(0.0, 25.0));
+    assert!(g.contains(point(250.0, 150.0)) && !g.contains(point(250.0, 10.0)));
+    g.resize(size(100.0, 50.0), size(500.0, 300.0));
+    assert_eq!(g.scale, 1.0);
+    assert_eq!(g.image_origin(), point(200.0, 125.0));
+}
+
+#[test]
+fn view_zoom_keeps_the_pointer_over_the_same_image_point() {
+    let mut g = geometry();
+    let anchor = point(100.0, 150.0);
+    let before = (anchor - g.image_origin()) / g.scale;
+    g.zoom(2.0, anchor);
+    let after = (anchor - g.image_origin()) / g.scale;
+    assert!((before.x - after.x).abs() < 0.001);
+    assert!((before.y - after.y).abs() < 0.001);
+}
+
+#[test]
+fn view_pan_zoom_and_resize_stay_bounded() {
+    let mut g = geometry();
+    g.zoom(1e9, point(250.0, 150.0));
+    assert_eq!(g.scale, MAX_ZOOM);
+    g.pan_by(point(1e9, -1e9));
+    assert_eq!(g.pan, point(15750.0, -7850.0));
+    assert!(
+        !g.pan_by(point(1.0, -1.0)),
+        "a pan at the edge does not move"
+    );
+    g.zoom(1e-9, point(250.0, 150.0));
+    assert_eq!(g.scale, MIN_ZOOM);
+    assert_eq!(g.pan, point(0.0, 0.0));
+    g.zoom(f32::NAN, point(0.0, 0.0));
+    assert_eq!(g.scale, MIN_ZOOM);
+    g.fit();
+    g.resize(size(1000.0, 500.0), size(250.0, 200.0));
+    assert_eq!(g.scale, 0.25, "a fitted image refits");
+    g.zoom(1.0, point(125.0, 100.0));
+    g.resize(size(1000.0, 500.0), size(300.0, 200.0));
+    assert_eq!(g.scale, 1.0, "a zoomed image keeps its zoom");
 }

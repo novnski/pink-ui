@@ -25,14 +25,22 @@ graph and no copied source.
   top right corner (glyph `CLOSE_GLYPH` px).
 - `place(layer)`: the layer over everything in the window from its top left
   corner, at `LAYER_PRIORITY`.
+- `ViewGeometry`: the viewer's zoom and pan maths (no drawing). The image
+  starts fitted inside the viewport, never upscaled, and centred;
+  `zoom(scale, anchor)` keeps the image point under the anchor in place
+  between `MIN_ZOOM` and `MAX_ZOOM` (less for an image whose zoomed side
+  would pass `MAX_EXTENT` px); `pan_by(delta)` keeps the pan inside the
+  image's overhang; `resize` refits a fitted image and clamps a zoomed one;
+  `image_origin()` and `contains(point)` place the image and hit-test it.
 - `ui_rems(design)`: a design size (pt at the 16 px default) in rems. The
   caption grows with the host's Interface size; the frame follows the window
   and the close capsule stays fixed.
 
 The host adds the rest: the resolved scrim and caption colours, the viewer
-(zoom and pan geometry), the file name, the ids, the focus handle, the close
-capsule's role, accessible name, glass hover fill and glyph, the animations
-and every listener (Escape, a plain click, the wheel).
+that places the image by `ViewGeometry`, the file name, the ids, the focus
+handle, the close capsule's role, accessible name, glass hover fill and
+glyph, the animations and every listener and gesture (Escape, a plain
+click, the wheel, a pinch, a drag) that drives the geometry.
 
 ## How PINK pins and consumes it
 
@@ -47,4 +55,5 @@ pink-image-lightbox = { git = "https://github.com/novnski/pink-ui", rev = "<merg
 - Alone: `cargo clippy --features gpui/runtime_shaders -- -D warnings` in this
   directory.
 - In the gallery: `tests/image_lightbox.rs` lays the lightbox out at Interface
-  sizes 12, 16 and 20.
+  sizes 12, 16 and 20 and checks the view geometry's fit, anchored zoom and
+  bounds.

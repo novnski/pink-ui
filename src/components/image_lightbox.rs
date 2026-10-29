@@ -2,8 +2,9 @@
 //!
 //! The layer, the image frame, the caption and the close capsule are the
 //! `pink-image-lightbox` package (`components/image-lightbox`), compiled
-//! here in place; PINK pins the same source. This module adds the viewer
-//! geometry, the gestures and the story.
+//! here in place, with the viewer's zoom and pan maths (`ViewGeometry`);
+//! PINK pins the same source. The thumbnails are the `pink-attachment-thumb`
+//! package. This module adds the gestures and the story.
 //!
 //! Pink: `attachments.rs` `lightbox_with_size`, the viewer a transcript
 //! thumbnail opens, over `image_viewer.rs` `ImageView`, the shared image
@@ -44,6 +45,7 @@ use gpui::{
 
 use crate::{
     HoverFill,
+    components::attachment_thumb as thumb,
     motion::{LIGHTBOX_BACKDROP_IN, LIGHTBOX_IN},
     pink::{self, Pink, radius},
     story,
@@ -57,16 +59,11 @@ const ICON_CLOSE: &str = "icons/image-lightbox/close.svg";
 const IMAGE_CHECKOUT: &str = "images/image-lightbox/checkout-coupon-error.png";
 const IMAGE_LATENCY: &str = "images/image-lightbox/p95-latency.png";
 
-/// Pink `image_viewer.rs`: the largest zoom, the layout bound for huge
-/// images, the drag threshold and the wheel's zoom rate and line height.
-const MAX_ZOOM: f32 = 32.0;
-const MAX_EXTENT: f32 = 131_072.0;
+/// Pink `image_viewer.rs`: the drag threshold and the wheel's zoom rate and
+/// line height. The zoom and pan maths is the package's `ViewGeometry`.
 const DRAG_SLOP: f32 = 4.0;
 const WHEEL_ZOOM_RATE: f32 = 0.0025;
 const LINE_PX: f32 = 40.0;
-/// Pink `transcript.rs` `ATT_THUMB_W` / `ATT_THUMB_H`.
-pub const THUMB_W: f32 = 112.0;
-pub const THUMB_H: f32 = 80.0;
 
 type CloseHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 
@@ -123,112 +120,6 @@ impl ImageLightbox {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Geometry (Pink `image_viewer.rs`)
-// ---------------------------------------------------------------------------
-
-#[derive(Clone, Copy, Debug)]
-struct Geometry {
-    natural: Size<f32>,
-    viewport: Size<f32>,
-    scale: f32,
-    pan: Point<f32>,
-    fitted: bool,
-}
-
-impl Default for Geometry {
-    fn default() -> Self {
-        Self {
-            natural: size(1.0, 1.0),
-            viewport: size(1.0, 1.0),
-            scale: 1.0,
-            pan: point(0.0, 0.0),
-            fitted: true,
-        }
-    }
-}
-
-impl Geometry {
-    /// Fit inside the viewport, never upscaled.
-    fn fit_scale(&self) -> f32 {
-        (self.viewport.width / self.natural.width)
-            .min(self.viewport.height / self.natural.height)
-            .min(1.0)
-    }
-
-    fn resize(&mut self, natural: Size<f32>, viewport: Size<f32>) {
-        let sizes = [
-            natural.width,
-            natural.height,
-            viewport.width,
-            viewport.height,
-        ];
-        if !sizes.iter().all(|v| v.is_finite() && *v > 0.0) {
-            return;
-        }
-        self.natural = natural;
-        self.viewport = viewport;
-        if self.fitted {
-            self.fit();
-        } else {
-            self.clamp_pan();
-        }
-    }
-
-    fn fit(&mut self) {
-        self.scale = self.fit_scale();
-        self.pan = point(0.0, 0.0);
-        self.fitted = true;
-    }
-
-    fn clamp_pan(&mut self) {
-        let limit = point(
-            ((self.natural.width * self.scale - self.viewport.width) / 2.0).max(0.0),
-            ((self.natural.height * self.scale - self.viewport.height) / 2.0).max(0.0),
-        );
-        self.pan.x = self.pan.x.clamp(-limit.x, limit.x);
-        self.pan.y = self.pan.y.clamp(-limit.y, limit.y);
-    }
-
-    /// Zoom to `scale` keeping the image point under `anchor` in place.
-    fn zoom(&mut self, scale: f32, anchor: Point<f32>) {
-        if !scale.is_finite() || scale <= 0.0 || !anchor.x.is_finite() || !anchor.y.is_finite() {
-            return;
-        }
-        // Bound layout coordinates even for enormous logical dimensions.
-        let maximum = (MAX_EXTENT / self.natural.width.max(self.natural.height))
-            .min(MAX_ZOOM)
-            .max(self.fit_scale());
-        let scale = scale.clamp(self.fit_scale().min(0.01), maximum);
-        let ratio = scale / self.scale;
-        let anchor = anchor - point(self.viewport.width / 2.0, self.viewport.height / 2.0);
-        self.pan = point(
-            anchor.x - (anchor.x - self.pan.x) * ratio,
-            anchor.y - (anchor.y - self.pan.y) * ratio,
-        );
-        self.scale = scale;
-        self.fitted = false;
-        self.clamp_pan();
-    }
-
-    fn pan_by(&mut self, delta: Point<f32>) -> bool {
-        if !delta.x.is_finite() || !delta.y.is_finite() {
-            return false;
-        }
-        let before = self.pan;
-        self.pan = self.pan + delta;
-        self.clamp_pan();
-        self.pan != before
-    }
-
-    fn image_origin(&self) -> Point<f32> {
-        point(
-            (self.viewport.width - self.natural.width * self.scale) / 2.0 + self.pan.x,
-            (self.viewport.height - self.natural.height * self.scale) / 2.0 + self.pan.y,
-        )
-    }
-}
-
 fn scroll_pixels(delta: ScrollDelta) -> Point<f32> {
     match delta {
         ScrollDelta::Pixels(p) => point(f32::from(p.x), f32::from(p.y)),
@@ -239,7 +130,7 @@ fn scroll_pixels(delta: ScrollDelta) -> Point<f32> {
 /// Pink `image_viewer.rs` `ViewState`: geometry plus the gesture in flight.
 #[derive(Default)]
 struct ViewState {
-    geometry: Geometry,
+    geometry: ViewGeometry,
     bounds: gpui::Bounds<Pixels>,
     drag: Option<(Point<f32>, Point<f32>)>,
     dragged: bool,
@@ -596,53 +487,25 @@ fn viewer(
         .into_any_element()
 }
 
-/// Pink `transcript.rs` `render_user_attachments`: a 112×80 thumbnail above
-/// a user bubble – radius 8, a `hairline(0.11)` edge on `ink(0.035)`, the
-/// image covering it. Add `.on_click` to open the lightbox.
+/// Pink `transcript.rs` `render_user_attachments`: a sent thumbnail above a
+/// user bubble, the `pink-attachment-thumb` package's 112×80 plate (a
+/// `hairline(0.11)` edge on `ink(0.035)`) with the image covering it. Add
+/// `.on_click` to open the lightbox.
 pub fn attachment_thumb(
     id: impl Into<ElementId>,
     source: impl Into<ImageSource>,
     t: &Pink,
 ) -> Stateful<Div> {
-    div()
-        .id(id)
-        .flex_none()
-        .w(px(THUMB_W))
-        .h(px(THUMB_H))
-        .rounded(px(radius::MD))
-        .overflow_hidden()
-        .relative()
-        .border_1()
-        .border_color(t.hairline(0.11))
-        .bg(t.ink(0.035))
-        .cursor_pointer()
-        .child(
-            // Explicit dims: the frame's rounding clips rectangularly, so the
-            // image rounds its own corners.
-            img(source.into())
-                .w(px(THUMB_W - 2.0))
-                .h(px(THUMB_H - 2.0))
-                .rounded(px(radius::MD))
-                .object_fit(ObjectFit::Cover),
-        )
-}
-
-/// Pink: the attachment strip above a user bubble – right-aligned and
-/// wrapping, 8px apart, `px 4 pt 4 pb 6`.
-pub fn attachment_strip() -> Div {
-    div()
-        .w_full()
-        .min_w_0()
-        .flex_none()
-        .flex()
-        .flex_row()
-        .flex_wrap()
-        .justify_end()
-        .items_start()
-        .gap(px(8.0))
-        .px(px(4.0))
-        .pt(px(4.0))
-        .pb(px(6.0))
+    thumb::plate(
+        thumb::Kind::Sent,
+        &thumb::PlateStyle {
+            edge: t.hairline(0.11),
+            fill: t.ink(0.035),
+        },
+    )
+    .id(id)
+    .cursor_pointer()
+    .child(thumb::image(thumb::Kind::Sent, source))
 }
 
 // ---------------------------------------------------------------------------
@@ -741,7 +604,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .w(px(COLUMN_W))
             .flex()
             .flex_col()
-            .child(attachment_strip().children(thumbs))
+            .child(thumb::sent_strip().children(thumbs))
             .child(div().w_full().flex().justify_end().child(bubble))
             .child(
                 div()
@@ -783,51 +646,10 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
 mod tests {
     use super::*;
 
-    fn geometry() -> Geometry {
-        let mut g = Geometry::default();
+    fn geometry() -> ViewGeometry {
+        let mut g = ViewGeometry::default();
         g.resize(size(1000.0, 500.0), size(500.0, 300.0));
         g
-    }
-
-    #[test]
-    fn fit_keeps_the_aspect_ratio_and_never_upscales() {
-        let mut g = geometry();
-        assert_eq!(g.scale, 0.5);
-        assert_eq!(g.image_origin(), point(0.0, 25.0));
-        g.resize(size(100.0, 50.0), size(500.0, 300.0));
-        assert_eq!(g.scale, 1.0);
-        assert_eq!(g.image_origin(), point(200.0, 125.0));
-    }
-
-    #[test]
-    fn zoom_keeps_the_pointer_over_the_same_image_point() {
-        let mut g = geometry();
-        let anchor = point(100.0, 150.0);
-        let before = (anchor - g.image_origin()) / g.scale;
-        g.zoom(2.0, anchor);
-        let after = (anchor - g.image_origin()) / g.scale;
-        assert!((before.x - after.x).abs() < 0.001);
-        assert!((before.y - after.y).abs() < 0.001);
-    }
-
-    #[test]
-    fn pan_zoom_and_resize_stay_bounded() {
-        let mut g = geometry();
-        g.zoom(1e9, point(250.0, 150.0));
-        assert_eq!(g.scale, 32.0);
-        g.pan_by(point(1e9, -1e9));
-        assert_eq!(g.pan, point(15750.0, -7850.0));
-        g.zoom(1e-9, point(250.0, 150.0));
-        assert_eq!(g.scale, 0.01);
-        assert_eq!(g.pan, point(0.0, 0.0));
-        g.zoom(f32::NAN, point(0.0, 0.0));
-        assert_eq!(g.scale, 0.01);
-        g.fit();
-        g.resize(size(1000.0, 500.0), size(250.0, 200.0));
-        assert_eq!(g.scale, 0.25);
-        g.zoom(1.0, point(125.0, 100.0));
-        g.resize(size(1000.0, 500.0), size(300.0, 200.0));
-        assert_eq!(g.scale, 1.0);
     }
 
     #[test]
