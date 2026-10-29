@@ -1,5 +1,6 @@
 //! Sidebar: Pink's app sidebar after UI rethink milestone 1 (novnski/pink#173,
-//! PRs #180, #181, #182 and #185): one slim scope row, the navigation rows,
+//! PRs #180, #181, #182 and #185), without the Board page PINK removed
+//! (novnski/pink#261): one slim scope row, the navigation rows,
 //! the thread list and the Inactive and Archived shelves, one column on the
 //! shell surface.
 //!
@@ -68,7 +69,6 @@ pub const DESCRIPTION: &str = "The app's thread sidebar: one slim scope row that
 
 const ICON_NEW_THREAD: &str = "icons/sidebar/pen-new-square.svg";
 const ICON_AUTOMATIONS: &str = "icons/sidebar/stopwatch-play.svg";
-const ICON_BOARD: &str = "icons/sidebar/clipboard-list.svg";
 const ICON_SORT: &str = "icons/sidebar/sort.svg";
 const ICON_BELL: &str = "icons/sidebar/bell.svg";
 const ICON_PIN: &str = "icons/sidebar/pin.svg";
@@ -430,10 +430,6 @@ impl SidebarNavItem {
     pub fn automations() -> Self {
         Self::new("automations", "Automations", ICON_AUTOMATIONS)
     }
-
-    pub fn board() -> Self {
-        Self::new("board", "Board", ICON_BOARD)
-    }
 }
 
 /// What a person did to one task.
@@ -568,11 +564,7 @@ impl Sidebar {
             id: id.into(),
             projects: Vec::new(),
             tasks: Vec::new(),
-            nav: vec![
-                SidebarNavItem::new_thread(),
-                SidebarNavItem::automations(),
-                SidebarNavItem::board(),
-            ],
+            nav: vec![SidebarNavItem::new_thread(), SidebarNavItem::automations()],
             filter: None,
             selected: None,
             page: None,
@@ -604,7 +596,7 @@ impl Sidebar {
         self
     }
 
-    /// Replaces the navigation rows (New thread, Automations, Board).
+    /// Replaces the navigation rows (New thread, Automations).
     pub fn nav(mut self, items: Vec<SidebarNavItem>) -> Self {
         self.nav = items;
         self
