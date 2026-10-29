@@ -1656,8 +1656,10 @@ fn target_chip(
 /// an open draft, in its state's tone (Open green, Draft muted, Merged the
 /// code tone, Closed red) washed 0.08, 0.16 on hover. A named link:
 /// "Pull request owner/repo#101, Draft: Fix the flaky login test". It draws
-/// 20 tall but takes a 24 pt target, reaching into the row's height.
+/// 20 tall but takes a 24 pt target, reaching into the row's height. The
+/// chip itself is the `pink-pr-badge` package's composer badge.
 fn pull_request_chip(key: &str, pr: &PullRequest, t: &Pink) -> Stateful<Div> {
+    use crate::components::pr_badge as badge;
     let id = format!("{key}-pr-{}", pr.number);
     let tone = pr.state.tone(t);
     let ink = t.readable_tone(tone, 0.85);
@@ -1690,34 +1692,9 @@ fn pull_request_chip(key: &str, pr: &PullRequest, t: &Pink) -> Stateful<Div> {
         )))
         .tooltip_show_delay(layout::TOOLTIP_DELAY)
         .child(
-            div()
-                .h(px(20.))
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(5.))
-                .px(px(7.))
-                .rounded(px(6.))
-                .bg(motion::hover_blend(
-                    &id,
-                    tone.opacity(0.08),
-                    tone.opacity(0.16),
-                ))
-                .text_size(px(11.))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(ink)
-                .child(
-                    svg()
-                        .path(ICON_PULL_REQUEST)
-                        .size(px(11.))
-                        .flex_none()
-                        .text_color(ink),
-                )
-                .child(
-                    div()
-                        .font_family(pink::MONO)
-                        .child(format!("#{}", pr.number)),
-                )
+            badge::badge(badge::Surface::Composer, &badge::hover_style(&id, tone, t))
+                .child(badge::glyph(ICON_PULL_REQUEST, ink))
+                .child(badge::number(pink::MONO, format!("#{}", pr.number)))
                 .when(pr.state == PullRequestState::Draft, |el| el.child("Draft")),
         )
 }
@@ -2105,8 +2082,13 @@ fn branch_chip_width(label: &str, window: &Window, scale: f32) -> f32 {
 /// `composer_task_pull_request_chrome`): both side paddings, the glyph and
 /// the gap after it, the gap before Draft and the row's gap before the chip.
 pub fn pull_request_chrome(draft: bool, scale: f32) -> f32 {
-    let gap = 5.0;
-    2.0 * 7.0 + 11.0 * scale + gap + if draft { gap } else { 0.0 } + 2.0 * scale
+    use crate::components::pr_badge as badge;
+    let gap = badge::COMPOSER_GAP;
+    2.0 * badge::COMPOSER_PAD_X
+        + badge::GLYPH * scale
+        + gap
+        + if draft { gap } else { 0.0 }
+        + 2.0 * scale
 }
 
 /// The PR chips' natural width together (Pink `render_context_row`

@@ -1,12 +1,13 @@
 //! Settings Parts: the `pink-settings-parts` package
 //! (`components/settings-parts`), PINK's settings row tile, meta line,
-//! option cards and error and warning strips as a single-GPUI package the
-//! app pins (UI rethink decision 54). The gallery compiles the package's own
-//! source here, unchanged, against its GPUI; PINK compiles the same file
-//! against its patched one. The kit's `pink::row_tile` and `pink::meta_line`,
-//! the Appearance Picker's theme cards, the Settings Page's warning strip and
-//! the Dropzone's error strip draw through it. This module adds only the
-//! story.
+//! option cards, error and warning strips, page header and status badges as
+//! a single-GPUI package the app pins (UI rethink decision 54). The gallery
+//! compiles the package's own source here, unchanged, against its GPUI;
+//! PINK compiles the same file against its patched one. The kit's
+//! `pink::row_tile`, `pink::meta_line` and `pink::badge`, the Appearance
+//! Picker's theme cards, the Settings Page's page header and warning strip
+//! and the Dropzone's error strip draw through it. This module adds only
+//! the story.
 
 #[allow(dead_code)]
 mod package {
@@ -23,7 +24,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Settings Parts";
-pub const DESCRIPTION: &str = "PINK's settings row parts as a package the app pins: the identity tile at a row's leading edge, the quiet facts line under a row title, the row of preview cards for picking a visual option, and the red error and amber warning strips a card shows above its rows";
+pub const DESCRIPTION: &str = "PINK's settings row parts as a package the app pins: the page title with its count, the identity tile at a row's leading edge, the quiet facts line under a row title, the outlined and active status badges, the row of preview cards for picking a visual option, and the red error and amber warning strips a card shows above its rows";
 
 const ICON_TILE: &str = "icons/settings-page/monitor.svg";
 const ICON_DANGER: &str = "icons/settings-page/danger-triangle.svg";
@@ -49,6 +50,15 @@ pub fn strip_style(tone: gpui::Hsla, muted: gpui::Hsla, t: &Pink) -> StripStyle 
     StripStyle { edge, plate, tone }
 }
 
+/// The kit's page header style (Pink `widgets::page_header`): the title in
+/// `text`, the count in `readable_muted(0.7)`.
+pub fn page_header_style(t: &Pink) -> PageHeaderStyle {
+    PageHeaderStyle {
+        title: t.text,
+        count: t.readable_muted(0.7),
+    }
+}
+
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |_, cx| {
         let t = Pink::get(cx);
@@ -71,12 +81,17 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .w(px(560.0))
             .flex()
             .flex_col()
+            .child(page_header(
+                &page_header_style(&t),
+                "Devices",
+                Some(SharedString::from("2")),
+            ))
             .child(
                 section::section_card(&section::CardStyle {
                     border: t.border,
                     background: t.card_glass_bg(),
                 })
-                .mt(px(0.0))
+                .mt(px(16.0))
                 .child(
                     section::section_header().child(
                         section::header_text()
@@ -101,6 +116,11 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                                         fragment("Seen 2 minutes ago"),
                                     ],
                                 )),
+                        )
+                        .child(
+                            section::row_controls()
+                                .child(pink::badge("Paired", pink::Tone::Success, &t))
+                                .child(pink::badge("Up to date", pink::Tone::Neutral, &t)),
                         ),
                 )
                 .child(

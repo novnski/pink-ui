@@ -38,7 +38,7 @@ use gpui::{
     anchored, canvas, deferred, div, point, prelude::*, px, svg,
 };
 
-use super::settings_section as section;
+use super::{settings_parts as parts, settings_section as section};
 use crate::{
     HoverFill,
     motion::{self, MENU_OUT, MENU_RISE_DOWN, RESIZE},
@@ -2262,7 +2262,8 @@ fn scroll_rail_to(handle: &ScrollHandle, m: RailMetrics, thumb_top: f32) {
 }
 
 /// One page (Pink `widgets::page_column` + `page_title_bar` +
-/// `page_subtitle`, then its cards): a column up to 720 wide, `px 32 /
+/// `page_subtitle`, then its cards; the title and count are
+/// `pink-settings-parts`' `page_header`): a column up to 720 wide, `px 32 /
 /// pt 28 / pb 72`.
 fn render_page(f: &Frame, section: &SettingsSection) -> AnyElement {
     let t = f.t;
@@ -2275,25 +2276,13 @@ fn render_page(f: &Frame, section: &SettingsSection) -> AnyElement {
         .justify_between()
         .gap_x(px(16.0))
         .gap_y(px(8.0))
-        .child(
-            div()
-                .flex()
-                .flex_row()
-                .items_baseline()
-                .gap(px(10.0))
-                .child(
-                    div()
-                        .type_style(TextStyle::Title1)
-                        .text_color(t.text)
-                        .child(section.label.clone()),
-                )
-                .children(section.count.map(|count| {
-                    div()
-                        .text_size(px(13.0))
-                        .text_color(t.readable_muted(0.7))
-                        .child(SharedString::from(count.to_string()))
-                })),
-        );
+        .child(parts::page_header(
+            &parts::page_header_style(t),
+            section.label.clone(),
+            section
+                .count
+                .map(|count| SharedString::from(count.to_string())),
+        ));
     let subtitle = section.subtitle.clone().map(|copy| {
         div()
             .mt(px(6.0))
@@ -2493,7 +2482,6 @@ fn render_card(f: &Frame, card: &SettingsCard) -> AnyElement {
 /// `@ 0.06`, 12 copy in `readable_tone(warning_muted, 0.9)` after a 14
 /// danger triangle.
 fn warning_strip(copy: SharedString, t: &Pink) -> Div {
-    use crate::components::settings_parts as parts;
     parts::warning_strip(
         &parts::strip_style(t.warning, t.warning_muted, t),
         ICON_DANGER,

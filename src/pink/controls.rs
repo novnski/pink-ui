@@ -850,29 +850,29 @@ impl Tone {
 /// - `Danger` / `Warning` (`project_commands`): the outline in `tone @ 0.35`,
 ///   the label `readable_tone(tone_muted, 0.9)`.
 /// - `Accent` has no Pink badge; it follows the outlined family in the accent.
+///
+/// Drawn by `pink-settings-parts` (`parts::badge`); the kit centres the
+/// label in a flex box, so a badge stretched by its row keeps it centred.
 pub fn badge(label: impl Into<SharedString>, tone: Tone, t: &Pink) -> Div {
-    let base = div()
-        .flex_none()
-        .flex()
-        .items_center()
-        .px(px(8.0))
-        .py(px(2.0))
-        .rounded_full()
-        .text_size(px(11.0));
-    let base = match tone {
-        Tone::Neutral => base
-            .border_1()
-            .border_color(t.border)
-            .text_color(t.text_muted),
-        Tone::Success => base
-            .bg(t.success.opacity(0.12))
-            .text_color(t.readable_tone(t.success_muted, 0.9)),
-        Tone::Accent | Tone::Warning | Tone::Danger => base
-            .border_1()
-            .border_color(tone.color(t).opacity(0.35))
-            .text_color(t.readable_tone(tone.muted(t), 0.9)),
+    use crate::components::settings_parts as parts;
+    let style = match tone {
+        Tone::Neutral => parts::BadgeStyle {
+            edge: Some(t.border),
+            fill: None,
+            text: t.text_muted,
+        },
+        Tone::Success => parts::BadgeStyle {
+            edge: None,
+            fill: Some(t.success.opacity(0.12)),
+            text: t.readable_tone(t.success_muted, 0.9),
+        },
+        Tone::Accent | Tone::Warning | Tone::Danger => parts::BadgeStyle {
+            edge: Some(tone.color(t).opacity(0.35)),
+            fill: None,
+            text: t.readable_tone(tone.muted(t), 0.9),
+        },
     };
-    base.child(label.into())
+    parts::badge(&style, label).flex().items_center()
 }
 
 /// A status pill (Pink's sidebar waiting pill: "Approve", "Reply",

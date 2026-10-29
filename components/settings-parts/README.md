@@ -5,9 +5,9 @@
 Like the other packages under `components/` it depends on crates.io
 `gpui = "=0.2.2"` in its own workspace. The pink-ui gallery compiles this
 same `src/lib.rs` in place (`src/components/settings_parts.rs`); the kit's
-`pink::row_tile`, the Appearance Picker's theme cards, the Settings Page's
-warning strip, the Integration Settings meta line and the Dropzone's error
-strip draw through it. PINK pins the package and patches `gpui` to its
+`pink::row_tile` and `pink::badge`, the Appearance Picker's theme cards, the
+Settings Page's page header and warning strip, the Integration Settings meta
+line and the Dropzone's error strip draw through it. PINK pins the package and patches `gpui` to its
 vendored runtime, so there is one GPUI type graph and no copied source.
 
 ## What it draws
@@ -26,6 +26,13 @@ vendored runtime, so there is one GPUI type graph and no copied source.
   `warning_strip(&StripStyle, icon_path, message)`: the red and amber strips
   a card shows above or between its rows, a leading icon before wrapping
   copy.
+- `page_header(&PageHeaderStyle, title, count)`: the top of a page, the
+  `PAGE_TITLE_SIZE` semibold title and an optional count on its baseline,
+  `PAGE_COUNT_GAP` after it.
+- `badge(&BadgeStyle, label)`: a fully rounded status pill, `BADGE_PAD_X`
+  by `BADGE_PAD_Y` with a `BADGE_TEXT` label; the neutral badge is an
+  outline (`edge`), the active one a tinted plate (`fill`). It never
+  shrinks, and a caller may retone it.
 - `ui_rems(design)`: every size next to text is a rem (pt at the 16 px
   default), so a page follows the host's Interface size; hairlines, corners
   and the selection ring stay in pixels.
@@ -47,4 +54,5 @@ pink-settings-parts = { git = "https://github.com/novnski/pink-ui", rev = "<merg
 - Alone: `cargo clippy --features gpui/runtime_shaders -- -D warnings` in this
   directory.
 - In the gallery: `tests/settings_parts.rs` lays the parts out at Interface
-  sizes 12, 16 and 20 and wraps a meta line in a narrow row.
+  sizes 12, 16 and 20, wraps a meta line in a narrow row, and keeps a badge
+  whole in a narrow controls column.

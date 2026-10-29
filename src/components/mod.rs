@@ -69,6 +69,7 @@ pub mod otp_input;
 pub mod overlay_card;
 pub mod permission_request;
 pub mod place_tab;
+pub mod pr_badge;
 pub mod profile_menu;
 pub mod progress_tracker;
 pub mod project_card;
@@ -91,6 +92,7 @@ pub mod switch;
 pub mod tab_bar;
 pub mod tab_chip;
 pub mod terminal;
+pub mod terminal_tabs;
 pub mod thinking_loader;
 pub mod thinking_state;
 pub mod tips_panel;
@@ -569,6 +571,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         story: place_tab::story,
     },
     ComponentEntry {
+        slug: "terminal-tabs",
+        name: terminal_tabs::NAME,
+        category: "Navigation",
+        description: terminal_tabs::DESCRIPTION,
+        story: terminal_tabs::story,
+    },
+    ComponentEntry {
         slug: "file-tree",
         name: file_tree::NAME,
         category: "Navigation",
@@ -805,6 +814,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Code",
         description: git_actions::DESCRIPTION,
         story: git_actions::story,
+    },
+    ComponentEntry {
+        slug: "pr-badge",
+        name: pr_badge::NAME,
+        category: "Code",
+        description: pr_badge::DESCRIPTION,
+        story: pr_badge::story,
     },
     ComponentEntry {
         slug: "terminal",

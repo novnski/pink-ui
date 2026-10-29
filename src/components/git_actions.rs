@@ -32,11 +32,11 @@ use web_time::Duration;
 
 use gpui::{
     AnyElement, AnyView, App, Context, ElementId, Entity, FontWeight, Hsla, IntoElement, Role,
-    SharedString, Stateful, Subscription, Task, Window, div, prelude::*, px, svg,
+    SharedString, Stateful, Subscription, Task, Window, div, prelude::*, px,
 };
 
 use crate::{
-    HoverFill as _,
+    HoverFill as _, motion,
     pink::{self, Pink, layout},
     primitives::{InputEvent, TextInput},
     story,
@@ -59,11 +59,6 @@ const MESSAGE_HEIGHT: f32 = 30.0;
 /// Pink's composer input type (`INPUT_TEXT_SIZE`, `INPUT_LINE_HEIGHT`).
 const INPUT_TEXT_SIZE: f32 = 14.0;
 const INPUT_LINE_HEIGHT: f32 = 22.75;
-// Pink: change_requests.rs `pull_request_badge` on the composer surface.
-const BADGE_HEIGHT: f32 = 20.0;
-const BADGE_PAD_X: f32 = 7.0;
-const BADGE_GAP: f32 = 5.0;
-const BADGE_ICON: f32 = 11.0;
 // Pink: pull_requests.rs `render_pr_panel`.
 const PR_DESCRIPTION_MAX_HEIGHT: f32 = 120.0;
 const PR_FIELD_RADIUS: f32 = 4.0;
@@ -1724,10 +1719,12 @@ fn pr_status_row(c: &Card, pr: Option<&PrStatus>) -> impl IntoElement {
 }
 
 /// The PR badge on its composer surface (Pink: change_requests.rs
-/// `pull_request_badge`): 20 tall, `px 7` gap 5 r6, 11 medium; a state-toned
-/// wash easing from 8% to 16% with the label brightening, the PR glyph and
-/// the mono number. It opens the PR, with a hover card naming it.
+/// `pull_request_badge`), drawn by the `pink-pr-badge` package: 20 tall,
+/// `px 7` gap 5 r6, 11 medium; a state-toned wash easing from 8% to 16%
+/// with the label brightening, the PR glyph and the mono number. It opens
+/// the PR, with a hover card naming it.
 fn pr_badge(c: &Card, pr: &PullRequest) -> impl IntoElement {
+    use crate::components::pr_badge as badge;
     let t = c.t;
     let tone = pr.state.tone(t);
     let tooltip = PrTooltip {
@@ -1735,50 +1732,25 @@ fn pr_badge(c: &Card, pr: &PullRequest) -> impl IntoElement {
         state: pr.state,
         title: pr.title.clone(),
     };
-    div()
-        .id(SharedString::from(format!("{}-pr-badge", c.key)))
+    let key = format!("{}-pr-badge", c.key);
+    badge::badge(badge::Surface::Composer, &badge::hover_style(&key, tone, t))
+        .id(SharedString::from(key.clone()))
         .role(Role::Link)
         .aria_label(SharedString::from(format!(
             "Pull request #{}, {}",
             pr.number,
             pr.state.label()
         )))
-        .h(px(BADGE_HEIGHT))
-        .flex_none()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(BADGE_GAP))
-        .px(px(BADGE_PAD_X))
-        .rounded(px(CONTROL_RADIUS))
-        .text_size(px(11.))
-        .font_weight(FontWeight::MEDIUM)
         .cursor_pointer()
-        .hover_fill_fg(
-            format!("{}-pr-badge", c.key),
-            tone.opacity(0.08),
-            tone.opacity(0.16),
-            t.readable_tone(tone, 0.85),
-            tone,
-        )
+        .on_hover(motion::hover_listener(key))
         .on_click(c.sender.on(GitRequest::OpenUrl(pr.url.clone())))
         .tooltip(move |_, cx| {
             let tooltip = tooltip.clone();
             cx.new(|_| tooltip).into()
         })
         .tooltip_show_delay(layout::TOOLTIP_DELAY)
-        .child(
-            svg()
-                .path(ICON_PULL_REQUEST)
-                .size(px(BADGE_ICON))
-                .flex_none()
-                .text_color(t.readable_tone(tone, 0.85)),
-        )
-        .child(
-            div()
-                .font_family(pink::MONO)
-                .child(format!("#{}", pr.number)),
-        )
+        .child(badge::glyph(ICON_PULL_REQUEST, t.readable_tone(tone, 0.85)))
+        .child(badge::number(pink::MONO, format!("#{}", pr.number)))
 }
 
 /// The PR badge's hover card (Pink `ChangeRequestTooltip`): "PR #482 ·

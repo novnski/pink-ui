@@ -1,10 +1,12 @@
 // PINK's settings row parts (settings/widgets.rs `row_tile`, `meta_line`,
-// `option_card_row`, `option_card`, `error_strip` and `warning_strip`): the
-// identity tile at a row's leading edge, the quiet facts line under a row
-// title, the row of preview cards for picking a visual option, and the
-// danger and caution strips a card shows above or between its rows. UI
-// rethink decision 54: drawn here, consumed by PINK through a pinned
-// revision, beside `pink-settings-section`'s card and rows.
+// `option_card_row`, `option_card`, `error_strip`, `warning_strip`,
+// `page_header`, `badge` and `badge_active`): the identity tile at a row's
+// leading edge, the quiet facts line under a row title, the row of preview
+// cards for picking a visual option, the danger and caution strips a card
+// shows above or between its rows, the page title with its count, and the
+// status badges rows and cards carry. UI rethink decision 54: drawn here,
+// consumed by PINK through a pinned revision, beside
+// `pink-settings-section`'s card and rows.
 //
 // The package draws only. The host supplies the resolved colours (the
 // readable tones, the strip plates, the selection accent), the icon paths
@@ -15,8 +17,7 @@
 // place with `include!` for its story.
 
 use gpui::{
-    AbsoluteLength, AnyElement, Div, FontWeight, Hsla, SharedString, div, prelude::*, px, rems,
-    svg,
+    AbsoluteLength, AnyElement, Div, FontWeight, Hsla, SharedString, div, prelude::*, px, rems, svg,
 };
 
 /// A row tile's side.
@@ -73,6 +74,19 @@ pub const WARNING_STRIP_TOP: f32 = 8.0;
 pub const WARNING_STRIP_PAD_Y: f32 = 10.0;
 pub const WARNING_STRIP_TEXT: f32 = 12.0;
 pub const WARNING_STRIP_ICON: f32 = 14.0;
+
+/// The page title (the Title1 role): its size and line height.
+pub const PAGE_TITLE_SIZE: f32 = 20.0;
+pub const PAGE_TITLE_LINE: f32 = 25.0;
+/// The gap between the page title and its count.
+pub const PAGE_COUNT_GAP: f32 = 10.0;
+/// The count's text size.
+pub const PAGE_COUNT_SIZE: f32 = 13.0;
+
+/// A status badge's padding and label size.
+pub const BADGE_PAD_X: f32 = 8.0;
+pub const BADGE_PAD_Y: f32 = 2.0;
+pub const BADGE_TEXT: f32 = 11.0;
 
 /// A design size (pt at the 16 px default) in rems, so it grows with the
 /// host's Interface size.
@@ -329,4 +343,76 @@ fn strip(
             ),
         )
         .child(div().min_w_0().child(message))
+}
+
+/// What a page header draws.
+pub struct PageHeaderStyle {
+    pub title: Hsla,
+    /// The count's quiet tone.
+    pub count: Hsla,
+}
+
+/// The top of a settings page: the `PAGE_TITLE_SIZE` semibold title and,
+/// when the page lists things, their count in `PAGE_COUNT_SIZE` on the
+/// title's baseline, `PAGE_COUNT_GAP` after it.
+pub fn page_header(
+    style: &PageHeaderStyle,
+    title: impl Into<SharedString>,
+    count: Option<SharedString>,
+) -> Div {
+    let header = div()
+        .flex()
+        .flex_row()
+        .items_baseline()
+        .gap(ui_rems(PAGE_COUNT_GAP))
+        .child(
+            div()
+                .text_size(ui_rems(PAGE_TITLE_SIZE))
+                .line_height(ui_rems(PAGE_TITLE_LINE))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(style.title)
+                .child(title.into()),
+        );
+    match count {
+        Some(count) => header.child(
+            div()
+                .text_size(ui_rems(PAGE_COUNT_SIZE))
+                .text_color(style.count)
+                .child(count),
+        ),
+        None => header,
+    }
+}
+
+/// What a status badge draws. The neutral badge is an outline (`edge`,
+/// no `fill`); the active one is a tinted plate (`fill`, no `edge`).
+pub struct BadgeStyle {
+    /// The 1 px outline, if any.
+    pub edge: Option<Hsla>,
+    /// The plate, if any.
+    pub fill: Option<Hsla>,
+    pub text: Hsla,
+}
+
+/// A status badge: a fully rounded pill, `BADGE_PAD_X` by `BADGE_PAD_Y`,
+/// the `BADGE_TEXT` label in `text` on its outline or plate. It does not
+/// shrink. A plain `Div`, so a caller can retone it.
+pub fn badge(style: &BadgeStyle, label: impl Into<SharedString>) -> Div {
+    let badge = div()
+        .flex_none()
+        .px(ui_rems(BADGE_PAD_X))
+        .py(ui_rems(BADGE_PAD_Y))
+        .rounded_full();
+    let badge = match style.edge {
+        Some(edge) => badge.border_1().border_color(edge),
+        None => badge,
+    };
+    let badge = match style.fill {
+        Some(fill) => badge.bg(fill),
+        None => badge,
+    };
+    badge
+        .text_size(ui_rems(BADGE_TEXT))
+        .text_color(style.text)
+        .child(label.into())
 }
