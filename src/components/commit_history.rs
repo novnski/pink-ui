@@ -50,6 +50,7 @@ use gpui::{
 
 use crate::{
     HoverFill,
+    components::commit_row as cr,
     interaction::HoverColors,
     motion::{self, COLLAPSE, HOVER_FADE, MENU_OUT, MENU_RISE_DOWN, RESIZE},
     pink::{self, FillTier, Pink, chrome, layout, loaders, radius},
@@ -73,7 +74,7 @@ const ICON_DOWN: &str = "icons/commit-history/alt-arrow-down.svg";
 const ICON_CHECK: &str = "icons/commit-history/check.svg";
 
 // Pink: history.rs constants.
-const ROW_HEIGHT: f32 = 36.0;
+const ROW_HEIGHT: f32 = cr::ROW_HEIGHT;
 const LANE_SPACING: f32 = 12.0;
 const NODE_RADIUS: f32 = 3.0;
 const HEAD_RING_PADDING: f32 = 2.0;
@@ -94,18 +95,16 @@ const GRAPH_HIT_RADIUS: f32 = 5.5;
 const FOCUSED_STROKE_WIDTH: f32 = 2.25;
 const GRAPH_UNFOCUSED_OPACITY: f32 = 0.24;
 const ROW_UNFOCUSED_OPACITY: f32 = 0.6;
-const SUBJECT_MIN_WIDTH: f32 = 80.0;
+const SUBJECT_MIN_WIDTH: f32 = cr::SUBJECT_MIN_WIDTH;
 const REF_AREA_RATIO: f32 = 0.45;
-const REF_BADGE_MAX_WIDTH: f32 = 112.0;
-const REF_GAP: f32 = 5.0;
+const REF_BADGE_MAX_WIDTH: f32 = cr::REF_BADGE_MAX_WIDTH;
+const REF_GAP: f32 = cr::REF_GAP;
 const SEARCH_WIDTH: f32 = 196.0;
 const SEARCH_IDLE_DISMISS: Duration = Duration::from_millis(1_500);
 /// The comparison is supplemental: it hides before it crowds the controls.
 const COMPARISON_MIN_WIDTH: f32 = 260.0;
 /// Pink: `copy_sha` shows "Copied" for 1.2 s.
 const COPIED_FOR: Duration = Duration::from_millis(1_200);
-/// Pink: `render_row`'s "Load more" footer row.
-const LOAD_MORE_ROW: f32 = 48.0;
 /// Pink: `render_column_header_cell`'s header strip.
 const HEADER_HEIGHT: f32 = 24.0;
 /// Pink: the toolbar (`surface_chrome::HEADER_HEIGHT`, the titlebar height).
@@ -3315,22 +3314,8 @@ fn history_row(
     let commit_column = container_query(move |size, _, _| {
         let refs_width = ref_area_width(f32::from(size.width));
         let t = commit_t;
-        div()
-            .size_full()
-            .flex()
-            .items_center()
-            .gap(px(REF_GAP))
-            .pr(px(8.0))
-            .opacity(content_opacity)
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_size(px(12.0))
-                    .text_color(t.text)
-                    .child(subject),
-            )
+        cr::subject_lane(content_opacity)
+            .child(cr::subject(subject, t.text))
             .when(!refs.is_empty(), |el| {
                 el.child(ref_area(&refs_key, refs, refs_width, &t))
             })
@@ -3354,20 +3339,14 @@ fn history_row(
                 content_opacity,
                 t,
             ),
-            HistoryColumn::Date => div()
-                .w(px(c.widths.date))
-                .min_w(px(DATE_MIN))
-                .h_full()
-                .flex_shrink(1.0)
-                .flex()
-                .items_center()
-                .truncate()
-                .pr(px(8.0))
-                .text_size(px(11.0))
-                .opacity(content_opacity)
-                .text_color(t.text_muted)
-                .child(format_date(&commit.date))
-                .into_any_element(),
+            HistoryColumn::Date => cr::date_cell(
+                c.widths.date,
+                DATE_MIN,
+                content_opacity,
+                format_date(&commit.date),
+                t.text_muted,
+            )
+            .into_any_element(),
             HistoryColumn::Sha => sha_cell(c, &sha, content_opacity),
         })
         .collect();
@@ -3377,43 +3356,29 @@ fn history_row(
     let path = graph_row.node_color_id;
     let open = c.on_open.clone();
     let open_commit = commit.clone();
-    let row = div()
-        .id(SharedString::from(row_key.clone()))
-        .h(px(ROW_HEIGHT))
-        .w_full()
-        .flex_none()
-        .flex()
-        .flex_row()
-        .items_center()
-        .text_size(px(11.0))
-        .cursor_pointer()
-        .bg(focused_wash.unwrap_or_else(|| {
+    let row = cr::row(
+        SharedString::from(row_key.clone()),
+        focused_wash.unwrap_or_else(|| {
             motion::hover_blend(
                 &row_key,
                 gpui::transparent_black(),
                 t.fill(FillTier::Quaternary),
             )
-        }))
-        .on_hover(move |hovered, window, cx| {
-            motion::set_hover(&hover_key, *hovered, motion::reduced_motion(cx));
-            window.refresh();
-            hover_state.update(cx, |s, cx| s.set_row_hover(hovered.then_some(path), cx));
-        })
-        .on_click(move |_, window, cx| {
-            if let Some(f) = &open {
-                f(&open_commit, window, cx);
-            }
-        })
-        .child(graph_cell)
-        .child(commit_column)
-        .child(
-            div()
-                .h_full()
-                .flex()
-                .flex_row()
-                .flex_shrink(1.0)
-                .children(cells),
-        );
+        }),
+    )
+    .on_hover(move |hovered, window, cx| {
+        motion::set_hover(&hover_key, *hovered, motion::reduced_motion(cx));
+        window.refresh();
+        hover_state.update(cx, |s, cx| s.set_row_hover(hovered.then_some(path), cx));
+    })
+    .on_click(move |_, window, cx| {
+        if let Some(f) = &open {
+            f(&open_commit, window, cx);
+        }
+    })
+    .child(graph_cell)
+    .child(commit_column)
+    .child(cr::cells().children(cells));
 
     let _ = cx;
     match transition {
@@ -3437,13 +3402,7 @@ fn ref_area(key: &str, refs: Vec<CommitRef>, available: f32, t: &Pink) -> gpui::
     let shown = visible_ref_count(&refs, available);
     let hidden: Vec<SharedString> = refs.iter().skip(shown).map(ref_description).collect();
     let hidden_count = hidden.len();
-    div()
-        .max_w(px(available))
-        .min_w_0()
-        .overflow_hidden()
-        .flex()
-        .items_center()
-        .gap(px(REF_GAP))
+    cr::ref_area(available)
         .children(
             refs.into_iter()
                 .take(shown)
@@ -3451,42 +3410,29 @@ fn ref_area(key: &str, refs: Vec<CommitRef>, available: f32, t: &Pink) -> gpui::
                 .map(|(ix, reference)| {
                     let color = ref_color(&reference, t);
                     let description = ref_description(&reference);
-                    div()
-                        .id(SharedString::from(format!("{key}-ref-{ix}")))
-                        .h(px(16.0))
-                        .max_w(px(REF_BADGE_MAX_WIDTH))
-                        .px(px(5.0))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .gap(px(2.0))
-                        .rounded(px(radius::XS))
-                        .bg(color.opacity(0.07))
-                        .text_size(px(11.0))
-                        .text_color(t.readable_tone(color, 0.9))
-                        .child(
-                            svg()
-                                .path(ref_icon(reference.kind))
-                                .size(px(10.0))
-                                .mt(px(1.0))
-                                .flex_none()
-                                .text_color(t.readable_tone(color, 0.78)),
-                        )
-                        .child(div().min_w_0().truncate().child(reference.label))
-                        .tooltip(ref_tooltip(vec![description]))
-                        .tooltip_show_delay(layout::TOOLTIP_DELAY)
+                    cr::ref_badge(
+                        SharedString::from(format!("{key}-ref-{ix}")),
+                        reference.label,
+                        svg().path(ref_icon(reference.kind)).flex_none(),
+                        &cr::RefBadgeStyle {
+                            fill: color.opacity(0.07),
+                            text: t.readable_tone(color, 0.9),
+                            glyph: t.readable_tone(color, 0.78),
+                        },
+                    )
+                    .tooltip(ref_tooltip(vec![description]))
+                    .tooltip_show_delay(layout::TOOLTIP_DELAY)
                 }),
         )
         .when(hidden_count > 0, |el| {
             el.child(
-                div()
-                    .id(SharedString::from(format!("{key}-ref-overflow")))
-                    .flex_none()
-                    .text_size(px(11.0))
-                    .text_color(t.text_faint)
-                    .child(format!("+{hidden_count}"))
-                    .tooltip(ref_tooltip(hidden))
-                    .tooltip_show_delay(layout::TOOLTIP_DELAY),
+                cr::ref_overflow(
+                    SharedString::from(format!("{key}-ref-overflow")),
+                    format!("+{hidden_count}"),
+                    t.text_faint,
+                )
+                .tooltip(ref_tooltip(hidden))
+                .tooltip_show_delay(layout::TOOLTIP_DELAY),
             )
         })
 }
@@ -3501,56 +3447,35 @@ fn author_cell(
     opacity: f32,
     t: &Pink,
 ) -> AnyElement {
-    let cell = div()
-        .w(px(width))
-        .min_w(px(AUTHOR_MIN))
-        .h_full()
-        .flex_shrink(1.0)
-        .flex()
-        .items_center()
-        .opacity(opacity);
     match display {
         AuthorDisplay::Avatar => {
             let tooltip_name = name.clone();
-            cell.justify_center()
+            cr::author_avatar_cell(width, AUTHOR_MIN, opacity)
                 .child(
-                    div()
-                        .id(SharedString::from(format!("{key}-author-{sha}")))
-                        .size(px(20.0))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .overflow_hidden()
-                        .rounded_full()
-                        .border_1()
-                        .border_color(t.hairline(0.12))
-                        .bg(t.wash(0.08))
-                        .child(
-                            div()
-                                .w_full()
-                                .text_center()
-                                .text_size(px(11.0))
-                                .line_height(px(18.0))
-                                .relative()
-                                .top(px(0.5))
-                                .text_color(t.text_faint)
-                                .child(author_initial(name)),
-                        )
-                        .tooltip(move |_, cx| {
-                            let name = tooltip_name.clone();
-                            cx.new(|_| AuthorTooltip { name }).into()
-                        })
-                        .tooltip_show_delay(layout::TOOLTIP_DELAY),
+                    cr::avatar(
+                        SharedString::from(format!("{key}-author-{sha}")),
+                        &cr::AvatarStyle {
+                            edge: t.hairline(0.12),
+                            fill: t.wash(0.08),
+                        },
+                    )
+                    .child(cr::avatar_initial(
+                        author_initial(name),
+                        pink::SANS.into(),
+                        t.text_faint,
+                    ))
+                    .tooltip(move |_, cx| {
+                        let name = tooltip_name.clone();
+                        cx.new(|_| AuthorTooltip { name }).into()
+                    })
+                    .tooltip_show_delay(layout::TOOLTIP_DELAY),
                 )
                 .into_any_element()
         }
-        AuthorDisplay::Name => cell
-            .pr(px(8.0))
-            .truncate()
-            .text_color(t.text_muted)
-            .child(name.clone())
-            .into_any_element(),
+        AuthorDisplay::Name => {
+            cr::author_name_cell(width, AUTHOR_MIN, opacity, name.clone(), t.text_muted)
+                .into_any_element()
+        }
     }
 }
 
@@ -3568,36 +3493,23 @@ fn sha_cell(c: &BodyCx, sha: &SharedString, opacity: f32) -> AnyElement {
     let state = c.state.clone();
     let on_copy = c.on_copy.clone();
     let full = sha.clone();
-    div()
-        .w(px(c.widths.sha))
-        .min_w(px(SHA_MIN))
-        .h_full()
-        .pr(px(6.0))
-        .flex_shrink(1.0)
-        .flex()
-        .items_center()
-        .opacity(opacity)
+    cr::sha_cell(c.widths.sha, SHA_MIN, opacity)
         .child(
-            div()
-                .id(SharedString::from(id.clone()))
-                .w_full()
-                .h(px(24.0))
-                .flex()
-                .items_center()
-                .rounded(px(radius::XS))
-                .cursor_pointer()
-                .hover_wash(id, t.fill(FillTier::Tertiary))
-                .font_family(pink::MONO)
-                .text_size(px(11.0))
-                .text_color(if copied { t.accent } else { t.text_muted })
-                .on_click(move |_, window, cx| {
-                    cx.stop_propagation();
-                    state.update(cx, |s, cx| s.copy_sha(full.clone(), cx));
-                    if let Some(f) = &on_copy {
-                        f(&full, window, cx);
-                    }
-                })
-                .child(label),
+            cr::sha_pill(
+                SharedString::from(id.clone()),
+                label.clone(),
+                pink::MONO.into(),
+                gpui::transparent_black(),
+                if copied { t.accent } else { t.text_muted },
+            )
+            .hover_wash(id, t.fill(FillTier::Tertiary))
+            .on_click(move |_, window, cx| {
+                cx.stop_propagation();
+                state.update(cx, |s, cx| s.copy_sha(full.clone(), cx));
+                if let Some(f) = &on_copy {
+                    f(&full, window, cx);
+                }
+            }),
         )
         .into_any_element()
 }
@@ -3630,47 +3542,32 @@ fn load_more_row(c: &BodyCx) -> gpui::Div {
         }
     };
     let on_load_more = c.on_load_more.clone();
-    let button = div()
-        .id(SharedString::from(id.clone()))
-        .h(px(28.0))
-        .px(px(11.0))
-        .flex()
-        .items_center()
-        .justify_center()
-        .gap(px(6.0))
-        .rounded(px(7.0))
-        .border_1()
-        .text_size(px(11.0))
-        .hover_colors(id, rest, hover)
-        .when(!pending, |el| {
-            el.cursor_pointer().on_click(move |_, window, cx| {
-                if let Some(f) = &on_load_more {
-                    f(window, cx);
-                }
-            })
+    let t_hover = motion::hover_t(&id);
+    let button = cr::load_more(
+        SharedString::from(id.clone()),
+        label,
+        svg().path(if c.load_error {
+            ICON_REFRESH
+        } else {
+            ICON_DOWN
+        }),
+        &cr::LoadMoreStyle {
+            fill: motion::mix(rest.bg, hover.bg, t_hover),
+            border: motion::mix(rest.border, hover.border, t_hover),
+            text: motion::mix(rest.fg, hover.fg, t_hover),
+            glyph: t.text_faint,
+            enabled: !pending,
+        },
+    )
+    .on_hover(motion::hover_listener(id))
+    .when(!pending, |el| {
+        el.on_click(move |_, window, cx| {
+            if let Some(f) = &on_load_more {
+                f(window, cx);
+            }
         })
-        .when(!pending, |el| {
-            el.child(
-                svg()
-                    .path(if c.load_error {
-                        ICON_REFRESH
-                    } else {
-                        ICON_DOWN
-                    })
-                    .size(px(11.0))
-                    .flex_none()
-                    .text_color(t.text_faint),
-            )
-        })
-        .child(label);
-    div()
-        .w_full()
-        .h(px(LOAD_MORE_ROW))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .child(button)
+    });
+    cr::load_more_row().child(button)
 }
 
 /// A popup anchored at a point, dropping 6 pt in on `MENU_IN` and fading on

@@ -32,7 +32,6 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    f32::consts::FRAC_PI_2,
     ops::Range,
     rc::Rc,
     sync::Arc,
@@ -42,14 +41,18 @@ use web_time::{Duration, Instant};
 use gpui::{
     Anchor, AnyElement, AnyView, App, Context, DispatchPhase, DragMoveEvent, ElementId, EmptyView,
     Entity, Font, FontWeight, Hsla, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, Role,
-    ScrollHandle, SharedString, Stateful, StyledText, Subscription, Task, TextRun, Transformation,
-    Window, anchored, canvas, deferred, div, font, img, point, prelude::*, px, radians, svg,
+    ScrollHandle, SharedString, Stateful, StyledText, Subscription, Task, TextRun, Window,
+    anchored, canvas, deferred, div, font, img, point, prelude::*, px, svg,
 };
 
 use super::scroll_rail;
 use crate::{
     HoverFill as _,
-    components::diff_rows,
+    components::{
+        diff_header as dh, diff_rows,
+        icon_button::{IconButtonStyle, icon_button},
+        surface_toolbar,
+    },
     motion::{self, DISCLOSURE, MENU_OUT, MENU_RISE_DOWN},
     pink::{self, Pink, Syntax, TEXT_CONTRAST_TARGET, chrome, layout, loaders, radius},
     primitives::{InputEvent, TextInput},
@@ -72,7 +75,7 @@ const ICON_REMOVE: &str = "icons/diff-viewer/close-circle.svg";
 
 // Diff metrics (Pink: changes.rs layout numbers).
 /// A file header is the surface chrome's header height.
-const FILE_HEADER_HEIGHT: f32 = layout::TITLEBAR_HEIGHT;
+const FILE_HEADER_HEIGHT: f32 = dh::FILE_HEADER_HEIGHT;
 // The row chrome's own numbers live in the `pink-diff-rows` package.
 const HUNK_HEADER_HEIGHT: f32 = diff_rows::HUNK_HEADER_HEIGHT;
 const DIFF_LINE_HEIGHT: f32 = diff_rows::LINE_HEIGHT;
@@ -106,10 +109,6 @@ const DRAFT_ACTIONS_HEIGHT: f32 = 28.0;
 const INPUT_TEXT_SIZE: f32 = 14.0;
 const INPUT_LINE_HEIGHT: f32 = 22.75;
 
-// Header menus (Pink: changes.rs `render_scope_menu`, `render_ref_menu`).
-const SCOPE_MENU_WIDTH: f32 = 180.0;
-const REF_MENU_WIDTH: f32 = 240.0;
-const REF_LIST_MAX_HEIGHT: f32 = 240.0;
 /// The changes header hangs its menus 10 pt below the trigger
 /// (`anchored_menu_below_gap(…, 10.0)`).
 const MENU_DROP_GAP: f32 = 10.0;
@@ -2553,40 +2552,19 @@ impl RenderOnce for DiffViewer {
             )
         };
 
-        let controls = div()
-            .size_full()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(chrome::CONTROL_GAP));
+        let controls = dh::header_row();
         let controls = if let Some((sha, subject)) = self.commit.clone() {
             // A commit-pinned pane: a fixed identity chip replaces the scope
             // dropdown.
             let short: String = sha.chars().take(7).collect();
             controls
-                .child(
-                    div()
-                        .flex_none()
-                        .h(px(chrome::CONTROL_M))
-                        .px(px(6.))
-                        .rounded(px(chrome::RADIUS_M))
-                        .flex()
-                        .items_center()
-                        .bg(t.ink(0.05))
-                        .font_family(pink::MONO)
-                        .text_size(px(11.))
-                        .text_color(t.text_muted)
-                        .child(short),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .text_size(px(12.))
-                        .text_color(t.text)
-                        .child(subject),
-                )
+                .child(dh::commit_sha(
+                    short,
+                    pink::MONO.into(),
+                    t.ink(0.05),
+                    t.text_muted,
+                ))
+                .child(dh::commit_subject(subject, t.text))
                 .child(split_toggle)
                 .child(wrap_toggle)
                 .child(fold_all)
@@ -2619,31 +2597,21 @@ impl RenderOnce for DiffViewer {
                 .filter(|_| self.scope == DiffScope::WorkingTree)
                 .map(|on_git| {
                     // Pink's Git pill: a quiet `wash(0.05)` plate, no hover.
-                    div()
-                        .id(SharedString::from(format!("{key}-git")))
-                        .role(Role::Button)
-                        .h(px(chrome::CONTROL_M))
-                        .px(px(8.))
-                        .rounded(px(chrome::RADIUS_M))
-                        .flex()
-                        .items_center()
-                        .cursor_pointer()
-                        .bg(t.wash(0.05))
-                        .text_size(px(11.))
-                        .text_color(t.text)
-                        .child("Git")
-                        .on_click(move |_, window, cx| on_git(window, cx))
+                    dh::git_chip(
+                        SharedString::from(format!("{key}-git")),
+                        "Git",
+                        t.wash(0.05),
+                        t.text,
+                    )
+                    .role(Role::Button)
+                    .on_click(move |_, window, cx| on_git(window, cx))
                 });
             controls
                 .child(scope_trigger(&c, self.scope, scope_card))
                 .children(ref_selector)
-                .child(div().flex_1())
+                .child(dh::spacer())
                 .child(
-                    div()
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .gap(px(chrome::CONTROL_GAP))
+                    dh::trailing()
                         .children(git)
                         .child(split_toggle)
                         .child(wrap_toggle)
@@ -2651,15 +2619,7 @@ impl RenderOnce for DiffViewer {
                 )
         };
         // Pink: surface_chrome.rs `toolbar` – no band and no border.
-        let toolbar = div()
-            .h(px(layout::TITLEBAR_HEIGHT))
-            .w_full()
-            .flex_none()
-            .px(px(chrome::EDGE_INSET))
-            .flex()
-            .items_center()
-            .gap(px(chrome::CONTROL_GAP))
-            .child(controls);
+        let toolbar = surface_toolbar::toolbar().child(controls);
 
         // ---- content (Pink: changes.rs `render`) --------------------------
         let commit = self.commit.is_some();
@@ -2821,36 +2781,29 @@ fn header_toggle(
     let t = c.t;
     let id = format!("{}-{name}", c.key);
     let ring = t.focus_ring();
-    div()
-        .id(SharedString::from(id.clone()))
-        .role(Role::Button)
-        .aria_label(label)
-        .size(px(chrome::CONTROL_M))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(chrome::RADIUS_M))
-        .cursor_pointer()
-        .tab_index(0)
-        .focus_visible(move |s| pink::focus_ring(s, ring))
-        .map(|el| {
+    icon_button(
+        id.clone(),
+        surface_toolbar::control_glyph(
+            svg().path(icon),
             if active {
-                el.bg(t.wash(0.14))
+                t.text
             } else {
-                el.hover_fill(id, t.wash(0.0), t.wash(0.14))
-            }
-        })
-        .child(
-            svg()
-                .path(icon)
-                .size(px(chrome::ICON_M))
-                .text_color(if active {
-                    t.text
-                } else {
-                    t.readable_muted(0.7)
-                }),
+                t.readable_muted(0.7)
+            },
         )
+        .into_any_element(),
+        &IconButtonStyle {
+            size: surface_toolbar::CONTROL_SIZE,
+            radius: surface_toolbar::CONTROL_RADIUS,
+            wash: t.wash(if active { 0.14 } else { 0.0 }),
+            enabled: true,
+        },
+    )
+    .role(Role::Button)
+    .aria_label(label)
+    .tab_index(0)
+    .focus_visible(move |s| pink::focus_ring(s, ring))
+    .when(!active, |el| el.hover_fill(id, t.wash(0.0), t.wash(0.14)))
 }
 
 /// The header buttons' tooltip (Pink `DiffHeaderTooltip`): `px 8 / py 6`,
@@ -2880,52 +2833,37 @@ fn scope_trigger(c: &Ctx, scope: DiffScope, menu: Option<AnyElement>) -> Statefu
     let t = c.t;
     let id = format!("{}-scope-trigger", c.key);
     let (press, click) = (c.state.clone(), c.state.clone());
-    div()
-        .id(SharedString::from(id.clone()))
-        .role(Role::Button)
-        .relative()
-        .h(px(chrome::CONTROL_M))
-        .px(px(8.))
-        .flex_none()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(6.))
-        .rounded(px(chrome::RADIUS_M))
-        .cursor_pointer()
-        .hover_fill(id, t.wash(0.05), t.wash(0.14))
-        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-            press.update(cx, |s, _| {
-                s.scope_menu.pressed_while_open = s.scope_menu.mounted()
-            });
-        })
-        .on_click(move |_, _, cx| {
-            cx.stop_propagation();
-            click.update(cx, |s, cx| {
-                if std::mem::take(&mut s.scope_menu.pressed_while_open) {
-                    return;
-                }
-                s.scope_menu.open = true;
-                s.scope_menu.closing = None;
-                s.scope_menu.reap = None;
-                cx.notify();
-            });
-        })
-        .child(
-            div()
-                .text_size(px(12.))
-                .line_height(px(14.))
-                .text_color(t.text)
-                .child(scope.label()),
-        )
-        .child(
-            svg()
-                .path(ICON_DOWN)
-                .size(px(12.))
-                .flex_none()
-                .text_color(t.readable_muted(0.7)),
-        )
-        .children(menu)
+    dh::scope_trigger(
+        SharedString::from(id.clone()),
+        scope.label(),
+        svg().path(ICON_DOWN).flex_none(),
+        &dh::ScopeTriggerStyle {
+            fill: t.wash(0.05),
+            text: t.text,
+            chevron: t.readable_muted(0.7),
+        },
+    )
+    .role(Role::Button)
+    .relative()
+    .hover_fill(id, t.wash(0.05), t.wash(0.14))
+    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+        press.update(cx, |s, _| {
+            s.scope_menu.pressed_while_open = s.scope_menu.mounted()
+        });
+    })
+    .on_click(move |_, _, cx| {
+        cx.stop_propagation();
+        click.update(cx, |s, cx| {
+            if std::mem::take(&mut s.scope_menu.pressed_while_open) {
+                return;
+            }
+            s.scope_menu.open = true;
+            s.scope_menu.closing = None;
+            s.scope_menu.reap = None;
+            cx.notify();
+        });
+    })
+    .children(menu)
 }
 
 /// The scope menu (Pink `render_scope_menu`): a 180 popover card of menu
@@ -2938,12 +2876,12 @@ fn scope_menu_card(
     let t = c.t;
     let close = c.state.clone();
     pink::popover_card(t)
-        .w(px(SCOPE_MENU_WIDTH))
+        .w(dh::ui_rems(dh::SCOPE_MENU_WIDTH))
         .flex()
         .flex_col()
         .on_mouse_down_out(move |_, _, cx| close.update(cx, |s, cx| s.close_menu(Menu::Scope, cx)))
-        .child(div().flex().flex_col().gap(px(layout::MENU_GAP)).children(
-            DiffScope::ALL.into_iter().enumerate().map(|(ix, scope)| {
+        .child(
+            dh::scope_list().children(DiffScope::ALL.into_iter().enumerate().map(|(ix, scope)| {
                 let state = c.state.clone();
                 let on_scope = on_scope.clone();
                 pink::menu_row(format!("{}-scope-row-{ix}", c.key), scope == current, t)
@@ -2955,9 +2893,9 @@ fn scope_menu_card(
                             f(scope, window, cx);
                         }
                     })
-                    .child(div().flex_1().child(scope.label()))
-            }),
-        ))
+                    .child(dh::scope_row_label(scope.label()))
+            })),
+        )
 }
 
 /// `{branch} → {base ⌄}` (Pink `render_ref_selector`): both names truncate,
@@ -2969,80 +2907,47 @@ fn ref_selector(
     menu: Option<AnyElement>,
 ) -> gpui::Div {
     let t = c.t;
-    let branch_weight = (branch.chars().count().max(1) as f32).powi(2);
-    let base_weight = (base.chars().count().max(1) as f32).powi(2);
     let id = format!("{}-ref-trigger", c.key);
     let (press, click) = (c.state.clone(), c.state.clone());
-    let mut trigger = div()
-        .id(SharedString::from(id.clone()))
-        .role(Role::Button)
-        .relative()
-        .h(px(chrome::CONTROL_M))
-        .px(px(6.))
-        .min_w_0()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(4.))
-        .rounded(px(chrome::RADIUS_M))
-        .cursor_pointer()
-        .hover_fill(id, t.wash(0.0), t.wash(0.12))
-        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-            press.update(cx, |s, _| {
-                s.ref_menu.pressed_while_open = s.ref_menu.mounted()
-            });
-        })
-        .on_click(move |_, window, cx| {
-            cx.stop_propagation();
-            click.update(cx, |s, cx| {
-                if std::mem::take(&mut s.ref_menu.pressed_while_open) {
-                    return;
-                }
-                s.open_ref_menu(window, cx);
-            });
-        })
-        .child(
-            div()
-                .min_w_0()
-                .truncate()
-                .font_family(pink::MONO)
-                .text_size(px(11.5))
-                .text_color(t.text)
-                .child(base),
-        )
-        .child(
-            svg()
-                .path(ICON_DOWN)
-                .size(px(11.))
-                .flex_none()
-                .text_color(t.readable_muted(0.7)),
-        )
-        .children(menu);
-    trigger.style().flex_shrink = Some(base_weight);
-    let mut branch_label = div()
-        .min_w_0()
-        .truncate()
-        .font_family(pink::MONO)
-        .text_size(px(11.5))
-        .text_color(t.text_dim)
-        .child(branch);
-    branch_label.style().flex_shrink = Some(branch_weight);
-    div()
-        .min_w_0()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(6.))
-        .ml(px(chrome::CONTROL_GAP))
-        .child(branch_label)
-        .child(
-            svg()
-                .path(ICON_ARROW_RIGHT)
-                .size(px(12.))
-                .flex_none()
-                .text_color(t.text_faint),
-        )
-        .child(trigger)
+    let trigger = dh::ref_trigger(
+        SharedString::from(id.clone()),
+        base,
+        svg().path(ICON_DOWN),
+        &dh::RefTriggerStyle {
+            mono: pink::MONO.into(),
+            fill: t.wash(0.0),
+            text: t.text,
+            chevron: t.readable_muted(0.7),
+        },
+    )
+    .role(Role::Button)
+    .relative()
+    .hover_fill(id, t.wash(0.0), t.wash(0.12))
+    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+        press.update(cx, |s, _| {
+            s.ref_menu.pressed_while_open = s.ref_menu.mounted()
+        });
+    })
+    .on_click(move |_, window, cx| {
+        cx.stop_propagation();
+        click.update(cx, |s, cx| {
+            if std::mem::take(&mut s.ref_menu.pressed_while_open) {
+                return;
+            }
+            s.open_ref_menu(window, cx);
+        });
+    })
+    .children(menu);
+    dh::ref_selector(
+        branch,
+        svg().path(ICON_ARROW_RIGHT),
+        trigger,
+        &dh::RefSelectorStyle {
+            mono: pink::MONO.into(),
+            branch: t.text_dim,
+            arrow: t.text_faint,
+        },
+    )
 }
 
 /// The base picker (Pink `render_ref_menu`): a 240 popover card with a
@@ -3056,24 +2961,17 @@ fn ref_menu_card(
     let t = c.t;
     let rows = filter_refs(&view.query, branches);
     let list: AnyElement = if rows.is_empty() {
-        div()
-            .px(px(8.))
-            .py(px(6.))
-            .text_size(px(12.))
-            .text_color(t.text_faint)
-            .child(if branches.is_empty() {
+        dh::ref_list_empty(
+            if branches.is_empty() {
                 "No branches"
             } else {
                 "No matching branches"
-            })
-            .into_any_element()
+            },
+            t.text_faint,
+        )
+        .into_any_element()
     } else {
-        div()
-            .id(SharedString::from(format!("{}-ref-list", c.key)))
-            .flex()
-            .flex_col()
-            .gap(px(layout::MENU_GAP))
-            .max_h(px(REF_LIST_MAX_HEIGHT))
+        dh::ref_list(SharedString::from(format!("{}-ref-list", c.key)))
             .overflow_y_scroll()
             .track_scroll(&view.list)
             .children(rows.into_iter().enumerate().map(|(row, ix)| {
@@ -3095,21 +2993,13 @@ fn ref_menu_card(
                     .on_click(move |_, window, cx| {
                         pick.update(cx, |s, cx| s.pick_ref(ix, window, cx));
                     })
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .font_family(pink::MONO)
-                            .text_size(px(12.))
-                            .child(name),
-                    )
+                    .child(dh::ref_row_label(name, pink::MONO.into()))
             }))
             .into_any_element()
     };
     let close = c.state.clone();
     pink::popover_card(t)
-        .w(px(REF_MENU_WIDTH))
+        .w(dh::ui_rems(dh::REF_MENU_WIDTH))
         .flex()
         .flex_col()
         .on_mouse_down_out(move |_, _, cx| close.update(cx, |s, cx| s.close_menu(Menu::Ref, cx)))
@@ -3186,51 +3076,25 @@ fn header_strip(
     deletions: u32,
     truncated: bool,
 ) -> gpui::Div {
-    div()
-        .flex_none()
-        .h(px(layout::TITLEBAR_HEIGHT))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(10.))
-        .px(px(pink::space::S16))
-        .border_b_1()
-        .border_color(t.hairline(0.06))
-        .child(
-            div()
-                .min_w_0()
-                .truncate()
-                .text_size(px(12.))
-                .text_color(t.text_muted)
-                .child(label),
-        )
-        .child(
-            div()
-                .font_family(pink::MONO)
-                .text_size(px(11.))
-                .text_color(t.readable_tone(t.diff_add, 1.0))
-                .child(format!("+{additions}")),
-        )
-        .child(
-            div()
-                .font_family(pink::MONO)
-                .text_size(px(11.))
-                .text_color(t.readable_tone(t.diff_del, 1.0))
-                .child(format!("−{deletions}")),
-        )
-        .child(div().flex_1())
+    dh::summary_strip(t.hairline(0.06))
+        .child(dh::summary_label(label, t.text_muted))
+        .child(dh::summary_count(
+            format!("+{additions}"),
+            pink::MONO.into(),
+            t.readable_tone(t.diff_add, 1.0),
+        ))
+        .child(dh::summary_count(
+            format!("\u{2212}{deletions}"),
+            pink::MONO.into(),
+            t.readable_tone(t.diff_del, 1.0),
+        ))
+        .child(dh::spacer())
         .when(truncated, |el| {
-            el.child(
-                div()
-                    .flex_none()
-                    .text_size(px(11.))
-                    .px(px(6.))
-                    .py(px(2.))
-                    .rounded(px(radius::XS))
-                    .bg(t.warning.opacity(0.08))
-                    .text_color(t.readable_tone(t.warning, 0.75))
-                    .child("Partial snapshot"),
-            )
+            el.child(dh::partial_badge(
+                "Partial snapshot",
+                t.warning.opacity(0.08),
+                t.readable_tone(t.warning, 0.75),
+            ))
         })
 }
 
@@ -3306,76 +3170,46 @@ fn file_header(
     let path = file.path.clone();
     let on_fold = c.on_fold.clone();
     let (adds, dels) = (file.additions, file.deletions);
-    let mono_count = |text: String, tone: Hsla| {
-        div()
-            .flex_none()
-            .font_family(pink::MONO)
-            .text_size(px(11.))
-            .text_color(t.readable_tone(tone, 1.0))
-            .child(text)
-    };
-    div()
-        .id(SharedString::from(id.clone()))
-        .w_full()
-        .h(px(FILE_HEADER_HEIGHT))
-        .when(!sticky && ix > 0, |el| {
-            el.border_t_1().border_color(t.hairline(0.04))
-        })
-        .when(sticky, |el| {
-            el.border_b_1()
-                .border_color(t.border)
-                .block_mouse_except_scroll()
-        })
-        .flex_none()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(8.))
-        .px(px(chrome::CONTENT_INSET))
-        .cursor_pointer()
-        .hover_fill(id, rest, hover)
-        .on_click(move |_, window, cx| toggle_fold(&state, &path, &on_fold, window, cx))
-        .child(
-            div()
-                .flex_none()
-                .size(px(14.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(
-                    svg()
-                        .path(ICON_CHEVRON)
-                        .size(px(12.))
-                        .text_color(t.readable_muted(0.7))
-                        .with_transformation(Transformation::rotate(radians(FRAC_PI_2 * open))),
-                ),
-        )
-        .child(img(file_icon(&file.path, t.dark)).size(px(14.)).flex_none())
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .font_family(pink::MONO)
-                .text_size(px(12.))
-                .text_color(t.text_dim)
-                .child(file.path.clone()),
-        )
-        .when(file.binary, |el| {
-            el.child(
-                div()
-                    .flex_none()
-                    .text_size(px(11.))
-                    .text_color(t.text_faint)
-                    .child("BIN"),
-            )
-        })
-        .when(adds > 0 || !file.binary, |el| {
-            el.child(mono_count(format!("+{adds}"), t.diff_add))
-        })
-        .when(dels > 0 || !file.binary, |el| {
-            el.child(mono_count(format!("−{dels}"), t.diff_del))
-        })
+    let mono: SharedString = pink::MONO.into();
+    dh::file_header(
+        SharedString::from(id.clone()),
+        if sticky {
+            dh::FileHeaderPlacement::Sticky
+        } else {
+            dh::FileHeaderPlacement::Row { first: ix == 0 }
+        },
+        &dh::FileHeaderStyle {
+            fill: rest,
+            rule: if sticky { t.border } else { t.hairline(0.04) },
+        },
+    )
+    .when(sticky, |el| el.block_mouse_except_scroll())
+    .hover_fill(id, rest, hover)
+    .on_click(move |_, window, cx| toggle_fold(&state, &path, &on_fold, window, cx))
+    .child(dh::disclosure(
+        svg().path(ICON_CHEVRON),
+        open,
+        t.readable_muted(0.7),
+    ))
+    .child(dh::artwork(img(file_icon(&file.path, t.dark))))
+    .child(dh::path(file.path.clone(), mono.clone(), t.text_dim))
+    .when(file.binary, |el| {
+        el.child(dh::binary_tag("BIN", t.text_faint))
+    })
+    .when(adds > 0 || !file.binary, |el| {
+        el.child(dh::count(
+            format!("+{adds}"),
+            mono.clone(),
+            t.readable_tone(t.diff_add, 1.0),
+        ))
+    })
+    .when(dels > 0 || !file.binary, |el| {
+        el.child(dh::count(
+            format!("\u{2212}{dels}"),
+            mono.clone(),
+            t.readable_tone(t.diff_del, 1.0),
+        ))
+    })
 }
 
 /// The header of the file under the list's top edge, held there and pushed

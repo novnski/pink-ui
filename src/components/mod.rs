@@ -30,6 +30,7 @@ pub mod command_row;
 pub mod comment_thread;
 pub mod comments_panel;
 pub mod commit_history;
+pub mod commit_row;
 pub mod compact_breakdown;
 pub mod composer_disc;
 pub mod composer_pill;
@@ -39,6 +40,7 @@ pub mod data_table;
 pub mod date_range_picker;
 pub mod decision_inbox;
 pub mod delegate_board;
+pub mod diff_header;
 pub mod diff_rows;
 pub mod diff_viewer;
 pub mod dropzone;
@@ -51,6 +53,7 @@ pub mod file_tree;
 pub mod filter_menu;
 pub mod find_bar;
 pub mod git_actions;
+pub mod git_card;
 pub mod icon_button;
 pub mod image_lightbox;
 pub mod inline_diff;
@@ -94,6 +97,7 @@ pub mod skeleton;
 pub mod smart_recommendation;
 pub mod stepper_form;
 pub mod subagent_cards;
+pub mod surface_toolbar;
 pub mod switch;
 pub mod tab_bar;
 pub mod tab_chip;
@@ -633,6 +637,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         story: file_row::story,
     },
     ComponentEntry {
+        slug: "surface-toolbar",
+        name: surface_toolbar::NAME,
+        category: "Navigation",
+        description: surface_toolbar::DESCRIPTION,
+        story: surface_toolbar::story,
+    },
+    ComponentEntry {
         slug: "button",
         name: button::NAME,
         category: "Buttons",
@@ -850,6 +861,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         story: diff_viewer::story,
     },
     ComponentEntry {
+        slug: "diff-header",
+        name: diff_header::NAME,
+        category: "Code",
+        description: diff_header::DESCRIPTION,
+        story: diff_header::story,
+    },
+    ComponentEntry {
         slug: "commit-history",
         name: commit_history::NAME,
         category: "Code",
@@ -857,11 +875,25 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         story: commit_history::story,
     },
     ComponentEntry {
+        slug: "commit-row",
+        name: commit_row::NAME,
+        category: "Code",
+        description: commit_row::DESCRIPTION,
+        story: commit_row::story,
+    },
+    ComponentEntry {
         slug: "git-actions",
         name: git_actions::NAME,
         category: "Code",
         description: git_actions::DESCRIPTION,
         story: git_actions::story,
+    },
+    ComponentEntry {
+        slug: "git-card",
+        name: git_card::NAME,
+        category: "Code",
+        description: git_card::DESCRIPTION,
+        story: git_card::story,
     },
     ComponentEntry {
         slug: "pr-badge",

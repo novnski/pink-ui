@@ -36,7 +36,8 @@ use gpui::{
 };
 
 use crate::{
-    HoverFill as _, motion,
+    components::git_card as gc,
+    motion,
     pink::{self, Pink, layout},
     primitives::{InputEvent, TextInput},
     story,
@@ -47,15 +48,9 @@ pub const DESCRIPTION: &str = "The Git card from Pink's changes pane: branch and
 
 const ICON_PULL_REQUEST: &str = "icons/git-actions/git-pull-request.svg";
 
-// Pink: changes/git_actions.rs `render_git_card`, `git_button_base`.
-const CARD_MAX_HEIGHT: f32 = 530.0;
-const CARD_GAP: f32 = 6.0;
-const BUTTON_HEIGHT: f32 = 26.0;
-const BUTTON_PAD_X: f32 = 10.0;
-/// Pink `Theme::CONTROL_RADIUS`.
-const CONTROL_RADIUS: f32 = 6.0;
-const FILE_LIST_MAX_HEIGHT: f32 = 130.0;
-const MESSAGE_HEIGHT: f32 = 30.0;
+// Pink: changes/git_actions.rs `render_git_card`; the card's own geometry
+// comes from the `pink-git-card` package.
+const MESSAGE_HEIGHT: f32 = gc::MESSAGE_HEIGHT;
 /// Pink's composer input type (`INPUT_TEXT_SIZE`, `INPUT_LINE_HEIGHT`).
 const INPUT_TEXT_SIZE: f32 = 14.0;
 const INPUT_LINE_HEIGHT: f32 = 22.75;
@@ -1411,34 +1406,24 @@ impl RenderOnce for GitActions {
         };
 
         // Pink `render_git_card`.
-        let mut card = div()
-            .id(self.id.clone())
-            .flex_none()
-            .w(px(self.width))
-            .max_h(px(CARD_MAX_HEIGHT))
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .gap(px(CARD_GAP))
-            .px(px(pink::space::S12))
-            .py(px(pink::space::S8))
-            .border_b_1()
-            .border_color(t.border)
-            .bg(t.card_glass_bg())
-            .font_family(pink::SANS)
-            .text_color(t.text);
+        let mut card = gc::card(
+            self.id.clone(),
+            &gc::CardStyle {
+                border: t.border,
+                fill: t.card_glass_bg(),
+            },
+        )
+        .w(px(self.width))
+        .overflow_y_scroll()
+        .font_family(pink::SANS)
+        .text_color(t.text);
         if let Some(preview) = &self.preview {
             let remote = preview
                 .remote
                 .clone()
                 .unwrap_or_else(|| "No push remote".into());
             card = card.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .text_size(px(11.))
-                    .text_color(t.text_dim)
+                gc::facts(t.text_dim)
                     .child(format!("Branch {} on {remote}", preview.branch))
                     .child(
                         c.step_button("git-refresh", "Refresh")
@@ -1471,13 +1456,8 @@ impl RenderOnce for GitActions {
                 .iter()
                 .map(|file| file_row(&c, &state, file, selected.contains(&file.path)));
             card = card.child(
-                div()
-                    .id(SharedString::from(format!("{key}-file-list")))
-                    .max_h(px(FILE_LIST_MAX_HEIGHT))
+                gc::file_list(SharedString::from(format!("{key}-file-list")))
                     .overflow_y_scroll()
-                    .flex()
-                    .flex_col()
-                    .gap(px(4.))
                     .children(rows),
             );
             // The commit row reads the picks and the message at click time.
@@ -1524,10 +1504,7 @@ impl RenderOnce for GitActions {
                         .child(message_input.clone()),
                 )
                 .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(6.))
+                    gc::button_row()
                         .child(
                             git_button(&key, "git-generate", "Generate message", &t)
                                 .on_click(generate),
@@ -1561,20 +1538,10 @@ impl RenderOnce for GitActions {
             }
         }
         if let Some(notice) = self.notice.clone() {
-            card = card.child(
-                div()
-                    .text_size(px(11.))
-                    .text_color(t.text_dim)
-                    .child(notice),
-            );
+            card = card.child(gc::note(notice, t.text_dim));
         }
         if self.busy {
-            card = card.child(
-                div()
-                    .text_size(px(11.))
-                    .text_color(t.text_faint)
-                    .child("Working…"),
-            );
+            card = card.child(gc::note("Working…", t.text_faint));
         }
         card
     }
@@ -1600,34 +1567,28 @@ impl Card<'_> {
     }
 }
 
-/// The shared button body (Pink `git_button_base`): 26 tall, `px 10`, r6, a
-/// 1 px `border`, 12 in `text`, a tab stop with the inset focus ring.
+/// The shared button body (Pink `git_button_base`), drawn by the
+/// `pink-git-card` package: 26 tall, `px 10`, r6, a 1 px edge, 12 type; a
+/// tab stop with the inset focus ring. `style` carries the plate, already
+/// blended over the hover fade.
 fn git_button_base(
     key: &str,
     id: &str,
     label: impl Into<SharedString>,
+    style: &gc::ButtonStyle,
     t: &Pink,
 ) -> Stateful<gpui::Div> {
     let label = label.into();
     let ring = t.focus_ring();
-    div()
-        .id(SharedString::from(format!("{key}-{id}")))
-        .role(Role::Button)
-        .aria_label(label.clone())
-        .tab_index(0)
-        .flex_none()
-        .h(px(BUTTON_HEIGHT))
-        .px(px(BUTTON_PAD_X))
-        .flex()
-        .items_center()
-        .rounded(px(CONTROL_RADIUS))
-        .border_1()
-        .border_color(t.border)
-        .text_size(px(12.))
-        .text_color(t.text)
-        .cursor_pointer()
-        .focus_visible(move |s| pink::focus_ring(s, ring))
-        .child(label)
+    gc::button(
+        SharedString::from(format!("{key}-{id}")),
+        label.clone(),
+        style,
+    )
+    .role(Role::Button)
+    .aria_label(label)
+    .tab_index(0)
+    .focus_visible(move |s| pink::focus_ring(s, ring))
 }
 
 /// A secondary card button on the raised plate (Pink `git_button`).
@@ -1637,11 +1598,14 @@ fn git_button(
     label: impl Into<SharedString>,
     t: &Pink,
 ) -> Stateful<gpui::Div> {
-    git_button_base(key, id, label, t).hover_fill(
-        format!("{key}-{id}-fill"),
-        t.surface_raised,
-        t.surface_raised_hover,
-    )
+    let fill_key = format!("{key}-{id}-fill");
+    let style = gc::ButtonStyle {
+        fill: motion::hover_blend(&fill_key, t.surface_raised, t.surface_raised_hover),
+        border: t.border,
+        text: t.text,
+        weight: None,
+    };
+    git_button_base(key, id, label, &style, t).on_hover(motion::hover_listener(fill_key))
 }
 
 /// The card's default action (Pink `git_primary_button`, audit SS-13): an
@@ -1653,64 +1617,46 @@ fn git_primary_button(
     t: &Pink,
 ) -> Stateful<gpui::Div> {
     let fill = t.accent_strong;
-    git_button_base(key, id, label, t)
-        .border_color(gpui::transparent_black())
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(t.on_accent)
-        .hover_fill(format!("{key}-{id}-fill"), fill, fill.opacity(0.88))
+    let fill_key = format!("{key}-{id}-fill");
+    let style = gc::ButtonStyle {
+        fill: motion::hover_blend(&fill_key, fill, fill.opacity(0.88)),
+        border: gpui::transparent_black(),
+        text: t.on_accent,
+        weight: Some(FontWeight::MEDIUM),
+    };
+    git_button_base(key, id, label, &style, t).on_hover(motion::hover_listener(fill_key))
 }
 
 /// "Commit · Commit 2 selected files" (Pink `render_next_git_action`): the
 /// step in medium `text`, its reason in `text_dim`, 11 on a shared baseline.
 fn next_step_line(key: &str, next: &NextAction, t: &Pink) -> impl IntoElement {
     let label = next.step.label();
-    div()
-        .id(SharedString::from(format!("{key}-git-next-action")))
-        .role(Role::Group)
-        .aria_label(SharedString::from(format!(
-            "Next Git step: {label}. {}",
-            next.reason
-        )))
-        .flex()
-        .items_baseline()
-        .gap(px(6.))
-        .min_w_0()
-        .text_size(px(11.))
-        .child(
-            div()
-                .flex_none()
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(t.text)
-                .child(label),
-        )
-        .child(
-            div()
-                .min_w_0()
-                .text_color(t.text_dim)
-                .child(next.reason.clone()),
-        )
+    gc::next_step(
+        SharedString::from(format!("{key}-git-next-action")),
+        label,
+        next.reason.clone(),
+        &gc::NextStepStyle {
+            label: t.text,
+            reason: t.text_dim,
+        },
+    )
+    .role(Role::Group)
+    .aria_label(SharedString::from(format!(
+        "Next Git step: {label}. {}",
+        next.reason
+    )))
 }
 
 /// The PR status line (Pink `render_pr_status`): the badge, its state word
 /// in the state's tone and the title, or what the lookup found.
 fn pr_status_row(c: &Card, pr: Option<&PrStatus>) -> impl IntoElement {
     let t = c.t;
-    let row = div()
-        .flex()
-        .items_center()
-        .gap(px(6.))
-        .text_size(px(11.))
-        .text_color(t.text_dim);
+    let row = gc::status_row(t.text_dim);
     match pr {
         Some(PrStatus::Linked(pr)) => row
             .child(pr_badge(c, pr))
-            .child(
-                div()
-                    .flex_none()
-                    .text_color(pr.state.tone(t))
-                    .child(pr.state.label()),
-            )
-            .child(div().min_w_0().truncate().child(pr.title.clone())),
+            .child(gc::status_state(pr.state.label(), pr.state.tone(t)))
+            .child(gc::status_title(pr.title.clone())),
         Some(PrStatus::NoMatch) => row.child("No PR found in the selected remote"),
         Some(PrStatus::UnsupportedHost) => row.child("PR status unsupported for this remote"),
         Some(PrStatus::Unavailable(reason)) => row.child(reason.clone()),
@@ -1833,34 +1779,23 @@ fn pr_panel(
         _ => None,
     };
     let small = |copy: SharedString| div().text_size(px(11.)).text_color(t.text_dim).child(copy);
-    let mut body =
-        div()
-            .id(SharedString::from(format!("{}-pr-panel", c.key)))
-            .flex()
-            .flex_col()
-            .gap(px(CARD_GAP))
-            .p(px(pink::space::S8))
-            .border_1()
-            .border_color(t.border)
-            .rounded(px(CONTROL_RADIUS))
-            .bg(t.card_glass_bg())
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(div().text_size(px(12.)).text_color(t.text).child(
-                        if details.is_some() {
-                            "Pull request"
-                        } else {
-                            "New draft pull request"
-                        },
-                    ))
-                    .child(
-                        c.step_button("pr-panel-close", "Close")
-                            .on_click(c.sender.on(GitRequest::ClosePrPanel)),
-                    ),
-            );
+    let mut body = gc::panel(
+        SharedString::from(format!("{}-pr-panel", c.key)),
+        &gc::CardStyle {
+            border: t.border,
+            fill: t.card_glass_bg(),
+        },
+    )
+    .child(gc::panel_header(
+        if details.is_some() {
+            "Pull request"
+        } else {
+            "New draft pull request"
+        },
+        t.text,
+        c.step_button("pr-panel-close", "Close")
+            .on_click(c.sender.on(GitRequest::ClosePrPanel)),
+    ));
     match panel {
         PrPanel::Details(details) => {
             let summary = &details.summary;
@@ -2048,19 +1983,12 @@ fn checkpoint_section(
 ) -> impl IntoElement {
     let t = c.t;
     let dim = |copy: SharedString| div().text_size(px(11.)).text_color(t.text_dim).child(copy);
-    let mut section = div()
-        .flex()
-        .flex_col()
-        .gap(px(5.))
-        .py(px(pink::space::S8))
-        .border_b_1()
-        .border_color(t.border)
-        .child(
-            div()
-                .text_size(px(11.))
-                .text_color(t.text)
-                .child("File checkpoints"),
-        );
+    let mut section = gc::section(t.border).child(
+        div()
+            .text_size(px(11.))
+            .text_color(t.text)
+            .child("File checkpoints"),
+    );
     match checkpoints {
         Some(list) => {
             if let Some(reason) = &list.restore_unavailable_reason {
@@ -2180,45 +2108,30 @@ fn file_row(c: &Card, state: &Entity<CardState>, file: &GitFile, picked: bool) -
     let path = file.path.clone();
     let staged = file.staged;
     let toggle = state.clone();
-    div()
-        .flex()
-        .items_center()
-        .gap(px(8.))
-        .min_w_0()
+    gc::file_row()
         .child(
-            div()
-                .id(SharedString::from(format!("{}-git-select-{path}", c.key)))
-                .role(Role::CheckBox)
-                .aria_label(path.clone())
-                .flex_none()
-                .cursor_pointer()
-                .text_size(px(11.))
-                .text_color(t.text)
-                .child(if picked { "☑" } else { "☐" })
-                .on_click({
-                    let path = path.clone();
-                    move |_, _, cx| {
-                        if staged {
-                            toggle.update(cx, |s, cx| {
-                                if !s.selected.insert(path.clone()) {
-                                    s.selected.remove(&path);
-                                }
-                                cx.notify();
-                            });
-                        }
+            gc::pick_box(
+                SharedString::from(format!("{}-git-select-{path}", c.key)),
+                picked,
+                t.text,
+            )
+            .role(Role::CheckBox)
+            .aria_label(path.clone())
+            .on_click({
+                let path = path.clone();
+                move |_, _, cx| {
+                    if staged {
+                        toggle.update(cx, |s, cx| {
+                            if !s.selected.insert(path.clone()) {
+                                s.selected.remove(&path);
+                            }
+                            cx.notify();
+                        });
                     }
-                }),
+                }
+            }),
         )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .font_family(pink::MONO)
-                .text_size(px(11.))
-                .text_color(t.text)
-                .child(path.clone()),
-        )
+        .child(gc::file_path(path.clone(), pink::MONO.into(), t.text))
         .when(file.unstaged, |row| {
             row.child(
                 c.step_button(&format!("git-stage-{path}"), "Stage")
