@@ -1,4 +1,4 @@
-// PINK's empty and error states, two shapes:
+// PINK's empty and error states, five shapes:
 //
 // - The list note (shell.rs `render_chat_sidebar` "sidebar-empty-state"): a
 //   list with nothing in it says so in a centred medium title and names the
@@ -7,6 +7,16 @@
 //   content, or after it failed, centres a tile holding the place's glyph,
 //   a title, a description and one bordered action ("Enter an address" with
 //   its shortcut; "Try again" after an error).
+// - The place state (right_rail.rs `render_place_empty`): a right-rail
+//   place with nothing open centres its faint glyph, one line saying so
+//   ("No diff open."), an optional notice and the host's button that opens
+//   one ("Diff the working tree").
+// - The guide (related_chats.rs `render_related_empty`): a list that fills
+//   only as the user works says so, then explains each kind of row it will
+//   hold beside that kind's glyph, then offers the host's button that starts
+//   one ("No related chats yet").
+// - The popup note (pickers.rs `empty_list_note`): a popover list with no
+//   rows centres one muted line ("No models found").
 //
 // UI rethink decision 54: drawn here, consumed by PINK through a pinned
 // revision. The package draws only. The host supplies the resolved colours,
@@ -14,7 +24,9 @@
 // names, the hover fill and the listeners. Plain `//` comments: the pink-ui
 // gallery compiles this file in place with `include!` for its story.
 
-use gpui::{AbsoluteLength, Div, FontWeight, Hsla, SharedString, div, prelude::*, px, rems};
+use gpui::{
+    AbsoluteLength, Div, FontWeight, Hsla, IntoElement, SharedString, div, prelude::*, px, rems,
+};
 
 /// The list note's padding and the gap between its lines, in px (PINK
 /// `Theme::SPACE_SM` / `SPACE_LG`). Fixed, like the list's own insets.
@@ -50,6 +62,36 @@ pub const ACTION_GAP: f32 = 8.0;
 pub const ACTION_TEXT: f32 = 12.0;
 pub const SHORTCUT_TEXT: f32 = 11.0;
 pub const ACTION_RADIUS: f32 = 6.0;
+
+/// The place state's padding (px), the gap between its parts (pt), its
+/// glyph (px, fixed like the rail's chrome), its message and notice sizes
+/// (pt) and the notice's widest measure (px).
+pub const PLACE_PAD: f32 = 16.0;
+pub const PLACE_GAP: f32 = 10.0;
+pub const PLACE_GLYPH: f32 = 22.0;
+pub const PLACE_MESSAGE: f32 = 12.5;
+pub const PLACE_NOTICE: f32 = 11.5;
+pub const PLACE_NOTICE_WIDTH: f32 = 280.0;
+
+/// The guide's side padding (px, PINK `Theme::SPACE_SM`, matching the list
+/// it stands in for), its top and bottom padding, the gap between its lines
+/// and its text size (pt).
+pub const GUIDE_PAD_X: f32 = 8.0;
+pub const GUIDE_PAD_Y: f32 = 10.0;
+pub const GUIDE_GAP: f32 = 8.0;
+pub const GUIDE_TEXT: f32 = 12.0;
+/// A guide line's kind glyph (pt), the gap after it (pt) and how far it
+/// drops to sit on the first line of its text (px).
+pub const GUIDE_GLYPH: f32 = 13.0;
+pub const GUIDE_GLYPH_GAP: f32 = 8.0;
+pub const GUIDE_GLYPH_DROP: f32 = 1.0;
+/// The extra space above the guide's action, in px.
+pub const GUIDE_ACTION_SPACE: f32 = 2.0;
+
+/// The popup note's padding and text size, in pt at the 16 px default.
+pub const POPUP_NOTE_PAD_X: f32 = 8.0;
+pub const POPUP_NOTE_PAD_Y: f32 = 24.0;
+pub const POPUP_NOTE_TEXT: f32 = 12.0;
 
 /// A design size (pt at the 16 px default) in rems, so it grows with the
 /// host's Interface size.
@@ -182,4 +224,103 @@ pub fn action(style: &ActionStyle) -> Div {
 /// The action's keyboard shortcut after its label. The host adds the keys.
 pub fn shortcut(color: Hsla) -> Div {
     div().text_size(ui_rems(SHORTCUT_TEXT)).text_color(color)
+}
+
+/// The place state's frame: fills the place and centres its glyph
+/// ([`place_glyph`]), its [`place_message`], an optional [`place_notice`]
+/// and the host's button. The host adds the id.
+pub fn place() -> Div {
+    div()
+        .size_full()
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .gap(ui_rems(PLACE_GAP))
+        .p(px(PLACE_PAD))
+}
+
+/// Sizes and tints the host's place glyph (an `svg()` of the place's icon).
+pub fn place_glyph<E: Styled>(glyph: E, color: Hsla) -> E {
+    glyph.size(px(PLACE_GLYPH)).text_color(color)
+}
+
+/// The line saying the place is empty. The host adds the copy.
+pub fn place_message(color: Hsla) -> Div {
+    div().text_size(ui_rems(PLACE_MESSAGE)).text_color(color)
+}
+
+/// A notice under the message (why the place could not fill), centred and
+/// wrapping inside `PLACE_NOTICE_WIDTH`. The host adds the copy.
+pub fn place_notice(color: Hsla) -> Div {
+    div()
+        .max_w(px(PLACE_NOTICE_WIDTH))
+        .text_center()
+        .text_size(ui_rems(PLACE_NOTICE))
+        .text_color(color)
+}
+
+/// What a guide draws, already resolved by the host.
+pub struct GuideStyle {
+    /// The heading.
+    pub title: Hsla,
+    /// The explanations and their glyphs.
+    pub text: Hsla,
+}
+
+/// The guide's column: the [`guide_title`], a [`guide_line`] per kind and
+/// the [`guide_action`]. The host adds the id.
+pub fn guide(style: &GuideStyle) -> Div {
+    div()
+        .px(px(GUIDE_PAD_X))
+        .py(ui_rems(GUIDE_PAD_Y))
+        .flex()
+        .flex_col()
+        .gap(ui_rems(GUIDE_GAP))
+        .text_size(ui_rems(GUIDE_TEXT))
+        .text_color(style.text)
+}
+
+/// The guide's heading. The host adds the copy.
+pub fn guide_title(style: &GuideStyle) -> Div {
+    div().text_color(style.title)
+}
+
+/// One kind explained: the host's glyph (an `svg()` of the kind's icon,
+/// sized and tinted here) beside its wrapping explanation.
+pub fn guide_line<E: Styled + IntoElement>(
+    style: &GuideStyle,
+    glyph: E,
+    text: impl Into<SharedString>,
+) -> Div {
+    div()
+        .flex()
+        .flex_row()
+        .items_start()
+        .gap(ui_rems(GUIDE_GLYPH_GAP))
+        .child(
+            glyph
+                .size(ui_rems(GUIDE_GLYPH))
+                .flex_none()
+                .mt(px(GUIDE_GLYPH_DROP))
+                .text_color(style.text),
+        )
+        .child(div().flex_1().min_w_0().child(text.into()))
+}
+
+/// The slot for the guide's action. The host adds its button.
+pub fn guide_action() -> Div {
+    div().pt(px(GUIDE_ACTION_SPACE))
+}
+
+/// The popup note: one muted line centred in an empty popover list. The
+/// host adds the id and the status role where it has them.
+pub fn popup_note(color: Hsla, copy: impl Into<SharedString>) -> Div {
+    div()
+        .px(ui_rems(POPUP_NOTE_PAD_X))
+        .py(ui_rems(POPUP_NOTE_PAD_Y))
+        .text_size(ui_rems(POPUP_NOTE_TEXT))
+        .text_color(color)
+        .text_center()
+        .child(copy.into())
 }

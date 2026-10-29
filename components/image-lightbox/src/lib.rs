@@ -7,16 +7,17 @@
 // revision.
 //
 // The package draws only. The host supplies the resolved scrim and caption
-// colours, its viewer (the image placed by its zoom and pan geometry) and the
-// file name; it adds the ids, the focus handle, the role and accessible name
-// of the close capsule, its hover fill and glyph, the entrance animations
-// (`rise` per frame) and every listener (Escape, a plain click, the wheel).
+// colours, its viewer (the image placed by `ViewGeometry`, the zoom and pan
+// maths kept here) and the file name; it adds the ids, the focus handle, the
+// role and accessible name of the close capsule, its hover fill and glyph,
+// the entrance animations (`rise` per frame) and every listener and gesture
+// (Escape, a plain click, the wheel, a pinch, a drag).
 // Plain `//` comments: the pink-ui gallery compiles this file in place with
 // `include!` for its story.
 
 use gpui::{
-    AbsoluteLength, Deferred, Div, Hsla, IntoElement, Pixels, Size, anchored, deferred, div, point,
-    prelude::*, px, rems, size,
+    AbsoluteLength, Deferred, Div, Hsla, IntoElement, Pixels, Point, Size, anchored, deferred, div,
+    point, prelude::*, px, rems, size,
 };
 
 /// The scrim's strength in the dark appearance (PINK `scrim_alpha(0.7)`;
@@ -42,6 +43,13 @@ pub const CLOSE_INSET: f32 = 16.0;
 pub const CLOSE_GLYPH: f32 = 12.0;
 /// The layer paints over popovers and menus, like a modal.
 pub const LAYER_PRIORITY: usize = 3;
+/// The viewer's largest zoom, and the bound on the zoomed image's longer
+/// side (in px) that keeps layout coordinates finite for an image with
+/// enormous logical dimensions.
+pub const MAX_ZOOM: f32 = 32.0;
+pub const MAX_EXTENT: f32 = 131_072.0;
+/// The smallest zoom, unless fitting needs less.
+pub const MIN_ZOOM: f32 = 0.01;
 
 /// A design size (pt at the 16 px default) in rems, so it grows with the
 /// host's Interface size.
@@ -125,4 +133,132 @@ pub fn close_button() -> Div {
 /// corner, whichever element renders it.
 pub fn place(layer: impl IntoElement) -> Deferred {
     deferred(anchored().position(point(px(0.0), px(0.0))).child(layer)).priority(LAYER_PRIORITY)
+}
+
+/// The viewer's zoom and pan, in viewport px: the image starts fitted inside
+/// the viewport (never upscaled) and centred; a zoom keeps the image point
+/// under its anchor in place; the pan is kept inside the image's overhang.
+/// The host owns the gestures that drive it and places the image at
+/// [`ViewGeometry::image_origin`], `natural * scale` in size.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ViewGeometry {
+    /// The image's logical size.
+    pub natural: Size<f32>,
+    /// The viewer's size.
+    pub viewport: Size<f32>,
+    pub scale: f32,
+    /// The image centre's offset from the viewport's centre.
+    pub pan: Point<f32>,
+    /// Whether the image still follows the viewport's fit.
+    pub fitted: bool,
+}
+
+impl Default for ViewGeometry {
+    fn default() -> Self {
+        Self {
+            natural: size(1.0, 1.0),
+            viewport: size(1.0, 1.0),
+            scale: 1.0,
+            pan: point(0.0, 0.0),
+            fitted: true,
+        }
+    }
+}
+
+impl ViewGeometry {
+    /// The scale that fits the image inside the viewport, never above 1.
+    pub fn fit_scale(&self) -> f32 {
+        (self.viewport.width / self.natural.width)
+            .min(self.viewport.height / self.natural.height)
+            .min(1.0)
+    }
+
+    /// Takes a new image or viewport size: a fitted image fits again, a
+    /// zoomed one keeps its scale with its pan clamped. Non-finite or empty
+    /// sizes are ignored.
+    pub fn resize(&mut self, natural: Size<f32>, viewport: Size<f32>) {
+        let sizes = [
+            natural.width,
+            natural.height,
+            viewport.width,
+            viewport.height,
+        ];
+        if !sizes.iter().all(|v| v.is_finite() && *v > 0.0) {
+            return;
+        }
+        self.natural = natural;
+        self.viewport = viewport;
+        if self.fitted {
+            self.fit();
+        } else {
+            self.clamp_pan();
+        }
+    }
+
+    /// Back to the fitted, centred image.
+    pub fn fit(&mut self) {
+        self.scale = self.fit_scale();
+        self.pan = point(0.0, 0.0);
+        self.fitted = true;
+    }
+
+    /// Keeps the pan inside the image's overhang past the viewport.
+    pub fn clamp_pan(&mut self) {
+        let limit = point(
+            ((self.natural.width * self.scale - self.viewport.width) / 2.0).max(0.0),
+            ((self.natural.height * self.scale - self.viewport.height) / 2.0).max(0.0),
+        );
+        self.pan.x = self.pan.x.clamp(-limit.x, limit.x);
+        self.pan.y = self.pan.y.clamp(-limit.y, limit.y);
+    }
+
+    /// Zooms to `scale`, between `MIN_ZOOM` (or the fit, if smaller) and
+    /// `MAX_ZOOM` (or less for a huge image), keeping the image point under
+    /// `anchor` (viewport px) in place. Non-finite input is ignored.
+    pub fn zoom(&mut self, scale: f32, anchor: Point<f32>) {
+        if !scale.is_finite() || scale <= 0.0 || !anchor.x.is_finite() || !anchor.y.is_finite() {
+            return;
+        }
+        let maximum = (MAX_EXTENT / self.natural.width.max(self.natural.height))
+            .min(MAX_ZOOM)
+            .max(self.fit_scale());
+        let scale = scale.clamp(self.fit_scale().min(MIN_ZOOM), maximum);
+        let ratio = scale / self.scale;
+        let anchor = anchor - point(self.viewport.width / 2.0, self.viewport.height / 2.0);
+        self.pan = point(
+            anchor.x - (anchor.x - self.pan.x) * ratio,
+            anchor.y - (anchor.y - self.pan.y) * ratio,
+        );
+        self.scale = scale;
+        self.fitted = false;
+        self.clamp_pan();
+    }
+
+    /// Pans by `delta` within the overhang; true when the image moved.
+    pub fn pan_by(&mut self, delta: Point<f32>) -> bool {
+        if !delta.x.is_finite() || !delta.y.is_finite() {
+            return false;
+        }
+        let before = self.pan;
+        self.pan += delta;
+        self.clamp_pan();
+        self.pan != before
+    }
+
+    /// The image's top left corner in the viewport.
+    pub fn image_origin(&self) -> Point<f32> {
+        point(
+            (self.viewport.width - self.natural.width * self.scale) / 2.0 + self.pan.x,
+            (self.viewport.height - self.natural.height * self.scale) / 2.0 + self.pan.y,
+        )
+    }
+
+    /// Whether `local` (viewport px) falls on the image, edges included.
+    pub fn contains(&self, local: Point<f32>) -> bool {
+        let origin = self.image_origin();
+        local.x >= origin.x
+            && local.y >= origin.y
+            && local.x <= origin.x + self.natural.width * self.scale
+            && local.y <= origin.y + self.natural.height * self.scale
+    }
 }
