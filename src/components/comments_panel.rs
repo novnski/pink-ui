@@ -808,7 +808,7 @@ impl RenderOnce for CommentsPanel {
         let commit_state = state.clone();
         let draft = div()
             .relative()
-            .h(comment_card::ui_rems(comment_card::DRAFT_HEIGHT))
+            .h(px(comment_card::draft_height(window.rem_size().into())))
             .w_full()
             .flex_none()
             .flex()

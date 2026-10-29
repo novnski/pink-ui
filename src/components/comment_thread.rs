@@ -710,7 +710,12 @@ impl RenderOnce for CommentThread {
                 state.update(cx, |s, cx| s.send(cx))
             }
         };
-        let draft = comment_card::draft(&comment_card::draft_style(&t), None).child(
+        let draft = comment_card::draft(
+            &comment_card::draft_style(&t),
+            comment_card::draft_height(window.rem_size().into()),
+            None,
+        )
+        .child(
             comment_card::content(None)
                 .child(card_header(self.anchor.clone(), self.title.clone(), &t))
                 .child(comment_card::field(

@@ -107,7 +107,7 @@ fn posted(
 }
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
-    story::view(cx, |_, cx| {
+    story::view(cx, |window, cx| {
         let t = Pink::get(cx);
         let cancel = "story-comment-card-cancel";
         div()
@@ -150,7 +150,12 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                 &t,
             ))
             .child(
-                draft(&draft_style(&t), None).child(
+                draft(
+                    &draft_style(&t),
+                    draft_height(window.rem_size().into()),
+                    None,
+                )
+                .child(
                     content(None)
                         .child(heading("src/lib.rs:5", &t))
                         .child(field(
