@@ -44,10 +44,27 @@ to its vendored runtime, so there is one GPUI type graph and no copied source.
 - `popup_note(color, copy)`: the centred muted `POPUP_NOTE_TEXT` line of an
   empty popover list ("No models found"), padded `POPUP_NOTE_PAD_X` by
   `POPUP_NOTE_PAD_Y`.
+- The surface state PINK's sidebar surfaces and file documents show with
+  nothing to show ("Files couldn't load" with Retry, "Loading files…"):
+  - `surface()`: takes the surface's free height and centres its parts
+    `SURFACE_GAP` apart inside a fixed `SURFACE_PAD_X` px side padding.
+  - `surface_glyph_slot()` and `surface_glyph(glyph, color)`: the slot
+    `SURFACE_GLYPH_SPACE` above the title, holding the host's
+    `SURFACE_GLYPH` icon or its loader.
+  - `surface_title(color)` and `surface_body(color)`: the medium
+    `SURFACE_TITLE` title and the centred `SURFACE_BODY` /
+    `SURFACE_BODY_LINE` secondary line, no wider than `SURFACE_BODY_WIDTH`.
+  - `surface_action()`: the slot for the host's buttons,
+    `SURFACE_ACTION_SPACE` lower.
+- `surface_message(color, copy)`: a surface whose state is one line
+  ("Loading file…") centres the surface state's secondary line alone.
+- `error_note(color, message)`: why a list failed to load, in the danger
+  ink, `ERROR_TEXT` padded `ERROR_PAD`; the host's Retry follows
+  `ERROR_GAP` lower.
 - `ui_rems(design)`: a design size (pt at the 16 px default) in rems. Every
   pane size grows with the host's Interface size; the radii, the list
-  note's insets, the place state's padding and glyph and the guide's side
-  padding stay fixed.
+  note's insets, the place state's padding and glyph, the guide's side
+  padding and the surface state's side padding stay fixed.
 
 The host adds the rest: the resolved colours, the glyph, the copy, the ids,
 the status role and accessible names, the action's hover fill and the

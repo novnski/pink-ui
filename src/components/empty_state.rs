@@ -5,7 +5,8 @@
 //! patched one. The Sidebar, Agent Inbox and Decision Inbox draw their empty
 //! lists with its note; this module adds only the story: the Browser pane
 //! state, a right-rail place with nothing open, the Related place's guide,
-//! an empty model list and the sidebar's list notes.
+//! an empty model list, the sidebar's list notes, the Files surface's
+//! states, a document's one-line messages and a list's error note.
 
 #[allow(dead_code)]
 mod package {
@@ -17,12 +18,12 @@ use gpui::{AnyView, App, IntoElement, Role, SharedString, Window, div, prelude::
 
 use crate::{
     HoverFill,
-    pink::{self, ButtonKind, ControlSize, FillTier, Pink},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, loaders},
     story,
 };
 
 pub const NAME: &str = "Empty State";
-pub const DESCRIPTION: &str = "PINK's empty and error states as a package the app pins: a surface with nothing to show centres a glyph tile, a title, a description and one bordered action that becomes Try again after a failure, and an empty list says so in a centred title with the next step under it";
+pub const DESCRIPTION: &str = "PINK's empty and error states as a package the app pins: a surface with nothing to show centres a glyph tile, a title, a description and one bordered action that becomes Try again after a failure, an empty list says so in a centred title with the next step under it, a sidebar surface centres its glyph or loader over a title, its error and Retry, and a list that failed to load says why over its Retry";
 
 /// Pink: `icons::GLOBE`, the Browser place's glyph.
 const ICON_GLOBE: &str = "icons/empty-state/globe.svg";
@@ -35,6 +36,10 @@ const ICON_BOT: &str = "icons/empty-state/bot.svg";
 const ICON_FORK: &str = "icons/empty-state/arrow-fork.svg";
 /// Pink: `icons::PLUS`.
 const ICON_PLUS: &str = "icons/empty-state/plus.svg";
+/// Pink: `icons::FOLDER` and `icons::FILE`, the Files surface's and a
+/// document's glyphs.
+const ICON_FOLDER: &str = "icons/empty-state/folder.svg";
+const ICON_FILE: &str = "icons/empty-state/file.svg";
 
 /// One pane state as PINK's Browser surface draws it (browser view.rs
 /// `empty_body`): before a page, or after one failed to load.
@@ -190,8 +195,100 @@ fn empty_menu(t: &Pink) -> impl IntoElement {
     )
 }
 
+/// The Files surface with nothing to show, as PINK draws it (files/mod.rs
+/// over surface_chrome.rs `surface_state`): the folder that failed to load
+/// with its error and Retry, or the loader while the tree reads.
+fn files_surface(key: &'static str, error: Option<&'static str>, t: &Pink) -> impl IntoElement {
+    let glyph = match error {
+        Some(_) => surface_glyph(svg().path(ICON_FOLDER), t.text_faint).into_any_element(),
+        None => loaders::gradient_spinner(2.5, t.glyph).into_any_element(),
+    };
+    surface()
+        .id(key)
+        .child(surface_glyph_slot().child(glyph))
+        .child(surface_title(t.text).child(if error.is_some() {
+            "Files couldn't load"
+        } else {
+            "Loading files…"
+        }))
+        .when_some(error, |el, error| {
+            el.child(surface_body(t.text_muted).child(error)).child(
+                surface_action().child(
+                    pink::button(
+                        format!("{key}-retry"),
+                        ButtonKind::Secondary,
+                        ControlSize::Sm,
+                        t,
+                    )
+                    .aria_label("Retry loading files")
+                    .child("Retry"),
+                ),
+            )
+        })
+}
+
+/// A document that failed to open, as PINK's file preview draws it
+/// (files/preview.rs `render_document_error`): its glyph, which file, why,
+/// and the way back.
+fn document_error(t: &Pink) -> impl IntoElement {
+    surface()
+        .id("story-empty-document-error")
+        .child(surface_glyph_slot().child(surface_glyph(svg().path(ICON_FILE), t.text_faint)))
+        .child(surface_title(t.text).child("notes.md couldn't open"))
+        .child(surface_body(t.text_muted).child("The file was removed from the checkout."))
+        .child(
+            surface_action().child(
+                div()
+                    .flex()
+                    .gap(px(8.0))
+                    .child(
+                        pink::button(
+                            "story-empty-document-retry",
+                            ButtonKind::Secondary,
+                            ControlSize::Sm,
+                            t,
+                        )
+                        .aria_label("Retry opening notes.md")
+                        .child("Retry"),
+                    )
+                    .child(
+                        pink::button(
+                            "story-empty-document-files",
+                            ButtonKind::Ghost,
+                            ControlSize::Sm,
+                            t,
+                        )
+                        .aria_label("Show workspace files")
+                        .child("Show files"),
+                    ),
+            ),
+        )
+}
+
+/// A list that failed to load, as PINK's workspace list draws it (shell.rs
+/// over popover.rs `error_row`): why, then Retry.
+fn list_error(t: &Pink) -> impl IntoElement {
+    error_note(
+        t.readable_tone(t.danger, 1.0),
+        "Couldn't reach the workspace service.",
+    )
+    .id("story-empty-list-error")
+    .child(
+        div().child(
+            pink::button(
+                "story-empty-list-retry",
+                ButtonKind::Secondary,
+                ControlSize::Sm,
+                t,
+            )
+            .aria_label("Retry loading workspaces")
+            .child("Retry"),
+        ),
+    )
+}
+
 /// A bordered stand-in for the surface a state fills.
-fn surface(width: f32, height: f32, t: &Pink) -> gpui::Div {
+fn frame(width: f32, height: f32, t: &Pink) -> gpui::Div {
     div()
         .w(px(width))
         .h(px(height))
@@ -217,12 +314,12 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                     .flex_row()
                     .flex_wrap()
                     .gap(px(16.0))
-                    .child(surface(360.0, 300.0, &t).child(browser_pane(
+                    .child(frame(360.0, 300.0, &t).child(browser_pane(
                         "story-empty-browser",
                         None,
                         &t,
                     )))
-                    .child(surface(360.0, 300.0, &t).child(browser_pane(
+                    .child(frame(360.0, 300.0, &t).child(browser_pane(
                         "story-empty-browser-error",
                         Some("The server at localhost:3000 isn’t responding."),
                         &t,
@@ -234,13 +331,13 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                     .flex_row()
                     .flex_wrap()
                     .gap(px(16.0))
-                    .child(surface(260.0, 120.0, &t).child(list_note(
+                    .child(frame(260.0, 120.0, &t).child(list_note(
                         "story-empty-threads",
                         "No threads yet",
                         "Start one with ⌘N.",
                         &t,
                     )))
-                    .child(surface(260.0, 120.0, &t).child(list_note(
+                    .child(frame(260.0, 120.0, &t).child(list_note(
                         "story-empty-attention",
                         "Nothing needs attention",
                         "Running and waiting threads appear here.",
@@ -254,7 +351,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                     .flex_wrap()
                     .items_start()
                     .gap(px(16.0))
-                    .child(surface(300.0, 240.0, &t).child(rail_place(
+                    .child(frame(300.0, 240.0, &t).child(rail_place(
                         "story-empty-changes",
                         ICON_GIT_DIFF,
                         "No diff open.",
@@ -262,7 +359,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                         "Diff the working tree",
                         &t,
                     )))
-                    .child(surface(300.0, 240.0, &t).child(rail_place(
+                    .child(frame(300.0, 240.0, &t).child(rail_place(
                         "story-empty-terminal",
                         ICON_TERMINAL,
                         "No terminals open.",
@@ -270,8 +367,36 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                         "New terminal",
                         &t,
                     )))
-                    .child(surface(300.0, 240.0, &t).child(related_guide(&t)))
+                    .child(frame(300.0, 240.0, &t).child(related_guide(&t)))
                     .child(empty_menu(&t)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .flex_wrap()
+                    .items_start()
+                    .gap(px(16.0))
+                    .child(frame(260.0, 240.0, &t).child(files_surface(
+                        "story-empty-files-error",
+                        Some("The workspace folder was moved or deleted."),
+                        &t,
+                    )))
+                    .child(frame(260.0, 240.0, &t).child(files_surface(
+                        "story-empty-files-loading",
+                        None,
+                        &t,
+                    )))
+                    .child(frame(300.0, 240.0, &t).child(document_error(&t)))
+                    .child(
+                        frame(260.0, 120.0, &t)
+                            .child(surface_message(t.text_faint, "Loading file…")),
+                    )
+                    .child(frame(260.0, 120.0, &t).child(surface_message(
+                        t.text_muted,
+                        "This file cannot be previewed.",
+                    )))
+                    .child(frame(260.0, 120.0, &t).child(list_error(&t))),
             )
     })
 }

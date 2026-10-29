@@ -9,7 +9,11 @@
 //! divider off its column's edge, a columns button off the strip's corner,
 //! and graph parts (node, HEAD's ring, the fold control) that grow with the
 //! Interface size or leave the 36 px row's middle, breaking the lanes the
-//! host strokes at a fixed pitch.
+//! host strokes at a fixed pitch. The lane strokes: a stroke leaving a row
+//! that no longer meets the next row's stroke on the same lane (a seam
+//! between rows), a stroke that misses the node it starts or ends on, a
+//! folding row whose strokes still reach past its shrinking edges, and a
+//! lane change whose curve leaves the two lanes it joins.
 
 use gpui::{
     Bounds, Context, IntoElement, Pixels, Render, TestAppContext, Window, div, prelude::*, px,
@@ -320,4 +324,60 @@ fn header_lines_up_and_graph_parts_keep_their_pitch(cx: &mut TestAppContext) {
             "fold after the node at {ui}: {fold:?}"
         );
     }
+}
+
+#[test]
+fn lane_strokes_join_row_to_row_and_meet_the_node() {
+    use pink_ui::components::commit_row::{LANE_OVERLAP, LaneShape, lane_curve};
+    let (lane_a, lane_b) = (9.0, 21.0);
+    let middle = ROW_HEIGHT / 2.0;
+
+    // Leaving through the bottom edge and arriving through the next row's
+    // top edge on the same lane overlap by both rows' run past the edge.
+    for leaving in [LaneShape::Outgoing, LaneShape::Through, LaneShape::Straight] {
+        let out = lane_curve(leaving, lane_a, lane_b, ROW_HEIGHT);
+        assert_eq!(
+            out.end,
+            (lane_b, ROW_HEIGHT + LANE_OVERLAP),
+            "{leaving:?} end"
+        );
+        for arriving in [LaneShape::Incoming, LaneShape::Through, LaneShape::Straight] {
+            let next = lane_curve(arriving, lane_b, lane_a, ROW_HEIGHT);
+            assert_eq!(
+                next.start.0, out.end.0,
+                "{leaving:?} meets {arriving:?} on its lane"
+            );
+            assert!(
+                (out.end.1 - ROW_HEIGHT) - next.start.1 >= 2.0 * LANE_OVERLAP - f32::EPSILON,
+                "{leaving:?} and {arriving:?} overlap across the row edge"
+            );
+        }
+    }
+
+    // Strokes into and out of a commit end and start on its node, the
+    // middle of the row where `graph_node` centres it.
+    let incoming = lane_curve(LaneShape::Incoming, lane_b, lane_a, ROW_HEIGHT);
+    assert_eq!(incoming.end, (lane_a, middle));
+    let outgoing = lane_curve(LaneShape::Outgoing, lane_a, lane_b, ROW_HEIGHT);
+    assert_eq!(outgoing.start, (lane_a, middle));
+
+    // A lane change's curve stays between the lanes it joins: its controls
+    // hold the lanes' x, so it leaves straight down and arrives straight down.
+    for shape in [LaneShape::Incoming, LaneShape::Outgoing, LaneShape::Through] {
+        let curve = lane_curve(shape, lane_a, lane_b, ROW_HEIGHT);
+        assert_eq!(
+            (curve.control_1.0, curve.control_2.0),
+            (lane_a, lane_b),
+            "{shape:?}"
+        );
+        assert!(curve.start.1 < curve.control_1.1 && curve.control_2.1 < curve.end.1);
+    }
+
+    // A row folding shut takes its strokes with it: the run past each edge
+    // shrinks with the row and is gone when it closes.
+    let half = lane_curve(LaneShape::Through, lane_a, lane_a, ROW_HEIGHT / 2.0);
+    assert_eq!(half.start.1, -LANE_OVERLAP / 2.0);
+    assert_eq!(half.end.1, ROW_HEIGHT / 2.0 + LANE_OVERLAP / 2.0);
+    let shut = lane_curve(LaneShape::Through, lane_a, lane_a, 0.0);
+    assert_eq!((shut.start.1, shut.end.1), (0.0, 0.0));
 }

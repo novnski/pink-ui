@@ -6,11 +6,13 @@
 // (avatar or name), date and short-sha cells; and the button that loads
 // older commits; the column header over them (names, resize dividers, the
 // drop line and the columns button) and each row's graph cell (the node,
-// HEAD's ring and a branch tip's fold control). UI rethink decision 54: drawn
-// here, consumed by PINK through a pinned revision.
+// HEAD's ring and a branch tip's fold control), and the lane graph's strokes
+// painted across the rows (`paint_lanes`, `paint_rail`). UI rethink decision
+// 54: drawn here, consumed by PINK through a pinned revision.
 //
-// The package draws only. The host supplies the lane graph's strokes and its
-// geometry (lane positions, node radius under focus), the glyphs and
+// The package draws only. The host supplies the lane graph's layout (each
+// row's bounds this frame, its segments' lane positions and colour ids, the
+// node radius under focus, the focused lane and its fade), the glyphs and
 // avatar images (its own assets), every colour already resolved (the row's
 // and the sha's washes blended over their hover fades, the graph focus's
 // dimming as an opacity), the families and the text; it adds the ids'
@@ -20,8 +22,8 @@
 // file in place with `include!` for its story.
 
 use gpui::{
-    AbsoluteLength, Div, ElementId, Hsla, Img, ObjectFit, SharedString, Stateful, StyledImage, Svg,
-    div, prelude::*, px, rems,
+    AbsoluteLength, Bounds, Div, ElementId, Hsla, Img, ObjectFit, PathBuilder, Pixels, Point,
+    SharedString, Stateful, StyledImage, Svg, Window, div, point, prelude::*, px, rems,
 };
 
 /// A commit row's height, in fixed pixels (PINK `HISTORY_ROW_HEIGHT`).
@@ -495,9 +497,9 @@ pub fn columns_glyph(glyph: Svg, color: Hsla) -> Svg {
 }
 
 // The graph cell (PINK history.rs `graph_cell`): the row's slice of the lane
-// graph. The host paints the strokes across every row and places the
-// node on its lane; the cell draws the node, HEAD's ring and a branch tip's
-// fold control.
+// graph. The host places the node on its lane; the cell draws the node,
+// HEAD's ring and a branch tip's fold control. The strokes between nodes
+// are painted across every row at once (`paint_lanes` below).
 
 /// A commit node's radius, in fixed pixels (PINK `HISTORY_NODE_RADIUS`);
 /// the host grows it while its lane holds the focus.
@@ -589,4 +591,263 @@ pub fn fold_control(
 /// The fold control's glyph (fold, or expand while collapsed).
 pub fn fold_glyph(glyph: Svg, color: Hsla) -> Svg {
     glyph.size(px(FOLD_GLYPH)).text_color(color)
+}
+
+// The lane strokes (PINK history.rs `graph_paths`): every lane through the
+// visible rows, painted on the host's canvas under the rows as one stroked
+// path per palette colour, so a lane runs from row to row without a seam.
+// With a focused lane a second pass draws it wider over the rest, which is
+// dimmed. The host lays the graph out (each row's bounds as laid out this
+// frame, its segments' lane positions and colour ids, the compact rail's
+// position), resolves the palette and its dimmed twin, owns the focus and
+// its fade, and hit-tests the pointer against `lane_curve`.
+
+/// A lane stroke's width, and the focused lane's at full focus, in fixed
+/// pixels (PINK `HISTORY_STROKE_WIDTH`, `HISTORY_GRAPH_FOCUSED_STROKE_WIDTH`).
+pub const LANE_STROKE: f32 = 1.5;
+pub const LANE_FOCUSED_STROKE: f32 = 2.25;
+/// How far a stroke runs past its row's top and bottom edges at the full
+/// `ROW_HEIGHT`, in fixed pixels, so neighbouring rows' strokes overlap
+/// instead of leaving a seam (PINK `HISTORY_GRAPH_ROW_OVERLAP`). It shrinks
+/// with a row folding shut.
+pub const LANE_OVERLAP: f32 = 0.75;
+/// A folding row at or under this height, in pixels, draws no strokes.
+pub const LANE_MIN_ROW: f32 = 0.5;
+
+/// How a segment crosses its row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LaneShape {
+    /// Straight down through the row, staying on its lane.
+    Straight,
+    /// Down through the row, curving from one lane to another.
+    Through,
+    /// In through the row's top edge, curving onto the node.
+    Incoming,
+    /// Out of the node, curving through the row's bottom edge.
+    Outgoing,
+}
+
+/// A segment's stroke as a cubic curve in row coordinates: pixels from the
+/// row's top-left corner. A `Straight` segment is painted as the line from
+/// `start` to `end`; its controls sit on that line.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LaneCurve {
+    pub start: (f32, f32),
+    pub control_1: (f32, f32),
+    pub control_2: (f32, f32),
+    pub end: (f32, f32),
+}
+
+/// The curve a segment of `shape` strokes from the lane at `from_x` to the
+/// lane at `to_x` across a row `row_height` tall. The node sits on the
+/// row's middle; strokes leaving through an edge run `LANE_OVERLAP` past it,
+/// scaled down while the row folds shut. The host hit-tests against the same
+/// curve, so the pointer follows what is painted.
+pub fn lane_curve(shape: LaneShape, from_x: f32, to_x: f32, row_height: f32) -> LaneCurve {
+    let middle = row_height / 2.0;
+    let overlap = LANE_OVERLAP * (row_height / ROW_HEIGHT).clamp(0.0, 1.0);
+    match shape {
+        LaneShape::Incoming => LaneCurve {
+            start: (from_x, -overlap),
+            control_1: (from_x, middle * 0.55),
+            control_2: (to_x, middle * 0.55),
+            end: (to_x, middle),
+        },
+        LaneShape::Outgoing => LaneCurve {
+            start: (from_x, middle),
+            control_1: (from_x, middle * 1.45),
+            control_2: (to_x, middle * 1.45),
+            end: (to_x, row_height + overlap),
+        },
+        LaneShape::Straight | LaneShape::Through => LaneCurve {
+            start: (from_x, -overlap),
+            control_1: (from_x, middle),
+            control_2: (to_x, middle),
+            end: (to_x, row_height + overlap),
+        },
+    }
+}
+
+/// One segment of a row's lane graph, laid out by the host.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LaneSegment {
+    /// The lane it leaves and the lane it reaches, as x offsets in pixels
+    /// from the row's left edge.
+    pub from_x: f32,
+    pub to_x: f32,
+    pub shape: LaneShape,
+    /// The lane's colour id: it strokes in `LaneStyle::colours[colour %
+    /// len]` and is focused when it equals `LaneFocus::colour`.
+    pub colour: usize,
+}
+
+/// The focused lane: its colour id and how far its focus has faded in,
+/// from 0 to 1.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LaneFocus {
+    pub colour: usize,
+    pub amount: f32,
+}
+
+/// What the lane strokes draw, already resolved by the host.
+pub struct LaneStyle<'a> {
+    /// The lane palette (PINK: the theme's tones, desaturated).
+    pub colours: &'a [Hsla],
+    /// The palette dimmed for every lane but the focused one, slot for slot,
+    /// already mixed toward the pane's surface by the focus's fade (opaque,
+    /// so overlapping row strokes don't stack into darker dots). Read only
+    /// while `focus` is set.
+    pub dimmed: &'a [Hsla],
+    pub focus: Option<LaneFocus>,
+}
+
+impl LaneStyle<'_> {
+    fn passes(&self) -> usize {
+        if self.focus.is_some() { 2 } else { 1 }
+    }
+
+    fn width(&self, focused_pass: bool) -> f32 {
+        self.focus
+            .filter(|_| focused_pass)
+            .map(|focus| LANE_STROKE + (LANE_FOCUSED_STROKE - LANE_STROKE) * focus.amount)
+            .unwrap_or(LANE_STROKE)
+    }
+
+    // Whether a stroke of colour id `colour` belongs to palette `slot` in
+    // this pass: the focused lane draws only in the second pass, the rest
+    // only in the first.
+    fn takes(&self, colour: usize, slot: usize, focused_pass: bool) -> bool {
+        colour % self.colours.len() == slot
+            && self
+                .focus
+                .is_none_or(|focus| (colour == focus.colour) == focused_pass)
+    }
+
+    fn paint_colour(&self, slot: usize, focused_pass: bool) -> Hsla {
+        let colour = self.colours[slot];
+        if self.focus.is_some() && !focused_pass {
+            self.dimmed.get(slot).copied().unwrap_or(colour)
+        } else {
+            colour
+        }
+    }
+}
+
+// A row the strokes reach: inside the viewport and not folded shut.
+fn lane_row_drawn(bounds: &Bounds<Pixels>, viewport: &Bounds<Pixels>) -> bool {
+    !(bounds.bottom() < viewport.top() || bounds.top() > viewport.bottom())
+        && f32::from(bounds.size.height) > LANE_MIN_ROW
+}
+
+/// Paints every lane through the rows that reach `viewport`: per pass and
+/// palette slot, one stroked path holding that colour's segments from every
+/// row, the focused lane last and wider. `rows` yields each laid-out row's
+/// bounds with its segments, top to bottom; rows outside the viewport or
+/// folded shut are skipped without reading their segments.
+pub fn paint_lanes<R, S>(window: &mut Window, viewport: Bounds<Pixels>, rows: R, style: &LaneStyle)
+where
+    R: IntoIterator<Item = (Bounds<Pixels>, S)>,
+    S: IntoIterator<Item = LaneSegment>,
+{
+    if style.colours.is_empty() {
+        return;
+    }
+    let rows: Vec<(Bounds<Pixels>, Vec<LaneSegment>)> = rows
+        .into_iter()
+        .filter(|(bounds, _)| lane_row_drawn(bounds, &viewport))
+        .map(|(bounds, segments)| (bounds, segments.into_iter().collect()))
+        .collect();
+    for pass in 0..style.passes() {
+        let focused_pass = style.focus.is_some() && pass == 1;
+        for slot in 0..style.colours.len() {
+            let mut builder = PathBuilder::stroke(px(style.width(focused_pass)));
+            let mut any = false;
+            for (bounds, segments) in &rows {
+                let origin = bounds.origin;
+                let at = |(x, y): (f32, f32)| point(origin.x + px(x), origin.y + px(y));
+                let height = f32::from(bounds.size.height);
+                for segment in segments
+                    .iter()
+                    .filter(|segment| style.takes(segment.colour, slot, focused_pass))
+                {
+                    any = true;
+                    let curve = lane_curve(segment.shape, segment.from_x, segment.to_x, height);
+                    builder.move_to(at(curve.start));
+                    if segment.shape == LaneShape::Straight {
+                        builder.line_to(at(curve.end));
+                    } else {
+                        builder.cubic_bezier_to(
+                            at(curve.end),
+                            at(curve.control_1),
+                            at(curve.control_2),
+                        );
+                    }
+                }
+            }
+            if any && let Ok(path) = builder.build() {
+                window.paint_path(path, style.paint_colour(slot, focused_pass));
+            }
+        }
+    }
+}
+
+/// One row of the compact rail, laid out by the host.
+pub struct RailRow {
+    /// The row's bounds as laid out this frame.
+    pub bounds: Bounds<Pixels>,
+    /// The next row's bounds, where the rail meets its node; `None` for
+    /// the last row, whose rail runs to its bottom edge.
+    pub next: Option<Bounds<Pixels>>,
+    /// The row's node colour id.
+    pub colour: usize,
+}
+
+/// Paints the compact rail: when the graph is too narrow for its lanes,
+/// one vertical line at `rail_x` (pixels from each row's left edge) runs
+/// from each node to the next in the node's colour, batched and focused
+/// like `paint_lanes`.
+pub fn paint_rail<R>(
+    window: &mut Window,
+    viewport: Bounds<Pixels>,
+    rail_x: f32,
+    rows: R,
+    style: &LaneStyle,
+) where
+    R: IntoIterator<Item = RailRow>,
+{
+    if style.colours.is_empty() {
+        return;
+    }
+    let rows: Vec<RailRow> = rows
+        .into_iter()
+        .filter(|row| lane_row_drawn(&row.bounds, &viewport))
+        .collect();
+    let middle = |bounds: &Bounds<Pixels>| -> Point<Pixels> {
+        point(
+            bounds.origin.x + px(rail_x),
+            bounds.origin.y + px(f32::from(bounds.size.height) / 2.0),
+        )
+    };
+    for pass in 0..style.passes() {
+        let focused_pass = style.focus.is_some() && pass == 1;
+        for slot in 0..style.colours.len() {
+            let mut builder = PathBuilder::stroke(px(style.width(focused_pass)));
+            let mut any = false;
+            for row in rows
+                .iter()
+                .filter(|row| style.takes(row.colour, slot, focused_pass))
+            {
+                let end_y = row
+                    .next
+                    .map(|next| middle(&next).y)
+                    .unwrap_or_else(|| row.bounds.bottom());
+                builder.move_to(middle(&row.bounds));
+                builder.line_to(point(row.bounds.origin.x + px(rail_x), end_y));
+                any = true;
+            }
+            if any && let Ok(path) = builder.build() {
+                window.paint_path(path, style.paint_colour(slot, focused_pass));
+            }
+        }
+    }
 }
