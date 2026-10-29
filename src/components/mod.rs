@@ -41,6 +41,7 @@ pub mod delegate_board;
 pub mod diff_viewer;
 pub mod dropzone;
 pub mod email_draft;
+pub mod empty_state;
 pub mod experiment_card;
 pub mod file_tree;
 pub mod filter_menu;
@@ -696,6 +697,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Feedback",
         description: decision_inbox::DESCRIPTION,
         story: decision_inbox::story,
+    },
+    ComponentEntry {
+        slug: "empty-state",
+        name: empty_state::NAME,
+        category: "Feedback",
+        description: empty_state::DESCRIPTION,
+        story: empty_state::story,
     },
     ComponentEntry {
         slug: "notice",

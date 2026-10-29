@@ -35,6 +35,7 @@ use gpui::{
 
 use crate::{
     HoverFill,
+    components::empty_state,
     motion::{self, COLLAPSE, RESORT},
     pink::{self, FillTier, Pink, chrome, layout, loaders, radius, space},
     story,
@@ -1337,7 +1338,7 @@ fn bell(c: &RowCx, active: bool, has_attention: bool) -> Stateful<Div> {
 }
 
 /// A centred empty list with the next step (Pink: shell.rs
-/// `render_chat_sidebar`, audit SH-24).
+/// `render_chat_sidebar`, audit SH-24), the `pink-empty-state` note.
 fn empty_state(activity: bool, t: &Pink) -> AnyElement {
     let (title, hint) = if activity {
         (
@@ -1347,28 +1348,15 @@ fn empty_state(activity: bool, t: &Pink) -> AnyElement {
     } else {
         ("No tasks yet", "Start one with ⌘N.")
     };
-    div()
-        .px(px(space::SM))
-        .py(px(space::LG))
-        .flex()
-        .flex_col()
-        .items_center()
-        .gap(px(2.0))
-        .text_center()
-        .child(
-            div()
-                .text_size(px(13.0))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(t.readable_muted(0.9))
-                .child(title),
-        )
-        .child(
-            div()
-                .text_size(px(12.0))
-                .text_color(t.readable_faint(0.9))
-                .child(hint),
-        )
-        .into_any_element()
+    empty_state::note(
+        &empty_state::NoteStyle {
+            title: t.readable_muted(0.9),
+            hint: t.readable_faint(0.9),
+        },
+        title,
+        hint,
+    )
+    .into_any_element()
 }
 
 impl RenderOnce for AgentInbox {

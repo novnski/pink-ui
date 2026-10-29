@@ -56,6 +56,7 @@ use gpui::{
 use super::section_header as header;
 use crate::{
     HoverFill,
+    components::empty_state,
     motion::{self, COLLAPSE, MENU_OUT, MENU_RISE_DOWN, RESORT},
     pink::{self, FillTier, Pink, TypeRole, chrome, layout, loaders, radius, space},
     primitives::{InputEvent, TextInput},
@@ -4414,7 +4415,8 @@ fn scope_controls(c: &RowCx, width: f32, cx: &App) -> (Option<AnyElement>, AnyEl
 /// A centred empty list with the next step (Pink: shell.rs
 /// `render_chat_sidebar`, audit SH-24, #180). Truthful: with only inactive
 /// or archived threads it says where they are, and "No threads yet" is
-/// only for a scope with none at all. Announced as a status.
+/// only for a scope with none at all. Announced as a status. Drawn by the
+/// `pink-empty-state` package's note.
 fn empty_state(key: &str, activity: bool, has_shelves: bool, t: &Pink) -> AnyElement {
     let (title, hint) = if activity {
         (
@@ -4429,31 +4431,18 @@ fn empty_state(key: &str, activity: bool, has_shelves: bool, t: &Pink) -> AnyEle
     } else {
         ("No threads yet", "Start one with ⌘N.")
     };
-    div()
-        .id(eid(format!("{key}-empty-state")))
-        .role(Role::Status)
-        .aria_label(format!("{title}. {hint}"))
-        .px(px(space::SM))
-        .py(u(space::LG))
-        .flex()
-        .flex_col()
-        .items_center()
-        .gap(u(2.0))
-        .text_center()
-        .child(
-            div()
-                .text_size(u(13.0))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(t.readable_muted(0.9))
-                .child(title),
-        )
-        .child(
-            div()
-                .text_size(u(12.0))
-                .text_color(t.readable_faint(0.9))
-                .child(hint),
-        )
-        .into_any_element()
+    empty_state::note(
+        &empty_state::NoteStyle {
+            title: t.readable_muted(0.9),
+            hint: t.readable_faint(0.9),
+        },
+        title,
+        hint,
+    )
+    .id(eid(format!("{key}-empty-state")))
+    .role(Role::Status)
+    .aria_label(format!("{title}. {hint}"))
+    .into_any_element()
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,10 @@
 //! Image Lightbox – a full-size view of an image over a dim scrim.
 //!
+//! The layer, the image frame, the caption and the close capsule are the
+//! `pink-image-lightbox` package (`components/image-lightbox`), compiled
+//! here in place; PINK pins the same source. This module adds the viewer
+//! geometry, the gestures and the story.
+//!
 //! Pink: `attachments.rs` `lightbox_with_size`, the viewer a transcript
 //! thumbnail opens, over `image_viewer.rs` `ImageView`, the shared image
 //! geometry and pointer gestures. The scrim (`scrim_alpha(0.7)`) fades in
@@ -21,6 +26,12 @@
 //! })
 //! ```
 
+#[allow(dead_code)]
+mod package {
+    include!("../../components/image-lightbox/src/lib.rs");
+}
+pub use package::*;
+
 use std::{rc::Rc, sync::Arc};
 use web_time::{Duration, Instant};
 
@@ -28,14 +39,13 @@ use gpui::{
     AnimationExt, AnyElement, AnyView, App, BoxShadow, Context, DispatchPhase, Div, ElementId,
     FocusHandle, ImageSource, ImgResourceLoader, IntoElement, MouseButton, MouseMoveEvent,
     ObjectFit, PinchEvent, Pixels, Point, Role, ScrollDelta, ScrollWheelEvent, SharedString, Size,
-    Stateful, Task, TouchPhase, Window, anchored, canvas, deferred, div, img, point, prelude::*,
-    px, size, svg,
+    Stateful, Task, TouchPhase, Window, canvas, div, img, point, prelude::*, px, size, svg,
 };
 
 use crate::{
     HoverFill,
     motion::{LIGHTBOX_BACKDROP_IN, LIGHTBOX_IN},
-    pink::{self, Pink, TextStyle, radius},
+    pink::{self, Pink, radius},
     story,
 };
 
@@ -47,19 +57,6 @@ const ICON_CLOSE: &str = "icons/image-lightbox/close.svg";
 const IMAGE_CHECKOUT: &str = "images/image-lightbox/checkout-coupon-error.png";
 const IMAGE_LATENCY: &str = "images/image-lightbox/p95-latency.png";
 
-/// Pink: `scrim_alpha(0.7)`, the lightbox's dark-mode scrim strength.
-const SCRIM: f32 = 0.7;
-/// Pink: the image box is 90% of the window's width and 85% of its height.
-const BOX_W: f32 = 0.9;
-const BOX_H: f32 = 0.85;
-/// Pink: the image box rises 10px as it fades in.
-const RISE: f32 = 10.0;
-/// Pink: box → caption gap.
-const GAP: f32 = 12.0;
-/// Pink: the close capsule – 32px, 16px in from the top right corner.
-const CLOSE_SIZE: f32 = 32.0;
-const CLOSE_INSET: f32 = 16.0;
-const CLOSE_GLYPH: f32 = 12.0;
 /// Pink `image_viewer.rs`: the largest zoom, the layout bound for huge
 /// images, the drag threshold and the wheel's zoom rate and line height.
 const MAX_ZOOM: f32 = 32.0;
@@ -408,20 +405,12 @@ impl RenderOnce for ImageLightbox {
 
         // A visible way out besides Escape and the backdrop: a glass capsule
         // top right (Pink audit SS-09).
-        let close_button = {
+        let close_capsule = {
             let close = close.clone();
-            div()
+            close_button()
                 .id(SharedString::from(format!("{key}-close")))
                 .role(Role::Button)
                 .aria_label("Close image")
-                .absolute()
-                .top(px(CLOSE_INSET))
-                .right(px(CLOSE_INSET))
-                .size(px(CLOSE_SIZE))
-                .rounded_full()
-                .flex()
-                .items_center()
-                .justify_center()
                 .hover_fill(format!("{key}-close"), t.wash(0.14), t.wash(0.22))
                 .cursor_pointer()
                 .on_click(move |_, window, cx| {
@@ -438,24 +427,18 @@ impl RenderOnce for ImageLightbox {
         };
 
         let viewport = window.viewport_size();
-        let max_w = viewport.width * BOX_W;
-        let max_h = viewport.height * BOX_H;
+        let style = LightboxStyle {
+            scrim: t.scrim(SCRIM_ALPHA_DARK),
+            caption: t.ink(0.7),
+        };
         let on_key = close.clone();
         let press = state.clone();
         let click = state.clone();
-        let overlay = div()
+        let overlay = layer(viewport, &style)
             .id(self.id.clone())
             .occlude()
             .track_focus(&focus)
-            .w(viewport.width)
-            .h(viewport.height)
             .font_family(pink::SANS)
-            .bg(t.scrim(SCRIM))
-            .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .gap(px(GAP))
             .on_key_down(move |event, window, cx| {
                 if event.keystroke.key == "escape" {
                     cx.stop_propagation();
@@ -474,29 +457,13 @@ impl RenderOnce for ImageLightbox {
                 }
             })
             .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
-            .child(
-                div()
-                    .relative()
-                    .w(max_w)
-                    .h(max_h)
-                    .child(content)
-                    .with_animation(
-                        SharedString::from(format!("{key}-image")),
-                        LIGHTBOX_IN.animation(),
-                        |el, p| el.opacity(p).top(px(RISE * (1.0 - p))),
-                    ),
-            )
-            .child(
-                div()
-                    .max_w(max_w)
-                    .overflow_hidden()
-                    .truncate()
-                    .text_size(px(TextStyle::Footnote.size()))
-                    .line_height(px(TextStyle::Footnote.line_height()))
-                    .text_color(t.ink(0.7))
-                    .child(self.image.name.clone()),
-            )
-            .child(close_button)
+            .child(frame(viewport).child(content).with_animation(
+                SharedString::from(format!("{key}-image")),
+                LIGHTBOX_IN.animation(),
+                |el, p| rise(el, p),
+            ))
+            .child(caption(viewport, &style).child(self.image.name.clone()))
+            .child(close_capsule)
             // The backdrop fades in rather than snapping.
             .with_animation(
                 SharedString::from(format!("{key}-in")),
@@ -504,7 +471,7 @@ impl RenderOnce for ImageLightbox {
                 |el, p| el.opacity(p),
             );
         // Over everything else in the window, like a modal.
-        deferred(anchored().position(point(px(0.0), px(0.0))).child(overlay)).priority(3)
+        place(overlay)
     }
 }
 

@@ -11,6 +11,10 @@
 //! retry backoff. Files over the size limit or of a type that isn't accepted
 //! never join the strip; Pink's error strip says why.
 //!
+//! The veil is the `pink-dropzone` package (`components/dropzone`), compiled
+//! here in place; PINK pins the same source for its chat's veil. This module
+//! adds the card, the thumbnails and the story.
+//!
 //! Transfers are simulated (a steady per-file speed) so the component can be
 //! shown on its own; `on_files` hands the real paths to your uploader.
 //!
@@ -19,6 +23,12 @@
 //!     .max_size(24 * MB)
 //!     .on_files(|paths, _, _| upload(paths))
 //! ```
+
+#[allow(dead_code)]
+mod package {
+    include!("../../components/dropzone/src/lib.rs");
+}
+pub use package::*;
 
 use std::{
     path::{Path, PathBuf},
@@ -565,25 +575,20 @@ fn summary(uploads: &[Upload]) -> String {
     }
 }
 
-/// Pink: `shell.rs` "attachment-drop-overlay" – hidden until files hover,
-/// then a 0.4 (dark) scrim with a centred 13 pt "Drop to attach". GPUI
-/// matches the style against the payload type, so only file drags reveal it.
+/// Pink: `shell.rs` "attachment-drop-overlay" – the package's veil, a 0.4
+/// (dark) scrim with a centred "Drop to attach", rounded to the card's inner
+/// corners. GPUI matches the style against the payload type, so only file
+/// drags reveal it.
 fn drop_veil(t: &Pink) -> Div {
-    div()
-        .absolute()
-        .inset_0()
-        .rounded(px(radius::inner(radius::SECTION_CARD, 1.)))
-        .opacity(0.)
-        .bg(t
+    veil(&VeilStyle {
+        scrim: t
             .scrim(pink::SCRIM_ALPHA_DARK)
-            .opacity(0.4 / pink::SCRIM_ALPHA_DARK))
-        .flex()
-        .items_center()
-        .justify_center()
-        .text_size(px(text::BODY))
-        .text_color(t.text)
-        .drag_over::<ExternalPaths>(|style, _, _, _| style.opacity(1.))
-        .child("Drop to attach")
+            .opacity(VEIL_ALPHA_DARK / pink::SCRIM_ALPHA_DARK),
+        label: t.text,
+    })
+    .rounded(px(radius::inner(radius::SECTION_CARD, 1.)))
+    .drag_over::<ExternalPaths>(|style, _, _, _| style.opacity(1.))
+    .child("Drop to attach")
 }
 
 /// Pink: the brief editor's "Add image" – a small ghost button, label then
