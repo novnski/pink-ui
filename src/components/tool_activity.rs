@@ -14,7 +14,7 @@ pub use package::*;
 use gpui::{AnyView, App, SharedString, Window, div, prelude::*, px, svg};
 
 use crate::{
-    pink::{self, FillTier, Pink},
+    pink::{self, Pink},
     story,
 };
 
@@ -29,18 +29,26 @@ pub const DESCRIPTION: &str = "PINK's tool activity as a package the app pins: o
 /// The 28 pt activity pitch at the 16 px default.
 pub const PITCH: f32 = 28.0;
 
-/// The theme's sentence tokens at `scale` (Interface size / 16).
+/// Sentence text, its line box and inline code at the 16 px default (PINK
+/// `TOOL_LABEL_SIZE`, `TOOL_LABEL_LINE_HEIGHT`, `TOOL_CODE_LABEL_SIZE`).
+pub const TEXT_SIZE: f32 = 14.0;
+pub const LINE_HEIGHT: f32 = 20.0;
+pub const CODE_SIZE: f32 = 13.0;
+
+/// The theme's sentence tokens at `scale` (Interface size / 16), as PINK's
+/// `activity_sentence_style`: 13 pt inline code on an 8% wash, the verb
+/// inheriting its control's hover-blended colour.
 pub fn sentence_style(t: &Pink, scale: f32) -> SentenceStyle {
     SentenceStyle {
         scale,
-        text_size: 14.0 * scale,
-        line_height: 20.0 * scale,
-        verb: Some(t.content_muted),
+        text_size: TEXT_SIZE * scale,
+        line_height: LINE_HEIGHT * scale,
+        verb: None,
         object: t.text,
         code: t.text,
-        code_fill: t.fill(FillTier::Tertiary),
+        code_fill: t.text.opacity(0.08),
         code_font: pink::MONO.into(),
-        code_size: 13.0 * scale,
+        code_size: CODE_SIZE * scale,
     }
 }
 
@@ -101,10 +109,17 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
         let failed = div()
             .flex()
             .flex_col()
-            .child(div().h(px(PITCH)).flex().items_center().child(sentence(
-                &[text("Failed to run"), code("cargo test --workspace")],
-                &sentence_style(&t, 1.0),
-            )))
+            .child(
+                div()
+                    .h(px(PITCH))
+                    .flex()
+                    .items_center()
+                    .text_color(t.content_muted)
+                    .child(sentence(
+                        &[text("Failed to run"), code("cargo test --workspace")],
+                        &sentence_style(&t, 1.0),
+                    )),
+            )
             .child(failure_line(
                 "error[E0425]: cannot find value `widht` in this scope".into(),
                 vec![
