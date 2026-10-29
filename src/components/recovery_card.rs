@@ -1,22 +1,22 @@
-//! Recovery Card – a Pink component (Pink: `transcript.rs`
-//! `render_recovery_trailer`, `transcript_notice`, `trailer_action`).
+//! Recovery Card: the `pink-recovery-card` package
+//! (`components/recovery-card`), PINK's timeline notice (transcript.rs
+//! `transcript_notice`, `trailer_action`) and the turn recovery it shows
+//! (`render_recovery_trailer`, novnski/pink#193), as a single-GPUI package
+//! the app pins. The gallery compiles the package's own source here,
+//! unchanged, against its GPUI; PINK compiles the same file against its
+//! patched one. This module adds the host side (colours, glyphs, roles,
+//! focus, hover and clicks) and the story.
 //!
-//! PINK's transcript notice for a turn that failed and is recovering, as of
-//! PINK 0.30.6 (novnski/pink#193, UI rethink #174): one card per failure
-//! that names its cause. While a recovery is active, the run's own error is
-//! absorbed into the card, which states the engine's detail or, when that is
-//! empty, the run's error; the separate "Run error" card ([`RunError`]) is
-//! for a failure nothing is recovering. The headline says what is happening
-//! in plain words ("Retrying in 5s, attempt 2 of 3", "Checking delivery").
-//! A clock marks checking and a refresh glyph retrying, both in the warning
-//! tone; anything that needs a person is danger with a triangle. Actions
-//! ride the title row: Send now (Continue when held) as the solid primary,
-//! Open Providers for an expired sign-in, and Cancel.
-//!
-//! The notice is PINK's timeline notice (audit TL-08): a 10 pt card tinted
-//! `tone@0.08` with a `tone@0.24` edge, `px 12 py 10`, a 14 pt glyph and a
-//! 13 pt semibold title in a 24 pt row, the 12/17 detail indented 22 under
-//! it, and 24 pt actions.
+//! One card per failure names its cause. While a recovery is active, the
+//! run's own error is absorbed into the card, which states the engine's
+//! detail or, when that is empty, the run's error; the separate "Run error"
+//! card ([`RunError`]) is for a failure nothing is recovering. The headline
+//! says what is happening in plain words ("Retrying in 5s, attempt 2 of 3",
+//! "Checking delivery"). A clock marks checking and a refresh glyph
+//! retrying, both in the warning tone; anything that needs a person is
+//! danger with a triangle. Actions ride the title row: Send now (Continue
+//! when held) as the solid primary, Open Providers for an expired sign-in,
+//! and Cancel.
 //!
 //! ```ignore
 //! RecoveryCard::new("recovery", Recovery::Scheduled { retry_in: 5, attempt: 2, of: 3 })
@@ -25,16 +25,22 @@
 //!     .on_cancel(|_, _| {})
 //! ```
 
+#[allow(dead_code)]
+mod package {
+    include!("../../components/recovery-card/src/lib.rs");
+}
+pub use package::*;
+
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, AnyView, App, ClipboardItem, Div, ElementId, FontWeight, Hsla, IntoElement, Role,
-    SharedString, Stateful, Window, div, prelude::*, px, svg,
+    AnyElement, AnyView, App, ClipboardItem, Div, ElementId, Hsla, IntoElement, Role, SharedString,
+    Stateful, Window, div, prelude::*, px, svg,
 };
 
 use crate::{
     HoverFill,
-    pink::{self, Pink, TextStyle, TypeStyleExt, layout, radius},
+    pink::{self, Pink, TextStyle, TypeStyleExt, layout},
     story,
 };
 
@@ -48,98 +54,8 @@ const ICON_COPY: &str = "icons/recovery-card/copy.svg";
 
 type Handler = Rc<dyn Fn(&mut Window, &mut App)>;
 
-/// Where a turn's recovery stands (Pink proto `RecoveryStatus`). Completed,
-/// cancelled and superseded recoveries show no card.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Recovery {
-    /// A retry is scheduled: `retry_in` seconds from now, the `attempt`th of
-    /// `of` (both counted from 1).
-    Scheduled {
-        retry_in: u32,
-        attempt: u32,
-        of: u32,
-    },
-    /// The retry is running.
-    Running,
-    /// The engine is confirming whether the provider received the turn.
-    CheckingDelivery,
-    /// The engine can't recover on its own.
-    RecoveryNeeded,
-    /// The provider's sign-in expired on this machine.
-    WaitingForSignIn { machine: SharedString },
-    /// Recovery is paused until someone continues it.
-    Held,
-    /// Every automatic retry has been used.
-    Exhausted,
-}
-
-impl Recovery {
-    /// Pink `render_recovery_trailer`'s headline: plain words, no joiners.
-    pub fn headline(&self) -> SharedString {
-        match self {
-            Self::Scheduled {
-                retry_in,
-                attempt,
-                of,
-            } => format!("Retrying in {retry_in}s, attempt {attempt} of {of}").into(),
-            Self::Running => "Recovering safely…".into(),
-            Self::CheckingDelivery => "Checking delivery".into(),
-            Self::RecoveryNeeded => "Recovery needed".into(),
-            Self::WaitingForSignIn { machine } => format!("Sign in on {machine}").into(),
-            Self::Held => "Recovery held".into(),
-            Self::Exhausted => "Automatic retry limit reached".into(),
-        }
-    }
-
-    /// Pink `RecoveryStatus::active`: still recovering. Only an active
-    /// recovery absorbs the run's error.
-    pub fn active(&self) -> bool {
-        !matches!(self, Self::Exhausted)
-    }
-
-    fn checking(&self) -> bool {
-        matches!(self, Self::CheckingDelivery)
-    }
-
-    fn retrying(&self) -> bool {
-        matches!(self, Self::Scheduled { .. } | Self::Running)
-    }
-
-    /// Send now applies while the recovery waits on something a person can
-    /// push past (Pink `can_send`).
-    fn can_send(&self) -> bool {
-        self.active() && !matches!(self, Self::Running | Self::CheckingDelivery)
-    }
-
-    /// Tone and glyph (Pink `render_recovery_trailer`): a warning clock while
-    /// checking, a warning refresh while retrying, otherwise a danger
-    /// triangle.
-    fn look(&self, t: &Pink) -> (Hsla, &'static str) {
-        if self.checking() {
-            (t.warning, ICON_CLOCK)
-        } else if self.retrying() {
-            (t.warning, ICON_REFRESH)
-        } else {
-            (t.danger, ICON_DANGER)
-        }
-    }
-}
-
-/// The card's cause (Pink `render_recovery_trailer`, PINK 0.30.6): the
-/// engine's detail, else the run's own error while the recovery is active,
-/// since the card absorbs that error's inline card.
-pub fn recovery_cause(
-    recovery: &Recovery,
-    detail: Option<&SharedString>,
-    run_error: Option<&SharedString>,
-) -> Option<SharedString> {
-    detail
-        .filter(|d| !d.trim().is_empty())
-        .or_else(|| run_error.filter(|_| recovery.active()))
-        .cloned()
-}
-
-/// A turn's recovery notice.
+/// A turn's recovery notice, as PINK's `render_recovery_trailer` hosts the
+/// package.
 #[derive(IntoElement)]
 pub struct RecoveryCard {
     id: ElementId,
@@ -183,13 +99,13 @@ impl RecoveryCard {
     }
 
     /// The engine only observes (or needs its configuration fixed): no Send
-    /// now (Pink `RecoveryAction::ObserveOnly`, `FixConfiguration`).
+    /// now (PINK `RecoveryAction::ObserveOnly`, `FixConfiguration`).
     pub fn observe_only(mut self, observe_only: bool) -> Self {
         self.observe_only = observe_only;
         self
     }
 
-    /// The failure is an expired sign-in: offer Open Providers (Pink
+    /// The failure is an expired sign-in: offer Open Providers (PINK
     /// `RecoveryFailure::AuthenticationExpired`).
     pub fn sign_in_expired(mut self, expired: bool) -> Self {
         self.sign_in_expired = expired;
@@ -217,60 +133,49 @@ impl RenderOnce for RecoveryCard {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Pink::get(cx);
         let key = self.id.to_string();
-        let (tone, icon) = self.recovery.look(&t);
-        let can_send = self.recovery.can_send() && !self.observe_only;
-        let mut actions: Vec<AnyElement> = Vec::new();
-        if can_send {
-            let label = if self.recovery == Recovery::Held {
-                "Continue"
-            } else {
-                "Send now"
-            };
-            actions.push(action_button(
-                &key,
-                "send",
-                label,
-                true,
-                self.on_send_now,
-                &t,
-            ));
-        }
-        if self.sign_in_expired {
-            // The accounts live on Settings, Providers: name the page the
-            // user lands on.
-            actions.push(action_button(
-                &key,
-                "providers",
-                "Open Providers",
-                !can_send,
-                self.on_open_providers,
-                &t,
-            ));
-        }
-        if self.recovery.active() && self.recovery != Recovery::Running {
-            actions.push(action_button(
-                &key,
-                "cancel",
-                "Cancel",
-                false,
-                self.on_cancel,
-                &t,
-            ));
-        }
+        let tone = match self.recovery.tone() {
+            Tone::Warning => t.warning,
+            Tone::Danger => t.danger,
+        };
+        let icon = match self.recovery.glyph() {
+            Glyph::Clock => ICON_CLOCK,
+            Glyph::Refresh => ICON_REFRESH,
+            Glyph::Danger => ICON_DANGER,
+        };
+        let actions = self
+            .recovery
+            .actions(self.observe_only, self.sign_in_expired)
+            .into_iter()
+            .map(|card_action| {
+                let (name, handler) = match card_action.action {
+                    RecoveryAction::SendNow => ("send", self.on_send_now.clone()),
+                    RecoveryAction::OpenProviders => ("providers", self.on_open_providers.clone()),
+                    RecoveryAction::Cancel => ("cancel", self.on_cancel.clone()),
+                };
+                action_button(
+                    &key,
+                    name,
+                    card_action.label,
+                    card_action.primary,
+                    handler,
+                    &t,
+                )
+            })
+            .collect();
         let cause = recovery_cause(
             &self.recovery,
             self.detail.as_ref(),
             self.run_error.as_ref(),
         );
-        transcript_notice(tone, icon, self.recovery.headline(), cause, actions, &t)
+        notice(tone, icon, self.recovery.headline(), cause, actions, &t)
             .id(self.id)
             .font_family(pink::SANS)
     }
 }
 
-/// A run's error with nothing recovering it (Pink `error_chip`): the danger
-/// notice titled "Run error" with the message as its detail and a 24 pt
-/// Copy error button.
+/// A run's error with nothing recovering it (PINK `error_chip`): the danger
+/// notice titled "Run error" with the message as its detail and a Copy error
+/// button.
 #[derive(IntoElement)]
 pub struct RunError {
     id: ElementId,
@@ -292,20 +197,13 @@ impl RenderOnce for RunError {
         let key = format!("{}-copy", self.id);
         let ring = t.focus_ring();
         let copied = self.message.clone();
-        let copy = div()
+        let copy = copy_button()
             .id(SharedString::from(key.clone()))
             .role(Role::Button)
             .aria_label("Copy error")
             .tab_index(0)
             .focus_visible(move |s| pink::focus_ring(s, ring))
             .on_key_down(pink::swallow_activation_key)
-            .size(px(24.))
-            .flex_none()
-            .rounded(px(radius::SM))
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_pointer()
             .hover_fill(key, gpui::transparent_black(), t.ink(0.08))
             .tooltip(pink::text_tooltip("Copy error"))
             .tooltip_show_delay(layout::TOOLTIP_DELAY)
@@ -315,15 +213,15 @@ impl RenderOnce for RunError {
             .child(
                 svg()
                     .path(ICON_COPY)
-                    .size(px(12.))
+                    .size(ui_rems(COPY_GLYPH))
                     .text_color(t.content_muted),
             )
             .into_any_element();
-        div().id(self.id).py(px(4.)).w_full().child(
-            transcript_notice(
+        run_error_frame().id(self.id).child(
+            notice(
                 t.danger,
                 ICON_DANGER,
-                "Run error".into(),
+                RUN_ERROR_TITLE.into(),
                 Some(self.message),
                 vec![copy],
                 &t,
@@ -333,63 +231,47 @@ impl RenderOnce for RunError {
     }
 }
 
-/// The timeline's one notice (Pink `transcript_notice`, audit TL-08).
-fn transcript_notice(
+/// The timeline's one notice (PINK `transcript_notice`): the package's card,
+/// title row and detail with the host's colours, glyph and alert role.
+fn notice(
     tone: Hsla,
     icon: &'static str,
-    title: SharedString,
-    detail: Option<SharedString>,
+    title_text: SharedString,
+    detail_text: Option<SharedString>,
     actions: Vec<AnyElement>,
     t: &Pink,
 ) -> Div {
-    let glyph = t.readable_tone(tone, 1.0);
-    div()
-        .w_full()
-        .rounded(px(radius::LG))
-        .border_1()
-        .border_color(tone.opacity(0.24))
-        .bg(tone.opacity(0.08))
-        .px(px(12.))
-        .py(px(10.))
-        .flex()
-        .flex_col()
-        .gap(px(4.))
+    let style = NoticeStyle {
+        tone,
+        glyph: t.readable_tone(tone, 1.0),
+        title: t.text,
+        detail: t.content_muted,
+    };
+    let said = spoken(&title_text, detail_text.as_deref());
+    card(&style)
         .child(
-            div()
-                .min_h(px(24.))
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(8.))
-                .child(svg().path(icon).size(px(14.)).flex_none().text_color(glyph))
+            title_row()
                 .child(
-                    div()
-                        .min_w_0()
-                        .flex_1()
-                        .text_size(px(13.))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(t.text)
-                        .child(title),
+                    svg()
+                        .path(icon)
+                        .size(glyph_size())
+                        .flex_none()
+                        .text_color(style.glyph),
+                )
+                .child(
+                    title(&style, title_text)
+                        .id("notice-title")
+                        .role(Role::Alert)
+                        .aria_label(said),
                 )
                 .children(actions),
         )
-        .when_some(detail, |card, detail| {
-            // Pink `notice_detail`: aligned under the title.
-            card.child(
-                div()
-                    .pl(px(22.))
-                    .max_w(px(680.))
-                    .text_size(px(12.))
-                    .line_height(px(17.))
-                    .text_color(t.content_muted)
-                    .child(detail),
-            )
-        })
+        .when_some(detail_text, |el, text| el.child(detail(&style).child(text)))
 }
 
-/// A notice button (Pink `trailer_action`, audit TL-08): 24 pt, `px 10`,
-/// radius 6, 12 medium. The primary is a solid plate easing to 0.88; the
-/// others are outlined in `border_strong` with an `ink(0.06)` hover.
+/// A notice button (PINK `trailer_action`): the primary is a solid plate
+/// easing to 0.88; the others are outlined in `border_strong` with an
+/// `ink(0.06)` hover.
 fn action_button(
     key: &str,
     name: &str,
@@ -415,25 +297,13 @@ fn action_button(
     };
     let id = format!("{key}-{name}");
     let ring = t.focus_ring();
-    div()
+    action(&ActionStyle { edge, text })
         .id(SharedString::from(id.clone()))
         .role(Role::Button)
         .aria_label(label)
         .tab_index(0)
         .focus_visible(move |s| pink::focus_ring(s, ring))
         .on_key_down(pink::swallow_activation_key)
-        .flex_none()
-        .h(px(24.))
-        .px(px(10.))
-        .flex()
-        .items_center()
-        .rounded(px(radius::SM))
-        .border_1()
-        .border_color(edge)
-        .text_size(px(12.))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(text)
-        .cursor_pointer()
         .hover_fill(id, fill, hover)
         .when_some(on_click, |el, f| {
             el.on_click(move |_, window, cx| f(window, cx))
@@ -463,7 +333,7 @@ fn sample(caption: &'static str, card: impl IntoElement, t: &Pink) -> Div {
         .child(card)
 }
 
-fn card(id: &'static str, recovery: Recovery) -> RecoveryCard {
+fn demo_card(id: &'static str, recovery: Recovery) -> RecoveryCard {
     RecoveryCard::new(id, recovery)
         .on_send_now(|_, _| {})
         .on_open_providers(|_, _| {})
@@ -485,7 +355,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
         let left = vec![
             sample(
                 "Retrying: the run's error is the cause",
-                card(
+                demo_card(
                     "rc-scheduled",
                     Recovery::Scheduled {
                         retry_in: 5,
@@ -499,20 +369,20 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .id("s1"),
             sample(
                 "Checking delivery after a restart",
-                card("rc-checking", Recovery::CheckingDelivery)
+                demo_card("rc-checking", Recovery::CheckingDelivery)
                     .detail("Run interrupted by engine restart, reconciling delivery"),
                 &t,
             )
             .id("s2"),
             sample(
                 "Recovering",
-                card("rc-running", Recovery::Running).run_error(RUN_ERROR),
+                demo_card("rc-running", Recovery::Running).run_error(RUN_ERROR),
                 &t,
             )
             .id("s3"),
             sample(
                 "Held",
-                card("rc-held", Recovery::Held)
+                demo_card("rc-held", Recovery::Held)
                     .detail("Recovery is paused while the thread's checkout is busy."),
                 &t,
             )
@@ -521,7 +391,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
         let right = vec![
             sample(
                 "Sign-in expired",
-                card(
+                demo_card(
                     "rc-sign-in",
                     Recovery::WaitingForSignIn {
                         machine: "Studio Mac".into(),
@@ -535,7 +405,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .id("s5"),
             sample(
                 "Recovery needed",
-                card("rc-needed", Recovery::RecoveryNeeded).detail(
+                demo_card("rc-needed", Recovery::RecoveryNeeded).detail(
                     "The worktree has uncommitted changes. Commit or stash them, then retry.",
                 ),
                 &t,
@@ -543,7 +413,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .id("s6"),
             sample(
                 "Retry limit reached",
-                card("rc-exhausted", Recovery::Exhausted).detail("Three attempts failed."),
+                demo_card("rc-exhausted", Recovery::Exhausted).detail("Three attempts failed."),
                 &t,
             )
             .id("s7"),
@@ -562,43 +432,4 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .child(column(left))
             .child(column(right))
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// PINK 0.30.6. Failure modes: a headline with a dot joiner or a
-    /// fraction; an active recovery ignoring the run's error; an exhausted
-    /// one absorbing it; a blank detail beating the run's error.
-    #[test]
-    fn one_card_names_its_cause() {
-        let scheduled = Recovery::Scheduled {
-            retry_in: 5,
-            attempt: 2,
-            of: 3,
-        };
-        assert_eq!(scheduled.headline(), "Retrying in 5s, attempt 2 of 3");
-        let error: SharedString = RUN_ERROR.into();
-        let detail: SharedString = "Run interrupted by engine restart".into();
-        assert_eq!(
-            recovery_cause(&scheduled, None, Some(&error)),
-            Some(error.clone())
-        );
-        assert_eq!(
-            recovery_cause(&scheduled, Some(&detail), Some(&error)),
-            Some(detail.clone())
-        );
-        let blank: SharedString = " ".into();
-        assert_eq!(
-            recovery_cause(&scheduled, Some(&blank), Some(&error)),
-            Some(error.clone())
-        );
-        assert_eq!(
-            recovery_cause(&Recovery::Exhausted, None, Some(&error)),
-            None
-        );
-        assert!(Recovery::Held.can_send() && !Recovery::CheckingDelivery.can_send());
-        assert!(!Recovery::Exhausted.can_send());
-    }
 }
