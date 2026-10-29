@@ -5,7 +5,7 @@ a single-GPUI package (UI rethink decision 54). Like the other packages under
 `components/` it depends on crates.io `gpui = "=0.2.2"` in its own workspace.
 The pink-ui gallery compiles this same `src/lib.rs` in place
 (`src/components/commit_row.rs`); Commit History draws its rows, column
-header and graph cells through it.
+header, graph cells and lane strokes through it.
 PINK pins the package and patches `gpui` to its vendored runtime, so there is
 one GPUI type graph and no copied source.
 
@@ -38,11 +38,28 @@ one GPUI type graph and no copied source.
   `HEAD_RING_PADDING` outside it, and a branch tip's `FOLD_SIZE` fold
   control `FOLD_GAP` after it, shown while the cell is pointed at or while
   the branch is collapsed.
+- `paint_lanes(window, viewport, rows, style)`: the lane strokes, painted on
+  the host's canvas under the rows. Each row that reaches the viewport
+  yields its bounds and its `LaneSegment`s (lane x positions, a
+  `LaneShape` and a colour id); every palette colour becomes one
+  `LANE_STROKE` path through all of them, so lanes join row to row without
+  a seam. With a `LaneFocus`, the other lanes take the dimmed palette and
+  the focused lane is drawn last, widening towards `LANE_FOCUSED_STROKE`
+  with its fade.
+- `paint_rail(window, viewport, rail_x, rows, style)`: the compact rail, one
+  vertical line from each node to the next in the node's colour, for a
+  graph too narrow for its lanes.
+- `lane_curve(shape, from_x, to_x, row_height)`: the cubic each segment
+  strokes in row coordinates, running `LANE_OVERLAP` past the row's edges
+  (scaled down while the row folds shut) and meeting the node on the row's
+  middle. The host hit-tests the pointer against it.
 
-The host adds the rest: the lane graph's strokes and geometry (lane
-positions, the node's radius under focus), glyph and avatar assets, every
+The host adds the rest: the lane graph's layout (each row's bounds, lane
+positions, the node's radius under focus, the focused lane and its fade),
+the canvas the strokes paint on, glyph and avatar assets, every
 resolved colour (the row's and the sha's washes blended over their hover
-fades, the graph focus's dimming as an opacity), the families and text, the
+fades, the lane palette and its dimmed twin, the graph focus's dimming as an
+opacity), the families and text, the
 container query that sizes the ref area, column widths and their
 persistence, tooltips, the fold transition, copying a sha and opening a
 commit.
@@ -60,4 +77,5 @@ pink-commit-row = { git = "https://github.com/novnski/pink-ui", rev = "<merged m
 - Alone: `cargo clippy --features gpui/runtime_shaders -- -D warnings` in this
   directory.
 - In the gallery: `tests/commit_row.rs` lays a row, its badge and cells, the
-  column header and a graph cell out at Interface sizes 12, 16 and 20.
+  column header and a graph cell out at Interface sizes 12, 16 and 20, and
+  checks that lane curves join row to row and meet the node.

@@ -39,7 +39,7 @@ use super::scroll_rail;
 use crate::{
     HoverFill,
     components::{
-        file_row,
+        empty_state, file_row,
         icon_button::{IconButtonStyle, icon_button},
         surface_toolbar,
     },
@@ -2194,11 +2194,10 @@ fn scroll_rail(c: &Ctx, window: &mut Window, cx: &mut App) -> Option<AnyElement>
     )
 }
 
-/// Pink: surface_chrome.rs `surface_state`, filling the pane.
+/// Pink: surface_chrome.rs `surface_state` (the empty-state package's
+/// surface state), filling the pane.
 fn pane_state(glyph: AnyElement, title: &str, body: Option<SharedString>, t: &Pink) -> Div {
     pink::surface_state(glyph, title.to_string(), body, t)
-        .flex_1()
-        .min_h_0()
 }
 
 impl RenderOnce for FileTree {
@@ -2371,16 +2370,13 @@ impl RenderOnce for FileTree {
                     }
                 });
             pane_state(
-                svg()
-                    .path(ICON_FOLDER)
-                    .size(px(28.0))
-                    .text_color(t.text_faint)
+                empty_state::surface_glyph(svg().path(ICON_FOLDER), t.text_faint)
                     .into_any_element(),
                 "Files couldn't load",
                 Some(error),
                 &t,
             )
-            .child(div().mt(px(6.0)).child(retry))
+            .child(empty_state::surface_action().child(retry))
             .into_any_element()
         } else if self.loading {
             // Pink: "A loader instead of a blank pane (audit SS-12)".

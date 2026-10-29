@@ -1,4 +1,4 @@
-// PINK's empty and error states, five shapes:
+// PINK's empty and error states, eight shapes:
 //
 // - The list note (shell.rs `render_chat_sidebar` "sidebar-empty-state"): a
 //   list with nothing in it says so in a centred medium title and names the
@@ -17,6 +17,15 @@
 //   one ("No related chats yet").
 // - The popup note (pickers.rs `empty_list_note`): a popover list with no
 //   rows centres one muted line ("No models found").
+// - The surface state (surface_chrome.rs `surface_state`): a sidebar
+//   surface or document with nothing to show centres its faint glyph (or
+//   the host's loader), a title, an optional secondary line and an optional
+//   action ("Files couldn't load" with Retry; "Loading files…").
+// - The surface message (files/preview.rs `centered_state`): a surface
+//   whose state is one line centres the surface state's secondary line
+//   alone ("Loading file…", "This file cannot be previewed.").
+// - The error note (popover.rs `error_row`): a list that failed to load
+//   says why in the danger ink, with room under it for the host's Retry.
 //
 // UI rethink decision 54: drawn here, consumed by PINK through a pinned
 // revision. The package draws only. The host supplies the resolved colours,
@@ -92,6 +101,29 @@ pub const GUIDE_ACTION_SPACE: f32 = 2.0;
 pub const POPUP_NOTE_PAD_X: f32 = 8.0;
 pub const POPUP_NOTE_PAD_Y: f32 = 24.0;
 pub const POPUP_NOTE_TEXT: f32 = 12.0;
+
+/// The surface state's side padding, in px (PINK `CONTENT_INSET`, where
+/// every surface's content starts). Fixed, like the surface's own insets.
+pub const SURFACE_PAD_X: f32 = 12.0;
+/// The gap between the surface state's parts, the glyph's extra space
+/// under it and the glyph's size, in pt at the 16 px default.
+pub const SURFACE_GAP: f32 = 6.0;
+pub const SURFACE_GLYPH_SPACE: f32 = 4.0;
+pub const SURFACE_GLYPH: f32 = 28.0;
+/// The surface state's title size.
+pub const SURFACE_TITLE: f32 = 13.0;
+/// The secondary line's size, line height and widest measure.
+pub const SURFACE_BODY: f32 = 12.0;
+pub const SURFACE_BODY_LINE: f32 = 18.0;
+pub const SURFACE_BODY_WIDTH: f32 = 280.0;
+/// The extra space above the surface state's action.
+pub const SURFACE_ACTION_SPACE: f32 = 6.0;
+
+/// The error note's padding, the gap between the message and the host's
+/// Retry, and the message's size, in pt at the 16 px default.
+pub const ERROR_PAD: f32 = 8.0;
+pub const ERROR_GAP: f32 = 6.0;
+pub const ERROR_TEXT: f32 = 12.0;
 
 /// A design size (pt at the 16 px default) in rems, so it grows with the
 /// host's Interface size.
@@ -323,4 +355,86 @@ pub fn popup_note(color: Hsla, copy: impl Into<SharedString>) -> Div {
         .text_color(color)
         .text_center()
         .child(copy.into())
+}
+
+/// The surface state's frame: takes the surface's free height and centres
+/// the [`surface_glyph_slot`], the [`surface_title`], an optional
+/// [`surface_body`] and an optional [`surface_action`], `SURFACE_GAP`
+/// apart, inside the fixed `SURFACE_PAD_X` side padding. The host adds the
+/// id and the debug selector.
+pub fn surface() -> Div {
+    div()
+        .flex_1()
+        .min_h_0()
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .gap(ui_rems(SURFACE_GAP))
+        .px(px(SURFACE_PAD_X))
+}
+
+/// The slot holding the surface state's glyph, `SURFACE_GLYPH_SPACE` above
+/// the title. The host adds its [`surface_glyph`] or its loader.
+pub fn surface_glyph_slot() -> Div {
+    div().mb(ui_rems(SURFACE_GLYPH_SPACE))
+}
+
+/// Sizes and tints the host's surface glyph (an `svg()` of the surface's
+/// icon) to `SURFACE_GLYPH`.
+pub fn surface_glyph<E: Styled>(glyph: E, color: Hsla) -> E {
+    glyph.size(ui_rems(SURFACE_GLYPH)).text_color(color)
+}
+
+/// The surface state's title, medium weight. The host adds the copy.
+pub fn surface_title(color: Hsla) -> Div {
+    div()
+        .text_size(ui_rems(SURFACE_TITLE))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(color)
+}
+
+/// The secondary line under the title (why the surface is empty, or the
+/// error), centred and wrapping inside `SURFACE_BODY_WIDTH`. The host adds
+/// the copy.
+pub fn surface_body(color: Hsla) -> Div {
+    div()
+        .max_w(ui_rems(SURFACE_BODY_WIDTH))
+        .text_center()
+        .text_size(ui_rems(SURFACE_BODY))
+        .line_height(ui_rems(SURFACE_BODY_LINE))
+        .text_color(color)
+}
+
+/// The slot for the surface state's action, `SURFACE_ACTION_SPACE` lower.
+/// The host adds its button or buttons.
+pub fn surface_action() -> Div {
+    div().mt(ui_rems(SURFACE_ACTION_SPACE))
+}
+
+/// The surface message: a surface whose state is one line centres it alone
+/// as a [`surface_body`] in the surface's free space, inside the fixed
+/// `SURFACE_PAD_X` side padding.
+pub fn surface_message(color: Hsla, copy: impl Into<SharedString>) -> Div {
+    div()
+        .flex_1()
+        .flex()
+        .items_center()
+        .justify_center()
+        .px(px(SURFACE_PAD_X))
+        .child(surface_body(color).child(copy.into()))
+}
+
+/// The error note: why a list failed to load, in the host's danger ink
+/// (held readable), padded `ERROR_PAD`. The host adds its Retry after the
+/// message, `ERROR_GAP` lower, and the listener on it.
+pub fn error_note(color: Hsla, message: impl Into<SharedString>) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .gap(ui_rems(ERROR_GAP))
+        .p(ui_rems(ERROR_PAD))
+        .text_size(ui_rems(ERROR_TEXT))
+        .text_color(color)
+        .child(message.into())
 }

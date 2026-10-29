@@ -18,6 +18,7 @@ use super::{
     radius, shadow_lg,
 };
 use crate::HoverFill;
+use crate::components::empty_state as empty;
 use crate::components::menu_card as menu;
 use crate::components::overlay_card as overlay;
 use crate::components::settings_parts as parts;
@@ -164,40 +165,22 @@ pub fn divider(t: &Pink) -> Div {
 }
 
 /// The empty / loading / error recipe for a surface (Pink
-/// `surface_chrome::surface_state`): a centered column, gap 6, `glyph`
-/// (28 px in `text_faint`, `mb 4`), a 13 medium title, and an optional
-/// 12/18 `text_muted` body capped at 280.
+/// `surface_chrome::surface_state`), drawn by the empty-state package's
+/// surface state: a centred column taking the surface's free height, the
+/// `glyph` (a 28 pt icon in `text_faint`, or a loader) over a 13 pt medium
+/// title and an optional 12/18 pt `text_muted` body capped at 280 pt.
+/// Chain an `empty::surface_action()` for its action.
 pub fn surface_state(
     glyph: impl IntoElement,
     title: impl Into<SharedString>,
     body: Option<SharedString>,
     t: &Pink,
 ) -> Div {
-    div()
-        .flex()
-        .flex_col()
-        .items_center()
-        .justify_center()
-        .gap(px(6.0))
-        .px(px(12.0))
-        .child(div().mb(px(4.0)).child(glyph))
-        .child(
-            div()
-                .text_size(px(13.0))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(t.text)
-                .child(title.into()),
-        )
+    empty::surface()
+        .child(empty::surface_glyph_slot().child(glyph))
+        .child(empty::surface_title(t.text).child(title.into()))
         .when_some(body, |el, body| {
-            el.child(
-                div()
-                    .max_w(px(280.0))
-                    .text_center()
-                    .text_size(px(12.0))
-                    .line_height(px(18.0))
-                    .text_color(t.text_muted)
-                    .child(body),
-            )
+            el.child(empty::surface_body(t.text_muted).child(body))
         })
 }
 

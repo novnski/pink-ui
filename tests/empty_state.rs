@@ -10,7 +10,13 @@
 //! notice that runs past its 280 px measure instead of wrapping; a guide
 //! glyph that keeps its design size or stops sitting 1 px down on its
 //! line's first row, or a guide line that runs past the list's insets; a
-//! popup note whose padding stops growing with its line.
+//! popup note whose padding stops growing with its line. The surface state
+//! (PINK's Files surface and file documents): a glyph that keeps its design
+//! size, a state that stops taking its surface's free height or leaves its
+//! centre, a secondary line that runs past its 280 pt measure or into the
+//! fixed 12 px side padding instead of wrapping, an action slot that loses
+//! its extra space; a surface message off its surface's centre; an error
+//! note whose padding stops growing with its line.
 
 use gpui::{
     Bounds, Context, IntoElement, Pixels, Render, TestAppContext, Window, div, prelude::*, px, svg,
@@ -18,11 +24,13 @@ use gpui::{
 use pink_ui::{
     Theme, ThemeMode,
     components::empty_state::{
-        ACTION_HEIGHT, ActionStyle, GUIDE_GLYPH, GUIDE_GLYPH_DROP, GUIDE_PAD_X, GuideStyle,
-        NOTE_GAP, NOTE_PAD_Y, NoteStyle, PANE_MAX_WIDTH, PANE_PAD, PLACE_GLYPH, PLACE_NOTICE_WIDTH,
-        POPUP_NOTE_PAD_Y, TILE, TileStyle, action, column, description, guide, guide_action,
-        guide_line, guide_title, note, pane, place, place_glyph, place_message, place_notice,
-        popup_note, shortcut, tile, title,
+        ACTION_HEIGHT, ActionStyle, ERROR_PAD, GUIDE_GLYPH, GUIDE_GLYPH_DROP, GUIDE_PAD_X,
+        GuideStyle, NOTE_GAP, NOTE_PAD_Y, NoteStyle, PANE_MAX_WIDTH, PANE_PAD, PLACE_GLYPH,
+        PLACE_NOTICE_WIDTH, POPUP_NOTE_PAD_Y, SURFACE_ACTION_SPACE, SURFACE_BODY_WIDTH,
+        SURFACE_GAP, SURFACE_GLYPH, SURFACE_PAD_X, TILE, TileStyle, action, column, description,
+        error_note, guide, guide_action, guide_line, guide_title, note, pane, place, place_glyph,
+        place_message, place_notice, popup_note, shortcut, surface, surface_action, surface_body,
+        surface_glyph, surface_glyph_slot, surface_message, surface_title, tile, title,
     },
     pink::Pink,
 };
@@ -257,5 +265,170 @@ fn empty_states_scale_with_the_interface_size(cx: &mut TestAppContext) {
     assert!(
         (small - 0.75).abs() < 0.04 && (large - 1.25).abs() < 0.04,
         "only the note's lines scale, not its fixed insets: {notes:?}"
+    );
+}
+
+/// The surfaces the surface shapes fill, in px: a sidebar wide enough for
+/// the 280 pt measure at every size, and one too narrow for it.
+const SIDEBAR_W: f32 = 420.0;
+const NARROW_W: f32 = 200.0;
+const SIDEBAR_H: f32 = 360.0;
+
+struct SurfaceHost {
+    ui: f32,
+}
+
+impl Render for SurfaceHost {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        window.set_rem_size(px(self.ui));
+        let t = Pink::get(cx);
+        let long = "The workspace folder was moved or deleted. ".repeat(4);
+        div()
+            .flex()
+            .flex_col()
+            .items_start()
+            .child(
+                div()
+                    .w(px(SIDEBAR_W))
+                    .h(px(SIDEBAR_H))
+                    .flex()
+                    .flex_col()
+                    .debug_selector(|| "sidebar".into())
+                    .child(
+                        surface()
+                            .debug_selector(|| "surface".into())
+                            .child(
+                                surface_glyph_slot().child(surface_glyph(
+                                    svg()
+                                        .path("icons/empty-state/folder.svg")
+                                        .debug_selector(|| "surface-glyph".into()),
+                                    t.text_faint,
+                                )),
+                            )
+                            .child(surface_title(t.text).child("Files couldn't load"))
+                            .child(
+                                surface_body(t.text_muted)
+                                    .debug_selector(|| "surface-body".into())
+                                    .child(long.clone()),
+                            )
+                            .child(
+                                surface_action()
+                                    .debug_selector(|| "surface-action".into())
+                                    .child("Retry"),
+                            ),
+                    ),
+            )
+            .child(
+                div()
+                    .w(px(NARROW_W))
+                    .h(px(SIDEBAR_H))
+                    .flex()
+                    .flex_col()
+                    .child(
+                        surface()
+                            .child(surface_title(t.text).child("Files couldn't load"))
+                            .child(
+                                surface_body(t.text_muted)
+                                    .debug_selector(|| "narrow-body".into())
+                                    .child(long),
+                            ),
+                    ),
+            )
+            .child(
+                div()
+                    .w(px(SIDEBAR_W))
+                    .h(px(SIDEBAR_H))
+                    .flex()
+                    .flex_col()
+                    .debug_selector(|| "document".into())
+                    .child(
+                        surface_message(t.text_faint, "Loading file…")
+                            .child(div().debug_selector(|| "message-probe".into())),
+                    ),
+            )
+            .child(
+                div()
+                    .w(px(LIST_W))
+                    .child(error_note(t.danger, "Offline.").debug_selector(|| "error-note".into())),
+            )
+    }
+}
+
+#[gpui::test]
+fn surface_states_scale_with_the_interface_size(cx: &mut TestAppContext) {
+    cx.update(pink_ui::init);
+    let mut errors = Vec::new();
+    for ui in [12.0_f32, 16.0, 20.0] {
+        let scale = ui / 16.0;
+        let mut cx = cx.clone();
+        cx.update(|cx| Theme::set_mode(ThemeMode::Dark, cx));
+        let (_, cx) = cx.add_window_view(|_, _| SurfaceHost { ui });
+        cx.run_until_parked();
+
+        let sidebar = bounds(cx, "sidebar");
+        let state = bounds(cx, "surface");
+        assert_eq!(
+            (state.size.width, state.size.height),
+            (sidebar.size.width, sidebar.size.height),
+            "surface state takes its surface's free space at {ui}"
+        );
+        let glyph = bounds(cx, "surface-glyph");
+        assert!(
+            near(f32::from(glyph.size.width), SURFACE_GLYPH * scale),
+            "surface glyph scales at {ui}: {}",
+            f32::from(glyph.size.width)
+        );
+        let mid = f32::from(sidebar.origin.x) + SIDEBAR_W / 2.0;
+        assert!(
+            near(
+                f32::from(glyph.origin.x) + f32::from(glyph.size.width) / 2.0,
+                mid
+            ),
+            "surface glyph centred at {ui}"
+        );
+        let body = bounds(cx, "surface-body");
+        assert!(
+            near(f32::from(body.size.width), SURFACE_BODY_WIDTH * scale),
+            "a long secondary line wraps at its measure at {ui}: {}",
+            f32::from(body.size.width)
+        );
+        assert!(
+            near(
+                f32::from(body.origin.x) + f32::from(body.size.width) / 2.0,
+                mid
+            ),
+            "secondary line centred at {ui}"
+        );
+        let action = bounds(cx, "surface-action");
+        assert!(
+            near(
+                f32::from(action.origin.y - body.bottom()),
+                (SURFACE_GAP + SURFACE_ACTION_SPACE) * scale
+            ),
+            "action sits its extra space under the secondary line at {ui}"
+        );
+        let narrow = bounds(cx, "narrow-body");
+        assert!(
+            near(f32::from(narrow.size.width), NARROW_W - 2.0 * SURFACE_PAD_X),
+            "in a narrow surface the line wraps inside the fixed side padding at {ui}: {}",
+            f32::from(narrow.size.width)
+        );
+
+        let document = bounds(cx, "document");
+        let probe = bounds(cx, "message-probe");
+        let document_mid = f32::from(document.origin.y) + f32::from(document.size.height) / 2.0;
+        assert!(
+            near(f32::from(probe.origin.y), document_mid),
+            "surface message centred in its surface at {ui}"
+        );
+
+        let error = bounds(cx, "error-note");
+        errors.push((f32::from(error.size.height), ERROR_PAD * scale));
+    }
+    // The error note's padding grows with its line.
+    let lines: Vec<f32> = errors.iter().map(|(h, pad)| h - 2.0 * pad).collect();
+    assert!(
+        (lines[0] / lines[1] - 0.75).abs() < 0.06 && (lines[2] / lines[1] - 1.25).abs() < 0.06,
+        "the error note's padding scales with its line: {errors:?}"
     );
 }

@@ -42,10 +42,10 @@ use std::{
 use web_time::{Duration, Instant};
 
 use gpui::{
-    Anchor, AnimationExt, AnyElement, AnyView, App, ClipboardItem, Context, DragMoveEvent,
+    Anchor, AnimationExt, AnyElement, AnyView, App, Bounds, ClipboardItem, Context, DragMoveEvent,
     ElementId, Entity, Hsla, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, PathBuilder, Pixels, Point, Render, ScrollHandle, SharedString, Subscription,
-    Task, Window, anchored, canvas, container_query, deferred, div, point, prelude::*, px, svg,
+    MouseUpEvent, Pixels, Point, Render, ScrollHandle, SharedString, Subscription, Task, Window,
+    anchored, canvas, container_query, deferred, div, point, prelude::*, px, size, svg,
 };
 
 use crate::{
@@ -81,7 +81,6 @@ const ICON_CHECK: &str = "icons/commit-history/check.svg";
 const ROW_HEIGHT: f32 = cr::ROW_HEIGHT;
 const LANE_SPACING: f32 = 12.0;
 const NODE_RADIUS: f32 = cr::NODE_RADIUS;
-const STROKE_WIDTH: f32 = 1.5;
 const GRAPH_SATURATION: f32 = 0.72;
 /// The first lane's center sits on the header's text gutter.
 const GRAPH_SIDE_PADDING: f32 = chrome::EDGE_INSET * 2.0 - NODE_RADIUS;
@@ -93,9 +92,7 @@ const COMPACT_ENTER_SUBJECT_WIDTH: f32 = 160.0;
 const COMPACT_EXIT_SUBJECT_WIDTH: f32 = 184.0;
 const COMPACT_ENTER_LANE_SPACING: f32 = 4.0;
 const COMPACT_EXIT_LANE_SPACING: f32 = 5.0;
-const GRAPH_ROW_OVERLAP: f32 = 0.75;
 const GRAPH_HIT_RADIUS: f32 = 5.5;
-const FOCUSED_STROKE_WIDTH: f32 = 2.25;
 const GRAPH_UNFOCUSED_OPACITY: f32 = 0.24;
 const ROW_UNFOCUSED_OPACITY: f32 = 0.6;
 const SUBJECT_MIN_WIDTH: f32 = cr::SUBJECT_MIN_WIDTH;
@@ -993,37 +990,37 @@ fn point_to_segment(px_: f32, py: f32, sx: f32, sy: f32, ex: f32, ey: f32) -> f3
     ((px_ - (sx + t * dx)).powi(2) + (py - (sy + t * dy)).powi(2)).sqrt()
 }
 
-/// Pointer distance to a painted segment, sampled along its Bézier (Pink
-/// `segment_distance`).
+/// The package's stroke shape for a laid-out segment (Pink `lane_shape`).
+fn lane_shape(segment: &GraphSegment) -> cr::LaneShape {
+    match segment.shape {
+        SegmentShape::Through if segment.from_lane == segment.to_lane => cr::LaneShape::Straight,
+        SegmentShape::Through => cr::LaneShape::Through,
+        SegmentShape::Incoming => cr::LaneShape::Incoming,
+        SegmentShape::Outgoing => cr::LaneShape::Outgoing,
+    }
+}
+
+/// Pointer distance to a painted segment, sampled along the package's
+/// `lane_curve`, the curve it paints (Pink `segment_distance`).
 fn segment_distance(segment: &GraphSegment, x: f32, y: f32, geometry: GraphGeometry) -> f32 {
-    let middle = ROW_HEIGHT / 2.0;
-    let from_x = geometry.lane_x(segment.from_lane);
-    let to_x = geometry.lane_x(segment.to_lane);
-    let (start_y, end_y, c1, c2) = match segment.shape {
-        SegmentShape::Incoming => (-GRAPH_ROW_OVERLAP, middle, middle * 0.55, middle * 0.55),
-        SegmentShape::Outgoing => (
-            middle,
-            ROW_HEIGHT + GRAPH_ROW_OVERLAP,
-            middle * 1.45,
-            middle * 1.45,
-        ),
-        SegmentShape::Through => (
-            -GRAPH_ROW_OVERLAP,
-            ROW_HEIGHT + GRAPH_ROW_OVERLAP,
-            middle,
-            middle,
-        ),
-    };
-    if segment.shape == SegmentShape::Through && segment.from_lane == segment.to_lane {
-        return point_to_segment(x, y, from_x, start_y, to_x, end_y);
+    let shape = lane_shape(segment);
+    let curve = cr::lane_curve(
+        shape,
+        geometry.lane_x(segment.from_lane),
+        geometry.lane_x(segment.to_lane),
+        ROW_HEIGHT,
+    );
+    let (start, c1, c2, end) = (curve.start, curve.control_1, curve.control_2, curve.end);
+    if shape == cr::LaneShape::Straight {
+        return point_to_segment(x, y, start.0, start.1, end.0, end.1);
     }
     const SAMPLES: usize = 10;
     let mut closest = f32::MAX;
-    let (mut prev_x, mut prev_y) = (from_x, start_y);
+    let (mut prev_x, mut prev_y) = start;
     for sample in 1..=SAMPLES {
         let t = sample as f32 / SAMPLES as f32;
-        let cx_ = cubic(from_x, from_x, to_x, to_x, t);
-        let cy = cubic(start_y, c1, c2, end_y, t);
+        let cx_ = cubic(start.0, c1.0, c2.0, end.0, t);
+        let cy = cubic(start.1, c1.1, c2.1, end.1, t);
         closest = closest.min(point_to_segment(x, y, prev_x, prev_y, cx_, cy));
         prev_x = cx_;
         prev_y = cy;
@@ -2886,9 +2883,9 @@ fn column_header(c: &BodyCx, geometry: GraphGeometry) -> gpui::Stateful<gpui::Di
     .child(column_button)
 }
 
-/// Every lane, painted in one stroked path per color under the rows; with a
-/// focused path, a second pass draws it thicker over the dimmed rest (Pink
-/// `graph_paths`).
+/// Every lane, painted by the package in one stroked path per color under
+/// the rows; with a focused path, a second pass draws it thicker over the
+/// dimmed rest (Pink `graph_paths`).
 #[allow(clippy::too_many_arguments)]
 fn graph_paths(
     rows: Rc<Vec<GraphRow>>,
@@ -2903,124 +2900,50 @@ fn graph_paths(
     canvas(
         move |bounds, _, _| origin.set(bounds.origin),
         move |bounds, _, window, _| {
-            let passes = if focus.is_some() { 2 } else { 1 };
-            let stroke_for = |selected_pass: bool| {
-                focus
-                    .filter(|_| selected_pass)
-                    .map(|f| STROKE_WIDTH + (FOCUSED_STROKE_WIDTH - STROKE_WIDTH) * f.amount)
-                    .unwrap_or(STROKE_WIDTH)
-            };
-            let dimmed = |color: Hsla, selected_pass: bool| match focus {
-                // Dimmed strokes stay opaque: overlapping segments would
-                // otherwise stack alpha into dark dots.
-                Some(f) if !selected_pass => {
+            // Dimmed strokes stay opaque: overlapping segments would
+            // otherwise stack alpha into dark dots.
+            let dimmed = focus.map(|f| {
+                palette.map(|color| {
                     motion::mix(color, graph_bg, (1.0 - GRAPH_UNFOCUSED_OPACITY) * f.amount)
-                }
-                _ => color,
+                })
+            });
+            let style = cr::LaneStyle {
+                colours: &palette,
+                dimmed: dimmed.as_ref().map_or(&[], |dimmed| dimmed.as_slice()),
+                focus: focus.map(|f| cr::LaneFocus {
+                    colour: f.color_id,
+                    amount: f.amount,
+                }),
             };
-            let origin = bounds.origin;
+            let row_bounds = |index: usize| {
+                tops.get(index).map(|&(top, height)| {
+                    Bounds::new(
+                        point(bounds.origin.x, bounds.origin.y + px(top)),
+                        size(bounds.size.width, px(height)),
+                    )
+                })
+            };
             if geometry.compact && show_compact_rail {
-                let rail_x = geometry.lane_x(0);
-                for pass in 0..passes {
-                    let selected_pass = focus.is_some() && pass == 1;
-                    for (color_index, color) in palette.iter().enumerate() {
-                        let mut builder = PathBuilder::stroke(px(stroke_for(selected_pass)));
-                        let mut any = false;
-                        for (index, row) in rows.iter().enumerate() {
-                            if row.node_color_id % palette.len() != color_index
-                                || focus.is_some_and(|f| {
-                                    (row.node_color_id == f.color_id) != selected_pass
-                                })
-                            {
-                                continue;
-                            }
-                            let Some(&(top, height)) = tops.get(index) else {
-                                continue;
-                            };
-                            if height <= 0.5 {
-                                continue;
-                            }
-                            let end_y = tops
-                                .get(index + 1)
-                                .map(|(next_top, next_h)| next_top + next_h / 2.0)
-                                .unwrap_or(top + height);
-                            builder.move_to(point(
-                                origin.x + px(rail_x),
-                                origin.y + px(top + height / 2.0),
-                            ));
-                            builder.line_to(point(origin.x + px(rail_x), origin.y + px(end_y)));
-                            any = true;
-                        }
-                        if any && let Ok(path) = builder.build() {
-                            window.paint_path(path, dimmed(*color, selected_pass));
-                        }
-                    }
-                }
+                let rail = rows.iter().enumerate().filter_map(|(index, row)| {
+                    Some(cr::RailRow {
+                        bounds: row_bounds(index)?,
+                        next: row_bounds(index + 1),
+                        colour: row.node_color_id,
+                    })
+                });
+                cr::paint_rail(window, bounds, geometry.lane_x(0), rail, &style);
                 return;
             }
-            for pass in 0..passes {
-                let selected_pass = focus.is_some() && pass == 1;
-                for (color_index, color) in palette.iter().enumerate() {
-                    let mut builder = PathBuilder::stroke(px(stroke_for(selected_pass)));
-                    let mut any = false;
-                    for (index, row) in rows.iter().enumerate() {
-                        let Some(&(top, height)) = tops.get(index) else {
-                            continue;
-                        };
-                        if height <= 0.5 {
-                            continue;
-                        }
-                        let middle = height / 2.0;
-                        let overlap = GRAPH_ROW_OVERLAP * (height / ROW_HEIGHT).clamp(0.0, 1.0);
-                        let ox = origin.x;
-                        let oy = origin.y + px(top);
-                        for segment in row.segments.iter().filter(|segment| {
-                            segment.color_id % palette.len() == color_index
-                                && focus.is_none_or(|f| {
-                                    (segment.color_id == f.color_id) == selected_pass
-                                })
-                        }) {
-                            any = true;
-                            let from_x = geometry.lane_x(segment.from_lane);
-                            let to_x = geometry.lane_x(segment.to_lane);
-                            match segment.shape {
-                                SegmentShape::Incoming => {
-                                    builder.move_to(point(ox + px(from_x), oy - px(overlap)));
-                                    builder.cubic_bezier_to(
-                                        point(ox + px(to_x), oy + px(middle)),
-                                        point(ox + px(from_x), oy + px(middle * 0.55)),
-                                        point(ox + px(to_x), oy + px(middle * 0.55)),
-                                    );
-                                }
-                                SegmentShape::Outgoing => {
-                                    builder.move_to(point(ox + px(from_x), oy + px(middle)));
-                                    builder.cubic_bezier_to(
-                                        point(ox + px(to_x), oy + px(height + overlap)),
-                                        point(ox + px(from_x), oy + px(middle * 1.45)),
-                                        point(ox + px(to_x), oy + px(middle * 1.45)),
-                                    );
-                                }
-                                SegmentShape::Through => {
-                                    builder.move_to(point(ox + px(from_x), oy - px(overlap)));
-                                    let end = point(ox + px(to_x), oy + px(height + overlap));
-                                    if segment.from_lane == segment.to_lane {
-                                        builder.line_to(end);
-                                    } else {
-                                        builder.cubic_bezier_to(
-                                            end,
-                                            point(ox + px(from_x), oy + px(middle)),
-                                            point(ox + px(to_x), oy + px(middle)),
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if any && let Ok(path) = builder.build() {
-                        window.paint_path(path, dimmed(*color, selected_pass));
-                    }
-                }
-            }
+            let lanes = rows.iter().enumerate().filter_map(|(index, row)| {
+                let segments = row.segments.iter().map(|segment| cr::LaneSegment {
+                    from_x: geometry.lane_x(segment.from_lane),
+                    to_x: geometry.lane_x(segment.to_lane),
+                    shape: lane_shape(segment),
+                    colour: segment.color_id,
+                });
+                Some((row_bounds(index)?, segments))
+            });
+            cr::paint_lanes(window, bounds, lanes, &style);
         },
     )
     .absolute()
