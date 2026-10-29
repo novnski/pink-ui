@@ -2293,9 +2293,11 @@ pub(crate) struct HistoryBudget {
 }
 
 /// The first eight settled successes show; later ones hide unless the
-/// group was expanded or the reader has that call open. Anything else
-/// (`settled` false: running and failed calls, thoughts) never hides and
-/// never counts (Pink `tool_history_budget`).
+/// group was expanded or the reader has that call open. As in Pink, an open
+/// call counts as one of the eight, and past them it stays in view without
+/// counting toward `Show N more`. Anything else (`settled` false: running
+/// and failed calls, thoughts) never hides and never counts (Pink
+/// `tool_history_budget`).
 pub(crate) fn history_budget(
     settled: &[bool],
     inspected: &[bool],
