@@ -9,6 +9,7 @@ pub mod agent_cursors;
 pub mod agent_inbox;
 pub mod agent_lanes;
 pub mod agent_plan;
+pub mod agent_row;
 pub mod agent_steering;
 pub mod agent_tree;
 pub mod ai_answer;
@@ -427,6 +428,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Agents",
         description: subagent_cards::DESCRIPTION,
         story: subagent_cards::story,
+    },
+    ComponentEntry {
+        slug: "agent-row",
+        name: agent_row::NAME,
+        category: "Agents",
+        description: agent_row::DESCRIPTION,
+        story: agent_row::story,
     },
     ComponentEntry {
         slug: "row-card",

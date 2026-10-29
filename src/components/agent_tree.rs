@@ -10,6 +10,10 @@
 //! and the inspector beside the list is Pink's child-agent card with usage
 //! cells, the agent's share of the run and Stop / Retry / Open log.
 //!
+//! Each row is the `pink-agent-row` package (`components/agent-row`), which
+//! PINK's Agents list pins; this story adds the nesting, the rails, the
+//! folds, the selection and the inspector.
+//!
 //! Arrow keys walk the outline: Up/Down move, Left folds or jumps to the
 //! parent, Right unfolds or enters the first child, Enter / Space toggle a
 //! branch.
@@ -39,6 +43,7 @@ use web_time::Instant;
 
 use crate::{
     HoverFill,
+    components::agent_row as ar,
     motion::{self, MotionSpec},
     pink::{
         self, ButtonKind, ControlSize, FillTier, Pink, TextStyle, TypeStyleExt, loaders, radius,
@@ -53,27 +58,17 @@ pub const DESCRIPTION: &str = "A multi-agent run as a nested agents list: status
 const ICON_BOT: &str = "icons/agent-tree/bot.svg";
 const ICON_CHEVRON: &str = "icons/agent-tree/alt-arrow-right.svg";
 
-/// GPUI's default line height (`phi()`), which Pink's agent rows inherit:
-/// they set sizes but no line heights.
-const PHI: f32 = 1.618_034;
-
-// Agent row (Pink: `shell/agents.rs` `render_agents_section`).
-const ROW_PAD_X: f32 = 10.0;
-const ROW_PAD_Y: f32 = 7.0;
-/// Between the title line and the meta line.
-const ROW_LINE_GAP: f32 = 2.0;
+// Agent row (Pink: `shell/agents.rs` `render_agents_section`), drawn by the
+// `pink-agent-row` package. Its sizes are rems: the outline scales its rows,
+// slots and rails by the window's rem size over 16.
+const ROW_PAD_X: f32 = ar::PAD_X;
+const ROW_PAD_Y: f32 = ar::PAD_Y;
+const DOT: f32 = ar::MARK;
+const STATUS_SIZE: f32 = ar::STATUS_TEXT;
+const TITLE_LINE: f32 = ar::TITLE_TEXT * ar::LINE_HEIGHT;
 /// Between rows (the list's `gap(2)`).
-const ROW_GAP: f32 = 2.0;
-const DOT: f32 = 7.0;
-const LEAD_GAP: f32 = 8.0;
-/// The meta line starts under the title (dot + gap).
-const META_INDENT: f32 = DOT + LEAD_GAP;
-const TITLE_SIZE: f32 = 13.0;
-const STATUS_SIZE: f32 = 11.0;
-const META_SIZE: f32 = 11.5;
-const TITLE_LINE: f32 = TITLE_SIZE * PHI;
-const META_LINE: f32 = META_SIZE * PHI;
-const ROW_H: f32 = 2.0 * ROW_PAD_Y + TITLE_LINE + ROW_LINE_GAP + META_LINE;
+const ROW_GAP: f32 = ar::LIST_GAP;
+const ROW_H: f32 = ar::ROW_HEIGHT;
 /// A row and the gap under it: the rail runs through both.
 const SLOT_H: f32 = ROW_H + ROW_GAP;
 const DOT_CY: f32 = ROW_PAD_Y + TITLE_LINE / 2.0;
@@ -517,6 +512,8 @@ struct Ctx<'a> {
     reduced: bool,
     /// Something is still moving this frame.
     animating: Cell<bool>,
+    /// The window's rem size over 16: the package's rows grow with it.
+    scale: f32,
 }
 
 impl Ctx<'_> {
@@ -555,7 +552,7 @@ impl Ctx<'_> {
 
     /// Height of a row and everything showing under it this frame.
     fn subtree_h(&self, node: &AgentNode) -> f32 {
-        SLOT_H * self.row_reveal(&node.id) + self.kids_h(node)
+        SLOT_H * self.scale * self.row_reveal(&node.id) + self.kids_h(node)
     }
 
     fn kids_h(&self, node: &AgentNode) -> f32 {
@@ -618,6 +615,7 @@ impl RenderOnce for AgentTree {
             now,
             reduced,
             animating: Cell::new(false),
+            scale: f32::from(window.rem_size()) / 16.0,
         };
         let outline_rows = branch(&root, 0, &[], &ctx);
         if ctx.animating.get() {
@@ -839,23 +837,24 @@ fn slot(node: &AgentNode, depth: usize, lines: &[Option<SharedString>], c: &Ctx)
     let reveal = c.row_reveal(&node.id);
     let rail = rail_for(node, depth, lines, c);
     let color = c.t.hairline(RAIL_ALPHA);
+    let scale = c.scale;
     div()
         .relative()
         .flex_none()
         .w_full()
-        .h(px(SLOT_H * reveal))
+        .h(px(SLOT_H * c.scale * reveal))
         .overflow_hidden()
         .child(row(node, depth, reveal, c))
         .child(
             canvas(
                 |_, _, _| (),
-                move |bounds, _, window, _| paint_rail(&rail, bounds.origin, color, window),
+                move |bounds, _, window, _| paint_rail(&rail, bounds.origin, color, scale, window),
             )
             .absolute()
             .top_0()
             .left_0()
             .w_full()
-            .h(px(SLOT_H)),
+            .h(px(SLOT_H * scale)),
         )
         .into_any_element()
 }
@@ -877,19 +876,11 @@ fn row(node: &AgentNode, depth: usize, reveal: f32, c: &Ctx) -> impl IntoElement
     let label = node.status.label();
 
     // The running row's mark is the sidebar working spinner.
-    let lead = div().flex_none().w(px(DOT)).flex().justify_center().child(
-        if node.status == AgentStatus::Running {
-            loaders::mini_glyph_spinner(format!("{}-spin-{id}", c.key), 2.0, t.glyph)
-                .into_any_element()
-        } else {
-            div()
-                .size(px(DOT))
-                .flex_none()
-                .rounded_full()
-                .bg(node.status.dot(t))
-                .into_any_element()
-        },
-    );
+    let lead = if node.status == AgentStatus::Running {
+        loaders::mini_glyph_spinner(format!("{}-spin-{id}", c.key), 2.0, t.glyph).into_any_element()
+    } else {
+        ar::dot(node.status.dot(t)).into_any_element()
+    };
 
     // Leaves keep the tile's slot, so every status word ends on one column.
     let fold_tile = if !has_kids {
@@ -931,35 +922,17 @@ fn row(node: &AgentNode, depth: usize, reveal: f32, c: &Ctx) -> impl IntoElement
             .into_any_element()
     };
 
-    let title_line = div()
-        .flex()
-        .items_center()
-        .gap(px(LEAD_GAP))
-        .child(lead)
-        .child(
-            div()
-                .min_w_0()
-                .flex_1()
-                .truncate()
-                .text_size(px(TITLE_SIZE))
-                .line_height(px(TITLE_LINE))
-                .text_color(if failed {
-                    t.readable_tone(t.danger, 1.0)
-                } else {
-                    t.text
-                })
-                .child(node.name.clone()),
-        )
-        .child(motion::status_swap(
+    let style = ar::row_style(failed, t);
+    let title_line = ar::title_line(
+        style.title,
+        lead,
+        node.name.clone(),
+        motion::status_swap(
             loaders::label_id(&format!("{}-status-{id}", c.key), label),
-            div()
-                .flex_none()
-                .text_size(px(STATUS_SIZE))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(t.readable_muted(0.9))
-                .child(label),
-        ))
-        .child(fold_tile);
+            ar::status_word(style.status, label),
+        ),
+    )
+    .child(fold_tile);
 
     // The activity, then "model, spend, elapsed" in the trailing column
     // Pink's chip rows share (one right-aligned edge, not trailing the text
@@ -980,28 +953,16 @@ fn row(node: &AgentNode, depth: usize, reveal: f32, c: &Ctx) -> impl IntoElement
         figures.push(money(node.cost));
         figures.push(duration_label(node.elapsed));
     }
-    let meta_line = div()
-        .pl(px(META_INDENT))
-        .flex()
-        .gap(px(LEAD_GAP))
-        .min_w_0()
-        .text_size(px(META_SIZE))
-        .line_height(px(META_LINE))
-        .text_color(t.readable_muted(0.85))
-        .child(div().flex_1().min_w_0().truncate().child(activity))
-        .when(!figures.is_empty(), |line| {
-            line.child(
-                div()
-                    .flex_none()
-                    .font_features(pink::tabular_figures())
-                    .child(figures.join(", ")),
-            )
-        });
+    let meta_line = ar::meta_line(style.activity, activity).when(!figures.is_empty(), |line| {
+        line.child(
+            ar::figures(style.figures, figures.join(", ")).font_features(pink::tabular_figures()),
+        )
+    });
 
     let state = c.state.clone();
     let select_id = id.clone();
     let hover_key = format!("{}-row-{id}", c.key);
-    div()
+    ar::row()
         .id(eid(hover_key.clone()))
         .group(ROW_GROUP)
         .role(Role::TreeItem)
@@ -1012,16 +973,9 @@ fn row(node: &AgentNode, depth: usize, reveal: f32, c: &Ctx) -> impl IntoElement
         .relative()
         .top(px(ROW_RISE * (1. - reveal)))
         .opacity(reveal)
-        .flex_none()
         .w_full()
-        .h(px(ROW_H))
-        .pl(px(ROW_PAD_X + depth as f32 * INDENT))
-        .pr(px(ROW_PAD_X))
-        .py(px(ROW_PAD_Y))
-        .rounded(px(radius::MD))
-        .flex()
-        .flex_col()
-        .gap(px(ROW_LINE_GAP))
+        .h(px(ROW_H * c.scale))
+        .pl(px((ROW_PAD_X + depth as f32 * INDENT) * c.scale))
         .cursor_pointer()
         .map(|el| {
             if is_selected {
@@ -1118,8 +1072,8 @@ fn union_path() -> PathBuilder {
 
 /// Paints a slot's rail. Fully drawn segments share one nonzero path so the
 /// joints never double their alpha; fading ones paint on their own.
-fn paint_rail(rail: &Rail, origin: Point<Pixels>, color: Hsla, window: &mut Window) {
-    let at = |x: f32, y: f32| point(origin.x + px(x), origin.y + px(y));
+fn paint_rail(rail: &Rail, origin: Point<Pixels>, color: Hsla, scale: f32, window: &mut Window) {
+    let at = |x: f32, y: f32| point(origin.x + px(x * scale), origin.y + px(y * scale));
     let mut solid = union_path();
     let mut faded: Vec<(PathBuilder, f32)> = Vec::new();
     let mut add = |points: &[Point<Pixels>], alpha: f32| {
