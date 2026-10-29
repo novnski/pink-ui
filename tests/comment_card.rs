@@ -7,7 +7,8 @@
 //! document column or whose bar leaves the band's edge; a long location that
 //! pushes edit and remove out of a narrow card instead of truncating; an
 //! adder, edit or remove that grows with the Interface size; a band draft's
-//! actions that scale, or a floating draft's that do not.
+//! actions that scale, or a floating draft's that do not; a band draft whose
+//! field and actions spill past its bottom edge into the next diff row.
 
 use gpui::{
     Bounds, Context, IntoElement, Pixels, Render, TestAppContext, Window, div, prelude::*, px, svg,
@@ -15,11 +16,11 @@ use gpui::{
 use pink_ui::{
     Theme, ThemeMode,
     components::comment_card::{
-        ACCENT_BAR_WIDTH, ACTION_HEIGHT, ADDER, ADDER_GLYPH, Column, DRAFT_HEIGHT, EDIT, GAP,
-        HEADER_HEIGHT, ICON_COMMENT, ICON_PEN, ICON_PLUS, ICON_REMOVE, LINE_HEIGHT, PAD_V, PAD_X,
-        REMOVE_HIT, REMOVE_INSET, action, action_style, actions, adder, body, card, card_height,
-        content, draft, draft_style, edit, field, floating, header, location, posted_style, remove,
-        scaled_action,
+        ACCENT_BAR_WIDTH, ACTION_HEIGHT, ADDER, ADDER_GLYPH, Column, EDIT, GAP, HEADER_HEIGHT,
+        ICON_COMMENT, ICON_PEN, ICON_PLUS, ICON_REMOVE, LINE_HEIGHT, PAD_V, PAD_X, REMOVE_HIT,
+        REMOVE_INSET, action, action_style, actions, adder, body, card, card_height, content,
+        draft, draft_height, draft_style, edit, field, floating, header, location, posted_style,
+        remove, scaled_action,
     },
     pink::{MONO, Pink},
 };
@@ -108,14 +109,14 @@ impl Render for Host {
                 .debug_selector(|| "adder".into()),
             )
             .child(
-                draft(&draft_style(&t), None)
+                draft(&draft_style(&t), draft_height(ui), None)
                     .debug_selector(|| "draft".into())
                     .child(
                         content(None)
                             .child(header(svg().path(ICON_COMMENT), t.text_faint))
                             .child(field(div().child("Note")))
                             .child(
-                                actions().child(
+                                actions().debug_selector(|| "draft-actions".into()).child(
                                     action(&action_style("cancel", false, &t), "Cancel")
                                         .debug_selector(|| "action".into()),
                                 ),
@@ -234,8 +235,13 @@ fn comment_cards_follow_the_analytic_height_and_the_bar_column(cx: &mut TestAppC
 
         let draft = bounds(cx, "draft");
         assert!(
-            near(draft.size.height, DRAFT_HEIGHT * scale),
+            near(draft.size.height, draft_height(ui)),
             "draft height at {ui}"
+        );
+        let draft_actions = bounds(cx, "draft-actions");
+        assert!(
+            near(draft.bottom() - draft_actions.bottom(), PAD_V / 2.0),
+            "draft holds its field and actions at {ui}"
         );
         let action = bounds(cx, "action");
         assert!(

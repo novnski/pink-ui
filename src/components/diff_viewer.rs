@@ -3663,7 +3663,7 @@ fn draft_card(c: &Ctx, draft: &DraftView) -> AnyElement {
         };
         format!("{path}:{}", draft.target.line).into()
     };
-    cc::draft(&cc::draft_style(t), None)
+    cc::draft(&cc::draft_style(t), DRAFT_CARD_HEIGHT, None)
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .child(
             cc::content(None)

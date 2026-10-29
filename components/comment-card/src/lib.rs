@@ -3,8 +3,8 @@
 // code editor before sending them to the agent. A posted card is a flat band
 // with a 3 pt accent bar, the comment glyph and the `path:line` it cites,
 // edit and remove revealed under the pointer, and the note; the open draft
-// is a firmer band of fixed height holding the host's text field and
-// Cancel and Comment (Save when editing). The code editor floats the same
+// is a firmer band holding the host's text field and Cancel and Comment
+// (Save when editing), as tall as its contents. The code editor floats the same
 // header and note on the host's popover card instead of a band. The adder is
 // the small `+` plate a line shows to start a draft. UI rethink decision
 // 54: drawn here, consumed by PINK through a pinned revision.
@@ -48,9 +48,9 @@ pub const LINE_HEIGHT: f32 = 18.0;
 /// The slack under a posted card's note, in fixed pixels (comments.rs
 /// `CARD_GAP`).
 pub const GAP: f32 = 6.0;
-/// The open draft's height, in pt at the 16 px default (comments.rs
-/// `DRAFT_CARD_HEIGHT`): fixed, so an open draft never fights a fold tween.
-pub const DRAFT_HEIGHT: f32 = 116.0;
+/// The open draft's height at the 16 px default (comments.rs
+/// `DRAFT_CARD_HEIGHT`); `draft_height` gives it at other Interface sizes.
+pub const DRAFT_HEIGHT: f32 = PAD_V + HEADER_HEIGHT + FIELD_HEIGHT + ACTIONS_HEIGHT;
 /// The draft's field slot and its action row, in fixed pixels.
 pub const FIELD_HEIGHT: f32 = 46.0;
 pub const ACTIONS_HEIGHT: f32 = 28.0;
@@ -93,6 +93,14 @@ pub fn ui_rems(design: f32) -> AbsoluteLength {
 /// measured, so a diff can tween a fold over it.
 pub fn card_height(body_lines: usize, ui_font_size: f32) -> f32 {
     PAD_V + GAP + (HEADER_HEIGHT + body_lines as f32 * LINE_HEIGHT) * (ui_font_size / 16.0)
+}
+
+/// The open draft's height at the host's Interface size: the padding, the
+/// field and the action row stay fixed and only the header scales, so the
+/// band always holds them. Worked out rather than measured, so an open
+/// draft never fights a fold tween.
+pub fn draft_height(ui_font_size: f32) -> f32 {
+    PAD_V + FIELD_HEIGHT + ACTIONS_HEIGHT + HEADER_HEIGHT * (ui_font_size / 16.0)
 }
 
 /// Centres a card's content under a document column (the Markdown
@@ -140,9 +148,9 @@ pub fn card(style: &BandStyle, height: f32, column: Option<Column>) -> Div {
     band(style, column).h(px(height))
 }
 
-/// The open draft's band, `DRAFT_HEIGHT` tall.
-pub fn draft(style: &BandStyle, column: Option<Column>) -> Div {
-    band(style, column).h(ui_rems(DRAFT_HEIGHT))
+/// The open draft's band, `height` tall (`draft_height`).
+pub fn draft(style: &BandStyle, height: f32, column: Option<Column>) -> Div {
+    band(style, column).h(px(height))
 }
 
 /// The column inside a band: the header, then the note or the field and

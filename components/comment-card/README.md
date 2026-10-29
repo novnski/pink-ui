@@ -12,9 +12,10 @@ type graph and no copied source.
 
 ## What it draws
 
-- `card(&BandStyle, height, column)` and `draft(&BandStyle, column)`: the
-  posted band (`card_height(body_lines, ui_font_size)` tall) and the open
-  draft (`DRAFT_HEIGHT`), each a row with its `ACCENT_BAR_WIDTH` bar first.
+- `card(&BandStyle, height, column)` and `draft(&BandStyle, height, column)`:
+  the posted band (`card_height(body_lines, ui_font_size)` tall) and the
+  open draft (`draft_height(ui_font_size)`), each a row with its
+  `ACCENT_BAR_WIDTH` bar first.
   `band` is the same row without a height, and `accent_bar` the bar alone.
   Under a `Column` the content centres at most `max_width` wide between
   the gutters and the bar sits on the band's edge.
