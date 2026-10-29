@@ -24,7 +24,7 @@ const LAYERS: &str = "icons/tool-call-card/layers-minimalistic.svg";
 const CHEVRON: &str = "icons/tool-call-card/alt-arrow-right.svg";
 
 pub const NAME: &str = "Tool Activity";
-pub const DESCRIPTION: &str = "PINK's tool activity as a package the app pins: one verb-first sentence per call or group on a 28 pt pitch at 14/20, commands and patterns as inline code, the verb kept while long objects truncate, a failure count and attention state only when the sentence cannot say them, and the failure line under a failed call with its recovery actions";
+pub const DESCRIPTION: &str = "PINK's tool activity as a package the app pins: one verb-first sentence per call or group on a 28 pt pitch in 14 pt text on a 20 pt line, commands and patterns as inline code, the verb kept while long objects truncate, a failure count and attention state only when the sentence cannot say them, and the failure line under a failed call with its recovery actions";
 
 /// The 28 pt activity pitch at the 16 px default.
 pub const PITCH: f32 = 28.0;
@@ -157,6 +157,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                 TERMINAL,
                 vec![
                     text("Running"),
+                    // joiners: allow a shell command, not a label
                     code("cargo test --workspace --locked -- --nocapture transcript"),
                 ],
                 ActivityState::Running,
