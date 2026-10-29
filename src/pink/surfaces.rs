@@ -18,6 +18,7 @@ use super::{
     radius, shadow_lg,
 };
 use crate::HoverFill;
+use crate::components::overlay_card as overlay;
 use crate::components::settings_parts as parts;
 use crate::components::settings_section as section;
 
@@ -236,11 +237,9 @@ pub fn overlay(t: &Pink) -> Div {
 }
 
 /// A full-width popup above the composer: the popover on the stack ladder's
-/// popup step (radius 20, `p 6`).
+/// popup step (radius 20, `p 6`), drawn by the `pink-overlay-card` package.
 pub fn stack_popup_card(t: &Pink) -> Div {
-    popover_card(t)
-        .rounded(px(radius::STACK_POPUP))
-        .p(px(layout::STACK_POPUP_INSET))
+    overlay::stack_popup(popover_card(t))
 }
 
 /// One pointer menu row (Pink `popover::menu_row`): gap 10, `px 8 / py 6`,
@@ -456,37 +455,26 @@ pub fn toolbar_input(t: &Pink) -> Div {
 // Tooltips
 // ---------------------------------------------------------------------------
 
-/// Every tooltip and hover card's surface (Pink `popover::tooltip_card`):
-/// radius 8, a 1 px `border_strong` edge, the opaque `tooltip_surface()`,
-/// `tooltip_shadows()`, and Geist named on the card (a tooltip lays out as
-/// its own root). Content sets padding and width.
+/// Every tooltip and hover card's surface (Pink `popover::tooltip_card`),
+/// drawn by the `pink-overlay-card` package: radius 8, a 1 px
+/// `border_strong` edge, the opaque `tooltip_surface()`, `tooltip_shadows()`,
+/// and Geist named on the card (a tooltip lays out as its own root). Content
+/// sets padding and width.
 pub fn tooltip_card(t: &Pink) -> Div {
-    div()
-        .rounded(px(radius::TOOLTIP))
-        .border_1()
-        .border_color(t.border_strong)
-        .bg(t.tooltip_surface())
-        .shadow(t.tooltip_shadows())
-        .font_family(SANS)
+    overlay::tooltip_card(&overlay::tooltip_style(t))
 }
 
-/// The plain-text tooltip view (Pink `popover::TextTooltip`): the
-/// [`tooltip_card`] at `px 8 / py 5`, Caption (11/14) in `text`, one line up
-/// to 48 characters, else wrapped at 260.
+/// The plain-text tooltip view (Pink `popover::TextTooltip`), drawn by the
+/// `pink-overlay-card` package: the [`tooltip_card`] at `px 8 / py 5`,
+/// Caption (11/14) in `text`, one line up to 48 characters, else wrapped at
+/// 260.
 pub struct TextTooltip(pub SharedString);
 
 impl Render for TextTooltip {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = Pink::get(cx);
-        let wraps = self.0.chars().count() > layout::TOOLTIP_WRAP_CHARS;
-        tooltip_card(&t)
-            .when(wraps, |card| card.w(px(layout::TOOLTIP_MAX_WIDTH)))
-            .when(!wraps, |card| card.whitespace_nowrap())
-            .px(px(8.0))
-            .py(px(5.0))
+        overlay::text_tooltip(&overlay::tooltip_style(&t), t.text, self.0.clone())
             .type_style(TextStyle::Caption)
-            .text_color(t.text)
-            .child(self.0.clone())
     }
 }
 
@@ -502,23 +490,14 @@ pub fn text_tooltip(
 // Dialogs and palettes
 // ---------------------------------------------------------------------------
 
-/// A dialog card (Pink `popover::dialog_card` in its frosted `modal`): 360
-/// wide, `p 20`, radius 16, the popover plate, a `separator(false)` edge,
-/// the frost elevation rings over `shadow_lg`, a column in `text`. Lay it on
-/// `t.scrim(MODAL_SCRIM)`.
+/// A dialog card (Pink `popover::dialog_card` in its frosted `modal`), drawn
+/// by the `pink-overlay-card` package: 360 wide, `p 20`, radius 16, the
+/// popover plate, a `separator(false)` edge, the frost elevation rings over
+/// `shadow_lg`, a column in `text`. Lay it on `t.scrim(MODAL_SCRIM)`.
 pub fn dialog_card(t: &Pink) -> Div {
-    div()
-        .w(px(layout::DIALOG_WIDTH))
-        .p(px(layout::DIALOG_PAD))
-        .rounded(px(radius::DIALOG))
-        .bg(t.surface_bg())
-        .border_1()
-        .border_color(t.separator(false))
+    overlay::dialog_card(&overlay::dialog_style(t))
         .shadow(floating_shadows(shadow_lg(), t))
-        .flex()
-        .flex_col()
         .font_family(SANS)
-        .text_color(t.text)
 }
 
 /// A dialog title: 15 semibold `text`. The body follows at `mt 6`.

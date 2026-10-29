@@ -63,6 +63,7 @@ pub mod model_picker;
 pub mod notice;
 pub mod notification_stack;
 pub mod otp_input;
+pub mod overlay_card;
 pub mod permission_request;
 pub mod place_tab;
 pub mod profile_menu;
@@ -689,6 +690,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Inputs",
         description: appearance_picker::DESCRIPTION,
         story: appearance_picker::story,
+    },
+    ComponentEntry {
+        slug: "overlay-card",
+        name: overlay_card::NAME,
+        category: "Feedback",
+        description: overlay_card::DESCRIPTION,
+        story: overlay_card::story,
     },
     ComponentEntry {
         slug: "decision-inbox",
