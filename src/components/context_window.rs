@@ -409,6 +409,12 @@ impl Usage {
         self.used() as f32 / self.capacity as f32
     }
 
+    /// The share in whole percent, as the chip prints it and the map fills
+    /// it (the package's exact rounding).
+    fn percent(&self) -> u64 {
+        package::share_percent(u64::from(self.used()), u64::from(self.capacity))
+    }
+
     fn tokens(&self, spot: Spot) -> u32 {
         match spot {
             Spot::Part(Part::System) => self.system,
@@ -527,12 +533,13 @@ fn accessible_name(compacting: bool, reported: bool, text: &str) -> SharedString
     }
 }
 
-/// The chip's text (Pink: context_usage.rs `label`).
-fn label(compacting: bool, fraction: f32) -> String {
+/// The chip's text (Pink: context_usage.rs `label`): the share in whole
+/// percent, the same number of cells the map fills.
+fn label(compacting: bool, percent: u64) -> String {
     if compacting {
         "Compacting…".into()
     } else {
-        format!("{:.0}%", fraction * 100.)
+        format!("{percent}%")
     }
 }
 
@@ -894,7 +901,7 @@ impl ContextWindow {
         if !self.usage.reported && !compacting {
             return (ring, ring);
         }
-        let text = label(compacting, self.usage.fraction());
+        let text = label(compacting, self.usage.percent());
         let run = gpui::TextRun {
             len: text.len(),
             font: gpui::font(pink::SANS),
@@ -1161,8 +1168,8 @@ fn chip(
     let color = t.readable_on_composer(tone, TEXT_CONTRAST_TARGET);
     let ring_color = t.readable_on_composer(tone, NON_TEXT_CONTRAST_TARGET);
     let track = t.text_faint.opacity(0.25);
-    let text = label(compacting, fraction);
     let reported = s.usage.reported;
+    let text = label(compacting, if reported { s.usage.percent() } else { 0 });
     let accessible = accessible_name(compacting, reported, &text);
     let hover_key = format!("{key}-chip");
     let ring = t.focus_ring();
@@ -2133,8 +2140,18 @@ mod tests {
             details(&usage()),
             "37,000 of 200,000 tokens\n163,000 tokens remaining"
         );
-        assert_eq!(label(false, 0.786), "79%");
-        assert_eq!(label(true, 0.786), "Compacting…");
+        // 37,000 of 200,000 is exactly 18.5%: ties to even, as `{:.0}` prints.
+        assert_eq!(label(false, usage().percent()), "18%");
+        assert_eq!(label(true, usage().percent()), "Compacting…");
+        // An exact half percent reads as the map fills it (57.5%: 58).
+        let mut half = usage();
+        half.conversation = 115_000 - 17_000;
+        assert_eq!(label(false, half.percent()), "58%");
+        let cells = half.cells();
+        assert_eq!(
+            cells.iter().filter(|c| matches!(c, Cell::Part(..))).count(),
+            58
+        );
     }
 
     /// PINK 0.30.6 (novnski/pink#193). Failure modes: an unreported window

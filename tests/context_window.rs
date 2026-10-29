@@ -17,6 +17,7 @@ use pink_ui::{
     components::context_window::package::{
         CELL, CELLS, Cell, CellPaint, FIELD_H, FIELD_W, FillPart, ITEM_H, ItemStyle, PITCH, ROW_H,
         RowStyle, Swatch, breakdown, cell, cells, field, item_row, marker_column, part_row,
+        share_percent,
     },
     pink::Pink,
 };
@@ -95,7 +96,8 @@ fn occupied(field: &[Cell]) -> usize {
 /// full window); rounding each part on its own (or a sliver's one cell)
 /// adding up to more or fewer cells than the share; the reserve drawn over
 /// occupied cells, or its hollow cells dropped where usage hasn't reached
-/// them; occupied cells out of fill order or broken up by free room.
+/// them; occupied cells out of fill order or broken up by free room; float
+/// error rounding an exact half percent the other way from the ring.
 #[test]
 fn filled_cells_equal_the_rounded_share() {
     for (percent, hollow) in [(25, 17), (80, 17), (95, 5)] {
@@ -122,6 +124,14 @@ fn filled_cells_equal_the_rounded_share() {
     assert!(full[83..93].iter().all(|c| *c == Cell::Part(2, None)));
     assert_eq!(full[94], Cell::Part(3, Some(0)));
     assert_eq!(full[95], Cell::Reserved);
+    // Exact half percents round as `{:.0}%` prints the exact share (ties to
+    // even), without float error moving them off the tie: 57.5% fills 58
+    // cells and 54.5% fills 54.
+    for (tokens, percent) in [(115_000, 58), (109_000, 54)] {
+        let field = cells(200_000, &[part(tokens)], 33_000);
+        assert_eq!(occupied(&field), percent, "{tokens} of 200,000");
+        assert_eq!(share_percent(tokens, 200_000), percent as u64);
+    }
 }
 
 #[test]

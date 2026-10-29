@@ -85,17 +85,15 @@ pub struct FillPart {
 /// order (a part with items gives each item its own run), free room, then
 /// the reserve's hollow cells at the end.
 ///
-/// The occupied cells always total the parts' share of the window, rounded
-/// as a percentage is printed (ties to even, like `{:.0}%`), so the map
-/// agrees with the host's ring; each run's cells are its share of them
+/// The occupied cells always total the parts' [`share_percent`] of the
+/// window, so the map agrees with a ring that prints it; each run's cells
+/// are its share of them
 /// (largest remainder). A run with any tokens keeps at least one cell, so
 /// only a window with more runs than its share has cells shows more. Usage
 /// that runs into the reserve stays occupied: the reserve is hollow only
 /// over the cells usage hasn't reached, and an overfull window fills every
 /// cell. Where compaction kicks in is the host's rule, not these cells.
 pub fn cells(capacity: u64, parts: &[FillPart], reserve: u64) -> Vec<Cell> {
-    let capacity = capacity.max(1) as f64;
-    let share = |tokens: u64| tokens as f64 / capacity * CELLS as f64;
     let mut runs: Vec<(Cell, u64)> = Vec::new();
     for (index, part) in parts.iter().enumerate() {
         let mut listed = 0u64;
@@ -109,7 +107,7 @@ pub fn cells(capacity: u64, parts: &[FillPart], reserve: u64) -> Vec<Cell> {
     let used = runs
         .iter()
         .fold(0u64, |sum, (_, tokens)| sum.saturating_add(*tokens));
-    let occupied = (share(used).round_ties_even() as usize)
+    let occupied = (share_percent(used, capacity).min(CELLS as u64) as usize)
         .max(runs.len())
         .min(CELLS);
     // Each run's exact share of the occupied cells, floored (one at least),
@@ -146,7 +144,8 @@ pub fn cells(capacity: u64, parts: &[FillPart], reserve: u64) -> Vec<Cell> {
     let reserved = if reserve == 0 {
         0
     } else {
-        (share(reserve).round() as usize).clamp(1, CELLS)
+        let (whole, rest, capacity) = percent_parts(reserve, capacity);
+        ((whole + u128::from(2 * rest >= capacity)).min(CELLS as u128) as usize).max(1)
     };
     let hollow = reserved.min(CELLS - occupied);
     let mut out = Vec::with_capacity(CELLS);
@@ -156,6 +155,28 @@ pub fn cells(capacity: u64, parts: &[FillPart], reserve: u64) -> Vec<Cell> {
     out.resize(CELLS - hollow, Cell::Free);
     out.resize(CELLS, Cell::Reserved);
     out
+}
+
+/// The share of a window of `capacity` tokens that `tokens` fill, in whole
+/// percent, rounded as `{:.0}%` prints an exact share (ties to even) but
+/// without the float error that moves a half percent off its tie. A host
+/// prints this beside the map so its ring and the field agree.
+pub fn share_percent(tokens: u64, capacity: u64) -> u64 {
+    let (whole, rest, capacity) = percent_parts(tokens, capacity);
+    let up = match (2 * rest).cmp(&capacity) {
+        std::cmp::Ordering::Greater => true,
+        std::cmp::Ordering::Equal => whole % 2 == 1,
+        std::cmp::Ordering::Less => false,
+    };
+    u64::try_from(whole + u128::from(up)).unwrap_or(u64::MAX)
+}
+
+/// `tokens` as a percent of `capacity` (at least 1): the whole percent, the
+/// remainder and the divisor, exactly.
+fn percent_parts(tokens: u64, capacity: u64) -> (u128, u128, u128) {
+    let scaled = u128::from(tokens) * CELLS as u128;
+    let capacity = u128::from(capacity.max(1));
+    (scaled / capacity, scaled % capacity, capacity)
 }
 
 /// A cell's top-left corner in the field, in design pt: the field fills
