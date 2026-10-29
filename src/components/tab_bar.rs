@@ -78,10 +78,12 @@ const TAB_MAX: f32 = tab_chip::TAB_MAX_WIDTH;
 const STRIP_COMPACT: f32 = 220.0;
 /// Pink: workbench/render.rs `TAB_STRIP_EDGE_FADE`.
 const EDGE_FADE: f32 = 24.0;
-/// Pink: workbench/render.rs `CANVAS_INSET`, `CANVAS_RADIUS`, `VIEWPORT_INSET`.
+/// Pink: workbench/fit.rs `FRAME_GUTTER`, `CARD_RADIUS` and `CARD_BORDER`
+/// (UI rethink D47, novnski/pink#175): one content card in an 8 pt gutter
+/// with a 12 pt radius and a hairline, and no extra viewport inset.
 const CANVAS_INSET: f32 = 8.0;
-const CANVAS_RADIUS: f32 = 14.0;
-const VIEWPORT_INSET: f32 = 6.0;
+const CANVAS_RADIUS: f32 = 12.0;
+const CARD_BORDER: f32 = 1.0;
 /// Pink: workbench/render.rs `SPLIT_SEAM`.
 const SPLIT_SEAM: f32 = 1.0;
 /// Pink: workbench.rs `TAB_EXIT_MS` – a closed tab narrows and fades.
@@ -2235,7 +2237,7 @@ impl RenderOnce for TabBar {
         };
         // The groups share the row (and the canvas under it) by their
         // shares, a 1 pt seam between neighbours.
-        let inset = CANVAS_INSET + VIEWPORT_INSET;
+        let inset = CANVAS_INSET + CARD_BORDER;
         let avail =
             (self.width - 2.0 * inset - SPLIT_SEAM * (s.groups.len().max(1) - 1) as f32).max(0.0);
         let total: f32 = s.groups.iter().map(|g| g.share).sum::<f32>().max(0.1);
@@ -2301,7 +2303,6 @@ impl RenderOnce for TabBar {
                     .border_color(t.hairline(0.08))
                     .bg(t.canvas_fill())
                     .overflow_hidden()
-                    .p(px(VIEWPORT_INSET - 1.0))
                     .child(columns),
             )
         });
