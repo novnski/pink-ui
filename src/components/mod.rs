@@ -64,6 +64,7 @@ pub mod integration_settings;
 pub mod kpi_chart;
 pub mod list_row;
 pub mod loaders;
+pub mod markdown_list;
 pub mod markdown_message;
 pub mod memory_panel;
 pub mod menu_card;
@@ -274,6 +275,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Chat",
         description: markdown_message::DESCRIPTION,
         story: markdown_message::story,
+    },
+    ComponentEntry {
+        slug: "markdown-list",
+        name: markdown_list::NAME,
+        category: "Chat",
+        description: markdown_list::DESCRIPTION,
+        story: markdown_list::story,
     },
     ComponentEntry {
         slug: "agent-cursors",

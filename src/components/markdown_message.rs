@@ -4,8 +4,9 @@
 //! canvas, no bubble (Pink: `markdown/render.rs` `render_tree` /
 //! `render_block`, parsed the way `markdown/parser.rs` reads CommonMark with
 //! tables, strikethrough and task lists). Blocks stack 12px apart; headings
-//! step down quickly from 19/27 to body size and take extra room above so they
-//! group with what follows. Prose is Geist 14/22 in `text`, strong runs
+//! step down quickly from 20/28 to body size and take extra room above so they
+//! group with what follows. Prose is Geist 15/24 in `text` (PINK's reading
+//! surface, about 90 characters per line at its 608 pt measure), strong runs
 //! semibold, links monochrome with a `content_muted` underline, inline code in
 //! Geist Mono on a rounded `code_wash`. List markers wear the accent: real 5px
 //! discs, tinted numbers, or task checkboxes. Quotes get an accent rail and a
@@ -48,7 +49,7 @@ use gpui::{
 
 use crate::{
     HoverFill,
-    components::{code_block, file_badge},
+    components::{code_block, file_badge, markdown_list},
     motion,
     pink::{self, Pink, Syntax, radius},
     story,
@@ -63,9 +64,10 @@ pub const DESCRIPTION: &str = "An AI reply rendered from markdown the way Pink's
 
 /// Gap between blocks of one message (Pink `MD_BLOCK_GAP`).
 const MD_BLOCK_GAP: f32 = 12.;
-/// Body text (Pink `MD_TEXT_SIZE` / `MD_LINE_HEIGHT`: 14/22).
-const MD_TEXT_SIZE: f32 = 14.;
-const MD_LINE_HEIGHT: f32 = 22.;
+/// Body text (Pink `MD_TEXT_SIZE` / `MD_LINE_HEIGHT`: 15/24, UI rethink
+/// D34).
+const MD_TEXT_SIZE: f32 = 15.;
+const MD_LINE_HEIGHT: f32 = 24.;
 /// Code fences: 12.5/18 Geist Mono (Pink `CODE_TEXT_SIZE` /
 /// `CODE_LINE_HEIGHT`).
 const CODE_TEXT_SIZE: f32 = pink::text::CODE;
@@ -94,14 +96,6 @@ const TABLE_HEADER_WEIGHT: FontWeight = FontWeight::BOLD;
 const INLINE_CODE_RADIUS: f32 = 4.5;
 const INLINE_CODE_PAD_X: f32 = 2.;
 const INLINE_CODE_INSET_Y: f32 = 2.;
-/// Lists: items 4 apart, an 18px marker column 8 from the text, 5px discs.
-const LIST_GAP: f32 = 4.;
-const LIST_MARKER_MIN_W: f32 = 18.;
-const LIST_MARKER_GAP: f32 = 8.;
-const LIST_DISC: f32 = 5.;
-/// The task checkbox: 16px, r4, a 12px check.
-const TASK_BOX: f32 = 16.;
-const TASK_CHECK: f32 = 12.;
 /// Quotes: children 8 apart.
 const QUOTE_GAP: f32 = 8.;
 /// The link actions menu (Pink `link_interaction.rs`).
@@ -124,13 +118,14 @@ const CHECK: &str = "icons/markdown-message/check.svg";
 const WRAP_TEXT: &str = "icons/markdown-message/wrap-text.svg";
 const ARROW_UP_RIGHT: &str = "icons/markdown-message/arrow-right-up.svg";
 
-/// Pink `heading_metrics`: a tight monochrome scale, H1 19/27 down to 14/22.
+/// Pink `heading_metrics`: a tight monochrome scale one step above 15/24
+/// prose per level, H1 20/28 down to body size.
 fn heading_metrics(level: u8) -> (f32, f32) {
     match level {
-        1 => (19., 27.),
-        2 => (17., 24.),
-        3 => (15., 22.),
-        _ => (14., 22.),
+        1 => (20., 28.),
+        2 => (18., 26.),
+        3 => (16., 24.),
+        _ => (15., 24.),
     }
 }
 
@@ -2840,39 +2835,28 @@ impl Renderer<'_> {
         el.into_any_element()
     }
 
-    /// Pink's list: items 4 apart, each a row of an 18px marker column and
-    /// the item's blocks 8 to its right. Markers wear the accent: tinted
-    /// numbers, a real 5px disc centered on the first line, or a checkbox.
+    /// Pink's list, drawn by the `pink-markdown-list` package: items 4
+    /// apart, each a row of an 18px marker column and the item's blocks 8 to
+    /// its right. Markers wear the accent: tinted numbers, a real 5px disc
+    /// centered on the first line, or a checkbox.
     fn list(&mut self, start: Option<u64>, items: &[Item]) -> AnyElement {
-        let mut list = div().flex().flex_col().gap(px(LIST_GAP));
+        let mut list = markdown_list::list();
         for (ix, item) in items.iter().enumerate() {
             let checkbox = item.task.filter(|_| self.tasks);
             let marker = match (checkbox, start) {
                 (Some(checked), _) => self.task_marker(checked, item),
-                (None, Some(start)) => div()
-                    .flex_none()
-                    .min_w(px(LIST_MARKER_MIN_W))
-                    .text_size(px(MD_TEXT_SIZE))
-                    .line_height(px(MD_LINE_HEIGHT))
-                    .text_color(self.t.readable_tone(self.t.accent, 1.))
-                    .child(SharedString::from(format!("{}.", start + ix as u64)))
-                    .into_any_element(),
-                (None, None) => div()
-                    .flex_none()
-                    .min_w(px(LIST_MARKER_MIN_W))
-                    .h(px(MD_LINE_HEIGHT))
-                    .flex()
-                    .items_center()
-                    .child(
-                        div()
-                            .ml(px(1.))
-                            .size(px(LIST_DISC))
-                            .rounded_full()
-                            .bg(self.t.accent),
-                    )
-                    .into_any_element(),
+                (None, Some(start)) => markdown_list::number(
+                    format!("{}.", start + ix as u64),
+                    self.t.readable_tone(self.t.accent, 1.),
+                    MD_TEXT_SIZE,
+                    MD_LINE_HEIGHT,
+                )
+                .into_any_element(),
+                (None, None) => {
+                    markdown_list::disc(self.t.accent, MD_LINE_HEIGHT).into_any_element()
+                }
             };
-            let mut body = div().flex_1().min_w_0().flex().flex_col().gap(px(LIST_GAP));
+            let mut body = markdown_list::body();
             for (ci, child) in item.blocks.iter().enumerate() {
                 // Without checkboxes, Pink's transcript shows the marker text
                 let literal = match (ci, item.task, checkbox, child) {
@@ -2891,22 +2875,17 @@ impl Renderer<'_> {
                 };
                 body = body.child(self.block(literal.as_ref().unwrap_or(child)));
             }
-            list = list.child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .gap(px(LIST_MARKER_GAP))
-                    .child(marker)
-                    .child(body),
-            );
+            list = list.child(markdown_list::item(marker, body));
         }
         list.into_any_element()
     }
 
-    /// Pink's task checkbox: 16px, r4, 1px edge – `border` when open, an
-    /// accent plate with a 12px check in `bg` when done. It toggles when the
-    /// host can rewrite the source, and otherwise rests at half strength.
-    /// Focus brightens its edge to `text`.
+    /// Pink's task checkbox, drawn by the `pink-markdown-list` package: 16px,
+    /// r4, 1px edge – `border` when open, an accent plate with a 12px check
+    /// in `bg` when done. It toggles when the host can rewrite the source,
+    /// and otherwise rests at half strength, as in Pink's replies. Its
+    /// accessible name is the item's text; its toggled state says whether
+    /// it is done. Focus brightens its edge to `text`.
     fn task_marker(&mut self, checked: bool, item: &Item) -> AnyElement {
         let ix = self.task_ix;
         self.task_ix += 1;
@@ -2915,35 +2894,23 @@ impl Renderer<'_> {
             Some(Block::Paragraph(runs)) => runs.iter().map(|r| r.text.as_str()).collect(),
             _ => String::new(),
         };
-        let edge = if checked { t.accent } else { t.border };
         let text = t.text;
         let toggle = self.on_task.clone();
-        let mut check = div()
-            .id(SharedString::from(format!("{}-task-{ix}", self.key)))
-            .role(Role::CheckBox)
-            .aria_toggled(if checked {
-                Toggled::True
-            } else {
-                Toggled::False
-            })
-            .aria_label(label)
-            .flex_none()
-            .size(px(TASK_BOX))
-            .border_1()
-            .rounded(px(radius::XS))
-            .border_color(edge)
-            .bg(if checked {
-                t.accent
-            } else {
-                transparent_black()
-            })
-            .flex()
-            .items_center()
-            .justify_center()
-            .when(checked, |el| {
-                el.child(svg().path(CHECK).size(px(TASK_CHECK)).text_color(t.bg))
-            });
-        check = match toggle {
+        let check = markdown_list::task_box(
+            &markdown_list::task_style(t),
+            checked,
+            toggle.is_some(),
+            svg().path(CHECK),
+        )
+        .id(SharedString::from(format!("{}-task-{ix}", self.key)))
+        .role(Role::CheckBox)
+        .aria_toggled(if checked {
+            Toggled::True
+        } else {
+            Toggled::False
+        })
+        .aria_label(label);
+        let check = match toggle {
             Some(toggle) => check
                 .tab_index(0)
                 .cursor_pointer()
@@ -2953,20 +2920,15 @@ impl Renderer<'_> {
                     cx.stop_propagation();
                     toggle(ix, !checked, window, cx);
                 }),
-            None => check.opacity(0.5),
+            None => check,
         };
-        div()
-            .flex_none()
-            .min_w(px(LIST_MARKER_MIN_W))
-            .h(px(MD_LINE_HEIGHT))
-            .flex()
-            .items_center()
+        markdown_list::marker_slot(MD_LINE_HEIGHT)
             .child(check)
             .into_any_element()
     }
 
     /// Pink `render_table`: frameless – only 1px `separator(false)` rules
-    /// under the header and between rows. Cells are 14/22 with 12px padding,
+    /// under the header and between rows. Cells are 15/24 with 12px padding,
     /// the header bold. Columns share the width in proportion to their
     /// content, never below `min(content, 96)`; past that the table scrolls.
     fn table(
@@ -3457,9 +3419,10 @@ impl RenderOnce for MarkdownMessage {
 // Story
 // ---------------------------------------------------------------------------
 
-const DEMO_WIDTH: f32 = 640.;
+/// PINK's default reading measure, 608 pt.
+const DEMO_WIDTH: f32 = 608.;
 /// The settled reply's height: the stage holds still while it streams.
-const MESSAGE_HEIGHT: f32 = 1009.;
+const MESSAGE_HEIGHT: f32 = 1053.;
 const DEMO_QUESTION: &str = "How do I stop our request logs from printing session tokens?";
 
 /// The tasks at the end of the demo reply, toggled by the reader.
