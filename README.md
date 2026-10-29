@@ -35,9 +35,11 @@
 - **73 components** in the Pink app's design language: its runtime palette
   (Geist, neutral surfaces, the violet accent), its radius, spacing and type
   ladders, its controls, motion and loaders, in light and dark.
-- **Twins are exact copies.** Where the app has the component – the working
-  line under a reply, the composer, the ⌘K palette, the model picker, the tool
-  group – pink-ui reproduces it value for value from the app's source.
+- **The app's components come from here.** Where PINK ships a component –
+  the sidebar rows, the composer's chips and discs, its menus, settings
+  sections, the tool group – it draws it from a package under
+  [`components/`](components), pinned by revision. Changes land here first and
+  the app follows.
 - A guide to the design language for new components:
   [`docs/pink-design.md`](docs/pink-design.md).
 
@@ -196,6 +198,27 @@ fn main() {
   component is built from.
 - **Fonts**: Geist and Geist Mono (the components), Inter (gallery and site
   chrome) and JetBrains Mono are bundled and registered by `init`.
+
+### In an app with its own GPUI
+
+The `pink-ui` crate brings its own GPUI (`gpui-pre`). An app that already has
+a GPUI, as PINK does, depends on the packages under
+[`components/`](components) instead. Each is its own workspace and depends
+only on crates.io `gpui = "=0.2.2"`, which the app patches to its runtime, so
+one GPUI type graph remains. Pin a merge commit on `main`:
+
+```toml
+[dependencies]
+pink-menu-card = { git = "https://github.com/novnski/pink-ui", rev = "<merge commit on main>", package = "pink-menu-card" }
+
+[patch.crates-io]
+gpui = { path = "path/to/your/gpui" }
+```
+
+A package draws; the app passes resolved colours, fonts and text and adds the
+ids, accessibility, focus, tooltips and listeners. PINK's workflow for
+changing, pinning and rolling back packages is in its
+[pink-ui guide](https://github.com/novnski/pink/blob/main/docs/reference/pink-ui.md).
 
 ## In the browser
 
