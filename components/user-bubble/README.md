@@ -13,9 +13,10 @@ no copied source.
 
 - `bubble(&BubbleStyle)`: the plate, `RADIUS` corners, padded `PAD_X` by
   `PAD_Y`, the prompt at `TEXT` on a `LINE_HEIGHT` line box, in the host's
-  fill and text colour, capped at the host's `max_width` (the column width
+  fill and text colour, capped at the host's `max_width` (the reading width
   times `MAX_WIDTH_FRACTION`). It may shrink below its text's unwrapped
-  width, so a long prompt wraps inside the cap.
+  width, so a long prompt wraps inside the cap. The prompt uses the prose
+  scale, 15/24 (UI rethink D34).
 - The optional hairline `edge`: PINK passes a 1 px inset spread shadow in
   the light appearance. The host builds it because crates.io GPUI 0.2.2 has
   no inset shadows; a shadow costs no layout, so measured heights stay
@@ -25,9 +26,10 @@ no copied source.
   corners stay fixed.
 
 The host adds the rest: right-aligning the row, the prompt's text and
-mention chips, text selection and find highlights, the long-prompt fold and
-its expander, attachments and badges above the plate, and the pending clock
-beside it.
+mention chips, text selection and find highlights, attachments and badges
+above the plate, and the pending clock beside it. Long prompts are never
+folded (UI rethink D44): they wrap inside the cap, and where the column is
+narrower than the cap (a narrow pane) the plate takes the full column.
 
 ## How PINK pins and consumes it
 
@@ -41,5 +43,6 @@ pink-user-bubble = { git = "https://github.com/novnski/pink-ui", rev = "<merged 
 
 - Alone: `cargo clippy --features gpui/runtime_shaders -- -D warnings` in this
   directory.
-- In the gallery: `tests/user_bubble.rs` lays a short and a long prompt out
-  at Interface sizes 12, 16 and 20.
+- In the gallery: `tests/user_bubble.rs` lays a short and a long prompt out,
+  plus a long prompt in a column narrower than its cap, at Interface sizes
+  12, 16 and 20.
