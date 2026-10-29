@@ -43,6 +43,14 @@ use crate::{
     story,
 };
 
+/// The review band and model, compiled from the `pink-hunk-review` package
+/// PINK pins (`components/hunk-review`): the card under the edit in focus,
+/// its copy and the Y / N / J / K keys.
+#[allow(dead_code)]
+pub mod review {
+    include!("../../components/hunk-review/src/lib.rs");
+}
+
 pub const NAME: &str = "Inline Diff";
 pub const DESCRIPTION: &str = "An agent's edits to a file as Pink's inline diff: old and new lines on red and green washes with the changed words marked, a review card under the edit in focus to keep or drop it with Y or N, and a footer that settles the rest and applies the review";
 
@@ -59,8 +67,6 @@ const BODY_BOTTOM_PAD: f32 = 8.0;
 /// One line-number column, never narrower than this (`GUTTER_WIDTH`).
 const GUTTER_WIDTH: f32 = 36.0;
 const GUTTER_PAD_RIGHT: f32 = diff_rows::GUTTER_PAD_RIGHT;
-/// A review card's bar matches the rows' bar column.
-const ACCENT_BAR_WIDTH: f32 = diff_rows::ACCENT_BAR_WIDTH;
 const CODE_PADDING_LEFT: f32 = 12.0;
 
 // Code surface (Pink: transcript.rs `code_surface_header`, `copy_action`).
@@ -73,15 +79,10 @@ const DIFF_VIEWPORT_MAX_HEIGHT: f32 = 360.0;
 /// The review footer: a header-like strip holding `ControlSize::Sm` buttons.
 const FOOTER_HEIGHT: f32 = 36.0;
 
-// Review card (Pink: comment_ui.rs `render_comment_card`, comments.rs).
-const CARD_PAD_V: f32 = 20.0;
-const CARD_GAP: f32 = 6.0;
-const CARD_HEADER_HEIGHT: f32 = 22.0;
-const CARD_LINE_HEIGHT: f32 = 18.0;
+// Review card (Pink: comment_ui.rs `render_comment_card`, comments.rs); its
+// geometry is the `pink-hunk-review` package's ([`review`]).
 const CARD_WRAP_COLUMNS: usize = 64;
 const CARD_MAX_LINES: usize = 8;
-const CARD_BAR_REST: f32 = 0.35;
-const CARD_BAR_ACTIVE: f32 = 0.7;
 
 /// What happened to one edit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -410,7 +411,7 @@ fn card_body_lines(body: &str) -> usize {
 }
 
 fn card_height(body: &str) -> f32 {
-    CARD_PAD_V + CARD_GAP + CARD_HEADER_HEIGHT + card_body_lines(body) as f32 * CARD_LINE_HEIGHT
+    review::height(card_body_lines(body))
 }
 
 // ---- the component -------------------------------------------------------
@@ -1339,14 +1340,25 @@ impl RenderOnce for InlineDiff {
             let act = act.clone();
             move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {
                 let k = &event.keystroke;
-                let command = match k.key.as_str() {
-                    "z" if k.modifiers.platform || k.modifiers.control => Command::Undo,
+                let shared = review::key_command(
+                    &k.key,
+                    k.modifiers.platform,
+                    k.modifiers.control,
+                    k.modifiers.alt,
+                );
+                let command = match (shared, k.key.as_str()) {
+                    (Some(review::Command::Decide(review::Decision::Keep)), _) => {
+                        Command::Decide(Decision::Kept)
+                    }
+                    (Some(review::Command::Decide(review::Decision::Drop)), _) => {
+                        Command::Decide(Decision::Dropped)
+                    }
+                    (Some(review::Command::Step(delta)), _) => Command::Step(delta),
+                    (None, "z") if k.modifiers.platform || k.modifiers.control => Command::Undo,
                     _ if k.modifiers.platform || k.modifiers.control || k.modifiers.alt => return,
-                    "y" | "enter" => Command::Decide(Decision::Kept),
-                    "n" | "backspace" | "delete" => Command::Decide(Decision::Dropped),
-                    "j" | "down" => Command::Step(1),
-                    "k" | "up" => Command::Step(-1),
-                    "u" => Command::Undo,
+                    (None, "enter") => Command::Decide(Decision::Kept),
+                    (None, "backspace" | "delete") => Command::Decide(Decision::Dropped),
+                    (None, "u") => Command::Undo,
                     _ => return,
                 };
                 act(command, window, cx);
@@ -1503,12 +1515,14 @@ impl RowPaint<'_> {
     }
 }
 
-/// The review card under the edit in focus, in the shape of Pink's inline
-/// review comment (Pink: comment_ui.rs `render_comment_card`): an
-/// `ink(0.05)` band with a 3 px `solid` bar, a 22 px header with the note
-/// glyph and the mono `path:line`, the note at 12/18, and Keep / Drop. The
-/// bar firms up from 0.35 to 0.7 (Pink's draft card) while the diff holds
-/// keyboard focus. It folds open and shut over `DISCLOSURE`.
+/// The review card under the edit in focus, drawn by the `pink-hunk-review`
+/// package PINK pins for its transcript diff (novnski/pink#310), in the shape
+/// of Pink's inline review comment (Pink: comment_ui.rs
+/// `render_comment_card`): an `ink(0.05)` band with a 3 px `solid` bar, a
+/// 22 px header with the note glyph, the mono `path:line` and, while the
+/// diff holds keyboard focus, the key legend, the note at 12/18, and Keep /
+/// Drop. The bar firms up from 0.35 to 0.7 (Pink's draft card) while the
+/// diff holds keyboard focus. It folds open and shut over `DISCLOSURE`.
 #[allow(clippy::too_many_arguments)]
 fn review_card(
     key: &str,
@@ -1536,43 +1550,31 @@ fn review_card(
                 act(Command::DecideEdit(ix, d), window, cx)
             })
     };
-    // Centre the actions on the header and first note line.
-    let actions_top =
-        CARD_PAD_V / 2. + (CARD_HEADER_HEIGHT + CARD_LINE_HEIGHT - ControlSize::Sm.height()) / 2.;
+    let style = review::BandStyle {
+        fill: t.ink(0.05),
+        bar: t.solid,
+        location: t.text_faint,
+        headline: t.text_dim,
+        detail: t.danger,
+    };
+    let keys = review::KeyStyle {
+        cap: t.ink(0.06),
+        key: t.text_muted,
+        verb: t.text_muted,
+    };
     div()
         .h(px(full * open))
         .w_full()
         .flex_none()
         .overflow_hidden()
         .child(
-            div()
-                .h(px(full))
-                .w_full()
-                .flex()
-                .flex_row()
-                .bg(t.ink(0.05))
+            review::band(&style, card_body_lines(&note))
                 .opacity(alpha)
+                .child(review::bar(&style, focus_t))
                 .child(
-                    div().w(px(ACCENT_BAR_WIDTH)).h_full().flex_none().bg(t
-                        .solid
-                        .opacity(motion::lerp(CARD_BAR_REST, CARD_BAR_ACTIVE, focus_t))),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .px(px(pink::space::S16))
-                        .py(px(CARD_PAD_V / 2.))
+                    review::content()
                         .child(
-                            div()
-                                .h(px(CARD_HEADER_HEIGHT))
-                                .flex_none()
-                                .flex()
-                                .flex_row()
-                                .items_center()
-                                .gap(px(pink::space::S6))
+                            review::header()
                                 .child(
                                     svg()
                                         .path(ICON_NOTE)
@@ -1581,35 +1583,32 @@ fn review_card(
                                         .text_color(t.text_faint),
                                 )
                                 .child(
-                                    div()
+                                    review::location_label(&style, location)
                                         .flex_1()
-                                        .min_w_0()
-                                        .truncate()
-                                        .font_family(pink::MONO)
-                                        .text_size(px(11.))
-                                        .text_color(t.text_faint)
-                                        .child(location),
-                                ),
+                                        .font_family(pink::MONO),
+                                )
+                                .when(focus_t > 0.5, |header| {
+                                    header.child(review::legend().children(
+                                        review::LEGEND.iter().map(|(keys_label, verb)| {
+                                            review::legend_item(&keys, keys_label, verb)
+                                                .font_family(pink::SANS)
+                                        }),
+                                    ))
+                                }),
                         )
                         .child(
                             div()
                                 .flex_1()
                                 .min_h_0()
                                 .overflow_hidden()
-                                .text_size(px(12.))
-                                .line_height(px(CARD_LINE_HEIGHT))
-                                .text_color(t.text_dim)
+                                .text_size(px(review::STATUS_TEXT))
+                                .line_height(px(review::LINE_HEIGHT))
+                                .text_color(style.headline)
                                 .child(note),
                         ),
                 )
                 .child(
-                    div()
-                        .flex_none()
-                        .flex()
-                        .items_start()
-                        .gap(px(pink::space::S6))
-                        .pt(px(actions_top))
-                        .pr(px(pink::chrome::CONTENT_INSET))
+                    review::actions()
                         .child(action("drop", ButtonKind::Ghost, "Drop", Decision::Dropped))
                         .child(action(
                             "keep",
