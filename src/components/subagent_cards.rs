@@ -35,16 +35,13 @@ use std::{ops::Range, rc::Rc, sync::Arc};
 use web_time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, AnyView, App, Context, ElementId, FontWeight, HighlightStyle, Hsla,
-    InteractiveText, IntoElement, SharedString, StyledText, Task, UnderlineStyle, Window, div,
-    prelude::*, px, svg,
+    AnyElement, AnyView, App, Context, ElementId, HighlightStyle, Hsla, InteractiveText,
+    IntoElement, SharedString, StyledText, Task, UnderlineStyle, Window, div, prelude::*, px,
 };
 
 use crate::{
-    pink::{
-        self, ButtonKind, ControlSize, FillTier, Pink, TypeRole, TypeStyleExt, layout,
-        loaders::TOOL_LABEL_SIZE, radius, space,
-    },
+    components::{row_card as rc, settings_parts as parts},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, layout, space},
     story,
 };
 
@@ -465,24 +462,8 @@ fn card_title(card: &SubagentCard) -> SharedString {
     }
 }
 
-/// Pink: `agent_cards.rs` `type_badge` – the conversation-type badge the `#`
-/// picker uses: a quiet label that never shrinks.
-fn type_badge(label: &'static str, t: &Pink) -> gpui::Div {
-    div()
-        .flex_none()
-        .h(px(16.0))
-        .px(px(5.0))
-        .flex()
-        .items_center()
-        .rounded(px(radius::XS))
-        .bg(t.ink(0.06))
-        .text_size(px(11.0))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(t.content_muted)
-        .child(label)
-}
-
-/// Pink: `AgentCard::render` – tile · text · actions in one wrapping row.
+/// Pink: `AgentCard::render`, drawn by the `pink-row-card` package's
+/// wrapping layout: tile, text and actions in one row that wraps.
 fn render_card(
     key: &str,
     card: &SubagentCard,
@@ -496,110 +477,58 @@ fn render_card(
     let status_color = card.status.color(t);
     let duration = card.duration_text(now);
     let preview = card.preview();
+    let shape = rc::Layout::Wrapping;
 
-    // The provider mark in the shared 28px row tile; its label carries
-    // provider and status so neither is shape- or colour-only.
-    let tile = div()
-        .id(SharedString::from(format!("{key}-tile-{id}")))
-        .aria_label(SharedString::from(format!(
-            "{provider_name} provider, {NEW_THREAD}, {status_label}"
-        )))
-        .flex_none()
-        .size(px(28.0))
-        .rounded(px(7.0))
-        .border_1()
-        .border_color(t.hairline(0.07))
-        .bg(t.fill(FillTier::Quaternary))
-        .flex()
-        .items_center()
-        .justify_center()
-        .child(
-            svg()
-                .path(card.icon.clone().unwrap_or_else(|| ICON_WIDGET.into()))
-                .size(px(16.0))
-                .flex_none()
-                .text_color(card.tint.unwrap_or(t.content_muted)),
-        );
+    // The provider mark in the shared 28px row tile (`pink-settings-parts`);
+    // its label carries provider and status so neither is shape- or
+    // colour-only.
+    let tile = parts::row_tile(
+        &parts::TileStyle {
+            border: t.hairline(0.07),
+            background: t.fill(FillTier::Quaternary),
+            icon: card.tint.unwrap_or(t.content_muted),
+        },
+        card.icon.clone().unwrap_or_else(|| ICON_WIDGET.into()),
+    )
+    .id(SharedString::from(format!("{key}-tile-{id}")))
+    .aria_label(SharedString::from(format!(
+        "{provider_name} provider, {NEW_THREAD}, {status_label}"
+    )));
 
     // Line 1: the title and the quiet type badge.
-    let title = div()
-        .min_w_0()
-        .flex()
-        .items_center()
-        .gap(px(space::SM))
-        .child(
-            div()
-                .min_w_0()
-                .truncate()
-                .type_role(TypeRole::Chrome)
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(t.text)
-                .child(card_title(card)),
-        )
-        .child(type_badge(NEW_THREAD, t));
+    let title = rc::title_line()
+        .child(rc::title(t.text, card_title(card)))
+        .child(rc::type_badge(
+            &rc::BadgeStyle {
+                background: t.ink(0.06),
+                text: t.content_muted,
+            },
+            NEW_THREAD,
+        ));
 
     // Line 2: the status (a coloured dot and quiet words; only a failure
-    // tints them), the live or frozen time, model · reasoning and the
-    // preview, which alone gives way when the line runs out.
-    let faint = t.content_faint;
-    // Facts sit apart on the row's gap, twice over: no separator glyph.
-    let separator = move || div().flex_none().text_color(faint);
+    // tints them), the live or frozen time, model and reasoning and the
+    // preview, which alone gives way when the line runs out. Facts sit
+    // apart on the line's gap: no separator glyph.
     let detail = [card.model.clone(), card.reasoning.clone()]
         .into_iter()
         .flatten()
         .map(|part| part.to_string())
         .collect::<Vec<_>>();
-    let detail = (!detail.is_empty()).then(|| detail.join(", "));
+    let detail = (!detail.is_empty()).then(|| detail.join(" "));
     let failed = card.status == AgentStatus::Failed;
-    let meta = div()
-        .min_w_0()
-        .flex()
-        .items_center()
-        .gap(px(6.0))
-        .text_size(px(TOOL_LABEL_SIZE))
-        .line_height(px(16.0))
-        .text_color(t.content_muted)
-        .child(
-            div()
-                .flex_none()
-                .size(px(6.0))
-                .rounded_full()
-                .bg(status_color),
-        )
-        .child(
-            div()
-                .flex_none()
-                .when(failed, |label| {
-                    label.text_color(t.readable_tone(t.danger, 1.0))
-                })
-                .child(status_label),
-        )
-        .when_some(duration, |meta, duration| {
-            meta.child(separator())
-                .child(div().flex_none().child(duration))
-        })
-        .when_some(detail, |meta, detail| {
-            meta.child(separator())
-                .child(div().flex_none().child(detail))
-        })
+    let meta = rc::meta_line(t.content_muted)
+        .child(rc::status(
+            status_color,
+            failed.then(|| t.readable_tone(t.danger, 1.0)),
+            status_label,
+        ))
+        .when_some(duration, |meta, duration| meta.child(rc::fact(duration)))
+        .when_some(detail, |meta, detail| meta.child(rc::fact(detail)))
         .when(!preview.is_empty(), |meta| {
-            meta.child(separator()).child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_color(t.readable_muted(0.8))
-                    .child(preview),
-            )
+            meta.child(rc::preview(t.readable_muted(0.8), preview))
         });
-    let text = div()
-        .flex_1()
-        .min_w(px(180.0))
-        .flex()
-        .flex_col()
-        .gap(px(2.0))
-        .child(title)
-        .child(meta);
+    let text = rc::text_column(shape).child(title).child(meta);
 
     // The actions in one trailing column: Show in split as a kit icon
     // button beside the Open chat button. Ids carry the card id, so two
@@ -624,37 +553,20 @@ fn render_card(
         let id = id.clone();
         el.on_click(move |_, window, cx| handler(&id, OpenMode::Chat, window, cx))
     });
-    let actions = div()
-        .flex_none()
-        .ml_auto()
-        .flex()
-        .items_center()
-        .gap(px(space::XS))
-        .child(split)
-        .child(open);
+    let actions = rc::actions(shape).child(split).child(open);
 
-    // One row: tile · text · actions. Too narrow for the actions beside a
-    // readable title, they wrap under the text, still at the right.
-    div()
-        .id(SharedString::from(format!("{key}-card-{id}")))
-        .w_full()
-        .min_w_0()
-        .px(px(12.0))
-        .py(px(10.0))
-        .rounded(px(radius::LG))
-        .border_1()
-        .border_color(t.hairline(0.07))
-        .bg(t.ink(0.03))
-        .flex()
-        .flex_row()
-        .flex_wrap()
-        .items_center()
-        .gap_x(px(12.0))
-        .gap_y(px(space::SM))
-        .child(tile)
-        .child(text)
-        .child(actions)
-        .into_any_element()
+    rc::card(
+        shape,
+        &rc::CardStyle {
+            border: t.hairline(0.07),
+            background: t.ink(0.03),
+        },
+    )
+    .id(SharedString::from(format!("{key}-card-{id}")))
+    .child(tile)
+    .child(text)
+    .child(actions)
+    .into_any_element()
 }
 
 /// Pink: `child_notices.rs` `display_entry` – the helper's result as the

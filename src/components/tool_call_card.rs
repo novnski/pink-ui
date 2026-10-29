@@ -45,7 +45,7 @@ use gpui::{
 
 use crate::{
     HoverFill as _,
-    components::code_block,
+    components::{code_block, file_badge},
     motion,
     pink::{self, FillTier, Pink, loaders, radius},
     story,
@@ -113,10 +113,9 @@ const CODE_ACTION_SIZE: f32 = 22.0;
 const COPIED_FOR: Duration = Duration::from_millis(1200);
 /// Rows hover their label, detail and chevron together.
 const HEADER_GROUP: &str = "tool-header";
-/// A file badge: a 22px chip, a 20px well, the 14px file-type artwork (Pink
+/// A file badge's height (the `pink-file-badge` package, Pink
 /// `file_badges::render_file_badge`).
-const FILE_BADGE_HEIGHT: f32 = 22.0;
-const FILE_WELL: f32 = 20.0;
+const FILE_BADGE_HEIGHT: f32 = file_badge::HEIGHT;
 
 const ICONS: &str = "icons/tool-call-card";
 const ALT_ARROW_RIGHT: &str = "icons/tool-call-card/alt-arrow-right.svg";
@@ -1399,46 +1398,25 @@ fn file_name(path: &str) -> &str {
         .unwrap_or(path)
 }
 
-/// Pink's file badge (`file_badges::render_file_badge`, no open route): a
-/// 22px r6 chip on `ink(0.06)` holding the file-type artwork in a 20px well
-/// and the file name in `text` at 85%, brightening with the row's hover.
+/// Pink's file badge (`file_badges::render_file_badge`, no open route),
+/// drawn by the `pink-file-badge` package: a 22px r6 chip on `ink(0.06)`
+/// holding the file-type artwork in a 20px well and the file name in `text`
+/// at 85%, brightening with the row's hover.
 fn file_badge(path: &str, hover_text: bool, t: &Pink) -> AnyElement {
     let text = t.text;
     // Pink `file_icons::well_bg`: a counter-shade seat for the artwork
     let well = pink::grey(if t.dark { 0 } else { 255 }).opacity(0.16);
-    let chip = div()
-        .min_w_0()
-        .h(px(FILE_BADGE_HEIGHT))
-        .flex()
-        .items_center()
-        .overflow_hidden()
-        .gap(px(6.0))
-        .rounded(px(radius::SM))
-        .bg(t.ink(0.06))
-        .pl(px(1.0))
-        .pr(px(6.0))
-        .text_color(t.text.opacity(0.85))
-        .child(
-            div()
-                .size(px(FILE_WELL))
-                .flex_none()
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(radius::XS))
-                .bg(well)
-                .child(
-                    img(file_icon(path, t.dark))
-                        .flex_none()
-                        .size(px(ACTIVITY_ICON_SIZE)),
-                ),
-        )
-        .child(
-            div()
-                .min_w_0()
-                .truncate()
-                .child(SharedString::from(file_name(path).to_owned())),
-        );
+    let chip = file_badge::badge(&file_badge::BadgeStyle {
+        background: t.ink(0.06),
+        text: t.text.opacity(0.85),
+    })
+    .child(file_badge::well(
+        well,
+        img(file_icon(path, t.dark))
+            .flex_none()
+            .size(px(file_badge::GLYPH)),
+    ))
+    .child(file_badge::name(file_name(path).to_owned()));
     if hover_text {
         chip.id("tool-file-badge")
             .group_hover(HEADER_GROUP, move |style| style.text_color(text))

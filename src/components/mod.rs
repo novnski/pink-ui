@@ -44,6 +44,7 @@ pub mod dropzone;
 pub mod email_draft;
 pub mod empty_state;
 pub mod experiment_card;
+pub mod file_badge;
 pub mod file_row;
 pub mod file_tree;
 pub mod filter_menu;
@@ -76,8 +77,10 @@ pub mod project_card;
 pub mod project_row;
 pub mod prompt_library;
 pub mod question_card;
+pub mod queue_row;
 pub mod reaction_bar;
 pub mod recovery_card;
+pub mod row_card;
 pub mod scroll_rail;
 pub mod section_header;
 pub mod segmented_control;
@@ -158,6 +161,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Chat",
         description: message_badge::DESCRIPTION,
         story: message_badge::story,
+    },
+    ComponentEntry {
+        slug: "queue-row",
+        name: queue_row::NAME,
+        category: "Chat",
+        description: queue_row::DESCRIPTION,
+        story: queue_row::story,
     },
     ComponentEntry {
         slug: "composer-disc",
@@ -363,6 +373,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         story: tool_call_card::story,
     },
     ComponentEntry {
+        slug: "file-badge",
+        name: file_badge::NAME,
+        category: "Agents",
+        description: file_badge::DESCRIPTION,
+        story: file_badge::story,
+    },
+    ComponentEntry {
         slug: "recovery-card",
         name: recovery_card::NAME,
         category: "Agents",
@@ -389,6 +406,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Agents",
         description: subagent_cards::DESCRIPTION,
         story: subagent_cards::story,
+    },
+    ComponentEntry {
+        slug: "row-card",
+        name: row_card::NAME,
+        category: "Agents",
+        description: row_card::DESCRIPTION,
+        story: row_card::story,
     },
     ComponentEntry {
         slug: "email-draft",
