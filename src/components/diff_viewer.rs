@@ -7,8 +7,9 @@
 //! changes.rs `render_header_controls`). Under a strip that counts the files
 //! and lines (`render_header_strip`) every file is a section: a 38 px header
 //! with its disclosure chevron, file-type artwork, mono path and `+N −N`
-//! (`render_file_header`), then its notices, `@@` hunk bands and diff rows –
-//! dual line-number gutters, a `+ − ·` marker column, red and green row
+//! (`render_file_header`), then its notices, `@@` hunk bands and diff rows
+//! (their chrome drawn by the `pink-diff-rows` package,
+//! [`crate::components::diff_rows`]) – dual line-number gutters, a `+ − ·` marker column, red and green row
 //! washes with the changed words washed stronger (`diff_line_row`,
 //! `word_changes`). Sections fold on Pink's disclosure curve, the header of
 //! the file under the top edge sticks (`render_sticky_file_header`), long
@@ -47,6 +48,7 @@ use gpui::{
 
 use crate::{
     HoverFill as _,
+    components::diff_rows,
     motion::{self, DISCLOSURE, MENU_OUT, MENU_RISE_DOWN},
     pink::{self, Pink, Syntax, TEXT_CONTRAST_TARGET, chrome, layout, loaders, radius},
     primitives::{InputEvent, TextInput},
@@ -70,23 +72,17 @@ const ICON_REMOVE: &str = "icons/diff-viewer/close-circle.svg";
 // Diff metrics (Pink: changes.rs layout numbers).
 /// A file header is the surface chrome's header height.
 const FILE_HEADER_HEIGHT: f32 = layout::TITLEBAR_HEIGHT;
-const HUNK_HEADER_HEIGHT: f32 = 28.0;
-const DIFF_LINE_HEIGHT: f32 = 21.0;
-const NOTICE_HEIGHT: f32 = 24.0;
+// The row chrome's own numbers live in the `pink-diff-rows` package.
+const HUNK_HEADER_HEIGHT: f32 = diff_rows::HUNK_HEADER_HEIGHT;
+const DIFF_LINE_HEIGHT: f32 = diff_rows::LINE_HEIGHT;
+const NOTICE_HEIGHT: f32 = diff_rows::NOTICE_HEIGHT;
 const BODY_BOTTOM_PAD: f32 = 8.0;
 /// One line-number column, never narrower than this (`GUTTER_WIDTH`).
-const GUTTER_WIDTH: f32 = 36.0;
-const GUTTER_PAD_RIGHT: f32 = 8.0;
-const MARKER_WIDTH: f32 = 16.0;
-const SPLIT_MARKER_WIDTH: f32 = 18.0;
-const SPLIT_DIVIDER_WIDTH: f32 = 1.0;
-/// The left spacer every row keeps so columns align (`ACCENT_BAR_WIDTH`).
-const ACCENT_BAR_WIDTH: f32 = 3.0;
-const DIFF_TEXT_SIZE: f32 = 12.0;
-/// Line numbers and the hunk band run at 11/12 of the code size.
-const DIFF_META_SIZE: f32 = 11.0;
-/// `\ No newline at end of file` runs at 10.5/12.
-const DIFF_NOTE_SIZE: f32 = 10.5;
+const GUTTER_WIDTH: f32 = diff_rows::GUTTER_WIDTH;
+const GUTTER_PAD_RIGHT: f32 = diff_rows::GUTTER_PAD_RIGHT;
+/// A comment card's accent bar matches the rows' bar column.
+const ACCENT_BAR_WIDTH: f32 = diff_rows::ACCENT_BAR_WIDTH;
+const DIFF_TEXT_SIZE: f32 = diff_rows::TEXT_SIZE;
 const DIFF_TAB_SIZE: usize = 4;
 const UNIFIED_CODE_PADDING_LEFT: f32 = 12.0;
 const SPLIT_CODE_PADDING_LEFT: f32 = 6.0;
@@ -1438,11 +1434,6 @@ fn diff_plain_text(t: &Pink) -> Hsla {
         TEXT_CONTRAST_TARGET,
     );
     t.readable_on(on_add, diff_row_wash(t.diff_del, t), TEXT_CONTRAST_TARGET)
-}
-
-/// Hunk header text, floored on the hunk band (`diff_hunk_text`).
-fn diff_hunk_text(t: &Pink) -> Hsla {
-    t.readable_on(t.text_faint, t.diff_hunk_bg, TEXT_CONTRAST_TARGET)
 }
 
 /// A row's marker, its color, the row wash and the line-number color
@@ -3457,12 +3448,13 @@ fn file_body(c: &Ctx, ix: usize, file: &DiffFile) -> gpui::Div {
         text_width: max_columns as f32 * c.advance,
         scroll: c.hscroll.get(&file.path).cloned(),
     };
+    let style = diff_rows::diff_style(c.t);
     let mut body = div().w_full().flex().flex_col();
     for notice in file_notices(file) {
-        body = body.child(notice_row(notice, c.t));
+        body = body.child(diff_rows::notice_row(notice, &style));
     }
     for (h, hunk) in file.hunks.iter().enumerate() {
-        body = body.child(hunk_header_row(&hunk.header, c.t));
+        body = body.child(diff_rows::hunk_header_row(hunk.header.clone(), &style));
         if c.split {
             for (p, pair) in split_pairs(&hunk.lines).into_iter().enumerate() {
                 body = body.child(split_line(&fc, h, p, &hunk.lines, pair));
@@ -3480,81 +3472,6 @@ fn file_body(c: &Ctx, ix: usize, file: &DiffFile) -> gpui::Div {
         }
     }
     body.child(div().w_full().flex_none().h(px(BODY_BOTTOM_PAD)))
-}
-
-/// "New file", "Binary file — contents not shown", … (Pink `notice_row`).
-fn notice_row(notice: SharedString, t: &Pink) -> gpui::Div {
-    div()
-        .h(px(NOTICE_HEIGHT))
-        .w_full()
-        .flex_none()
-        .flex()
-        .items_center()
-        .px(px(pink::space::S16))
-        .text_size(px(11.))
-        .text_color(t.text_faint)
-        .child(notice)
-}
-
-/// One `@@ … @@` band (Pink `hunk_header_row`): 28 tall on `diff_hunk_bg`,
-/// mono at 11 in the floored faint tone.
-fn hunk_header_row(header: &SharedString, t: &Pink) -> gpui::Div {
-    div()
-        .h(px(HUNK_HEADER_HEIGHT))
-        .w_full()
-        .flex_none()
-        .flex()
-        .items_center()
-        .px(px(chrome::CONTENT_INSET))
-        .bg(t.diff_hunk_bg)
-        .font_family(pink::MONO)
-        .text_size(px(DIFF_META_SIZE))
-        .text_color(diff_hunk_text(t))
-        .child(header.clone())
-}
-
-/// `\ No newline at end of file`: a note about the row, indented past the
-/// columns and never tinted (Pink `meta_line_row`).
-fn meta_line_row(text: &SharedString, t: &Pink, pad_left: f32) -> AnyElement {
-    div()
-        .h(px(DIFF_LINE_HEIGHT))
-        .w_full()
-        .flex_none()
-        .flex()
-        .items_center()
-        .pl(px(pad_left))
-        .text_size(px(DIFF_NOTE_SIZE))
-        .text_color(t.text_faint)
-        .italic()
-        .child(text.clone())
-        .into_any_element()
-}
-
-fn gutter_cell(number: Option<u32>, color: Hsla, width: f32) -> gpui::Div {
-    div()
-        .w(px(width))
-        .flex_none()
-        .font_family(pink::MONO)
-        .text_size(px(DIFF_META_SIZE))
-        .line_height(px(DIFF_LINE_HEIGHT))
-        .text_color(color)
-        .flex()
-        .justify_end()
-        .pr(px(GUTTER_PAD_RIGHT))
-        .child(number.map(|n| n.to_string()).unwrap_or_default())
-}
-
-fn marker_cell(marker: &'static str, color: Hsla, width: f32) -> gpui::Div {
-    div()
-        .w(px(width))
-        .flex_none()
-        .flex()
-        .justify_center()
-        .font_family(pink::MONO)
-        .text_size(px(DIFF_TEXT_SIZE))
-        .line_height(px(DIFF_LINE_HEIGHT))
-        .text_color(color)
-        .child(marker)
 }
 
 /// The only part of a row allowed past its viewport (Pink
@@ -3611,12 +3528,14 @@ fn code_viewport(
 fn unified_line(fc: &FileCx, h: usize, l: usize, hunk: &Hunk, line: &DiffLine) -> AnyElement {
     let c = fc.c;
     let t = c.t;
+    let style = diff_rows::diff_style(t);
     if line.kind == LineKind::Meta {
-        return meta_line_row(
-            &line.text,
-            t,
-            ACCENT_BAR_WIDTH + 2.0 * fc.gutter + MARKER_WIDTH + 12.0,
-        );
+        return diff_rows::meta_line_row(
+            line.text.clone(),
+            diff_rows::unified_meta_pad(fc.gutter, UNIFIED_CODE_PADDING_LEFT),
+            &style,
+        )
+        .into_any_element();
     }
     let paint = row_paint(line.kind, t);
     let runs = syntax_runs(&line.text, fc.lang, c.plain, &c.syntax, &c.mono);
@@ -3630,22 +3549,9 @@ fn unified_line(fc: &FileCx, h: usize, l: usize, hunk: &Hunk, line: &DiffLine) -
         _ => runs,
     };
     let faint = t.readable_faint(0.8);
-    let row = div()
-        .map(|el| {
-            if c.wrap {
-                el.min_h(px(DIFF_LINE_HEIGHT))
-            } else {
-                el.h(px(DIFF_LINE_HEIGHT))
-            }
-        })
-        .w_full()
-        .flex_none()
-        .flex()
-        .flex_row()
-        .items_start()
-        .when_some(paint.wash, |el, wash| el.bg(wash))
-        .child(div().w(px(ACCENT_BAR_WIDTH)).self_stretch().flex_none())
-        .child(gutter_cell(
+    let row = diff_rows::unified_row(paint.wash, c.wrap, &style)
+        .child(diff_rows::accent_bar(None))
+        .child(diff_rows::gutter(
             line.old_no,
             if line.kind == LineKind::Del {
                 paint.number
@@ -3653,8 +3559,9 @@ fn unified_line(fc: &FileCx, h: usize, l: usize, hunk: &Hunk, line: &DiffLine) -
                 faint
             },
             fc.gutter,
+            &style,
         ))
-        .child(gutter_cell(
+        .child(diff_rows::gutter(
             line.new_no,
             if line.kind == LineKind::Add {
                 paint.number
@@ -3662,8 +3569,14 @@ fn unified_line(fc: &FileCx, h: usize, l: usize, hunk: &Hunk, line: &DiffLine) -
                 faint
             },
             fc.gutter,
+            &style,
         ))
-        .child(marker_cell(paint.marker, paint.marker_color, MARKER_WIDTH))
+        .child(diff_rows::marker(
+            paint.marker,
+            paint.marker_color,
+            diff_rows::MARKER_WIDTH,
+            &style,
+        ))
         .child(code_viewport(
             c,
             &line.text,
@@ -3697,7 +3610,7 @@ fn unified_line(fc: &FileCx, h: usize, l: usize, hunk: &Hunk, line: &DiffLine) -
                 CommentSide::New => fc.gutter,
             };
             el.child(positioned_adder(
-                ACCENT_BAR_WIDTH + column + (fc.gutter - COMMENT_ADDER_SIZE) / 2.0,
+                diff_rows::ACCENT_BAR_WIDTH + column + (fc.gutter - COMMENT_ADDER_SIZE) / 2.0,
                 comment_adder(fc, side, number),
             ))
         })
@@ -3715,22 +3628,16 @@ fn unified_line(fc: &FileCx, h: usize, l: usize, hunk: &Hunk, line: &DiffLine) -
 fn split_cell(fc: &FileCx, line: &DiffLine, number: Option<u32>, slot: &str) -> gpui::Div {
     let c = fc.c;
     let paint = row_paint(line.kind, c.t);
+    let style = diff_rows::diff_style(c.t);
     let runs = syntax_runs(&line.text, fc.lang, c.plain, &c.syntax, &c.mono);
-    div()
-        .flex_1()
-        .min_w_0()
-        .self_stretch()
-        .overflow_hidden()
-        .flex()
-        .flex_row()
-        .items_start()
-        .when_some(paint.wash, |el, wash| el.bg(wash))
-        .child(div().w(px(ACCENT_BAR_WIDTH)).self_stretch().flex_none())
-        .child(gutter_cell(number, paint.number, fc.gutter))
-        .child(marker_cell(
+    diff_rows::split_half(paint.wash)
+        .child(diff_rows::accent_bar(None))
+        .child(diff_rows::gutter(number, paint.number, fc.gutter, &style))
+        .child(diff_rows::marker(
             paint.marker,
             paint.marker_color,
-            SPLIT_MARKER_WIDTH,
+            diff_rows::SPLIT_MARKER_WIDTH,
+            &style,
         ))
         .child(code_viewport(
             c,
@@ -3742,17 +3649,13 @@ fn split_cell(fc: &FileCx, line: &DiffLine, number: Option<u32>, slot: &str) -> 
         ))
 }
 
-/// The empty half of a one-sided split row (Pink `split_filler`).
-fn split_filler(t: &Pink) -> gpui::Div {
-    div().flex_1().min_w_0().self_stretch().bg(t.ink(0.03))
-}
-
 /// One split row (Pink `SplitLine` + `split_row`): old on the left, new on
 /// the right around a `hairline(0.06)` divider. Only the right column takes
 /// a `+`: notes cite the file the agent edits.
 fn split_line(fc: &FileCx, h: usize, p: usize, lines: &[DiffLine], pair: LinePair) -> AnyElement {
     let c = fc.c;
     let t = c.t;
+    let style = diff_rows::diff_style(t);
     let left = pair.0.and_then(|ix| lines.get(ix));
     let right = pair.1.and_then(|ix| lines.get(ix));
     if let Some(meta) = [left, right]
@@ -3760,11 +3663,16 @@ fn split_line(fc: &FileCx, h: usize, p: usize, lines: &[DiffLine], pair: LinePai
         .flatten()
         .find(|line| line.kind == LineKind::Meta)
     {
-        return meta_line_row(&meta.text, t, 2.0 * (ACCENT_BAR_WIDTH + fc.gutter));
+        return diff_rows::meta_line_row(
+            meta.text.clone(),
+            diff_rows::split_meta_pad(fc.gutter),
+            &style,
+        )
+        .into_any_element();
     }
     let left = match left {
         Some(line) => split_cell(fc, line, line.old_no, &format!("o{h}-{p}")).into_any_element(),
-        None => split_filler(t).into_any_element(),
+        None => diff_rows::split_filler(&style).into_any_element(),
     };
     let right = match right {
         Some(line) => {
@@ -3786,7 +3694,7 @@ fn split_line(fc: &FileCx, h: usize, p: usize, lines: &[DiffLine], pair: LinePai
                     .relative()
                     .when(hovered, |el| {
                         el.child(positioned_adder(
-                            ACCENT_BAR_WIDTH + (fc.gutter - COMMENT_ADDER_SIZE) / 2.0,
+                            diff_rows::ACCENT_BAR_WIDTH + (fc.gutter - COMMENT_ADDER_SIZE) / 2.0,
                             comment_adder(fc, side, number),
                         ))
                     })
@@ -3803,31 +3711,9 @@ fn split_line(fc: &FileCx, h: usize, p: usize, lines: &[DiffLine], pair: LinePai
                 None => cell.into_any_element(),
             }
         }
-        None => split_filler(t).into_any_element(),
+        None => diff_rows::split_filler(&style).into_any_element(),
     };
-    div()
-        .map(|el| {
-            if c.wrap {
-                el.min_h(px(DIFF_LINE_HEIGHT))
-            } else {
-                el.h(px(DIFF_LINE_HEIGHT))
-            }
-        })
-        .w_full()
-        .flex_none()
-        .flex()
-        .flex_row()
-        .items_stretch()
-        .child(left)
-        .child(
-            div()
-                .w(px(SPLIT_DIVIDER_WIDTH))
-                .self_stretch()
-                .flex_none()
-                .bg(t.hairline(0.06)),
-        )
-        .child(right)
-        .into_any_element()
+    diff_rows::split_row(left, right, c.wrap, &style).into_any_element()
 }
 
 // ---- review comments ------------------------------------------------------

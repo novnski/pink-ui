@@ -3,7 +3,8 @@
 //! Find in a conversation the way Pink's transcript does it (Pink:
 //! `transcript/find.rs` `render_find_bar`, highlights from
 //! `markdown/find.rs` `FindPaint`). The bar floats over the top-right of the
-//! transcript (16 from the right edge) on Pink's popover card: 420 wide,
+//! transcript (16 from the right edge) on Pink's popover card, its chrome
+//! drawn by the `pink-find-bar` package ([`chrome`]): 420 wide, opaque,
 //! `px 8 / py 4`, gap 4 – a 14px magnifier in `text_muted`, the query field
 //! (13/18, "Find in conversation" in `text_faint`), the status in 12px
 //! `content_muted` ("3 of 7", "No results", "Searching…", "· Partial
@@ -34,8 +35,9 @@ use web_time::Duration;
 
 use gpui::{
     AnyElement, AnyView, App, BorderStyle, Bounds, BoxShadow, Context, ElementId, Entity,
-    Focusable, IntoElement, MouseButton, Pixels, SharedString, StyledText, Subscription, Task,
-    TextLayout, Window, canvas, div, point, prelude::*, px, quad, size, svg, transparent_black,
+    Focusable, Hsla, IntoElement, MouseButton, Pixels, SharedString, StyledText, Subscription,
+    Task, TextLayout, Window, canvas, div, point, prelude::*, px, quad, size, svg,
+    transparent_black,
 };
 
 use crate::{
@@ -44,16 +46,21 @@ use crate::{
     story,
 };
 
+/// The bar's chrome: the `pink-find-bar` package (`components/find-bar`),
+/// the same source PINK pins, compiled here against the gallery's GPUI.
+#[allow(dead_code)]
+pub mod chrome {
+    include!("../../components/find-bar/src/lib.rs");
+}
+
 pub const NAME: &str = "Find Bar";
 pub const DESCRIPTION: &str = "A floating find bar over a conversation: type to wash every match in the transcript, step through them with Enter, Shift+Enter or the arrows, match case with Aa, and read where you are as \"3 of 7\"";
 
-/// Pink `FIND_BAR_WIDTH`.
-const FIND_BAR_WIDTH: f32 = 420.;
 /// Pink `FIND_BAR_HEIGHT`: what the reveal inset reserves for the bar.
-pub const FIND_BAR_HEIGHT: f32 = 40.;
+pub const FIND_BAR_HEIGHT: f32 = chrome::BAR_HEIGHT;
 /// Pink: the bar floats 16 from the transcript's right edge, and revealed
 /// rows land 12 below it (`find_reveal_inset`).
-pub const FIND_BAR_RIGHT: f32 = 16.;
+pub const FIND_BAR_RIGHT: f32 = chrome::BAR_RIGHT;
 pub const FIND_REVEAL_GAP: f32 = 12.;
 /// Pink `MAX_QUERY_CHARS`: a longer paste is cut at a char boundary.
 const MAX_QUERY_CHARS: usize = 256;
@@ -691,38 +698,19 @@ impl RenderOnce for FindBar {
                 }
             });
 
-        // Pink: the popover card as a 420-wide row
-        let bar = pink::popover_card(&t)
-            .w(px(FIND_BAR_WIDTH))
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(4.))
-            .px(px(8.))
-            .py(px(4.))
+        // Pink: the popover card as a 420-wide row, opaque under the query
+        // so the conversation never shows through it (`pink-find-bar`)
+        let bar = chrome::plate(pink::popover_card(&t), Hsla { a: 1., ..t.bg })
+            .child(chrome::glyph(svg().path(MAGNIFER), t.text_muted))
             .child(
-                svg()
-                    .path(MAGNIFER)
-                    .size(px(pink::icon_size::SM))
-                    .flex_none()
-                    .text_color(t.text_muted),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
+                chrome::field(input)
                     .text_size(px(INPUT_TEXT_SIZE))
                     .line_height(px(INPUT_LINE_HEIGHT))
-                    .text_color(t.text)
-                    .child(input),
+                    .text_color(t.text),
             )
             .child(
-                div()
-                    .id(SharedString::from(format!("{key}-status")))
-                    .flex_none()
-                    .text_size(px(12.))
-                    .text_color(t.content_muted)
-                    .child(status),
+                chrome::status(status, t.content_muted)
+                    .id(SharedString::from(format!("{key}-status"))),
             )
             .child(case_button)
             .child(step_button(false))
@@ -1045,13 +1033,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
             .pt(px(8. + FIND_BAR_HEIGHT + FIND_REVEAL_GAP))
             .px(px(FIND_BAR_RIGHT))
             .child(rows)
-            .children(bar.map(|bar| {
-                div()
-                    .absolute()
-                    .top(px(8.))
-                    .right(px(FIND_BAR_RIGHT))
-                    .child(bar)
-            }))
+            .children(bar.map(|bar| chrome::anchor(8.).child(bar)))
             .children(reopen.map(|button| {
                 div()
                     .absolute()
