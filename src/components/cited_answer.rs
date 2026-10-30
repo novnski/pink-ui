@@ -33,9 +33,9 @@ use web_time::{Duration, Instant};
 
 use gpui::{
     AnyElement, AnyView, App, BorderStyle, Bounds, ClipboardItem, Context, Div, ElementId, Font,
-    FontFeatures, FontWeight, Hsla, InteractiveText, IntoElement, Pixels, Render, Role,
-    SharedString, Stateful, StyledText, Task, TextLayout, TextRun, Transformation, Window, canvas,
-    div, point, prelude::*, px, quad, radians, size, svg, transparent_black,
+    FontWeight, Hsla, InteractiveText, IntoElement, Pixels, Render, Role, SharedString, Stateful,
+    StyledText, Task, TextLayout, TextRun, Window, canvas, div, point, prelude::*, px, quad,
+    radians, size, svg, transparent_black,
 };
 
 use crate::{
@@ -43,12 +43,18 @@ use crate::{
         self, FOLD_TWEEN_WINDOW, HOVER_FADE, TOOL_BODY_FADE, TOOL_BODY_RISE, TOOL_ROW_REVEAL,
         TOOL_ROW_STAGGER_MS,
     },
-    pink::{
-        self, Pink, TextStyle, TypeStyleExt, icon_size, layout,
-        loaders::{TOOL_LABEL_LINE_HEIGHT, TOOL_LABEL_SIZE},
-        radius, space, text,
-    },
+    pink::{self, Pink, TextStyle, TypeStyleExt, layout, radius, space, text},
     story,
+};
+
+#[allow(dead_code)]
+mod package {
+    include!("../../components/cited-answer/src/lib.rs");
+}
+pub use package::{
+    CARD_GAP, CARD_RADIUS, CITE_GAP, CardStyle, HEADER_H, HEADING_H, HeadingStyle, PREVIEW_PAD,
+    PREVIEW_W, PreviewStyle, QuoteStyle, TILE, Tile, card, header, heading, marker_font,
+    marker_text, preview, quote, ui_rems,
 };
 
 pub const NAME: &str = "Cited Answer";
@@ -64,8 +70,6 @@ const ICON_OPEN: &str = "icons/cited-answer/arrow-right-up.svg";
 const MD_TEXT_SIZE: f32 = text::PROSE;
 const MD_LINE_HEIGHT: f32 = 22.;
 const MD_BLOCK_GAP: f32 = space::S12;
-/// Between two superscript numbers of one sentence.
-const CITE_GAP: &str = "\u{2009}";
 /// Rounded match washes under shaped glyphs (Pink: `search_highlight`):
 /// 1 px wider than the glyphs, 1.5 px in from the line box, nudged 0.5 px
 /// down to sit on the glyphs' optical center, radius 3.
@@ -75,18 +79,6 @@ const WASH_NUDGE_Y: f32 = 0.5;
 const WASH_RADIUS: f32 = 3.;
 /// The source column: Pink's large menu width.
 const PANEL_WIDTH: f32 = layout::MENU_W_L;
-/// The column's heading row (Pink: `SIDEBAR_DISCLOSURE_HEADER_HEIGHT`).
-const SECTION_HEADING_HEIGHT: f32 = 28.;
-/// A two-line source header (Pink: command palette history row, `min_h 44`,
-/// `py 5`).
-const SOURCE_HEADER_HEIGHT: f32 = 44.;
-/// The header's tiles: number at left, chevron at right (Pink: chip header
-/// tiles, 18 px, chevron 12).
-const TILE: f32 = 18.;
-const CHEVRON: f32 = icon_size::XS;
-/// Stacked chip cards sit 8 px apart (Pink: `CHIP_HEIGHT` 38 around a
-/// `CHIP_CARD_HEIGHT` 30 card).
-const CARD_GAP: f32 = space::S8;
 /// How long "Copied" shows (Pink: `copy_ui_for`).
 const COPIED_FOR: Duration = Duration::from_millis(1200);
 
@@ -319,14 +311,9 @@ fn sans() -> Font {
     gpui::font(pink::SANS)
 }
 
-/// Geist's superscript figures (OpenType `sups`) at 500. The weight keeps the
-/// shaper from merging the number into a regular word and dropping `sups`.
+/// Geist's superscript figures (the package's `marker_font`).
 fn superscript() -> Font {
-    Font {
-        features: FontFeatures(Arc::new(vec![("sups".into(), 1)])),
-        weight: FontWeight::MEDIUM,
-        ..gpui::font(pink::SANS)
-    }
+    marker_font(pink::SANS)
 }
 
 fn push_run(flat: &mut ParagraphFlat, s: &str, font: Font, color: Hsla) {
@@ -774,6 +761,7 @@ impl RenderOnce for CitedAnswer {
                     source,
                     is_open,
                     hot: hot_source == Some(ix),
+                    hovered: hover_source == Some(ix),
                     progress,
                     body_alpha,
                     marks,
@@ -795,40 +783,31 @@ impl RenderOnce for CitedAnswer {
             .flex()
             .flex_col()
             .child(
-                // Pink: `activity_center.rs` `activity_section_heading` – a
-                // 28 px heading row, `px 8 gap 8`, the 11 px semibold name
-                // and its count trailing.
-                div()
-                    .id("ca-sources-heading")
-                    .role(Role::Heading)
-                    .aria_label(SharedString::from(format!(
-                        "Sources, {source_count} source{}",
-                        if source_count == 1 { "" } else { "s" }
-                    )))
-                    .h(px(SECTION_HEADING_HEIGHT))
-                    .px(px(space::S8))
-                    .flex()
-                    .items_center()
-                    .gap(px(space::S8))
-                    .type_style(TextStyle::Caption)
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(t.readable_faint(0.9))
-                            .child("Sources"),
-                    )
-                    .child(
-                        div()
-                            .flex_none()
-                            .font_features(pink::tabular_figures())
-                            .text_color(t.readable_faint(0.7))
-                            .child(source_count.to_string()),
-                    ),
+                // Pink: `activity_center.rs` `activity_section_heading`, from
+                // the package: the 11 px semibold name and its count.
+                heading(
+                    &HeadingStyle {
+                        title: t.readable_faint(0.9),
+                        count: t.readable_faint(0.7),
+                    },
+                    "Sources",
+                    source_count.to_string(),
+                )
+                .font_features(pink::tabular_figures())
+                .id("ca-sources-heading")
+                .role(Role::Heading)
+                .aria_label(SharedString::from(format!(
+                    "Sources, {source_count} source{}",
+                    if source_count == 1 { "" } else { "s" }
+                ))),
             )
-            .child(div().flex().flex_col().gap(px(CARD_GAP)).children(cards));
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(ui_rems(CARD_GAP))
+                    .children(cards),
+            );
 
         div()
             .id(self.id.clone())
@@ -941,6 +920,8 @@ struct SourceCard<'a> {
     is_open: bool,
     /// A citation of this source is pointed at.
     hot: bool,
+    /// The pointer is on this source's header.
+    hovered: bool,
     /// The fold: 0 shut, 1 open, and the body's fade.
     progress: f32,
     body_alpha: f32,
@@ -978,136 +959,77 @@ impl SourceCard<'_> {
             (hot || is_open) as u8 as f32,
             HOVER_FADE,
         );
-        let group = SharedString::from(format!("{key}-src-{ix}"));
+        let hover_t = motion::follow(
+            &format!("{key}-head-{ix}"),
+            self.hovered as u8 as f32,
+            HOVER_FADE,
+        );
         let ring = t.focus_ring();
 
-        // Pink: the chip header's 18 px tile (r6, `ink(0.08)`), here holding
-        // the citation number; it takes the accent wash while the source is
-        // in play.
-        let tile = div()
-            .size(px(TILE))
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(px(radius::SM))
-            .bg(motion::mix(t.ink(0.08), t.accent_wash, lit))
-            .type_style(TextStyle::Caption)
-            .font_weight(FontWeight::MEDIUM)
-            .font_features(pink::tabular_figures())
-            .text_color(motion::mix(
-                t.content_muted,
-                t.readable_tone(t.accent, 1.),
-                lit,
-            ))
-            .child((ix + 1).to_string());
-
-        // Pink: the trailing disclosure tile – half strength at rest, full
-        // under the pointer; the 12 px chevron turns 90° with the fold.
-        let chevron = div()
-            .size(px(TILE))
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .opacity(0.5)
-            .group_hover(group.clone(), |style| style.opacity(1.))
-            .child(
-                svg()
-                    .path(ICON_CHEVRON)
-                    .size(px(CHEVRON))
-                    .flex_none()
-                    .text_color(t.content_faint)
-                    .group_hover(group.clone(), |style| style.text_color(t.text))
-                    .with_transformation(Transformation::rotate(radians(FRAC_PI_2 * progress))),
-            );
+        // The package's chip card: the 18 px tile (r6, `ink(0.08)`) holding
+        // the citation number takes the accent wash while the source is in
+        // play; the title brightens and the half-strength chevron comes up
+        // under the pointer, turning 90 degrees with the fold.
+        let style = CardStyle {
+            border: motion::mix(t.hairline(0.07), t.accent.opacity(0.35), hot_t),
+            background: t.ink(0.03),
+            tile: motion::mix(t.ink(0.08), t.accent_wash, lit),
+            tile_text: motion::mix(t.content_muted, t.readable_tone(t.accent, 1.), lit),
+            title: motion::mix(t.text.opacity(0.85), t.text, hover_t),
+            meta: t.content_faint,
+            chevron: motion::mix(t.content_faint.opacity(0.5), t.text, hover_t),
+        };
 
         let hover_state = state.clone();
         let toggle_state = state.clone();
         let toggle_sources = cite_sources.clone();
-        let header = div()
-            .id(ElementId::NamedInteger("ca-src-head".into(), ix as u64))
-            .group(group.clone())
-            .role(Role::Button)
-            .aria_label(source.title.clone())
-            .aria_expanded(is_open)
-            .tab_index(0)
-            .rounded(px(radius::SM))
-            .focus_visible(move |style| pink::focus_ring(style, ring))
-            .h(px(SOURCE_HEADER_HEIGHT))
-            .flex_none()
-            .px(px(space::S8))
-            .flex()
-            .items_center()
-            .gap(px(space::S8))
-            .cursor_pointer()
-            .on_hover(move |hovered, _, cx| {
-                hover_state.update(cx, |s, cx| {
-                    let next = if *hovered {
-                        Some(ix)
-                    } else if s.hover_source == Some(ix) {
-                        None
-                    } else {
-                        s.hover_source
-                    };
-                    if s.hover_source != next {
-                        s.hover_source = next;
-                        cx.notify();
-                    }
-                })
-            })
-            .on_click(move |_, _, cx| {
-                toggle_state.update(cx, |s, cx| {
-                    let next = if source_of(s.open, &toggle_sources) == Some(ix) {
-                        None
-                    } else {
-                        Some(Open::Source(ix))
-                    };
-                    s.set_open(next, &toggle_sources);
+        let header = header(
+            &style,
+            Tile::Number((ix + 1).to_string().into()),
+            source.title.clone(),
+            source.meta(),
+            Some((ICON_CHEVRON.into(), radians(FRAC_PI_2 * progress))),
+        )
+        .font_features(pink::tabular_figures())
+        .id(ElementId::NamedInteger("ca-src-head".into(), ix as u64))
+        .role(Role::Button)
+        .aria_label(source.title.clone())
+        .aria_expanded(is_open)
+        .tab_index(0)
+        .rounded(px(radius::SM))
+        .focus_visible(move |style| pink::focus_ring(style, ring))
+        .cursor_pointer()
+        .on_hover(move |hovered, _, cx| {
+            hover_state.update(cx, |s, cx| {
+                let next = if *hovered {
+                    Some(ix)
+                } else if s.hover_source == Some(ix) {
+                    None
+                } else {
+                    s.hover_source
+                };
+                if s.hover_source != next {
+                    s.hover_source = next;
                     cx.notify();
-                })
+                }
             })
-            .child(tile)
-            .child(
-                // Pink: command palette history row – a 12 px title over an
-                // 11 px faint meta line, 2 px apart.
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .gap(px(space::S2))
-                    .child(
-                        div()
-                            .id("ca-src-title")
-                            .truncate()
-                            .type_style(TextStyle::Footnote)
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(t.text.opacity(0.85))
-                            .group_hover(group.clone(), |style| style.text_color(t.text))
-                            .child(source.title.clone()),
-                    )
-                    .child(
-                        div()
-                            .truncate()
-                            .type_style(TextStyle::Caption)
-                            .text_color(t.content_faint)
-                            .child(source.meta()),
-                    ),
-            )
-            .child(chevron);
+        })
+        .on_click(move |_, _, cx| {
+            toggle_state.update(cx, |s, cx| {
+                let next = if source_of(s.open, &toggle_sources) == Some(ix) {
+                    None
+                } else {
+                    Some(Open::Source(ix))
+                };
+                s.set_open(next, &toggle_sources);
+                cx.notify();
+            })
+        });
 
         let body = self.body(t, state);
         let natural = self.height.get();
-        div()
+        card(&style)
             .id(ElementId::NamedInteger("ca-src".into(), ix as u64))
-            .flex()
-            .flex_col()
-            .overflow_hidden()
-            .rounded(px(radius::PANEL))
-            .border_1()
-            .border_color(motion::mix(t.hairline(0.07), t.accent.opacity(0.35), hot_t))
-            .bg(t.ink(0.03))
             .child(header)
             .child(
                 div()
@@ -1173,25 +1095,18 @@ impl SourceCard<'_> {
             .filter(|(_, p)| *p > 0.001)
             .map(|(r, p)| (r.clone(), t.code_wash.opacity(*p)))
             .collect();
-        let quote = div()
-            .relative()
-            .border_l_2()
-            .border_color(t.accent.opacity(0.6))
-            .bg(t.accent.opacity(0.05))
-            .rounded_tr(px(radius::SM))
-            .rounded_br(px(radius::SM))
-            .pl(px(space::S12))
-            .pr(px(space::S10))
-            .py(px(space::S6))
-            .text_size(px(TOOL_LABEL_SIZE))
-            .line_height(px(TOOL_LABEL_LINE_HEIGHT))
-            .text_color(t.content_muted)
-            .child(
-                div()
-                    .relative()
-                    .child(wash_underlay(styled.layout().clone(), washes))
-                    .child(styled),
-            );
+        let quote = quote(
+            &QuoteStyle {
+                rule: t.hairline(0.06),
+                rail: t.accent.opacity(0.6),
+                background: t.accent.opacity(0.05),
+                text: t.content_muted,
+            },
+            div()
+                .relative()
+                .child(wash_underlay(styled.layout().clone(), washes))
+                .child(styled),
+        );
 
         // Pink: the meta lane – `pt 4`, 24 px actions 2 px apart.
         let live = self.is_open;
@@ -1242,8 +1157,7 @@ impl SourceCard<'_> {
             .flex_none()
             .flex()
             .flex_col()
-            .child(div().h(px(1.)).flex_none().bg(t.hairline(0.06)))
-            .child(div().px(px(space::S8)).pt(px(space::S8)).child(quote))
+            .child(quote)
             .child(
                 div()
                     .px(px(space::S4))
