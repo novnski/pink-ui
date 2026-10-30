@@ -17,6 +17,10 @@
 //! `pink-question-card` wizard's, all in rems like PINK's. Only the blanks
 //! and their sentence are the gallery's own.
 //!
+//! The template rows' blank counts, the sentence and its blank chips are
+//! the `pink-prompt-library` package (`components/prompt-library`), the
+//! same source PINK pins for its composer's saved templates.
+//!
 //! Keys: menu rows are tab stops (Enter opens one); in a blank Tab moves on,
 //! Enter uses the prompt when it is complete (or jumps to the next empty
 //! blank), Escape closes the menu.
@@ -27,6 +31,12 @@
 //!     .open(true)
 //!     .on_use(|template, prompt, _, _| println!("{}: {prompt}", template.title))
 //! ```
+
+#[allow(dead_code)]
+mod package {
+    include!("../../components/prompt-library/src/lib.rs");
+}
+pub use package::*;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -43,7 +53,7 @@ use gpui::{
 use web_time::Instant;
 
 use crate::{
-    components::question_card::{self as card, ui_rems},
+    components::question_card as card,
     motion::{self, HOVER_FADE, MENU_OUT, MENU_RISE_UP, TRANSCRIPT_IN, TRANSCRIPT_IN_RISE},
     pink::{self, ButtonKind, ControlSize, FillTier, Pink, layout, loaders, radius},
     primitives::{InputEvent, TextInput},
@@ -59,14 +69,6 @@ const ICON_NOTEBOOK: &str = "icons/prompt-library/notebook.svg";
 /// `INPUT_LINE_HEIGHT`: `text-[14px] leading-relaxed`).
 const INPUT_TEXT_SIZE: f32 = 14.0;
 const INPUT_LINE_HEIGHT: f32 = 22.75;
-/// The saved-prompt list's height cap (Pink `render_stash_menu`).
-const STASH_LIST_MAX_H: f32 = 220.0;
-/// Inline chip geometry (Pink composer.rs chip quads): the wash sits 2 px
-/// inside the line box top and bottom, at radius 5.
-const CHIP_INSET_Y: f32 = 2.0;
-const CHIP_RADIUS: f32 = 5.0;
-/// Side room inside an editable blank, so the caret never touches its edge.
-const CHIP_PAD_X: f32 = 4.0;
 /// How long the Copied / Sent note stays.
 const NOTE_MS: u64 = 1600;
 /// Room the story keeps above the pill for the popup: the list cap, the
@@ -110,7 +112,7 @@ impl PromptTemplate {
     }
 
     /// The body split into text and blanks.
-    fn parts(&self) -> Vec<Part> {
+    fn parts(&self) -> Vec<Part<'_>> {
         let mut parts = Vec::new();
         let mut rest = self.body.as_ref();
         while let Some(open) = rest.find('{') {
@@ -118,13 +120,13 @@ impl PromptTemplate {
                 break;
             };
             if open > 0 {
-                parts.push(Part::Text(rest[..open].to_string()));
+                parts.push(Part::Text(&rest[..open]));
             }
-            parts.push(Part::Blank(rest[open + 1..open + close].to_string()));
+            parts.push(Part::Blank(&rest[open + 1..open + close]));
             rest = &rest[open + close + 1..];
         }
         if !rest.is_empty() {
-            parts.push(Part::Text(rest.to_string()));
+            parts.push(Part::Text(rest));
         }
         parts
     }
@@ -134,52 +136,13 @@ impl PromptTemplate {
         let mut vars: Vec<String> = Vec::new();
         for part in self.parts() {
             if let Part::Blank(name) = part
-                && !vars.contains(&name)
+                && !vars.iter().any(|var| var == name)
             {
-                vars.push(name);
+                vars.push(name.to_string());
             }
         }
         vars
     }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-enum Part {
-    Text(String),
-    Blank(String),
-}
-
-/// One piece of the sentence: a word, or a blank.
-#[derive(Clone, Debug, PartialEq)]
-enum Piece {
-    Word(String),
-    Blank(String),
-}
-
-/// The sentence as unbreakable groups: words wrap freely, and a blank stays
-/// glued to the punctuation right before or after it.
-fn atoms(parts: &[Part]) -> Vec<Vec<Piece>> {
-    let mut atoms: Vec<Vec<Piece>> = vec![Vec::new()];
-    for part in parts {
-        match part {
-            Part::Text(text) => {
-                for (i, chunk) in text.split(' ').enumerate() {
-                    if i > 0 {
-                        atoms.push(Vec::new());
-                    }
-                    if !chunk.is_empty() {
-                        atoms
-                            .last_mut()
-                            .unwrap()
-                            .push(Piece::Word(chunk.to_string()));
-                    }
-                }
-            }
-            Part::Blank(var) => atoms.last_mut().unwrap().push(Piece::Blank(var.clone())),
-        }
-    }
-    atoms.retain(|atom| !atom.is_empty());
-    atoms
 }
 
 /// Five saved prompts for writing, sales, engineering and hiring.
@@ -289,9 +252,9 @@ impl LibraryState {
         let mut complete = true;
         for part in template.parts() {
             match part {
-                Part::Text(text) => out.push_str(&text),
+                Part::Text(text) => out.push_str(text),
                 Part::Blank(var) => {
-                    let value = self.value(&template.id, &var, cx);
+                    let value = self.value(&template.id, var, cx);
                     if value.trim().is_empty() {
                         complete = false;
                         out.push_str(&format!("{{{var}}}"));
@@ -691,16 +654,7 @@ fn stash_menu(
                 .when(busy, |row| row.cursor_default())
                 .child(div().flex_1().min_w_0().truncate().child(label.clone()))
                 .when(blanks > 0, |row| {
-                    row.child(
-                        div()
-                            .flex_none()
-                            .text_size(ui_rems(11.))
-                            .text_color(popup.text_muted)
-                            .child(format!(
-                                "{blanks} blank{}",
-                                if blanks == 1 { "" } else { "s" }
-                            )),
-                    )
+                    row.child(blank_count(popup.text_muted, blanks))
                 })
                 .when(s.on_delete.is_some(), |row| {
                     row.child(
@@ -782,13 +736,6 @@ fn measure(text: &str, window: &mut Window) -> f32 {
     f32::from(line.width)
 }
 
-/// A filled blank's colors: Pink's inline folder chip (composer.rs
-/// `composer_chip_palette`): `accent` text on accent at 0.17 dark / 0.10
-/// light.
-fn chip_palette(t: &Pink) -> (gpui::Hsla, gpui::Hsla) {
-    (t.accent, t.accent.opacity(if t.dark { 0.17 } else { 0.10 }))
-}
-
 /// The pill holding the open prompt (Pink: composer.rs `composer_surface`
 /// with the question wizard's layout): radius 26, a 1 px `border`, the
 /// input plate and `shadow_lg`; `px 16 / pt 16` body with a tracked header
@@ -846,12 +793,8 @@ fn composer(
             let space = measure(" ", window);
             let mut seen: Vec<String> = Vec::new();
             let mut groups: Vec<AnyElement> = Vec::new();
-            for atom in atoms(&template.parts()) {
-                let mut group = div()
-                    .min_h(px(INPUT_LINE_HEIGHT))
-                    .flex()
-                    .flex_row()
-                    .items_center();
+            for atom in atoms(template.parts()) {
+                let mut group = group(px(INPUT_LINE_HEIGHT));
                 for piece in atom {
                     group = match piece {
                         Piece::Word(word) => group.child(div().child(word)),
@@ -884,14 +827,7 @@ fn composer(
                 SharedString::from(format!("{key}-sentence-{}", template.id)),
                 TRANSCRIPT_IN,
                 TRANSCRIPT_IN_RISE,
-                div()
-                    .flex()
-                    .flex_row()
-                    .flex_wrap()
-                    .items_center()
-                    .gap_x(px(space))
-                    .text_color(t.text)
-                    .children(groups),
+                sentence(px(space)).text_color(t.text).children(groups),
             )
             .into_any_element()
         }
@@ -949,27 +885,25 @@ fn blank(
     } else {
         value.as_ref()
     };
-    let width = measure(shown, window) + 2. * CHIP_PAD_X + layout::CARET_WIDTH;
+    let width = chip_width(
+        px(measure(shown, window)),
+        px(layout::CARET_WIDTH),
+        px(CHIP_PAD_X),
+    );
     let k = motion::follow(key, if filled { 1. } else { 0. }, HOVER_FADE);
     let f = motion::follow(
         &format!("{key}-focus"),
         if focused { 1. } else { 0. },
         HOVER_FADE,
     );
-    let (ink, wash) = chip_palette(t);
+    let filled = filled_palette(t.accent, t.dark);
     let empty = motion::mix(t.fill(FillTier::Tertiary), t.fill(FillTier::Primary), f);
+    let style = ChipStyle {
+        fill: motion::mix(empty, filled.fill, k),
+        ink: motion::mix(t.text, filled.ink, k),
+    };
     let target = input.clone();
-    div()
-        .flex_none()
-        .w(px(width))
-        .h(px(INPUT_LINE_HEIGHT - 2. * CHIP_INSET_Y))
-        .px(px(CHIP_PAD_X))
-        .flex()
-        .items_center()
-        .rounded(px(CHIP_RADIUS))
-        .bg(motion::mix(empty, wash, k))
-        .text_color(motion::mix(t.text, ink, k))
-        .line_height(px(INPUT_LINE_HEIGHT - 2. * CHIP_INSET_Y))
+    blank_chip(&style, width, px(INPUT_LINE_HEIGHT), px(CHIP_PAD_X))
         .cursor_text()
         .on_mouse_down(MouseButton::Left, move |_, window, cx| {
             TextInput::focus(&target, window, cx)
@@ -979,26 +913,20 @@ fn blank(
 
 /// A repeated blank: the same chip, showing what the first one holds.
 fn echo(var: &str, value: &SharedString, t: &Pink) -> impl IntoElement {
-    let filled = !value.trim().is_empty();
-    let (ink, wash) = chip_palette(t);
-    div()
-        .flex_none()
-        .h(px(INPUT_LINE_HEIGHT - 2. * CHIP_INSET_Y))
-        .px(px(CHIP_PAD_X))
-        .flex()
-        .items_center()
-        .rounded(px(CHIP_RADIUS))
-        .bg(if filled {
-            wash
-        } else {
-            t.fill(FillTier::Tertiary)
-        })
-        .text_color(if filled { ink } else { t.placeholder })
-        .child(if filled {
-            value.trim().to_string()
-        } else {
-            var.to_string()
-        })
+    let style = if value.trim().is_empty() {
+        ChipStyle {
+            fill: t.fill(FillTier::Tertiary),
+            ink: t.placeholder,
+        }
+    } else {
+        filled_palette(t.accent, t.dark)
+    };
+    let text = if value.trim().is_empty() {
+        var.to_string()
+    } else {
+        value.trim().to_string()
+    };
+    echo_chip(&style, text, px(INPUT_LINE_HEIGHT), px(CHIP_PAD_X))
 }
 
 /// The pill's footer (Pink wizard footer: `px 16 / pb 16`, gap 12,
@@ -1107,12 +1035,12 @@ mod tests {
         assert_eq!(
             template.parts(),
             vec![
-                Part::Text("Hi ".into()),
-                Part::Blank("name".into()),
-                Part::Text(", meet ".into()),
-                Part::Blank("next step".into()),
-                Part::Text(". Bye ".into()),
-                Part::Blank("name".into()),
+                Part::Text("Hi "),
+                Part::Blank("name"),
+                Part::Text(", meet "),
+                Part::Blank("next step"),
+                Part::Text(". Bye "),
+                Part::Blank("name"),
             ]
         );
         assert_eq!(template.variables(), vec!["name", "next step"]);
@@ -1123,7 +1051,7 @@ mod tests {
         let template = PromptTemplate::new("t", "T", "Close with {call to action}. Thanks");
         let word = |w: &str| Piece::Word(w.into());
         assert_eq!(
-            atoms(&template.parts()),
+            atoms(template.parts()),
             vec![
                 vec![word("Close")],
                 vec![word("with")],
