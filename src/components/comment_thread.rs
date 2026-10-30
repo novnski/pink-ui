@@ -31,10 +31,10 @@ use std::{
 use web_time::{Duration, Instant, SystemTime};
 
 use gpui::{
-    AnyElement, AnyView, App, Context, ElementId, Entity, FillOptions, FillRule, Focusable,
-    FontWeight, Hsla, IntoElement, KeyDownEvent, PathBuilder, PathStyle, Pixels, Point, Role,
-    ScrollHandle, SharedString, Stateful, Subscription, Task, TextRun, Transformation, Window,
-    canvas, div, font, img, point, prelude::*, px, radians, svg,
+    AnyElement, AnyView, App, Context, ElementId, Entity, FillOptions, FillRule, Focusable, Hsla,
+    IntoElement, KeyDownEvent, PathBuilder, PathStyle, Pixels, Point, Role, ScrollHandle,
+    SharedString, Stateful, Subscription, Task, TextRun, Transformation, Window, canvas, div, font,
+    img, point, prelude::*, px, radians, svg,
 };
 
 use crate::{
@@ -44,6 +44,18 @@ use crate::{
     pink::{self, FillTier, Pink, loaders, radius, space},
     primitives::{InputEvent, TextInput},
     story,
+};
+
+// The thread's pieces are the `pink-comment-thread` package, compiled here
+// in place; PINK pins the same source.
+mod package {
+    include!("../../components/comment-thread/src/lib.rs");
+}
+// Pink history.rs author avatar; message text starts past it and an 8px gap.
+pub use package::{
+    AVATAR, AvatarStyle, ChipStyle, LINE_HEIGHT, MessageLines, MetaStyle, PlateStyle, TEXT_INDENT,
+    body as note, chip, count, count_label, footer, initial, initial_avatar, mark_avatar, message,
+    message_height, messages, meta, plate, thread_height,
 };
 
 pub const NAME: &str = "Comment Thread";
@@ -58,6 +70,8 @@ pub const STEPS_GLYPH: &str = "icons/comment-thread/layers-minimalistic.svg";
 
 const ICON_REMOVE: &str = comment_card::ICON_REMOVE;
 const ICON_CHEVRON: &str = "icons/comment-thread/alt-arrow-right.svg";
+/// The Resolved chip's glyph (Pink `icons::CHECK`).
+pub const RESOLVED_GLYPH: &str = "icons/comment-thread/check.svg";
 
 /// Pink comments.rs card geometry, from the `pink-comment-card` package:
 /// the vertical padding (split top and bottom), a body line and the slack
@@ -78,9 +92,6 @@ const CHIPS_TOP_PAD: f32 = 2.0;
 /// Detail text starts after Pink's 4px break past the branch tip.
 const DETAIL_TEXT_X: f32 = ACTIVITY_BRANCH_END_X + 4.0;
 
-/// Pink history.rs author avatar; message text starts past it and an 8px gap.
-const AVATAR: f32 = 20.0;
-const TEXT_INDENT: f32 = AVATAR + space::S8;
 /// Pink markdown/render.rs inline code plate.
 const INLINE_CODE_RADIUS: f32 = 4.5;
 const INLINE_CODE_PAD_X: f32 = 2.0;
@@ -121,12 +132,7 @@ impl ThreadAuthor {
 
     /// Pink history.rs `history_author_initial`: the first letter, upper-cased.
     fn initial(&self) -> SharedString {
-        self.name
-            .chars()
-            .find(|c| !c.is_whitespace())
-            .map(|c| c.to_uppercase().collect::<String>())
-            .unwrap_or_else(|| "?".to_string())
-            .into()
+        initial(&self.name)
     }
 }
 
@@ -217,15 +223,6 @@ fn time_ago(then: SystemTime, now: SystemTime) -> String {
         return format!("{mo}mo");
     }
     format!("{}y", d / 365)
-}
-
-/// Pink comments.rs `chip_label`.
-fn count_label(count: usize) -> String {
-    if count == 1 {
-        "1 comment".into()
-    } else {
-        format!("{count} comments")
-    }
 }
 
 fn eid(id: String) -> ElementId {
@@ -409,6 +406,7 @@ pub struct CommentThread {
     on_close: Option<Handler>,
     min_height: Pixels,
     max_height: Pixels,
+    resolved: bool,
 }
 
 impl CommentThread {
@@ -428,6 +426,7 @@ impl CommentThread {
             on_close: None,
             min_height: px(0.),
             max_height: px(340.),
+            resolved: false,
         }
     }
 
@@ -477,6 +476,12 @@ impl CommentThread {
     /// Taller conversations scroll (340px by default).
     pub fn max_height(mut self, height: Pixels) -> Self {
         self.max_height = height;
+        self
+    }
+
+    /// Shows the package's Resolved chip in the header.
+    pub fn resolved(mut self, resolved: bool) -> Self {
+        self.resolved = resolved;
         self
     }
 }
@@ -658,18 +663,19 @@ impl RenderOnce for CommentThread {
         // the count and a close revealed on hover (Pink's remove)
         let group: SharedString = format!("{key}-thread").into();
         let ring = t.focus_ring();
-        let count = s.messages.len();
+        let total = s.messages.len();
         let header = card_header(self.anchor.clone(), self.title.clone(), &t)
-            .child(
-                div()
-                    .flex_none()
-                    .whitespace_nowrap()
-                    .text_size(px(pink::text::CAPTION))
-                    .line_height(px(pink::TextStyle::Caption.line_height()))
-                    .font_features(pink::tabular_figures())
-                    .text_color(t.text_faint)
-                    .child(count_label(count)),
-            )
+            .child(count(count_label(total), t.text_faint).font_features(pink::tabular_figures()))
+            .when(self.resolved, |d| {
+                d.child(chip(
+                    svg().path(RESOLVED_GLYPH),
+                    "Resolved",
+                    &ChipStyle {
+                        background: t.fill(FillTier::Quaternary),
+                        text: t.content_muted,
+                    },
+                ))
+            })
             .when_some(self.on_close.clone(), |d, on_close| {
                 d.child(
                     // Pink's remove: a 24 pt hit box, 16 pt footprint (DS-19)
@@ -821,44 +827,29 @@ fn space_width(window: &Window) -> Pixels {
 }
 
 /// Avatar, name and time (Pink history.rs author avatar; the time is the
-/// sidebar's 11px tabular stamp).
+/// sidebar's 11px tabular stamp), drawn by the package.
 fn meta_row(author: &ThreadAuthor, time: Option<String>, t: &Pink) -> gpui::Div {
-    div()
-        .h(px(AVATAR))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(space::S8))
-        .min_w_0()
-        .child(author_avatar(author, t))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .text_size(px(pink::text::FOOTNOTE))
-                .line_height(px(pink::TextStyle::Footnote.line_height()))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(t.text)
-                .child(author.name.clone()),
-        )
-        .when_some(time, |d, time| {
-            d.child(
-                div()
-                    .flex_none()
-                    .whitespace_nowrap()
-                    .text_size(px(pink::text::CAPTION))
-                    .line_height(px(pink::TextStyle::Caption.line_height()))
-                    .font_features(pink::tabular_figures())
-                    .text_color(t.content_faint)
-                    .child(time),
-            )
-        })
+    let style = MetaStyle {
+        name: t.text,
+        time: t.content_faint,
+    };
+    meta(
+        author_avatar(author, t),
+        author.name.clone(),
+        time.map(Into::into),
+        &style,
+    )
+    .font_features(pink::tabular_figures())
 }
 
 /// Pink history.rs author avatar: a 20px disc, `hairline(0.12)` edge over
 /// `wash(0.08)`, holding the photo, the initial, or an assistant's mark.
-fn author_avatar(author: &ThreadAuthor, t: &Pink) -> AnyElement {
+fn author_avatar(author: &ThreadAuthor, t: &Pink) -> gpui::Div {
+    let style = AvatarStyle {
+        edge: t.hairline(0.12),
+        fill: t.wash(0.08),
+        content: t.text_faint,
+    };
     match (&author.avatar, author.assistant) {
         (Some(path), _) => div()
             .size(px(AVATAR))
@@ -866,28 +857,11 @@ fn author_avatar(author: &ThreadAuthor, t: &Pink) -> AnyElement {
             .overflow_hidden()
             .rounded_full()
             .border_1()
-            .border_color(t.hairline(0.12))
-            .bg(t.wash(0.08))
-            .child(img(path.clone()).size_full().rounded_full())
-            .into_any_element(),
-        (None, true) => div()
-            .size(px(AVATAR))
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_full()
-            .border_1()
-            .border_color(t.hairline(0.12))
-            .bg(t.wash(0.08))
-            .child(
-                svg()
-                    .path(ASSISTANT_MARK)
-                    .size(px(pink::icon_size::XS))
-                    .text_color(t.text_faint),
-            )
-            .into_any_element(),
-        (None, false) => pink::avatar(author.initial(), t).into_any_element(),
+            .border_color(style.edge)
+            .bg(style.fill)
+            .child(img(path.clone()).size_full().rounded_full()),
+        (None, true) => mark_avatar(svg().path(ASSISTANT_MARK), &style),
+        (None, false) => initial_avatar(author.initial(), &style),
     }
 }
 
