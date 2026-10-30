@@ -24,14 +24,13 @@
 //! The run is simulated from each step's estimate (use [`AgentPlan::fail_once`]
 //! to rehearse a failure), so the component works on its own in a demo.
 
-use std::{ops::Range, rc::Rc, sync::Arc};
+use std::{rc::Rc, sync::Arc};
 use web_time::{Duration, Instant};
 
 use gpui::{
     AnimationExt, AnyElement, AnyView, App, ClickEvent, ClipboardItem, Div, DragMoveEvent,
-    ElementId, EmptyView, Entity, FontWeight, HighlightStyle, IntoElement, MouseButton,
-    MouseDownEvent, Role, SharedString, Stateful, StyledText, Subscription, Task, Window, div, phi,
-    prelude::*, px, svg,
+    ElementId, EmptyView, Entity, FontWeight, IntoElement, MouseButton, MouseDownEvent, Role,
+    SharedString, Stateful, Subscription, Task, Window, div, prelude::*, px, svg,
 };
 
 use crate::{
@@ -43,6 +42,18 @@ use crate::{
     },
     primitives::{InputEvent, TextInput},
     story,
+};
+
+#[allow(dead_code)]
+mod package {
+    include!("../../components/agent-plan/src/lib.rs");
+}
+use package as plan;
+pub use package::{
+    CHECKLIST_ROW_H, CLOSE, ChecklistStyle, HEADER_H, HeaderStyle, ROW_H, STACK_GAP, StepStatus,
+    StepStyle, Summary, TRAY_INSET, TRAY_OVERLAP, add_label, checklist, checklist_row, close,
+    controls, disclosure, drag_offsets, drop_index, field, header, header_summary, line, lines,
+    move_step, note, slide_offset, slot, status_text, step_text, step_title, summary, ui_rems,
 };
 
 pub const NAME: &str = "Agent Plan";
@@ -65,29 +76,11 @@ const ICON_CANCEL: &str = "icons/agent-plan/queue-close.svg";
 
 /// Width of the composer column the plan stacks in.
 const WIDTH: f32 = 600.0;
-/// The composer stack's column gap (Pink `Theme::SPACE_SM`).
-const STACK_GAP: f32 = 8.0;
-/// The tray is inset from the column and tucked behind the composer (Pink
-/// `QUEUE_SIDE_INSET`, `QUEUE_COMPOSER_OVERLAP`).
-const TRAY_INSET: f32 = 16.0;
-const TRAY_OVERLAP: f32 = 18.0;
-/// The tray's header bar and its glyph (Pink goals.rs `HEADER_HEIGHT`,
-/// `GLYPH`).
-const TRAY_HEADER_H: f32 = 38.0;
-const TRAY_GLYPH: f32 = 14.0;
-/// Tray rows (Pink `queue.rs`: `ROW_HEIGHT`, `QUEUE_TEXT_SIZE`, `ROW_PAD_X`,
+/// Tray rows' padding and corners (Pink `queue.rs`: `ROW_PAD_X`,
 /// `ROW_RADIUS`, `QUEUE_ICON_SIZE`).
-const ROW_H: f32 = 36.0;
-const ROW_TEXT: f32 = 12.5;
 const ROW_PAD_X: f32 = 8.0;
 const ROW_RADIUS: f32 = radius::MD;
 const TRAY_ICON: f32 = 13.0;
-/// The checklist (Pink `render_checklist`): 11.5 text, a 28 disclosure row,
-/// a 24 close button, at most 144 of step lines.
-const CHECKLIST_TEXT: f32 = 11.5;
-const CHECKLIST_ROW_H: f32 = 28.0;
-const CHECKLIST_CLOSE: f32 = 24.0;
-const CHECKLIST_MAX_H: f32 = 144.0;
 /// How long the demo waits before it acts on its own.
 const AUTO_RUN: Duration = Duration::from_millis(2600);
 const AUTO_RETRY: Duration = Duration::from_millis(3400);
@@ -122,30 +115,6 @@ impl PlanStep {
     pub fn estimate(mut self, seconds: f32) -> Self {
         self.estimate = seconds.max(0.5);
         self
-    }
-}
-
-/// Where a step is in the run.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StepStatus {
-    Pending,
-    Running,
-    Done,
-    Failed,
-    Skipped,
-}
-
-impl StepStatus {
-    /// The checklist's status word (Pink `render_checklist`; "Failed" and
-    /// "Skipped" are the plan's own).
-    fn word(self) -> &'static str {
-        match self {
-            Self::Pending => "Pending",
-            Self::Running => "In progress",
-            Self::Done => "Completed",
-            Self::Failed => "Failed",
-            Self::Skipped => "Skipped",
-        }
     }
 }
 
@@ -300,6 +269,8 @@ struct PlanState {
     adding: bool,
     add: Entity<TextInput>,
     drag: Option<DragState>,
+    /// A row's height in px at the window's Interface size, for the drag.
+    row_h: f32,
     next_key: usize,
     /// (step key, message): fails once, then clears; autoplay re-arms it.
     failure: Option<(usize, SharedString)>,
@@ -383,6 +354,7 @@ impl PlanState {
             adding: false,
             add,
             drag: None,
+            row_h: ROW_H,
             next_key: count,
             rehearsal: failure.clone(),
             failure,
@@ -661,50 +633,10 @@ impl PlanState {
 
     /// Moves the row at `from` to `to` (Pink `move_queued`).
     fn move_step(&mut self, from: usize, to: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if from != to && from < self.steps.len() {
-            let step = self.steps.remove(from);
-            self.steps.insert(to.min(self.steps.len()), step);
+        if plan::move_step(&mut self.steps, from, to) {
             self.changed(window, cx);
         }
         cx.notify();
-    }
-}
-
-/// A pointer inside the step list as a row slot (Pink `terminal/panel.rs`
-/// `drop_index`).
-fn drop_index(rel_y: f32, slot: f32, count: usize) -> usize {
-    if count == 0 || slot <= 0.0 {
-        return 0;
-    }
-    ((rel_y / slot).floor().max(0.0) as usize).min(count - 1)
-}
-
-/// Rows between the dragged one and its target shift one slot toward the
-/// gap it leaves (Pink `terminal/panel.rs` `slide_offset`).
-fn slide_offset(ix: usize, from: usize, over: usize) -> f32 {
-    if from < over && ix > from && ix <= over {
-        -1.0
-    } else if over < from && ix >= over && ix < from {
-        1.0
-    } else {
-        0.0
-    }
-}
-
-/// Start and target offsets of a row's slide (Pink `queue_drag_offsets`):
-/// the dragged row travels to the hovered slot, the rows in its path slide
-/// into the space it left.
-fn drag_offsets(ix: usize, from: usize, prev_over: usize, over: usize) -> (f32, f32) {
-    if ix == from {
-        (
-            (prev_over as f32 - from as f32) * ROW_H,
-            (over as f32 - from as f32) * ROW_H,
-        )
-    } else {
-        (
-            slide_offset(ix, from, prev_over) * ROW_H,
-            slide_offset(ix, from, over) * ROW_H,
-        )
     }
 }
 
@@ -712,49 +644,20 @@ fn drag_offsets(ix: usize, from: usize, prev_over: usize, over: usize) -> (f32, 
 // Rendering
 // ---------------------------------------------------------------------------
 
-/// Plain checklist copy with the plan's one red word, when a step failed.
-fn status_text(text: String, red: Option<Range<usize>>, t: &Pink) -> StyledText {
-    let styled = StyledText::new(text);
-    match red {
-        Some(range) => styled.with_highlights([(
-            range,
-            HighlightStyle {
-                color: Some(t.readable_tone(t.danger, 0.9)),
-                ..Default::default()
-            },
-        )]),
-        None => styled,
-    }
-}
-
 /// The run as Pink's provider checklist (Pink: composer/checklist.rs
-/// `Composer::render_checklist`): a 28 disclosure row reading
-/// "done/total · detail" beside a 24 close button, unfolding into one
-/// "Status · step" line per step and a closing note, all 11.5 `text_muted`.
-fn checklist(key: &str, s: &PlanState, state: &Entity<PlanState>, t: &Pink) -> Stateful<Div> {
+/// `Composer::render_checklist`), drawn by the package: a 28 disclosure row
+/// reading "2 of 5, In progress: step" beside a 24 close tile, unfolding
+/// into one "Status: step" line per step and a closing note, all 11.5
+/// `text_muted`. This adds the buttons, roles and the scroller.
+fn run_checklist(key: &str, s: &PlanState, state: &Entity<PlanState>, t: &Pink) -> Stateful<Div> {
     let ring = t.focus_ring();
     let hover = t.element_hover;
     let total = s.steps.len();
-    let done = s
-        .steps
-        .iter()
-        .filter(|st| st.status == StepStatus::Done)
-        .count();
-    let find = |status| s.steps.iter().find(|st| st.status == status);
-    let (detail, failed) = if let Some(step) = find(StepStatus::Running) {
-        (format!("In progress: {}", step.plan.title), false)
-    } else if let Some(step) = find(StepStatus::Failed) {
-        (format!("Failed: {}", step.plan.title), true)
-    } else if let Some(step) = find(StepStatus::Pending) {
-        (format!("Next: {}", step.plan.title), false)
-    } else if done == total {
-        ("Plan complete".into(), false)
-    } else {
-        ("Plan finished".into(), false)
+    let style = ChecklistStyle {
+        text: t.text_muted,
+        danger: t.readable_tone(t.danger, 0.9),
     };
-    let prefix = format!("{done} of {total}, ");
-    let red = failed.then(|| prefix.len()..prefix.len() + "Failed".len());
-    let label = format!("{prefix}{detail}");
+    let sum = summary(s.steps.iter().map(|st| (st.status, st.plan.title.as_ref())));
     let expanded = s.expanded;
     let close_label = if s.phase == Phase::Running {
         "Stop the run and edit the plan"
@@ -762,86 +665,53 @@ fn checklist(key: &str, s: &PlanState, state: &Entity<PlanState>, t: &Pink) -> S
         "Close the run and edit the plan"
     };
 
-    let row = div()
-        .flex()
-        .items_center()
-        .gap(px(4.))
-        .min_w_0()
+    let row = checklist_row()
         .child(
-            div()
-                .id(format!("{key}-expand"))
-                .role(Role::Button)
-                .tab_index(0)
-                .tab_stop(true)
-                .aria_label(format!(
-                    "{} plan checklist: {label}",
-                    if expanded { "Collapse" } else { "Expand" }
-                ))
-                .aria_expanded(expanded)
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .px(px(8.))
-                .h(px(CHECKLIST_ROW_H))
-                .rounded(px(radius::SM))
-                .cursor_pointer()
-                .hover(move |style| style.bg(hover))
-                .focus_visible(move |style| pink::focus_ring(style, ring))
-                .on_key_down(pink::swallow_activation_key)
-                .child(
-                    svg()
-                        .path(if expanded {
-                            ICON_ARROW_DOWN
-                        } else {
-                            ICON_ARROW_RIGHT
-                        })
-                        .flex_none()
-                        .size(px(12.))
-                        .text_color(t.text_muted),
-                )
-                .child(
-                    div()
-                        .min_w_0()
-                        .text_ellipsis()
-                        .child(status_text(label.clone(), red, t)),
-                )
-                .on_click({
-                    let state = state.clone();
-                    move |_, _, cx| {
-                        state.update(cx, |s, cx| {
-                            s.take_over();
-                            s.expanded = !s.expanded;
-                            cx.notify();
-                        })
-                    }
-                }),
+            disclosure(
+                &style,
+                if expanded {
+                    ICON_ARROW_DOWN
+                } else {
+                    ICON_ARROW_RIGHT
+                },
+                &sum,
+            )
+            .id(format!("{key}-expand"))
+            .role(Role::Button)
+            .tab_index(0)
+            .tab_stop(true)
+            .aria_label(format!(
+                "{} plan checklist: {}",
+                if expanded { "Collapse" } else { "Expand" },
+                sum.label
+            ))
+            .aria_expanded(expanded)
+            .cursor_pointer()
+            .hover(move |style| style.bg(hover))
+            .focus_visible(move |style| pink::focus_ring(style, ring))
+            .on_key_down(pink::swallow_activation_key)
+            .on_click({
+                let state = state.clone();
+                move |_, _, cx| {
+                    state.update(cx, |s, cx| {
+                        s.take_over();
+                        s.expanded = !s.expanded;
+                        cx.notify();
+                    })
+                }
+            }),
         )
         .child(
-            div()
+            close(&style, ICON_CLOSE)
                 .id(format!("{key}-close"))
                 .role(Role::Button)
                 .tab_index(0)
                 .tab_stop(true)
                 .aria_label(close_label)
-                .flex_none()
-                .size(px(CHECKLIST_CLOSE))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(radius::SM))
                 .cursor_pointer()
                 .hover(move |style| style.bg(hover))
                 .focus_visible(move |style| pink::focus_ring(style, ring))
                 .on_key_down(pink::swallow_activation_key)
-                .child(
-                    svg()
-                        .path(ICON_CLOSE)
-                        .flex_none()
-                        .size(px(12.))
-                        .text_color(t.text_muted),
-                )
                 .on_click({
                     let state = state.clone();
                     move |_, _, cx| {
@@ -854,29 +724,17 @@ fn checklist(key: &str, s: &PlanState, state: &Entity<PlanState>, t: &Pink) -> S
                 }),
         );
 
-    let panel = div()
-        .id(format!("{key}-checklist"))
-        .flex()
-        .flex_col()
-        .min_w_0()
-        .text_size(px(CHECKLIST_TEXT))
-        .line_height(phi())
-        .text_color(t.text_muted)
-        .child(row);
+    let panel = checklist(&style).id(format!("{key}-checklist")).child(row);
     if !expanded {
         return panel;
     }
-    let lines = s.steps.iter().enumerate().map(|(index, step)| {
-        let word = step.status.word();
-        let line = format!("{word}: {}", step.plan.title);
-        let red = (step.status == StepStatus::Failed).then(|| 0..word.len());
-        div()
+    let steps = s.steps.iter().enumerate().map(|(index, step)| {
+        line(&style, step.status, &step.plan.title)
             .id(format!("{key}-checklist-step-{index}"))
             .role(Role::ListItem)
-            .aria_label(line.clone())
-            .child(status_text(line, red, t))
+            .aria_label(format!("{}: {}", step.status.word(), step.plan.title))
     });
-    let note = match s.phase {
+    let closing = match s.phase {
         Phase::Failed => format!(
             "Agent plan paused at step {} of {total}",
             s.failed_ix().map_or(0, |ix| ix + 1)
@@ -892,25 +750,14 @@ fn checklist(key: &str, s: &PlanState, state: &Entity<PlanState>, t: &Pink) -> S
     };
     panel
         .child(
-            div()
+            lines()
                 .id(format!("{key}-checklist-rows"))
                 .role(Role::List)
                 .aria_label("Plan steps")
-                .max_h(px(CHECKLIST_MAX_H))
                 .overflow_y_scroll()
-                .flex()
-                .flex_col()
-                .px(px(12.))
-                .gap(px(4.))
-                .children(lines),
+                .children(steps),
         )
-        .child(
-            div()
-                .px(px(12.))
-                .py(px(4.))
-                .font_features(tabular_figures())
-                .child(note),
-        )
+        .child(note(closing).font_features(tabular_figures()))
 }
 
 /// A failed step's notice above the composer (Pink: notice.rs `notice_chip`,
@@ -1064,31 +911,12 @@ fn tray_action(
         )
 }
 
-/// The 20 × 28 leading slot of a tray row (Pink `queue_row`'s marker).
-fn row_slot(glyph: &'static str, size: f32, color: gpui::Hsla) -> Div {
-    div()
-        .w(px(20.))
-        .h(px(28.))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(radius::XS))
-        .child(
-            svg()
-                .path(glyph)
-                .flex_none()
-                .size(px(size))
-                .text_color(color),
-        )
-}
-
 /// A row frame shared by the tray's step and add rows (Pink `queue_row`):
 /// 36 tall, `px 8`, gap 8, radius 8.
 fn row_frame(id: String) -> Stateful<Div> {
     div()
         .id(id)
-        .h(px(ROW_H))
+        .h(ui_rems(ROW_H))
         .flex_none()
         .px(px(ROW_PAD_X))
         .flex()
@@ -1185,54 +1013,31 @@ fn step_row(
     let stop = |_: &MouseDownEvent, _: &mut Window, cx: &mut App| cx.stop_propagation();
 
     let content = if editing {
-        div()
-            .flex_1()
-            .min_w_0()
-            .text_size(px(ROW_TEXT))
-            .line_height(px(16.))
-            .text_color(t.text)
-            .child(s.rename.clone())
-            .into_any_element()
+        field(t.text).child(s.rename.clone()).into_any_element()
     } else {
-        div()
-            .flex_1()
-            .min_w_0()
-            .flex()
-            .flex_col()
-            .gap(px(1.))
-            .child(
-                div()
-                    .id(format!("{row_key}-title"))
-                    .truncate()
-                    .text_size(px(ROW_TEXT))
-                    .line_height(px(16.))
-                    .text_color(t.text.opacity(0.9))
-                    .child(step.plan.title.clone())
-                    .on_click({
-                        let state = state.clone();
-                        move |event: &ClickEvent, window, cx| {
-                            if event.click_count() >= 2 {
-                                state.update(cx, |s, cx| {
-                                    s.take_over();
-                                    s.begin_rename(step_key, window, cx)
-                                });
-                            }
-                        }
-                    }),
-            )
-            .child(
-                div()
-                    .truncate()
-                    .text_size(px(11.))
-                    .line_height(px(13.))
-                    .text_color(t.text_muted)
-                    .child(format!(
-                        "{}, about {}",
-                        step.plan.tool,
-                        format_elapsed(step.plan.estimate.round() as i64)
-                    )),
-            )
-            .into_any_element()
+        let style = StepStyle {
+            title: t.text.opacity(0.9),
+            detail: t.text_muted,
+        };
+        let detail = format!(
+            "{}, about {}",
+            step.plan.tool,
+            format_elapsed(step.plan.estimate.round() as i64)
+        );
+        let title = step_title(style.title, step.plan.title.clone())
+            .id(format!("{row_key}-title"))
+            .on_click({
+                let state = state.clone();
+                move |event: &ClickEvent, window, cx| {
+                    if event.click_count() >= 2 {
+                        state.update(cx, |s, cx| {
+                            s.take_over();
+                            s.begin_rename(step_key, window, cx)
+                        });
+                    }
+                }
+            });
+        step_text(&style, title, Some(detail.into())).into_any_element()
     };
 
     let actions = if editing {
@@ -1293,7 +1098,7 @@ fn step_row(
         .child(if editing {
             div().w(px(20.)).flex_none()
         } else {
-            row_slot(ICON_DRAG, TRAY_ICON, t.readable_muted(0.5)).cursor_pointer()
+            slot(ICON_DRAG, t.readable_muted(0.5)).cursor_pointer()
         })
         .child(content)
         .child(actions);
@@ -1302,6 +1107,7 @@ fn step_row(
         return row.into_any_element();
     };
     let (start, target) = drag_offsets(ix, drag.from, drag.prev_over, drag.over);
+    let (start, target) = (start * s.row_h, target * s.row_h);
     div()
         .flex_none()
         .child(row)
@@ -1320,16 +1126,8 @@ fn add_row(key: &str, s: &PlanState, state: &Entity<PlanState>, t: &Pink) -> Sta
     if s.adding {
         return row_frame(add_key.clone())
             .bg(t.fill(FillTier::Tertiary))
-            .child(row_slot(ICON_PLUS, TRAY_ICON, t.readable_muted(0.8)))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .text_size(px(ROW_TEXT))
-                    .line_height(px(16.))
-                    .text_color(t.text)
-                    .child(s.add.clone()),
-            )
+            .child(slot(ICON_PLUS, t.readable_muted(0.8)))
+            .child(field(t.text).child(s.add.clone()))
             .child(edit_actions(&add_key, "Add step", state, true, t));
     }
     let ring = t.focus_ring();
@@ -1342,14 +1140,8 @@ fn add_row(key: &str, s: &PlanState, state: &Entity<PlanState>, t: &Pink) -> Sta
         .on_key_down(pink::swallow_activation_key)
         .cursor_pointer()
         .hover_wash(add_key, t.fill(FillTier::Tertiary))
-        .child(row_slot(ICON_PLUS, TRAY_ICON, t.readable_muted(0.8)))
-        .child(
-            div()
-                .text_size(px(ROW_TEXT))
-                .line_height(px(16.))
-                .text_color(tone)
-                .child("Add a step"),
-        )
+        .child(slot(ICON_PLUS, t.readable_muted(0.8)))
+        .child(add_label(tone, "Add a step"))
         .on_click({
             let state = state.clone();
             move |_, window, cx| {
@@ -1375,60 +1167,25 @@ fn tray_header(
     let count = s.steps.len();
     let estimate: f32 = s.steps.iter().map(|st| st.plan.estimate).sum();
     let steps = format!("{count} {}", if count == 1 { "step" } else { "steps" });
-    // Facts sit apart on the row's gap, twice over: no separator glyph.
-    let dot = || div().flex_none();
-    let summary = div()
-        .id(format!("{key}-summary"))
-        .role(Role::Status)
-        .aria_label(format!(
-            "Plan, {title}, {steps}, about {}",
-            format_elapsed(estimate.round() as i64)
-        ))
-        .flex_1()
-        .min_w_0()
-        .h_full()
-        .pl(px(14.))
-        .pr(px(6.))
-        .flex()
-        .items_center()
-        .gap(px(7.))
-        .text_size(px(13.))
-        .child(
-            svg()
-                .path(ICON_CHECKLIST)
-                .flex_none()
-                .size(px(TRAY_GLYPH))
-                .text_color(t.readable_muted(0.85)),
-        )
-        .child(
-            div()
-                .flex_none()
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(t.text)
-                .child("Plan"),
-        )
-        .child(dot())
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .text_color(t.readable_muted(0.8))
-                .child(title.clone()),
-        )
-        .child(
-            div()
-                .flex_none()
-                .flex()
-                .items_center()
-                .gap(px(7.))
-                .text_size(px(12.))
-                .font_features(tabular_figures())
-                .text_color(t.readable_muted(0.75))
-                .child(steps)
-                .child(dot())
-                .child(format!("about {}", format_elapsed(estimate.round() as i64))),
-        );
+    let estimate = format!("about {}", format_elapsed(estimate.round() as i64));
+    let style = HeaderStyle {
+        glyph: t.readable_muted(0.85),
+        label: t.text,
+        objective: t.readable_muted(0.8),
+        facts: t.readable_muted(0.75),
+    };
+    // Facts sit apart on the row's gap: no separator glyph.
+    let summary = header_summary(
+        &style,
+        ICON_CHECKLIST,
+        "Plan",
+        title.clone(),
+        [steps.clone().into(), estimate.clone().into()],
+    )
+    .id(format!("{key}-summary"))
+    .role(Role::Status)
+    .aria_label(format!("Plan, {title}, {steps}, {estimate}"))
+    .font_features(tabular_figures());
     let run = pink::button_enabled(
         format!("{key}-run"),
         ButtonKind::Primary,
@@ -1454,22 +1211,7 @@ fn tray_header(
             }
         }
     });
-    div()
-        .h(px(TRAY_HEADER_H))
-        .flex_none()
-        .flex()
-        .items_center()
-        .child(summary)
-        .child(
-            div()
-                .flex_none()
-                .h_full()
-                .pr(px(8.))
-                .flex()
-                .items_center()
-                .gap(px(2.))
-                .child(run),
-        )
+    header().child(summary).child(controls().child(run))
 }
 
 /// The draft as a tray above the composer (Pink: queue.rs
@@ -1486,6 +1228,7 @@ fn plan_tray(
     t: &Pink,
 ) -> Stateful<Div> {
     let count = s.steps.len();
+    let row_h = s.row_h;
     let rows = s
         .steps
         .iter()
@@ -1508,7 +1251,7 @@ fn plan_tray(
                     return;
                 }
                 let rel_y = f32::from(event.event.position.y - event.bounds.top());
-                let over = drop_index(rel_y, ROW_H, count);
+                let over = drop_index(rel_y, row_h, count);
                 state.update(cx, |s, cx| {
                     s.take_over();
                     s.drag_over(from, over, cx)
@@ -1529,10 +1272,10 @@ fn plan_tray(
         // Docked, the tray floats over the transcript with the composer and
         // takes Pink's opaque-treatment `menu_shadows`; on its own it lies flat.
         .when(docked, |el| {
-            el.mx(px(TRAY_INSET))
-                .mb(px(-(STACK_GAP + TRAY_OVERLAP)))
+            el.mx(ui_rems(TRAY_INSET))
+                .mb(ui_rems(-(STACK_GAP + TRAY_OVERLAP)))
                 .rounded_t(px(radius::STACK_TRAY))
-                .pb(px(TRAY_OVERLAP))
+                .pb(ui_rems(TRAY_OVERLAP))
                 .shadow(t.menu_shadows())
         })
         .when(!docked, |el| el.rounded(px(radius::STACK_TRAY)))
@@ -1579,6 +1322,7 @@ impl RenderOnce for AgentPlan {
         state.update(cx, |s, cx| {
             s.on_run = on_run;
             s.on_change = on_change;
+            s.row_h = ROW_H * f32::from(window.rem_size()) / 16.0;
             if !drag_live {
                 s.drag = None;
             }
@@ -1595,7 +1339,7 @@ impl RenderOnce for AgentPlan {
         let strip = (s.phase != Phase::Draft).then(|| {
             motion::fade_quick(
                 ElementId::Name(format!("{key}-checklist-in-{epoch}").into()),
-                checklist(&key, s, &state, &t),
+                run_checklist(&key, s, &state, &t),
             )
         });
         let notice = failure_notice(&key, s, &state, &t).map(|notice| {
@@ -1616,7 +1360,7 @@ impl RenderOnce for AgentPlan {
             .w(px(WIDTH))
             .flex()
             .flex_col()
-            .gap(px(STACK_GAP))
+            .gap(ui_rems(STACK_GAP))
             .font_family(pink::SANS)
             .text_color(t.text)
             .children(notice)
