@@ -4,13 +4,16 @@
 //! scaling with the Interface size (fixed pixels clip its text at 20 or float
 //! it at 12); a long action name that pushes the meta word (who decides) out
 //! of a narrow menu instead of ending in an ellipsis; names that stop lining
-//! up because a row without a glyph collapses its slot.
+//! up because a row without a glyph collapses its slot; the gallery card's
+//! animated lanes placing those rem-sized rows at 16 px offsets, so at 20 they
+//! overlap and spill out of the card (Codex review on novnski/pink-ui#106).
 
 use gpui::{Bounds, Context, IntoElement, Pixels, Render, TestAppContext, Window, div, prelude::*};
 use pink_ui::{
     Theme, ThemeMode,
     components::autonomy_dial::{
-        GROUP_GAP, HEAD_H, HeadingStyle, ROW_H, RowStyle, empty, group, groups, heading, row,
+        AgentAction, AutonomyDial, GROUP_GAP, HEAD_H, HeadingStyle, ROW_H, Risk, RowStyle, empty,
+        group, groups, heading, row,
     },
     pink::Pink,
 };
@@ -116,6 +119,57 @@ fn groups_scale_with_the_interface_and_keep_who_decides_in_reach(cx: &mut TestAp
             (f32::from(head_b.origin.y - first_end) - GROUP_GAP * scale).abs() < 0.5,
             "group gap at {ui}: {:?}",
             head_b.origin.y - first_end
+        );
+    }
+}
+
+/// The gallery's card: two unattended actions and one that needs approval.
+struct Card;
+
+impl Render for Card {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        Theme::sync_rem_size(window, cx);
+        AutonomyDial::new(
+            "dial",
+            "Repo agent",
+            vec![
+                AgentAction::new("read", "Read code", Risk::Read),
+                AgentAction::new("tests", "Run tests", Risk::Read),
+                AgentAction::new("merge", "Merge to main", Risk::Risky),
+            ],
+        )
+        .level(1)
+    }
+}
+
+#[gpui::test]
+fn the_cards_lanes_keep_rows_apart_at_every_interface_size(cx: &mut TestAppContext) {
+    cx.update(pink_ui::init);
+    for ui in [12.0_f32, 16.0, 20.0] {
+        let scale = ui / 16.0;
+        let mut cx = cx.clone();
+        cx.update(|cx| {
+            Theme::set_mode(ThemeMode::Dark, cx);
+            Theme::set_ui_font_size(ui, cx);
+        });
+        let (_, cx) = cx.add_window_view(|_, _| Card);
+        cx.run_until_parked();
+        let read = bounds(cx, "dial-row-read");
+        let tests = bounds(cx, "dial-row-tests");
+        let merge = bounds(cx, "dial-row-merge");
+        let lanes = bounds(cx, "dial-lanes");
+        assert!(
+            (f32::from(tests.origin.y - read.origin.y) - ROW_H * scale).abs() < 0.5,
+            "rows {:?} apart at {ui}, {:?} tall",
+            tests.origin.y - read.origin.y,
+            read.size.height
+        );
+        assert!(
+            merge.origin.y + merge.size.height
+                <= lanes.origin.y + lanes.size.height + gpui::px(0.5),
+            "the last row spills out of the lanes at {ui}: {:?} past {:?}",
+            merge.origin.y + merge.size.height,
+            lanes.origin.y + lanes.size.height
         );
     }
 }

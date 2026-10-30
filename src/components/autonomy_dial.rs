@@ -665,7 +665,7 @@ fn group_heading(
         .absolute()
         .left_0()
         .right_0()
-        .top(px(y))
+        .top(ui_rems(y))
         .role(Role::Heading)
         .aria_label(SharedString::from(format!("{label}, {count} {noun}")))
 }
@@ -673,7 +673,9 @@ fn group_heading(
 /// The two groups. Every action sits in one of them, and a level change or
 /// a lock makes rows glide to their new place (Pink: `RESORT`, the sidebar's
 /// list reorder). The block keeps one height while the level turns; only an
-/// emptied group, which holds a quiet line instead, can change it.
+/// emptied group, which holds a quiet line instead, can change it. Offsets
+/// are design sizes placed in rems, like the package's rows, so the lanes
+/// scale with the Interface size.
 #[allow(clippy::too_many_arguments)]
 fn lanes(
     key: &str,
@@ -704,7 +706,7 @@ fn lanes(
             .absolute()
             .left_0()
             .right_0()
-            .top(px(y))
+            .top(ui_rems(y))
             .with_animation(
                 ElementId::NamedInteger(format!("{key}-empty-{ix}").into(), rev),
                 FADE_QUICK.with_delay(RESORT.duration_ms).animation(),
@@ -737,10 +739,12 @@ fn lanes(
         })
         .collect::<Vec<_>>();
 
+    let selector = format!("{key}-lanes");
     div()
+        .debug_selector(move || selector)
         .relative()
         .w_full()
-        .h(px(height))
+        .h(ui_rems(height))
         .child(group_heading(
             format!("{key}-head-0"),
             "Unattended",
@@ -783,11 +787,13 @@ fn action_row(
         label: t.text,
         meta: tone,
     };
+    let selector = group.to_string();
     dial::row(&style, action.icon.clone(), action.label.clone(), meta)
+        .debug_selector(move || selector)
         .absolute()
         .left_0()
         .right_0()
-        .top(px(y))
+        .top(ui_rems(y))
         .group(group.clone())
         .child(lock_button(
             key, action, is_locked, group, state, on_lock, t,
