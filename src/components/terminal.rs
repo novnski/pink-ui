@@ -3,7 +3,10 @@
 //! Pink: `terminal/panel.rs` `TerminalPanel` (the tab strip, the Commands
 //! shelf from `project_commands.rs` and the terminal body), docked at the
 //! bottom of the main column by `shell.rs` `render_terminal_container`, and
-//! `terminal/view.rs` `TerminalElement`, which paints the grid. The drawer
+//! `terminal/view.rs` `TerminalElement`, which paints the grid. Since #176
+//! the drawer is the terminal's only home (the right panel has no Terminal
+//! place) and it is held to 40% of the window at render time (D52), keeping
+//! the saved height. The drawer
 //! has a 1 px top edge with a 10 px resize grip floating over it (drag to
 //! resize, double-click for the default height) and slides open and shut
 //! over `RESIZE`. The strip holds fixed 118 px tabs – a terminal glyph, the
@@ -86,6 +89,18 @@ const SEMANTIC_SEPARATORS: &str = ",│`|:\"' ()[]{}<>\t";
 const RESIZE_HITBOX_HEIGHT: f32 = 10.0;
 const MIN_HEIGHT: f32 = 160.0;
 const DEFAULT_HEIGHT: f32 = 280.0;
+/// The share of the window the drawer may take (Pink D52,
+/// `TERMINAL_MAX_VH`): 40%, applied at render time, so a saved or dragged
+/// height is never rewritten.
+const DRAWER_MAX_SHARE: f32 = 0.40;
+/// The demo's stand-in window: the conversation column the drawer docks in.
+const WINDOW_HEIGHT: f32 = 720.0;
+
+/// The tallest the drawer may be in a window `window_height` tall (Pink
+/// `clamp_terminal_height`): 40% of it, never under `MIN_HEIGHT`.
+fn drawer_max_height(window_height: f32) -> f32 {
+    (window_height * DRAWER_MAX_SHARE).max(MIN_HEIGHT)
+}
 
 // Pink: popover.rs floating scrollbar rail.
 const RAIL_TRACK_INSET: f32 = scroll_rail::TRACK_INSET;
@@ -236,9 +251,16 @@ impl Terminal {
         self
     }
 
-    /// The tallest the drawer may be dragged (Pink: 55% of the window).
+    /// The tallest the drawer may be dragged.
     pub fn max_height(mut self, height: f32) -> Self {
         self.max_height = height;
+        self
+    }
+
+    /// Holds the drawer to 40% of a window `height` tall (Pink D52), never
+    /// under its minimum; sets [`Self::max_height`].
+    pub fn window_height(mut self, height: f32) -> Self {
+        self.max_height = drawer_max_height(height);
         self
     }
 
@@ -2514,6 +2536,21 @@ fn shape_row(
 /// The 10 px grip over the drawer's top edge: a 1 px line in
 /// `border_strong` while hovered or dragged; drag to resize, double-click
 /// for the default height (Pink `render_terminal_container`'s handle).
+/// Where a drawer resize starts: the pointer's y and the height the drawer
+/// is drawn at (the saved height held to `max_height`, as `render` draws
+/// it), so a capped drawer follows the pointer from its first pixel. The
+/// saved height changes only once the drag moves the edge.
+fn resize_anchor(y: f32, saved: f32, max_height: f32) -> (f32, f32) {
+    (y, saved.min(max_height).max(MIN_HEIGHT))
+}
+
+/// The drawer's height with the pointer at `y` during a resize from
+/// `anchor`, held between `MIN_HEIGHT` and `max_height`.
+fn resized_height(anchor: (f32, f32), y: f32, max_height: f32) -> f32 {
+    let (start_y, start_h) = anchor;
+    (start_h - (y - start_y)).clamp(MIN_HEIGHT, max_height.max(MIN_HEIGHT))
+}
+
 fn resize_handle(
     key: &str,
     t: &Pink,
@@ -2556,7 +2593,11 @@ fn resize_handle(
             window.prevent_default();
             cx.stop_propagation();
             down_state.update(cx, |s, cx| {
-                s.resize_anchor = Some((f32::from(ev.position.y), s.height));
+                s.resize_anchor = Some(resize_anchor(
+                    f32::from(ev.position.y),
+                    s.height,
+                    max_height,
+                ));
                 cx.notify();
             })
         })
@@ -2567,8 +2608,7 @@ fn resize_handle(
         .on_drag_move::<DrawerResize>(move |ev, window, cx| {
             let y = f32::from(ev.event.position.y);
             let height = move_state.update(cx, |s, cx| {
-                let (start_y, start_h) = s.resize_anchor?;
-                let next = (start_h - (y - start_y)).clamp(MIN_HEIGHT, max_height.max(MIN_HEIGHT));
+                let next = resized_height(s.resize_anchor?, y, max_height);
                 if (next - s.height).abs() < f32::EPSILON {
                     return None;
                 }
@@ -3025,10 +3065,12 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
         let collapse = demo.clone();
         let run = demo.clone();
         let toggle = demo.clone();
+        // The saved height (400) is taller than D52 allows in this window;
+        // the drawer draws at 40% of it and keeps the saved value.
         let terminal = Terminal::new("terminal")
             .width(780.0)
             .height(400.0)
-            .max_height(560.0)
+            .window_height(WINDOW_HEIGHT)
             .autofocus(true)
             .open(open)
             .tabs(tabs)
@@ -3122,7 +3164,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                 .tooltip_show_delay(layout::TOOLTIP_DELAY);
         div()
             .w(px(780.0))
-            .h(px(640.0))
+            .h(px(WINDOW_HEIGHT))
             .flex()
             .flex_col()
             .rounded(px(pink::radius::PANEL))
@@ -3148,6 +3190,37 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// D52 (#176): the drawer is held to 40% of its window (render and drag
+    /// both clamp to `max_height`), never under its minimum, and the saved
+    /// height is kept. Catches a return to Pink's old 55% share or a cap
+    /// that drops below the floor in a short window.
+    #[test]
+    fn the_drawer_is_held_to_forty_percent_of_its_window() {
+        let drawer = Terminal::new("t")
+            .height(400.0)
+            .window_height(WINDOW_HEIGHT);
+        assert_eq!(drawer.max_height, 288.0);
+        // The saved height is kept; render draws min(saved, cap).
+        assert_eq!(drawer.height, 400.0);
+        let short = Terminal::new("t").window_height(300.0);
+        assert_eq!(short.max_height, MIN_HEIGHT);
+    }
+
+    /// A drawer drawn under its saved height (D52's cap) follows the pointer
+    /// from its first pixel: the drag starts at the drawn height, not the
+    /// saved one. Catches the Codex P2 on pink-ui #100, where a 400 pt saved
+    /// drawer capped to 288 ignored the first 112 pt of a downward drag.
+    #[test]
+    fn a_capped_drawer_resizes_from_its_drawn_height() {
+        let max = Terminal::new("t").window_height(WINDOW_HEIGHT).max_height;
+        let capped = resize_anchor(500.0, 400.0, max);
+        assert_eq!(resized_height(capped, 510.0, max), 278.0);
+        assert_eq!(resized_height(capped, 400.0, max), max);
+        let free = resize_anchor(500.0, 200.0, max);
+        assert_eq!(resized_height(free, 510.0, max), 190.0);
+        assert_eq!(resized_height(free, 900.0, max), MIN_HEIGHT);
+    }
 
     fn text_of(emu: &Emulator, line: usize) -> String {
         emu.lines[line].iter().map(|c| c.ch).collect()

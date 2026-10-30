@@ -1,8 +1,12 @@
 //! Commit History – a repository's commits, with the lanes that tie them
 //! together, as Pink's History pane.
 //!
-//! Pink: `history.rs` `GitHistory`, hosted in the right pane under the
-//! Changes surface's toolbar (`changes.rs` `render_header_controls` inside
+//! Pink: `history.rs` `GitHistory`, a Review surface in the right panel
+//! (#176): Review's `History` action in the panel's band opens it
+//! (`shell/right_rail.rs` `show_history_surface`), so the band reads
+//! `Review` (shown), `Files` and `More`, with History and Expand on the right
+//! ([`crate::pink::right_panel`]). Under the band sits the surface's own
+//! toolbar (`changes.rs` `render_header_controls` inside
 //! `surface_chrome::toolbar`). The toolbar names the checked-out branch in
 //! mono, counts the commits with how far the branch is ahead of / behind its
 //! upstream, and carries the search field that grows out of a magnifier,
@@ -57,7 +61,7 @@ use crate::{
     },
     interaction::HoverColors,
     motion::{self, COLLAPSE, HOVER_FADE, MENU_OUT, MENU_RISE_DOWN, RESIZE},
-    pink::{self, FillTier, Pink, chrome, layout, loaders, radius},
+    pink::{self, FillTier, Pink, chrome, layout, loaders, radius, right_panel},
     primitives::{InputEvent, TextInput},
     story,
 };
@@ -3931,14 +3935,45 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
         } else {
             history
         };
-        history
+        let history = history
             .loading(!loaded)
             .commits(commits)
             .has_more(!older)
             .loading_more(loading_more)
             .fetching(fetching)
             .on_fetch(move |_, cx| fetch_demo.update(cx, |d, cx| d.start_fetch(cx)))
-            .on_load_more(move |_, cx| more_demo.update(cx, |d, cx| d.load_older(cx)))
+            .on_load_more(move |_, cx| more_demo.update(cx, |d, cx| d.load_older(cx)));
+        // History lives under Review (#176): the right panel's band names
+        // Review as the shown destination, with History and Expand.
+        let t = Pink::get(cx);
+        let band = right_panel::band(
+            "commit-history",
+            right_panel::Destination::Review,
+            [
+                right_panel::action(
+                    "commit-history-history",
+                    right_panel::ICON_HISTORY,
+                    "History",
+                    &t,
+                )
+                .into_any_element(),
+                right_panel::action(
+                    "commit-history-expand",
+                    right_panel::ICON_EXPAND,
+                    "Expand",
+                    &t,
+                )
+                .into_any_element(),
+            ],
+            &t,
+        );
+        div()
+            .w(px(660.0))
+            .flex()
+            .flex_col()
+            .gap(px(4.0))
+            .child(band)
+            .child(history)
     })
 }
 
