@@ -53,6 +53,7 @@ use gpui::{
 
 use crate::{
     HoverFill,
+    components::cited_answer as cited,
     motion::{self, DISCLOSURE, TOOL_CONNECTOR_REVEAL, TOOL_ROW_REVEAL},
     pink::{
         self, FillTier, Pink,
@@ -111,7 +112,6 @@ const DISCLOSURE_CHEVRON_SIZE: f32 = 12.;
 const TRAIL_TILE: f32 = 18.;
 const HEADER_GROUP: &str = "tool-header";
 /// Pink: `badges.rs` `BadgeCard`.
-const CARD_WIDTH: f32 = 320.;
 /// Pink: `markdown/veil.rs`.
 const VEIL_EMA_SEED_MS: f32 = 160.;
 const VEIL_MIN_FADE_MS: f32 = 120.;
@@ -1411,79 +1411,28 @@ struct CitationCard {
 impl Render for CitationCard {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = Pink::get(cx);
-        let passage = div()
-            .flex()
-            .flex_row()
-            .gap(px(space::SM))
-            .p(px(space::SM))
-            .rounded(px(radius::SM))
-            .bg(t.ink(0.05))
-            .child(
-                div()
-                    .flex_none()
-                    .w(px(2.))
-                    .rounded(px(1.))
-                    .bg(t.solid.opacity(0.35)),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .gap(px(space::XS))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_row()
-                            .items_center()
-                            .gap(px(space::S6))
-                            .font_family(pink::MONO)
-                            .text_size(px(pink::text::CAPTION))
-                            .line_height(px(14.))
-                            .text_color(t.text_faint)
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .truncate()
-                                    .child(self.source.site.clone()),
-                            )
-                            .child(
-                                div()
-                                    .flex_none()
-                                    .px(px(space::XS))
-                                    .rounded(px(3.))
-                                    .bg(t.ink(0.10))
-                                    .child(self.number.to_string()),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(pink::text::FOOTNOTE))
-                            .line_height(px(16.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(t.text)
-                            .child(self.source.title.clone()),
-                    )
-                    .when(!self.source.snippet.is_empty(), |el| {
-                        el.child(
-                            div()
-                                .min_w_0()
-                                .text_size(px(pink::text::FOOTNOTE))
-                                .line_height(px(16.))
-                                .text_color(t.readable_muted(0.85))
-                                .child(self.source.snippet.clone()),
-                        )
-                    }),
-            );
+        // The passage row is the `pink-cited-answer` package's preview.
+        let passage = cited::preview(
+            &cited::PreviewStyle {
+                row: t.ink(0.05),
+                bar: t.solid.opacity(0.35),
+                site: t.text_faint,
+                tag: t.ink(0.10),
+                title: t.text,
+                snippet: t.readable_muted(0.85),
+            },
+            pink::MONO,
+            Some(self.number.to_string().into()),
+            self.source.site.clone(),
+            self.source.title.clone(),
+            (!self.source.snippet.is_empty()).then(|| self.source.snippet.clone()),
+        );
         pink::popover_card(&t)
             .bg(t.tooltip_surface())
-            .w(px(CARD_WIDTH))
-            .p(px(space::S6))
+            .w(cited::ui_rems(cited::PREVIEW_W))
+            .p(cited::ui_rems(cited::PREVIEW_PAD))
             .flex()
             .flex_col()
-            .gap(px(space::XS))
             .child(passage)
     }
 }
