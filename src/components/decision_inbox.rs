@@ -7,7 +7,7 @@
 //! `render_wizard`): the r26 composer pill, a tracked uppercase header with a
 //! "1/3" counter, the question, two numbered option rows and a footer with
 //! "Answer later" and Send. Every other decision is a one-line card (Pink:
-//! transcript.rs `async_question_card`): an accent edge and "Open · click to
+//! transcript.rs `async_question_card`): an accent edge and "Open, click to
 //! answer" while it waits, a hairline and "Answered: …, click to change"
 //! once it has settled.
 //!
@@ -35,7 +35,7 @@ use web_time::Duration;
 
 use gpui::{
     AnyView, App, Context, Div, ElementId, Entity, FocusHandle, FontWeight, KeyDownEvent, Role,
-    SharedString, Stateful, Task, Toggled, Window, div, phi, prelude::*, px, svg,
+    SharedString, Stateful, Task, Toggled, Window, div, phi, prelude::*, px,
 };
 
 use crate::{
@@ -44,9 +44,22 @@ use crate::{
         question_card as card,
     },
     motion::{self, TOOL_ROW_REVEAL, TRANSCRIPT_IN, TRANSCRIPT_IN_RISE},
-    pink::{self, ButtonKind, ControlSize, Pink, layout, radius, space},
+    pink::{self, ButtonKind, ControlSize, Pink, layout, space},
     story,
 };
+
+#[allow(dead_code)]
+mod package {
+    include!("../../components/decision-inbox/src/lib.rs");
+}
+use package as inbox;
+pub use package::{
+    CARD_GAP_Y, CARD_H, CARD_PAD_X, CARD_PART_GAP, CARD_RADIUS, CARD_TEXT, CardStyle, FACT_GAP,
+    FACT_TEXT, ICON, TILE, TILE_RADIUS, TITLE_MAX_W, fact, facts, ui_rems,
+};
+
+/// The package's card, under the name the gallery's tests import.
+pub use package::card;
 
 pub const NAME: &str = "Decision Inbox";
 pub const DESCRIPTION: &str = "Decisions waiting on you under a Needs you heading: the current one opens in the question panel with two numbered answers, the rest wait as one-line cards, and answered ones settle into a record you can click to change";
@@ -61,8 +74,6 @@ const HEADING_H: f32 = 28.;
 /// Above every Activity section but the first (Pink spaces.rs
 /// `SIDEBAR_SECTION_GAP`).
 const SECTION_GAP: f32 = 12.;
-/// The transcript card's row (Pink transcript.rs `async_question_card`).
-const CARD_H: f32 = 34.;
 
 /// Which of the two options answered a decision: option 1 or option 2.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -535,8 +546,21 @@ fn decision_card(
     let ring = t.focus_ring();
     let hover = t.ink(0.07);
     let (state, id) = (state.clone(), d.id.clone());
-    let card = div().py(px(4.)).w_full().child(
-        div()
+    // Drawn by the `pink-decision-inbox` package.
+    let style = inbox::CardStyle {
+        border: if answered {
+            t.hairline(0.08)
+        } else {
+            t.accent.opacity(0.35)
+        },
+        background: t.ink(0.045),
+        tile: t.ink(0.09),
+        icon: t.content_muted,
+        title: t.text.opacity(0.85),
+        status: if answered { t.content_muted } else { t.accent },
+    };
+    let card = div().py(inbox::ui_rems(inbox::CARD_GAP_Y)).w_full().child(
+        inbox::card(&style, ICON_QUESTION, d.title.clone(), status.clone())
             .id(eid(format!("{key}-card-{}", d.id)))
             .role(Role::Button)
             .aria_label(format!("{}, {status}", d.title))
@@ -547,61 +571,7 @@ fn decision_card(
             .on_click(move |_, window, cx| {
                 state.update(cx, |s, cx| s.open(id.clone(), window, cx));
             })
-            .h(px(CARD_H))
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(px(8.))
-            .overflow_hidden()
-            .rounded(px(radius::LG))
-            .border_1()
-            .border_color(if answered {
-                t.hairline(0.08)
-            } else {
-                t.accent.opacity(0.35)
-            })
-            .bg(t.ink(0.045))
-            .hover(move |style| style.bg(hover))
-            .px(px(8.))
-            .text_size(px(12.))
-            .child(
-                div()
-                    .flex_none()
-                    .size(px(20.))
-                    .rounded(px(radius::SM))
-                    .bg(t.ink(0.09))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(
-                        svg()
-                            .path(ICON_QUESTION)
-                            .flex_none()
-                            .size(px(12.))
-                            .text_color(t.content_muted),
-                    ),
-            )
-            .child(
-                div()
-                    .flex_none()
-                    .max_w(px(320.))
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .text_ellipsis()
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(t.text.opacity(0.85))
-                    .child(d.title.clone()),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .text_ellipsis()
-                    .text_color(if answered { t.content_muted } else { t.accent })
-                    .child(status),
-            ),
+            .hover(move |style| style.bg(hover)),
     );
     // Pink's transcript rows arrive over `TOOL_ROW_REVEAL`, rising 4 px.
     motion::rise_in(
