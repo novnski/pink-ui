@@ -29,6 +29,16 @@ use gpui::{
 };
 use web_time::Instant;
 
+#[allow(dead_code)]
+mod package {
+    include!("../../components/autonomy-dial/src/lib.rs");
+}
+use package as dial;
+pub use package::{
+    EMPTY_TEXT, GROUP_GAP, HEAD_H, HEAD_TEXT, HeadingStyle, LABEL_TEXT, MARK_GAP, MARK_SLOT,
+    META_TEXT, PAD_X, ROW_H, RowStyle, empty, group, groups, heading, row, ui_rems,
+};
+
 use crate::{
     HoverFill,
     motion::{self, FADE_QUICK, MENU_OUT, MENU_RISE_DOWN, RESORT},
@@ -54,16 +64,9 @@ const CHIP_ICON: f32 = 16.;
 /// Control tooltips wrap past this many characters (Pink: pickers.rs
 /// `TOOLTIP_WRAP_CHARS`).
 const TOOLTIP_WRAP_CHARS: usize = 40;
-/// A group heading and the gap above the second one (Pink: spaces.rs
-/// `SIDEBAR_DISCLOSURE_HEADER_HEIGHT`, `SIDEBAR_SECTION_GAP`).
-const HEAD_H: f32 = 28.;
-const SECTION_GAP: f32 = 12.;
-/// One action row (Pink: shell.rs `compact_chat_row_height`) and its leading
-/// grid, a 16 glyph slot then an 8 gap (`SIDEBAR_MARK_SLOT`,
-/// `SIDEBAR_MARK_GAP`).
-const ROW_H: f32 = 32.;
-const MARK_SLOT: f32 = 16.;
-const MARK_GAP: f32 = 8.;
+// The group heading, row and gap sizes are the package's (`HEAD_H`,
+// `ROW_H`, `GROUP_GAP`): Pink's spaces.rs sidebar disclosure header and
+// section gap, and shell.rs `compact_chat_row_height`.
 
 type LevelHandler = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 type LockHandler = Rc<dyn Fn(&SharedString, bool, &mut Window, &mut App)>;
@@ -653,37 +656,18 @@ fn group_heading(
     t: &Pink,
 ) -> Stateful<Div> {
     let noun = if count == 1 { "action" } else { "actions" };
-    div()
+    let style = HeadingStyle {
+        title: t.readable_faint(0.9),
+        count: t.readable_faint(0.7),
+    };
+    dial::heading(&style, label, count)
         .id(eid(id))
         .absolute()
         .left_0()
         .right_0()
         .top(px(y))
-        .h(px(HEAD_H))
-        .px(px(8.))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(8.))
         .role(Role::Heading)
         .aria_label(SharedString::from(format!("{label}, {count} {noun}")))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .text_size(px(11.))
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(t.readable_faint(0.9))
-                .child(label),
-        )
-        .child(
-            div()
-                .flex_none()
-                .text_size(px(11.))
-                .text_color(t.readable_faint(0.7))
-                .child(count.to_string()),
-        )
 }
 
 /// The two groups. Every action sits in one of them, and a level change or
@@ -706,7 +690,7 @@ fn lanes(
         .filter(|a| unattended(a, level, locked))
         .count();
     let asks = actions.len() - runs;
-    let second = HEAD_H + runs.max(1) as f32 * ROW_H + SECTION_GAP;
+    let second = HEAD_H + runs.max(1) as f32 * ROW_H + GROUP_GAP;
     let second_y = motion::follow(&format!("{key}-head-b"), second, RESORT);
     let height = motion::follow(
         &format!("{key}-lanes-h"),
@@ -716,18 +700,11 @@ fn lanes(
 
     // Shown once the departing rows have cleared the slot.
     let empty = |ix: usize, copy: &'static str, y: f32| {
-        div()
+        dial::empty(t.text_muted, copy)
             .absolute()
             .left_0()
             .right_0()
             .top(px(y))
-            .h(px(ROW_H))
-            .px(px(8.))
-            .flex()
-            .items_center()
-            .text_size(px(12.))
-            .text_color(t.text_muted)
-            .child(copy)
             .with_animation(
                 ElementId::NamedInteger(format!("{key}-empty-{ix}").into(), rev),
                 FADE_QUICK.with_delay(RESORT.duration_ms).animation(),
@@ -801,51 +778,17 @@ fn action_row(
 ) -> Div {
     let group: SharedString = format!("{key}-row-{}", action.id).into();
     let (meta, tone) = action.risk.meta(t);
-    div()
+    let style = RowStyle {
+        icon: t.text_muted,
+        label: t.text,
+        meta: tone,
+    };
+    dial::row(&style, action.icon.clone(), action.label.clone(), meta)
         .absolute()
         .left_0()
         .right_0()
         .top(px(y))
-        .h(px(ROW_H))
-        .px(px(8.))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(MARK_GAP))
         .group(group.clone())
-        .child(
-            div()
-                .size(px(MARK_SLOT))
-                .flex_none()
-                .flex()
-                .items_center()
-                .justify_center()
-                .when_some(action.icon.clone(), |slot, icon| {
-                    slot.child(
-                        svg()
-                            .path(icon)
-                            .size(px(MARK_SLOT))
-                            .flex_none()
-                            .text_color(t.text_muted),
-                    )
-                }),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .text_size(px(13.))
-                .text_color(t.text)
-                .child(action.label.clone()),
-        )
-        .child(
-            div()
-                .flex_none()
-                .text_size(px(11.))
-                .text_color(tone)
-                .child(meta),
-        )
         .child(lock_button(
             key, action, is_locked, group, state, on_lock, t,
         ))
