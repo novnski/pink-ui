@@ -75,6 +75,7 @@ use crate::ActiveTheme;
 
 pub mod controls;
 pub mod loaders;
+pub mod right_panel;
 pub mod surfaces;
 
 pub use controls::*;

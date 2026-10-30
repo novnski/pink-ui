@@ -1,6 +1,12 @@
 //! Diff Viewer – a checkout's changes, file by file, the way Pink's changes
 //! pane shows them (Pink: changes.rs `Changes`).
 //!
+//! The diff is a Review surface in the right panel (#176): Review's summary
+//! opens it with `Diff`, and the panel's band reads `Review` (shown),
+//! `Files` and `More`, with History and Expand on the right
+//! ([`crate::pink::right_panel`]). Review's Diff always opens the working
+//! tree, never History or a pinned commit.
+//!
 //! The toolbar carries the scope dropdown (Working tree, Branch changes,
 //! Latest turn), the `{branch} → {base}` ref selector in branch scope, the
 //! Git pill and the unified ⇄ split, wrap and fold-all toggles (Pink:
@@ -54,7 +60,7 @@ use crate::{
         surface_toolbar,
     },
     motion::{self, DISCLOSURE, MENU_OUT, MENU_RISE_DOWN},
-    pink::{self, Pink, Syntax, TEXT_CONTRAST_TARGET, layout, loaders, radius},
+    pink::{self, Pink, Syntax, TEXT_CONTRAST_TARGET, layout, loaders, radius, right_panel},
     primitives::{InputEvent, TextInput},
     story,
 };
@@ -4042,7 +4048,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
         };
         let on_scope = demo.clone();
         let on_base = demo.clone();
-        DiffViewer::new("diff-viewer")
+        let viewer = DiffViewer::new("diff-viewer")
             .patch(demo_patch(scope, landed))
             .scope(scope)
             .preparing(!ready)
@@ -4077,7 +4083,33 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                 });
             })
             .width(780.)
-            .height(980.)
+            .height(780.);
+        // Review's Diff (#176): the right panel's band names Review as the
+        // shown destination, with History and Expand.
+        let t = Pink::get(cx);
+        let band = right_panel::band(
+            "diff-viewer",
+            right_panel::Destination::Review,
+            [
+                right_panel::action(
+                    "diff-viewer-history",
+                    right_panel::ICON_HISTORY,
+                    "History",
+                    &t,
+                )
+                .into_any_element(),
+                right_panel::action("diff-viewer-expand", right_panel::ICON_EXPAND, "Expand", &t)
+                    .into_any_element(),
+            ],
+            &t,
+        );
+        div()
+            .w(px(780.))
+            .flex()
+            .flex_col()
+            .gap(px(4.))
+            .child(band)
+            .child(viewer)
     })
 }
 
