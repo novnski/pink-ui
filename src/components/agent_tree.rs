@@ -28,7 +28,6 @@
 use std::{
     cell::Cell,
     collections::{HashMap, HashSet},
-    f32::consts::FRAC_PI_2,
     rc::Rc,
     sync::Arc,
     time::Duration,
@@ -36,8 +35,7 @@ use std::{
 
 use gpui::{
     AnyElement, AnyView, App, Div, ElementId, Entity, FocusHandle, FontWeight, Hsla, KeyDownEvent,
-    PathBuilder, Pixels, Point, Role, SharedString, Task, Transformation, Window, canvas, div,
-    point, prelude::*, px, radians, relative, svg,
+    Role, SharedString, Task, Window, div, prelude::*, px, relative, svg,
 };
 use web_time::Instant;
 
@@ -55,45 +53,24 @@ use crate::{
 pub const NAME: &str = "Agent Tree";
 pub const DESCRIPTION: &str = "A multi-agent run as a nested agents list: status, model, spend and runtime on every row, sub-agents on a rail that folds away, and an inspector with the selected agent's usage, Stop and Retry";
 
+#[allow(dead_code)]
+mod package {
+    include!("../../components/agent-tree/src/lib.rs");
+}
+pub use package::*;
+
 const ICON_BOT: &str = "icons/agent-tree/bot.svg";
 const ICON_CHEVRON: &str = "icons/agent-tree/alt-arrow-right.svg";
 
 // Agent row (Pink: `shell/agents.rs` `render_agents_section`), drawn by the
-// `pink-agent-row` package. Its sizes are rems: the outline scales its rows,
-// slots and rails by the window's rem size over 16.
-const ROW_PAD_X: f32 = ar::PAD_X;
-const ROW_PAD_Y: f32 = ar::PAD_Y;
-const DOT: f32 = ar::MARK;
+// `pink-agent-row` package, nested by the `pink-agent-tree` package (its
+// indents, activity rail and disclosure tile). Their sizes are rems: the
+// outline scales its rows, slots and rails by the window's rem size over 16.
 const STATUS_SIZE: f32 = ar::STATUS_TEXT;
-const TITLE_LINE: f32 = ar::TITLE_TEXT * ar::LINE_HEIGHT;
-/// Between rows (the list's `gap(2)`).
-const ROW_GAP: f32 = ar::LIST_GAP;
 const ROW_H: f32 = ar::ROW_HEIGHT;
-/// A row and the gap under it: the rail runs through both.
-const SLOT_H: f32 = ROW_H + ROW_GAP;
-const DOT_CY: f32 = ROW_PAD_Y + TITLE_LINE / 2.0;
 /// An arriving row's content settles this far up (Pink: `transcript.rs`
 /// `tool_chip`, `top(4 * (1 - content_reveal))`).
 const ROW_RISE: f32 = 4.0;
-
-// Activity rail (Pink: `transcript.rs` `activity_rail`, trunk x 12.5, elbow
-// radius 6, branch to x 28, glyph at x 32).
-const RAIL_ALPHA: f32 = 0.12;
-const BEND_RADIUS: f32 = 6.0;
-/// Trunk to the child's status glyph.
-const RAIL_SPAN: f32 = 32.0 - 12.5;
-/// The break between the branch tip and the glyph.
-const BRANCH_GAP: f32 = 32.0 - 28.0;
-/// The trunk hangs from the parent's dot.
-const TRUNK_X: f32 = ROW_PAD_X + DOT / 2.0;
-/// Each level puts the child's dot at the rail's glyph position.
-const INDENT: f32 = TRUNK_X + RAIL_SPAN - ROW_PAD_X;
-/// The trunk leaves the parent's dot after the same break.
-const RAIL_TOP: f32 = DOT_CY + DOT / 2.0 + BRANCH_GAP;
-
-// Disclosure tile (Pink: `transcript.rs` `chip_header_row` trail).
-const TILE: f32 = 18.0;
-const CHEVRON: f32 = 12.0;
 const ROW_GROUP: &str = "agent-row";
 
 /// The list column: Pink's widest right pane.
@@ -845,17 +822,7 @@ fn slot(node: &AgentNode, depth: usize, lines: &[Option<SharedString>], c: &Ctx)
         .h(px(SLOT_H * c.scale * reveal))
         .overflow_hidden()
         .child(row(node, depth, reveal, c))
-        .child(
-            canvas(
-                |_, _, _| (),
-                move |bounds, _, window, _| paint_rail(&rail, bounds.origin, color, scale, window),
-            )
-            .absolute()
-            .top_0()
-            .left_0()
-            .w_full()
-            .h(px(SLOT_H * scale)),
-        )
+        .child(package::rail(rail, color, scale))
         .into_any_element()
 }
 
@@ -884,7 +851,7 @@ fn row(node: &AgentNode, depth: usize, reveal: f32, c: &Ctx) -> impl IntoElement
 
     // Leaves keep the tile's slot, so every status word ends on one column.
     let fold_tile = if !has_kids {
-        div().size(px(TILE)).flex_none().into_any_element()
+        tile_slot().into_any_element()
     } else {
         let (progress, _) = c.fold(&node.id);
         let state = c.state.clone();
@@ -893,33 +860,25 @@ fn row(node: &AgentNode, depth: usize, reveal: f32, c: &Ctx) -> impl IntoElement
         node.descendant_ids(&mut hidden);
         // Pink's trailing tile: half strength at rest, full under the
         // pointer; the chevron turns 0 → 90° with the fold.
-        div()
-            .id(eid(format!("{}-fold-{id}", c.key)))
-            .size(px(TILE))
-            .flex_none()
-            .opacity(0.5)
-            .group_hover(ROW_GROUP, |s| s.opacity(1.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_pointer()
-            .child(
-                svg()
-                    .path(ICON_CHEVRON)
-                    .size(px(CHEVRON))
-                    .with_transformation(Transformation::rotate(radians(FRAC_PI_2 * progress)))
-                    .text_color(t.content_faint)
-                    .group_hover(ROW_GROUP, |s| s.text_color(t.text)),
-            )
-            .on_click(move |_, _, cx| {
-                cx.stop_propagation();
-                state.update(cx, |s, cx| {
-                    let fold = !s.folded.contains(&fold_id);
-                    s.set_folded(&fold_id, fold, &hidden);
-                    cx.notify();
-                });
-            })
-            .into_any_element()
+        disclosure(
+            ICON_CHEVRON,
+            progress,
+            t.content_faint,
+            Some((ROW_GROUP, t.text)),
+        )
+        .id(eid(format!("{}-fold-{id}", c.key)))
+        .opacity(0.5)
+        .group_hover(ROW_GROUP, |s| s.opacity(1.0))
+        .cursor_pointer()
+        .on_click(move |_, _, cx| {
+            cx.stop_propagation();
+            state.update(cx, |s, cx| {
+                let fold = !s.folded.contains(&fold_id);
+                s.set_folded(&fold_id, fold, &hidden);
+                cx.notify();
+            });
+        })
+        .into_any_element()
     };
 
     let style = ar::row_style(failed, t);
@@ -975,7 +934,7 @@ fn row(node: &AgentNode, depth: usize, reveal: f32, c: &Ctx) -> impl IntoElement
         .opacity(reveal)
         .w_full()
         .h(px(ROW_H * c.scale))
-        .pl(px((ROW_PAD_X + depth as f32 * INDENT) * c.scale))
+        .pl(px(indent(depth) * c.scale))
         .cursor_pointer()
         .map(|el| {
             if is_selected {
@@ -1001,33 +960,6 @@ fn row(node: &AgentNode, depth: usize, reveal: f32, c: &Ctx) -> impl IntoElement
 // ---------------------------------------------------------------------------
 // Activity rail
 // ---------------------------------------------------------------------------
-
-/// What one slot's rail draws (Pink: `transcript.rs` `activity_rail`).
-#[derive(Clone, Default)]
-struct Rail {
-    /// Ancestor trunks passing this slot: x and opacity.
-    guides: Vec<(f32, f32)>,
-    /// The elbow off the parent's trunk.
-    elbow: Option<Elbow>,
-    /// The trunk this row starts for its sub-agents: x, drawn share,
-    /// opacity.
-    start: Option<(f32, f32, f32)>,
-}
-
-#[derive(Clone, Copy)]
-struct Elbow {
-    x: f32,
-    /// Trunk from the slot top to the bend.
-    incoming: f32,
-    /// The bend and the branch to the dot.
-    branch: f32,
-    /// Trunk from the bend on to the slot bottom, for a later sibling.
-    continuation: f32,
-}
-
-fn trunk_x(level: usize) -> f32 {
-    level as f32 * INDENT + TRUNK_X
-}
 
 /// The rail for `node`'s slot. The connector draws on Pink's sequence: a
 /// later sibling's arrival first extends the trunk past the rows above it,
@@ -1062,119 +994,6 @@ fn rail_for(node: &AgentNode, depth: usize, lines: &[Option<SharedString>], c: &
         }
     }
     rail
-}
-
-fn union_path() -> PathBuilder {
-    PathBuilder::fill().with_style(gpui::PathStyle::Fill(
-        gpui::FillOptions::default().with_fill_rule(gpui::FillRule::NonZero),
-    ))
-}
-
-/// Paints a slot's rail. Fully drawn segments share one nonzero path so the
-/// joints never double their alpha; fading ones paint on their own.
-fn paint_rail(rail: &Rail, origin: Point<Pixels>, color: Hsla, scale: f32, window: &mut Window) {
-    let at = |x: f32, y: f32| point(origin.x + px(x * scale), origin.y + px(y * scale));
-    let mut solid = union_path();
-    let mut faded: Vec<(PathBuilder, f32)> = Vec::new();
-    let mut add = |points: &[Point<Pixels>], alpha: f32| {
-        if alpha >= 1. {
-            ribbon(&mut solid, points);
-        } else if alpha > 0. {
-            let mut path = union_path();
-            ribbon(&mut path, points);
-            faded.push((path, alpha));
-        }
-    };
-    for &(x, alpha) in &rail.guides {
-        add(&[at(x, 0.), at(x, SLOT_H)], alpha);
-    }
-    if let Some(elbow) = rail.elbow {
-        let bend_y = DOT_CY - BEND_RADIUS;
-        if elbow.incoming > 0. {
-            let mut bottom = bend_y * elbow.incoming;
-            if elbow.incoming >= 1. && elbow.continuation > 0. {
-                bottom = bend_y + (SLOT_H - bend_y) * elbow.continuation;
-            }
-            add(&[at(elbow.x, 0.), at(elbow.x, bottom)], 1.);
-        }
-        if elbow.branch > 0. {
-            let points: Vec<_> = branch_points(elbow.branch)
-                .into_iter()
-                .map(|p| at(elbow.x + p.x, bend_y + p.y))
-                .collect();
-            add(&points, 1.);
-        }
-    }
-    if let Some((x, drawn, alpha)) = rail.start {
-        let bottom = RAIL_TOP + (SLOT_H - RAIL_TOP) * drawn;
-        add(&[at(x, RAIL_TOP), at(x, bottom)], alpha);
-    }
-    if let Ok(path) = solid.build() {
-        window.paint_path(path, color);
-    }
-    for (path, alpha) in faded {
-        if let Ok(path) = path.build() {
-            window.paint_path(path, color.opacity(alpha));
-        }
-    }
-}
-
-/// The elbow and branch, revealed by distance so the bend and the straight
-/// leg draw at one speed (Pink: `transcript.rs` `activity_branch_points`).
-fn branch_points(progress: f32) -> Vec<Point<f32>> {
-    let mut path: Vec<_> = (0..=24)
-        .map(|step| {
-            let t = step as f32 / 24.0;
-            point(BEND_RADIUS * t * t, BEND_RADIUS * (2.0 * t - t * t))
-        })
-        .collect();
-    path.push(point(RAIL_SPAN - BRANCH_GAP, BEND_RADIUS));
-    if progress >= 1.0 {
-        return path;
-    }
-    let lengths: Vec<_> = path
-        .windows(2)
-        .map(|pair| (pair[1].x - pair[0].x).hypot(pair[1].y - pair[0].y))
-        .collect();
-    let mut remaining = lengths.iter().sum::<f32>() * progress.clamp(0.0, 1.0);
-    let mut visible = vec![path[0]];
-    for (pair, length) in path.windows(2).zip(lengths) {
-        if remaining <= 0.0 {
-            break;
-        }
-        let t = (remaining / length).min(1.0);
-        visible.push(point(
-            motion::lerp(pair[0].x, pair[1].x, t),
-            motion::lerp(pair[0].y, pair[1].y, t),
-        ));
-        remaining -= length;
-    }
-    visible
-}
-
-/// A 1 px ribbon along `points`, as a clockwise contour (Pink:
-/// `transcript.rs` `activity_ribbon`).
-fn ribbon(path: &mut PathBuilder, points: &[Point<Pixels>]) {
-    if points.len() < 2 {
-        return;
-    }
-    let mut left = Vec::with_capacity(points.len());
-    let mut right = Vec::with_capacity(points.len());
-    for (ix, p) in points.iter().enumerate() {
-        let a = points[ix.saturating_sub(1)];
-        let b = points[(ix + 1).min(points.len() - 1)];
-        let dx = f32::from(b.x - a.x);
-        let dy = f32::from(b.y - a.y);
-        let length = dx.hypot(dy).max(0.0001);
-        let normal = point(px(-dy / length * 0.5), px(dx / length * 0.5));
-        left.push(*p + normal);
-        right.push(*p - normal);
-    }
-    path.move_to(left[0]);
-    for p in left.iter().skip(1).chain(right.iter().rev()) {
-        path.line_to(*p);
-    }
-    path.close();
 }
 
 // ---------------------------------------------------------------------------
