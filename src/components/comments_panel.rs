@@ -32,11 +32,21 @@ use gpui::{
 use crate::{
     components::comment_card,
     motion,
-    pink::{
-        self, ControlSize, Pink, Segment, chrome, icon_size, layout, loaders, radius, space, text,
-    },
+    pink::{self, ControlSize, Pink, Segment, icon_size, layout, loaders, radius, space, text},
     primitives::{InputEvent, TextInput},
     story,
+};
+
+// The pane's pieces (toolbar, heading and count, byline, note and replies
+// line) are the `pink-comments-panel` package, compiled here in place; PINK
+// pins the same source.
+mod package {
+    include!("../../components/comments-panel/src/lib.rs");
+}
+pub use package::{
+    BYLINE_HEIGHT, ENTRY_GAP, LINE_HEIGHT, PaneStyle, SWITCH_WIDTH, TITLE_INSET, TOOLBAR_HEIGHT,
+    byline, content, count, entry, entry_height, heading, list, name, note, pane, replies,
+    replies_label, time, toolbar,
 };
 
 pub const NAME: &str = "Comments Panel";
@@ -76,11 +86,6 @@ const CODE_PAD_LEFT: f32 = 12.0;
 const POPUP_MAX_HEIGHT: f32 = 320.0;
 const POPUP_LIST_MAX_HEIGHT: f32 = 312.0;
 const POPUP_GAP: f32 = 6.0;
-/// Pink shell/board/filters.rs: a two-option segmented switch, 150 wide.
-const SWITCH_WIDTH: f32 = 150.0;
-/// The pane title starts where the cards' text does (past the bar and the
-/// card's 16px inset), measured from the toolbar's own inset.
-const TITLE_INSET: f32 = ACCENT_BAR_WIDTH + space::S16 - chrome::EDGE_INSET;
 
 type IdHandler = Rc<dyn Fn(SharedString, &mut Window, &mut App)>;
 
@@ -544,46 +549,13 @@ impl RenderOnce for CommentsPanel {
         // (Pink surface_chrome `toolbar`; the count is the activity section
         // heading's trailing count; the switch is Pink `button::segmented`)
         let switch_state = state.clone();
-        let toolbar = div()
-            .h(px(layout::TITLEBAR_HEIGHT))
-            .w_full()
-            .flex_none()
-            .px(px(chrome::EDGE_INSET))
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(chrome::CONTROL_GAP))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .pl(px(TITLE_INSET))
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap(px(space::S6))
-                    .child(
-                        div()
-                            .min_w_0()
-                            .truncate()
-                            .text_size(px(text::BODY))
-                            .line_height(px(pink::TextStyle::Body.line_height()))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(t.text)
-                            .child("Comments"),
-                    )
-                    .when(open_count > 0, |d| {
-                        d.child(
-                            div()
-                                .flex_none()
-                                .text_size(px(text::CAPTION))
-                                .line_height(px(pink::TextStyle::Caption.line_height()))
-                                .font_features(pink::tabular_figures())
-                                .text_color(t.readable_faint(0.7))
-                                .child(format!("{open_count}")),
-                        )
-                    }),
-            )
+        let toolbar = toolbar()
+            .child(heading("Comments", t.text).when(open_count > 0, |d| {
+                d.child(
+                    package::count(format!("{open_count}"), t.readable_faint(0.7))
+                        .font_features(pink::tabular_figures()),
+                )
+            }))
             .child(pink::segmented(
                 format!("{key}-tabs"),
                 vec![
@@ -649,34 +621,16 @@ impl RenderOnce for CommentsPanel {
             let header = card_header(location.clone(), &t).child(action);
 
             // Who wrote it and when (the sidebar's 11px tabular stamp)
-            let byline = div()
-                .h(px(CARD_LINE_HEIGHT))
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(space::S6))
-                .min_w_0()
-                .child(
-                    div()
-                        .min_w_0()
-                        .truncate()
-                        .text_size(px(text::FOOTNOTE))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(t.text)
-                        .child(c.author.clone()),
-                )
-                .when(!c.time.is_empty(), |d| {
-                    d.child(
-                        div()
-                            .flex_none()
-                            .whitespace_nowrap()
-                            .text_size(px(text::CAPTION))
-                            .line_height(px(pink::TextStyle::Caption.line_height()))
-                            .font_features(pink::tabular_figures())
-                            .text_color(t.content_faint)
-                            .child(c.time.clone()),
-                    )
-                });
+            let byline =
+                byline()
+                    .child(name(c.author.clone(), t.text))
+                    .when(!c.time.is_empty(), |d| {
+                        d.child(
+                            time(c.time.clone(), t.content_faint)
+                                .line_height(px(pink::TextStyle::Caption.line_height()))
+                                .font_features(pink::tabular_figures()),
+                        )
+                    });
 
             let edit = c.edit.clone().map(|edit| {
                 let (_, since) = edit_seen.get(&c.id).copied().unwrap_or((edit.status, None));
