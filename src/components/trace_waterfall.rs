@@ -32,7 +32,7 @@ use web_time::{Duration, Instant};
 use gpui::{
     AnyElement, AnyView, App, ClickEvent, Div, ElementId, Entity, FocusHandle, FontWeight,
     IntoElement, KeyDownEvent, MouseButton, PathBuilder, Pixels, Point, SharedString, Stateful,
-    TextRun, Transformation, Window, canvas, div, font, point, prelude::*, px, radians, svg,
+    Transformation, Window, canvas, div, point, prelude::*, px, radians, svg,
 };
 
 use crate::{
@@ -48,6 +48,17 @@ use crate::{
     },
     story,
 };
+
+/// The `pink-trace-waterfall` package (`components/trace-waterfall`): the
+/// time axis, its ticks and grid, every step's duration bar and label and
+/// the time and cost formats, compiled here unchanged. PINK draws a
+/// finished turn's calls with it.
+#[allow(dead_code)]
+pub mod package {
+    include!("../../components/trace-waterfall/src/lib.rs");
+}
+
+use package::fmt_secs;
 
 pub const NAME: &str = "Trace Waterfall";
 pub const DESCRIPTION: &str = "An agent run against time: its sub-agents, model calls and tool calls on an activity rail that folds, each with a duration bar and its time and cost on a shared axis, a live working line while it runs and a readout of the step under the pointer";
@@ -101,10 +112,6 @@ const SAME_ARRIVAL: f32 = 0.05;
 const AXIS_H: f32 = 30.0;
 /// A step's bar: Pink's 6 pt usage-meter capsule.
 const BAR_H: f32 = 6.0;
-const PAD_L: f32 = 12.0;
-/// Room after the axis for the longest bar's label.
-const PAD_R: f32 = 88.0;
-const LABEL_GAP: f32 = 6.0;
 /// Pink's meta / timer size and line.
 const META_SIZE: f32 = 11.0;
 const META_LINE: f32 = 14.0;
@@ -368,45 +375,9 @@ fn descendants(spans: &[TraceSpan], ix: usize) -> Vec<usize> {
     out
 }
 
-/// A tick step that gives at most six ticks over `scale` seconds.
-fn tick_step(scale: f32) -> f32 {
-    [1., 2., 5., 10., 15., 20., 30., 60., 120., 300.]
-        .into_iter()
-        .find(|step| scale / step <= 6.)
-        .unwrap_or(600.)
-}
-
-/// A step's duration: tenths under 10 s, whole seconds to a minute, then
-/// Pink's `1m 05s` (Pink `native_agents::duration_label`).
-fn fmt_secs(s: f32) -> String {
-    let s = s.max(0.);
-    if s < 10. {
-        format!("{s:.1}s")
-    } else if s < 60. {
-        format!("{s:.0}s")
-    } else {
-        let whole = s as u32;
-        format!("{}m {:02}s", whole / 60, whole % 60)
-    }
-}
-
-fn fmt_tick(s: f32) -> String {
-    let whole = s.round() as u32;
-    match (whole / 60, whole % 60) {
-        (0, secs) => format!("{secs}s"),
-        (mins, 0) => format!("{mins}m"),
-        (mins, secs) => format!("{mins}m {secs}s"),
-    }
-}
-
-/// Live spend (Pink `usage_live::live_money`): mills under a dollar.
+/// Live spend in the package's format (Pink `usage_live::live_money`).
 fn fmt_cost(c: f32) -> String {
-    if c < 1. {
-        format!("${:.3}", c.max(0.))
-    } else {
-        let cents = (c * 100.).round() as u64;
-        format!("${}.{:02}", cents / 100, cents % 100)
-    }
+    package::fmt_cost(f64::from(c))
 }
 
 /// Token counts (Pink `usage::compact_tokens`): `640`, `2.14K`, `32.1K`.
@@ -508,23 +479,18 @@ fn fold_at(open: bool, toggled: Option<(Instant, f32)>, clock: Instant, reduced:
     }
 }
 
-/// The time axis: seconds to x inside the timeline column.
+/// The package's time axis, and the pixels it spans inside the timeline
+/// column for the now-line.
 #[derive(Clone, Copy)]
 struct Axis {
-    scale: f32,
+    trace: package::TraceAxis,
     width: f32,
 }
 
 impl Axis {
     fn x(&self, s: f32) -> f32 {
-        PAD_L + (s / self.scale).clamp(0., 1.2) * self.width
+        package::PAD_L + self.trace.fraction(s) * self.width
     }
-}
-
-/// A bar's label and its shaped width.
-struct BarLabel {
-    text: String,
-    width: f32,
 }
 
 impl RenderOnce for TraceWaterfall {
@@ -650,54 +616,20 @@ impl RenderOnce for TraceWaterfall {
         let scale = motion::follow(&format!("{key}-scale"), target_scale, EMPHASIZED);
         let col_w = self.width - 2. - TREE_W;
         let axis = Axis {
-            scale,
-            width: col_w - PAD_L - PAD_R,
+            trace: package::TraceAxis::new(scale),
+            width: col_w - package::PAD_L - package::PAD_R,
         };
 
-        // Bar labels, shaped so they can flip to the bar's left near the edge.
-        let mut label_font = font(pink::SANS);
-        label_font.features = pink::tabular_figures();
-        let measure = |text: &str, weight: FontWeight, window: &mut Window| -> f32 {
-            let mut font = label_font.clone();
-            font.weight = weight;
-            let run = TextRun {
-                len: text.len(),
-                font,
-                color: t.text,
-                background_color: None,
-                underline: None,
-                strikethrough: None,
-            };
-            f32::from(
-                window
-                    .text_system()
-                    .shape_line(
-                        SharedString::from(text.to_string()),
-                        px(META_SIZE),
-                        &[run],
-                        None,
-                    )
-                    .width(),
-            )
-        };
-        let slowest_w = measure("Slowest", FontWeight::MEDIUM, window) + LABEL_GAP;
-        let labels: Vec<Option<BarLabel>> = (0..n)
+        // Bar labels: the time, then the cost once any has accrued.
+        let labels: Vec<Option<String>> = (0..n)
             .map(|ix| {
                 let span = &spans[ix];
                 if span.start > now {
                     return None;
                 }
-                let mut text = fmt_secs(span.end.min(now) - span.start);
                 let (_, _, cost) = totals(&spans, ix, now);
-                if cost > 0. {
-                    text.push_str(", ");
-                    text.push_str(&fmt_cost(cost));
-                }
-                let mut width = measure(&text, FontWeight::NORMAL, window);
-                if slowest == Some(ix) {
-                    width += slowest_w;
-                }
-                Some(BarLabel { text, width })
+                let cost = (cost > 0.).then_some(f64::from(cost));
+                Some(package::bar_label(span.end.min(now) - span.start, cost).to_string())
             })
             .collect();
 
@@ -726,7 +658,6 @@ impl RenderOnce for TraceWaterfall {
             selected,
             slowest,
             axis,
-            col_w,
             state: &state,
             act: &act,
         };
@@ -848,13 +779,6 @@ impl RenderOnce for TraceWaterfall {
             ));
 
         // ---- axis -------------------------------------------------------------
-        let step = tick_step(scale);
-        let mut ticks = Vec::new();
-        let mut s = 0.;
-        while s <= scale + 0.001 {
-            ticks.push(s);
-            s += step;
-        }
         let axis_row = div()
             .w_full()
             .h(px(AXIS_H))
@@ -874,19 +798,8 @@ impl RenderOnce for TraceWaterfall {
                     .child("Step"),
             )
             .child(
-                div()
-                    .relative()
-                    .flex_1()
-                    .h_full()
-                    .font_features(pink::tabular_figures())
-                    .children(ticks.iter().map(|s| {
-                        div()
-                            .absolute()
-                            .top(px((AXIS_H - META_LINE) / 2.))
-                            .left(px(axis.x(*s).round() + 4.))
-                            .whitespace_nowrap()
-                            .child(fmt_tick(*s))
-                    })),
+                package::axis_ticks(&axis.trace, t.readable_muted(0.85))
+                    .font_features(pink::tabular_figures()),
             );
 
         // ---- steps ------------------------------------------------------------
@@ -896,15 +809,7 @@ impl RenderOnce for TraceWaterfall {
             .bottom_0()
             .left(px(TREE_W))
             .right_0()
-            .children(ticks.iter().skip(1).map(|s| {
-                div()
-                    .absolute()
-                    .top_0()
-                    .bottom_0()
-                    .left(px(axis.x(*s).round()))
-                    .w(px(1.))
-                    .bg(t.hairline(0.06))
-            }));
+            .child(package::grid(&axis.trace, t.hairline(0.06)));
         let body = div()
             .relative()
             .w_full()
@@ -1030,12 +935,11 @@ struct Frame<'a> {
     reveal: &'a [f32],
     connector: &'a [f32],
     folds: &'a [Fold],
-    labels: &'a [Option<BarLabel>],
+    labels: &'a [Option<String>],
     collapsed: &'a HashSet<usize>,
     selected: Option<usize>,
     slowest: Option<usize>,
     axis: Axis,
-    col_w: f32,
     state: &'a Entity<TraceState>,
     act: &'a Act,
 }
@@ -1515,8 +1419,6 @@ impl Frame<'_> {
         let span = &self.spans[ix];
         let status = span.status(self.now);
         let slowest = self.slowest == Some(ix);
-        let x0 = self.axis.x(span.start);
-        let x1 = self.axis.x(span.end.min(self.now)).max(x0 + BAR_H);
         let color = match (span.kind, status) {
             (_, Status::Failed) => t.readable_tone(t.danger, 1.),
             (SpanKind::Agent, _) => t.fill(FillTier::Secondary),
@@ -1525,35 +1427,13 @@ impl Frame<'_> {
             _ if slowest => t.readable_tone(t.warning, 1.),
             _ => t.text_muted,
         };
-        let bar = div()
-            .absolute()
-            .left(px(x0))
-            .top(px((height - BAR_H) / 2.))
-            .w(px(x1 - x0))
-            .h(px(BAR_H))
-            .rounded_full()
-            .bg(color);
-        let label = self.labels[ix].as_ref().map(|label| {
-            let right = x1 + LABEL_GAP + label.width <= self.col_w - CELL_PAD_R;
-            let x = if right {
-                x1 + LABEL_GAP
-            } else {
-                (x0 - LABEL_GAP - label.width).max(4.)
-            };
+        let label = self.labels[ix].as_ref().map(|text| {
             div()
-                .absolute()
-                .left(px(x))
-                .top_0()
-                .h_full()
                 .flex()
                 .items_center()
-                .gap(px(LABEL_GAP))
-                .whitespace_nowrap()
-                .text_size(px(META_SIZE))
-                .line_height(px(META_LINE))
+                .gap(px(package::LABEL_GAP))
                 .font_features(pink::tabular_figures())
-                .text_color(t.content_faint)
-                .child(label.text.clone())
+                .child(text.clone())
                 .when(slowest, |label| {
                     label.child(
                         div()
@@ -1562,14 +1442,20 @@ impl Frame<'_> {
                             .child("Slowest"),
                     )
                 })
+                .into_any_element()
         });
-        div()
-            .relative()
-            .flex_1()
-            .h_full()
-            .when(reveal < 1., |cell| cell.opacity(reveal))
-            .child(bar)
-            .children(label)
+        package::bar_cell(
+            &self.axis.trace,
+            Some(span.start),
+            Some(span.end.min(self.now)),
+            label,
+            &package::BarStyle {
+                fill: color,
+                label: t.content_faint,
+            },
+        )
+        .h(px(height))
+        .when(reveal < 1., |cell| cell.opacity(reveal))
     }
 }
 
@@ -2052,9 +1938,9 @@ mod tests {
 
     #[test]
     fn ticks_stay_readable() {
-        assert_eq!(tick_step(8.), 2.);
-        assert_eq!(tick_step(25.), 5.);
-        assert_eq!(tick_step(45.), 10.);
+        assert_eq!(package::tick_step(8.), 2.);
+        assert_eq!(package::tick_step(25.), 5.);
+        assert_eq!(package::tick_step(45.), 10.);
     }
 
     #[test]
