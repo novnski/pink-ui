@@ -602,8 +602,38 @@ impl RenderOnce for TraceWaterfall {
         let scale = motion::follow(&format!("{key}-scale"), target_scale, EMPHASIZED);
         let axis = package::TraceAxis::new(scale);
 
-        // Bar labels: the time, then the cost once any has accrued.
-        let labels: Vec<Option<String>> = (0..n)
+        // Bar labels: the time, then the cost once any has accrued, shaped
+        // so one that would run past the cell's edge (the slowest step's
+        // "Slowest" at the run's end) flips to the bar's left.
+        let rem_scale = f32::from(window.rem_size()) / 16.;
+        let measure = |text: &str, weight: FontWeight, window: &mut Window| -> f32 {
+            let mut font = gpui::font(pink::SANS);
+            font.features = pink::tabular_figures();
+            font.weight = weight;
+            let run = gpui::TextRun {
+                len: text.len(),
+                font,
+                color: t.text,
+                background_color: None,
+                underline: None,
+                strikethrough: None,
+            };
+            f32::from(
+                window
+                    .text_system()
+                    .shape_line(
+                        SharedString::from(text.to_string()),
+                        px(META_SIZE * rem_scale),
+                        &[run],
+                        None,
+                    )
+                    .width(),
+            )
+        };
+        let slowest_w =
+            measure("Slowest", FontWeight::MEDIUM, window) + package::LABEL_GAP * rem_scale;
+        let cell_w = self.width - 2. - TREE_W;
+        let labels: Vec<Option<(String, package::LabelSide)>> = (0..n)
             .map(|ix| {
                 let span = &spans[ix];
                 if span.start > now {
@@ -611,7 +641,20 @@ impl RenderOnce for TraceWaterfall {
                 }
                 let (_, _, cost) = totals(&spans, ix, now);
                 let cost = (cost > 0.).then_some(f64::from(cost));
-                Some(package::bar_label(span.end.min(now) - span.start, cost).to_string())
+                let text = package::bar_label(span.end.min(now) - span.start, cost).to_string();
+                let mut width = measure(&text, FontWeight::NORMAL, window);
+                if slowest == Some(ix) {
+                    width += slowest_w;
+                }
+                let side = package::label_side(
+                    &axis,
+                    span.start,
+                    Some(span.end.min(now)),
+                    width,
+                    cell_w,
+                    rem_scale,
+                );
+                Some((text, side))
             })
             .collect();
 
@@ -919,7 +962,7 @@ struct Frame<'a> {
     reveal: &'a [f32],
     connector: &'a [f32],
     folds: &'a [Fold],
-    labels: &'a [Option<String>],
+    labels: &'a [Option<(String, package::LabelSide)>],
     collapsed: &'a HashSet<usize>,
     selected: Option<usize>,
     slowest: Option<usize>,
@@ -1411,7 +1454,10 @@ impl Frame<'_> {
             _ if slowest => t.readable_tone(t.warning, 1.),
             _ => t.text_muted,
         };
-        let label = self.labels[ix].as_ref().map(|text| {
+        let side = self.labels[ix]
+            .as_ref()
+            .map_or(package::LabelSide::After, |(_, side)| *side);
+        let label = self.labels[ix].as_ref().map(|(text, _)| {
             div()
                 .flex()
                 .items_center()
@@ -1428,7 +1474,7 @@ impl Frame<'_> {
                 })
                 .into_any_element()
         });
-        package::bar_cell(
+        package::bar_cell_on(
             &self.axis,
             Some(span.start),
             Some(span.end.min(self.now)),
@@ -1437,6 +1483,7 @@ impl Frame<'_> {
                 fill: color,
                 label: t.content_faint,
             },
+            side,
         )
         .h(px(height))
         .when(reveal < 1., |cell| cell.opacity(reveal))

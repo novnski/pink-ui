@@ -6,7 +6,10 @@
 //! duration) instead of a mark at its start; a call with no recorded start
 //! given a bar at all; an axis with too many ticks to read, ticks that do
 //! not start at zero, or hairlines that miss them; an explicit zero cost
-//! that reads as unknown, or an unknown one shown as zero.
+//! that reads as unknown, or an unknown one shown as zero; a label that
+//! runs past the cell's edge at the run's end instead of flipping to the
+//! bar's left, or one flipped where it fits after the bar (or has no room
+//! before it).
 
 use gpui::{
     Bounds, Context, IntoElement, Pixels, Render, TestAppContext, Window, div, prelude::*, px,
@@ -14,8 +17,9 @@ use gpui::{
 use pink_ui::{
     Theme, ThemeMode,
     components::trace_waterfall::package::{
-        BAR_H, BarStyle, LABEL_GAP, MAX_TICKS, PAD_L, PAD_R, ROW_H, TraceAxis, axis_ticks,
-        bar_cell, bar_label, fmt_cost, fmt_secs, fmt_tick, tick_step,
+        BAR_H, BarStyle, LABEL_GAP, LabelSide, MAX_TICKS, PAD_L, PAD_R, ROW_H, TraceAxis,
+        axis_ticks, bar_cell, bar_cell_on, bar_label, fmt_cost, fmt_secs, fmt_tick, label_side,
+        tick_step,
     },
     pink::Pink,
 };
@@ -24,6 +28,9 @@ const WIDTH: f32 = 480.0;
 /// A finished 20 s turn: a closed call from 2 s to 12 s, one that never
 /// closed from 5 s and one with no recorded start.
 const TOTAL: f32 = 20.0;
+/// A label wider than the room after the axis ("1m 00s, $0.031" and
+/// "Slowest"), in pt at the 16 px default.
+const FLIPPED_W: f32 = 120.0;
 
 struct Host {
     ui: f32,
@@ -59,10 +66,33 @@ impl Render for Host {
                     .debug_selector(move || format!("{name}-cell")),
                 )
         };
+        // The run's last call, ending at its end, with a label wider than
+        // the room after the axis: drawn before its bar.
+        let flipped = div()
+            .w(px(WIDTH))
+            .h(px(ROW_H * self.ui / 16.0))
+            .flex()
+            .child(
+                bar_cell_on(
+                    &axis,
+                    Some(14.0),
+                    Some(TOTAL),
+                    Some(
+                        div()
+                            .debug_selector(|| "flipped-label".into())
+                            .w(px(FLIPPED_W * self.ui / 16.0))
+                            .into_any_element(),
+                    ),
+                    &style,
+                    LabelSide::Before,
+                )
+                .debug_selector(|| "flipped-cell".into()),
+            );
         div()
             .flex()
             .flex_col()
             .child(row("closed", Some(2.0), Some(12.0)))
+            .child(flipped)
             .child(row("open", Some(5.0), None))
             .child(row("untimed", None, None))
             .child(
@@ -133,6 +163,15 @@ fn bars_follow_the_axis_at_every_interface_size(cx: &mut TestAppContext) {
             "untimed label at {ui}: {}",
             f32::from(untimed.origin.x)
         );
+        // A flipped label ends LABEL_GAP before its bar's start, inside the
+        // cell.
+        let flipped = bounds(cx, "flipped-label");
+        assert!(
+            near(f32::from(flipped.right()), at(14.0) - LABEL_GAP * scale)
+                && near(f32::from(flipped.size.width), FLIPPED_W * scale),
+            "flipped label at {ui}: {flipped:?} vs bar start {}",
+            at(14.0)
+        );
         // The label's line grows with the Interface size.
         assert!(
             near(f32::from(closed.size.height), 14.0 * scale),
@@ -170,4 +209,37 @@ fn ticks_and_figures_stay_readable() {
     // Nonsense never reaches the screen as NaN.
     assert_eq!(fmt_secs(f32::NAN), "0.0s");
     assert_eq!(TraceAxis::new(f32::NAN).scale, 1.0);
+}
+
+/// The host's measured label goes after its bar while it fits before the
+/// cell's edge, before the bar when it would run past and the room before
+/// holds it, and after anyway when neither side has room.
+#[test]
+fn labels_flip_before_the_bar_only_when_they_would_run_past() {
+    let axis = TraceAxis::finished(TOTAL);
+    for scale in [0.75_f32, 1.0, 1.25] {
+        let cell = WIDTH * scale;
+        let short = 40.0 * scale;
+        let wide = FLIPPED_W * scale;
+        assert_eq!(
+            label_side(&axis, 14.0, Some(TOTAL), short, cell, scale),
+            LabelSide::After,
+            "a time label fits after the run's last bar at {scale}"
+        );
+        assert_eq!(
+            label_side(&axis, 14.0, Some(TOTAL), wide, cell, scale),
+            LabelSide::Before,
+            "a wide label at the run's end flips at {scale}"
+        );
+        assert_eq!(
+            label_side(&axis, 2.0, Some(12.0), wide, cell, scale),
+            LabelSide::After,
+            "a wide label with room after a mid-run bar stays after it at {scale}"
+        );
+        assert_eq!(
+            label_side(&axis, 0.0, Some(TOTAL), wide, cell, scale),
+            LabelSide::After,
+            "no room before a bar from zero at {scale}"
+        );
+    }
 }

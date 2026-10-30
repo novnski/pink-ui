@@ -3,7 +3,8 @@
 // its end), carries at most six readable ticks with a hairline under each,
 // and every call draws as Pink's 6 px usage-meter capsule from its start to
 // its end with its time (and, when the host knows it, its cost) in Pink's
-// 11/14 timer type just after the bar.
+// 11/14 timer type just after the bar, or just before it when the host's
+// measured label would run past the cell's edge.
 //
 // What a call has not recorded is never drawn as if it had: a call with no
 // end draws only a capsule-sized mark at its start, and a call with no
@@ -213,8 +214,45 @@ pub fn marker(axis: &TraceAxis, secs: f32, color: Hsla) -> Div {
 pub struct BarStyle {
     /// The capsule.
     pub fill: Hsla,
-    /// The label after it.
+    /// The label beside it.
     pub label: Hsla,
+}
+
+/// Which side of its bar a call's label sits on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LabelSide {
+    /// [`LABEL_GAP`] after the bar's end.
+    #[default]
+    After,
+    /// [`LABEL_GAP`] before the bar's start, ending there.
+    Before,
+}
+
+/// Where a label `label_w` px wide goes for a call from `start` to `end`
+/// seconds in a timeline cell `cell_w` px wide at Interface `scale` (the
+/// rem size over 16): after the bar while it fits before the cell's edge,
+/// else before the bar when the room there holds it, else after anyway. The
+/// host measures the label with its own text system (a label the package
+/// draws can't measure itself on gpui 0.2.2).
+pub fn label_side(
+    axis: &TraceAxis,
+    start: f32,
+    end: Option<f32>,
+    label_w: f32,
+    cell_w: f32,
+    scale: f32,
+) -> LabelSide {
+    let plot_w = (cell_w - (PAD_L + PAD_R) * scale).max(0.);
+    let from = axis.fraction(start);
+    let to = end.map_or(from, |e| axis.fraction(e).max(from));
+    let bar_start = PAD_L * scale + from * plot_w;
+    let bar_end = bar_start + ((to - from) * plot_w).max(BAR_H * scale);
+    let gap = LABEL_GAP * scale;
+    if bar_end + gap + label_w <= cell_w || bar_start - gap < label_w {
+        LabelSide::After
+    } else {
+        LabelSide::Before
+    }
 }
 
 /// One call's timeline cell: its bar from `start` to `end` seconds on the
@@ -228,6 +266,19 @@ pub fn bar_cell(
     end: Option<f32>,
     label: Option<AnyElement>,
     style: &BarStyle,
+) -> Div {
+    bar_cell_on(axis, start, end, label, style, LabelSide::After)
+}
+
+/// [`bar_cell`] with the label on `side` of the bar (see [`label_side`]).
+/// A call with no `start` has no bar, so its label stays at the zero.
+pub fn bar_cell_on(
+    axis: &TraceAxis,
+    start: Option<f32>,
+    end: Option<f32>,
+    label: Option<AnyElement>,
+    style: &BarStyle,
+    side: LabelSide,
 ) -> Div {
     // The bar and its label run from the call's start to the axis's far
     // edge (`fraction` stops at 1.2), so the bar's share of that run is its
@@ -245,30 +296,46 @@ pub fn bar_cell(
             .bg(style.fill)
     });
     let has_bar = bar.is_some();
+    let before = has_bar && side == LabelSide::Before;
     let label = label.map(|label| {
         div()
             .flex_none()
-            .when(has_bar, |label| label.ml(ui_rems(LABEL_GAP)))
+            .when(has_bar && !before, |label| label.ml(ui_rems(LABEL_GAP)))
+            .when(before, |label| label.mr(ui_rems(LABEL_GAP)))
             .whitespace_nowrap()
             .text_size(ui_rems(META_SIZE))
             .line_height(ui_rems(META_LINE))
             .text_color(style.label)
             .child(label)
     });
-    div().relative().flex_1().min_w_0().h_full().child(
-        plot().child(
+    let run = div()
+        .absolute()
+        .top_0()
+        .bottom_0()
+        .left(relative(from))
+        .w(relative(reach))
+        .flex()
+        .items_center()
+        .children(bar);
+    let plot = if before {
+        // The label ends at the bar's start: a box from the plot's zero to
+        // there, its content packed to the end.
+        plot().child(run).child(
             div()
                 .absolute()
                 .top_0()
                 .bottom_0()
-                .left(relative(from))
-                .w(relative(reach))
+                .left_0()
+                .w(relative(from))
                 .flex()
                 .items_center()
-                .children(bar)
+                .justify_end()
                 .children(label),
-        ),
-    )
+        )
+    } else {
+        plot().child(run.children(label))
+    };
+    div().relative().flex_1().min_w_0().h_full().child(plot)
 }
 
 /// A call's label text: its time, then its cost when the host knows it
