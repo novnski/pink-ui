@@ -21,19 +21,31 @@
 use std::{collections::HashMap, rc::Rc, sync::Arc, time::Duration};
 
 use gpui::{
-    AnyElement, AnyView, App, Context, ElementId, Entity, FocusHandle, Focusable, FontWeight,
-    IntoElement, KeyDownEvent, ScrollHandle, SharedString, Subscription, Task, Window, div, point,
-    prelude::*, px, svg,
+    AnyElement, AnyView, App, Context, ElementId, Entity, FocusHandle, Focusable, IntoElement,
+    KeyDownEvent, ScrollHandle, SharedString, Subscription, Task, Window, div, point, prelude::*,
+    px,
 };
 
 use crate::{
     motion::{self, TOOL_ROW_REVEAL},
     pink::{
         self, ButtonKind, ControlSize, FillTier, Pink, TextStyle, Tone, TypeStyleExt, layout,
-        loaders::label_id, radius,
+        loaders::label_id,
     },
     primitives::{InputEvent, TextInput},
     story,
+};
+
+#[allow(dead_code)]
+mod package {
+    include!("../../components/integration-picker/src/lib.rs");
+}
+use package as picker;
+pub use package::{
+    IDENTITY_TEXT, IDENTITY_TOP, MONOGRAM_TEXT, PERMISSION_GAP, PERMISSION_PART_GAP,
+    PERMISSIONS_TOP, REVIEW_W, SEARCH_H, SEARCH_W, SearchStyle, TILE, TILE_RADIUS, TileStyle,
+    arrange, identity_line, matches, monogram, monogram_tile, permission_detail, permission_list,
+    permission_row, search_field, ui_rems,
 };
 
 pub const NAME: &str = "Integration Picker";
@@ -47,10 +59,6 @@ const CANVAS_RADIUS: f32 = 14.0;
 const PLANE_INSET: f32 = 5.0;
 const PLANE_W: f32 = 760.0;
 const PLANE_H: f32 = 760.0;
-/// The search field in the title bar.
-const SEARCH_W: f32 = 220.0;
-/// The review dialog's width (Pink `extensions.rs` `render_review`).
-const REVIEW_W: f32 = 460.0;
 /// How long the demo connection takes.
 const HANDSHAKE: Duration = Duration::from_millis(1400);
 
@@ -144,10 +152,6 @@ impl Integration {
         self.connected = true;
         self.status = Some(status.into());
         self
-    }
-
-    fn monogram(&self) -> SharedString {
-        pink::monogram(&self.name)
     }
 
     /// The permissions' default switches.
@@ -284,43 +288,28 @@ struct PickerState {
     on_back: Option<BackHandler>,
 }
 
-/// The visible services as `(section, rows)`, Connected first.
+/// The visible services as `(section, rows)`, Connected first (the
+/// package's rule, shared with PINK).
 fn arranged<'a>(
     all: &'a [Integration],
     connected: &[SharedString],
     query: &str,
 ) -> Vec<(Section, Vec<&'a Integration>)> {
-    let q = query.trim().to_lowercase();
-    let matches = |i: &&Integration| {
-        q.is_empty()
-            || i.name.to_lowercase().contains(&q)
-            || i.category.to_lowercase().contains(&q)
-            || i.domain.to_lowercase().contains(&q)
-    };
-    let (on, off): (Vec<&Integration>, Vec<&Integration>) = all
-        .iter()
-        .filter(matches)
-        .partition(|i| connected.contains(&i.id));
-    [(Section::Connected, on), (Section::Available, off)]
-        .into_iter()
-        .filter(|(_, rows)| !rows.is_empty())
-        .collect()
+    picker::arrange(
+        all,
+        query,
+        |i| connected.contains(&i.id),
+        |i| vec![i.name.as_ref(), i.category.as_ref(), i.domain.as_ref()],
+    )
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Section {
-    Connected,
-    Available,
+use picker::Section;
+
+trait SectionCopy {
+    fn description(self, app: &str) -> String;
 }
 
-impl Section {
-    fn title(self) -> &'static str {
-        match self {
-            Section::Connected => "Connected",
-            Section::Available => "Available",
-        }
-    }
-
+impl SectionCopy for Section {
     fn description(self, app: &str) -> String {
         match self {
             Section::Connected => format!(
@@ -648,19 +637,16 @@ impl RenderOnce for IntegrationPicker {
 
         // Pink: the file search field (`files/mod.rs` `render_header` on
         // `surface_chrome::input`), 28 tall like the title bar's actions.
-        let search = pink::toolbar_input(&t)
-            .flex_none()
-            .w(px(SEARCH_W))
-            .line_height(px(16.))
-            .child(
-                svg()
-                    .path(ICON_SEARCH)
-                    .size(px(pink::icon_size::XS))
-                    .flex_none()
-                    .text_color(t.text_faint),
-            )
-            .child(div().flex_1().min_w_0().child(input))
-            .into_any_element();
+        let search = search_field(
+            &SearchStyle {
+                fill: t.ink(0.035),
+                glyph: t.text_faint,
+            },
+            ICON_SEARCH,
+            input,
+        )
+        .line_height(px(16.))
+        .into_any_element();
 
         let page = page_column()
             .child(page_title_bar("Integrations", Some(total), vec![search], &t))
@@ -850,24 +836,17 @@ fn service_row(service: &Integration, section: Section, rows: &RowContext, t: &P
 }
 
 /// The row's identity tile (Pink `widgets::row_tile`: 28, radius 7, `border`
-/// on a Quaternary plate). The service's initial stands in for the 16 px
-/// icon, sized and weighted like Pink's project tile letter.
+/// on a Quaternary plate), drawn by the package with the service's initial
+/// standing in for the 16 px icon.
 fn service_tile(service: &Integration, t: &Pink) -> impl IntoElement {
-    div()
-        .flex_none()
-        .size(px(28.))
-        .rounded(px(radius::TILE))
-        .border_1()
-        .border_color(t.border)
-        .bg(t.fill(FillTier::Quaternary))
-        .flex()
-        .items_center()
-        .justify_center()
-        .text_size(px(14.))
-        .line_height(px(16.))
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(t.text_muted)
-        .child(service.monogram())
+    monogram_tile(
+        &TileStyle {
+            border: t.border,
+            background: t.fill(FillTier::Quaternary),
+            text: t.text_muted,
+        },
+        &service.name,
+    )
 }
 
 /// The quiet line under a row title (Pink `settings/widgets.rs` `meta_line`):
@@ -939,7 +918,7 @@ fn review_dialog(
     };
 
     // Pink: the empty lifecycle block's `mt 8` plus the capabilities' `mt 12`.
-    let mut permissions = div().mt(px(20.)).flex().flex_col().gap(px(10.));
+    let mut permissions = permission_list();
     if service.permissions.is_empty() {
         permissions = permissions.child(pink::dialog_body("This app asks for no permissions.", t));
     }
@@ -963,30 +942,17 @@ fn review_dialog(
             pink::switch_control(switch_id, permission.label.clone(), on, t)
                 .on_click(move |_, _, cx| flip.update(cx, |s, cx| s.toggle_grant(ix, cx)))
         };
-        let description = if permission.required {
-            format!("{}, required", permission.detail)
-        } else {
-            permission.detail.to_string()
-        };
-        permissions = permissions.child(
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(12.))
-                .child(pink::row_text(
-                    permission.label.clone(),
-                    Some(description.into()),
-                    t,
-                ))
-                .child(switch),
-        );
+        let description = permission_detail(&permission.detail, permission.required);
+        permissions = permissions.child(permission_row(
+            pink::row_text(permission.label.clone(), Some(description.into()), t),
+            switch,
+        ));
     }
 
     let (cancel, confirm_state) = (state.clone(), state.clone());
     let (escape, enter) = (state.clone(), state.clone());
     let card = pink::dialog_card(t)
-        .w(px(REVIEW_W))
+        .w(ui_rems(REVIEW_W))
         .track_focus(focus)
         .on_key_down(move |event: &KeyDownEvent, window, cx| {
             match event.keystroke.key.as_str() {
@@ -999,14 +965,11 @@ fn review_dialog(
         .child(pink::dialog_title(title, t))
         .child(div().mt(px(8.)).child(pink::dialog_body(body, t)))
         .when(!service.domain.is_empty(), |card| {
-            card.child(
-                div()
-                    .mt(px(6.))
-                    .font_family(pink::MONO)
-                    .text_size(px(11.))
-                    .text_color(t.readable_muted(0.8))
-                    .child(service.domain.clone()),
-            )
+            card.child(identity_line(
+                pink::MONO,
+                t.readable_muted(0.8),
+                service.domain.clone(),
+            ))
         })
         .child(permissions)
         .child(
