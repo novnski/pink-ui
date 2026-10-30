@@ -126,12 +126,12 @@ impl Rail {
     }
 }
 
-/// The rail over a slot, absolutely placed at its top-left corner. `scale`
-/// is the window's rem size over 16 (the host's Interface size).
+/// The rail over a `SLOT_H` slot, absolutely placed at its top-left corner.
+/// `scale` is the window's rem size over 16 (the host's Interface size).
 pub fn rail(rail: Rail, color: Hsla, scale: f32) -> impl IntoElement {
     canvas(
         |_, _, _| (),
-        move |bounds, _, window, _| paint_rail(&rail, bounds.origin, color, scale, window),
+        move |bounds, _, window, _| paint_rail(&rail, bounds.origin, SLOT_H, color, scale, window),
     )
     .absolute()
     .top_0()
@@ -140,17 +140,35 @@ pub fn rail(rail: Rail, color: Hsla, scale: f32) -> impl IntoElement {
     .h(px(SLOT_H * scale))
 }
 
+/// The rail over a slot of any height (a row with extra lines under it):
+/// it fills its parent, and the trunks run the measured height.
+pub fn rail_fill(rail: Rail, color: Hsla, scale: f32) -> impl IntoElement {
+    canvas(
+        |_, _, _| (),
+        move |bounds, _, window, _| {
+            let slot_h = f32::from(bounds.size.height) / scale.max(0.01);
+            paint_rail(&rail, bounds.origin, slot_h, color, scale, window)
+        },
+    )
+    .absolute()
+    .top_0()
+    .left_0()
+    .size_full()
+}
+
 fn union_path() -> PathBuilder {
     PathBuilder::fill().with_style(gpui::PathStyle::Fill(
         gpui::FillOptions::default().with_fill_rule(gpui::FillRule::NonZero),
     ))
 }
 
-/// Paints a slot's rail. Fully drawn segments share one nonzero path so the
-/// joints never double their alpha; fading ones paint on their own.
+/// Paints a slot's rail, `slot_h` pt tall. Fully drawn segments share one
+/// nonzero path so the joints never double their alpha; fading ones paint
+/// on their own.
 pub fn paint_rail(
     rail: &Rail,
     origin: Point<Pixels>,
+    slot_h: f32,
     color: Hsla,
     scale: f32,
     window: &mut Window,
@@ -168,14 +186,14 @@ pub fn paint_rail(
         }
     };
     for &(x, alpha) in &rail.guides {
-        add(&[at(x, 0.), at(x, SLOT_H)], alpha);
+        add(&[at(x, 0.), at(x, slot_h)], alpha);
     }
     if let Some(elbow) = rail.elbow {
         let bend_y = DOT_CY - BEND_RADIUS;
         if elbow.incoming > 0. {
             let mut bottom = bend_y * elbow.incoming;
             if elbow.incoming >= 1. && elbow.continuation > 0. {
-                bottom = bend_y + (SLOT_H - bend_y) * elbow.continuation;
+                bottom = bend_y + (slot_h - bend_y) * elbow.continuation;
             }
             add(&[at(elbow.x, 0.), at(elbow.x, bottom)], 1.);
         }
@@ -188,7 +206,7 @@ pub fn paint_rail(
         }
     }
     if let Some((x, drawn, alpha)) = rail.start {
-        let bottom = RAIL_TOP + (SLOT_H - RAIL_TOP) * drawn;
+        let bottom = RAIL_TOP + (slot_h - RAIL_TOP) * drawn;
         add(&[at(x, RAIL_TOP), at(x, bottom)], alpha);
     }
     if let Ok(path) = solid.build() {

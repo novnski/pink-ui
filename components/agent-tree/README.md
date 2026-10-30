@@ -24,7 +24,9 @@ them.
   open. Fully drawn segments share one nonzero path so joints never double
   their alpha; partly drawn ones (`incoming`, `branch`, `start`'s drawn share)
   let a host animate arrivals. Paint it in the hairline colour at
-  `RAIL_ALPHA`. `scale` is the window's rem size over 16.
+  `RAIL_ALPHA`. `scale` is the window's rem size over 16. `rail_fill` fills
+  a taller slot (a row with extra lines) and runs its trunks the measured
+  height.
 - `paint_rail` and `branch_points`: the same, for a host's own canvas.
 - `disclosure(icon, open, color, group_hover)`: the `TILE` disclosure tile with
   its `CHEVRON`, turned 0 to 90 degrees by `open`, optionally recoloured
