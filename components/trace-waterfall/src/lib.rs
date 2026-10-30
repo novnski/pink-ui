@@ -191,6 +191,23 @@ pub fn grid(axis: &TraceAxis, color: Hsla) -> Div {
         )
 }
 
+/// A 1 px line in `color` across the timeline column at `secs` (a live
+/// run's now-line), on the same plot as the bars and grid. Absolute: put it
+/// in the timeline column's box, which it fills.
+pub fn marker(axis: &TraceAxis, secs: f32, color: Hsla) -> Div {
+    div().absolute().inset_0().child(
+        plot().child(
+            div()
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .left(relative(axis.fraction(secs)))
+                .w(px(1.))
+                .bg(color),
+        ),
+    )
+}
+
 /// What one bar draws.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BarStyle {

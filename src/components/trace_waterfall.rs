@@ -479,20 +479,6 @@ fn fold_at(open: bool, toggled: Option<(Instant, f32)>, clock: Instant, reduced:
     }
 }
 
-/// The package's time axis, and the pixels it spans inside the timeline
-/// column for the now-line.
-#[derive(Clone, Copy)]
-struct Axis {
-    trace: package::TraceAxis,
-    width: f32,
-}
-
-impl Axis {
-    fn x(&self, s: f32) -> f32 {
-        package::PAD_L + self.trace.fraction(s) * self.width
-    }
-}
-
 impl RenderOnce for TraceWaterfall {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Pink::get(cx);
@@ -614,11 +600,7 @@ impl RenderOnce for TraceWaterfall {
             total.max(1.) * 1.02
         };
         let scale = motion::follow(&format!("{key}-scale"), target_scale, EMPHASIZED);
-        let col_w = self.width - 2. - TREE_W;
-        let axis = Axis {
-            trace: package::TraceAxis::new(scale),
-            width: col_w - package::PAD_L - package::PAD_R,
-        };
+        let axis = package::TraceAxis::new(scale);
 
         // Bar labels: the time, then the cost once any has accrued.
         let labels: Vec<Option<String>> = (0..n)
@@ -798,7 +780,7 @@ impl RenderOnce for TraceWaterfall {
                     .child("Step"),
             )
             .child(
-                package::axis_ticks(&axis.trace, t.readable_muted(0.85))
+                package::axis_ticks(&axis, t.readable_muted(0.85))
                     .font_features(pink::tabular_figures()),
             );
 
@@ -809,7 +791,7 @@ impl RenderOnce for TraceWaterfall {
             .bottom_0()
             .left(px(TREE_W))
             .right_0()
-            .child(package::grid(&axis.trace, t.hairline(0.06)));
+            .child(package::grid(&axis, t.hairline(0.06)));
         let body = div()
             .relative()
             .w_full()
@@ -830,14 +812,16 @@ impl RenderOnce for TraceWaterfall {
             .when(live, |body| {
                 // The now-line: where the run has got to, in Pink's Working
                 // status tone (Pink: `shell/spaces.rs` `busy@0.55`).
+                // On the package's plot, so it meets the bars at every
+                // Interface size.
                 body.child(
                     div()
                         .absolute()
                         .top_0()
                         .bottom_0()
-                        .left(px((TREE_W + axis.x(now)).round()))
-                        .w(px(1.))
-                        .bg(t.busy.opacity(0.55)),
+                        .left(px(TREE_W))
+                        .right_0()
+                        .child(package::marker(&axis, now, t.busy.opacity(0.55))),
                 )
             });
 
@@ -939,7 +923,7 @@ struct Frame<'a> {
     collapsed: &'a HashSet<usize>,
     selected: Option<usize>,
     slowest: Option<usize>,
-    axis: Axis,
+    axis: package::TraceAxis,
     state: &'a Entity<TraceState>,
     act: &'a Act,
 }
@@ -1445,7 +1429,7 @@ impl Frame<'_> {
                 .into_any_element()
         });
         package::bar_cell(
-            &self.axis.trace,
+            &self.axis,
             Some(span.start),
             Some(span.end.min(self.now)),
             label,
