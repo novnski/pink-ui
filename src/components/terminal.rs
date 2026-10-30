@@ -2536,6 +2536,21 @@ fn shape_row(
 /// The 10 px grip over the drawer's top edge: a 1 px line in
 /// `border_strong` while hovered or dragged; drag to resize, double-click
 /// for the default height (Pink `render_terminal_container`'s handle).
+/// Where a drawer resize starts: the pointer's y and the height the drawer
+/// is drawn at (the saved height held to `max_height`, as `render` draws
+/// it), so a capped drawer follows the pointer from its first pixel. The
+/// saved height changes only once the drag moves the edge.
+fn resize_anchor(y: f32, saved: f32, max_height: f32) -> (f32, f32) {
+    (y, saved.min(max_height).max(MIN_HEIGHT))
+}
+
+/// The drawer's height with the pointer at `y` during a resize from
+/// `anchor`, held between `MIN_HEIGHT` and `max_height`.
+fn resized_height(anchor: (f32, f32), y: f32, max_height: f32) -> f32 {
+    let (start_y, start_h) = anchor;
+    (start_h - (y - start_y)).clamp(MIN_HEIGHT, max_height.max(MIN_HEIGHT))
+}
+
 fn resize_handle(
     key: &str,
     t: &Pink,
@@ -2578,7 +2593,11 @@ fn resize_handle(
             window.prevent_default();
             cx.stop_propagation();
             down_state.update(cx, |s, cx| {
-                s.resize_anchor = Some((f32::from(ev.position.y), s.height));
+                s.resize_anchor = Some(resize_anchor(
+                    f32::from(ev.position.y),
+                    s.height,
+                    max_height,
+                ));
                 cx.notify();
             })
         })
@@ -2589,8 +2608,7 @@ fn resize_handle(
         .on_drag_move::<DrawerResize>(move |ev, window, cx| {
             let y = f32::from(ev.event.position.y);
             let height = move_state.update(cx, |s, cx| {
-                let (start_y, start_h) = s.resize_anchor?;
-                let next = (start_h - (y - start_y)).clamp(MIN_HEIGHT, max_height.max(MIN_HEIGHT));
+                let next = resized_height(s.resize_anchor?, y, max_height);
                 if (next - s.height).abs() < f32::EPSILON {
                     return None;
                 }
@@ -3187,6 +3205,21 @@ mod tests {
         assert_eq!(drawer.height, 400.0);
         let short = Terminal::new("t").window_height(300.0);
         assert_eq!(short.max_height, MIN_HEIGHT);
+    }
+
+    /// A drawer drawn under its saved height (D52's cap) follows the pointer
+    /// from its first pixel: the drag starts at the drawn height, not the
+    /// saved one. Catches the Codex P2 on pink-ui #100, where a 400 pt saved
+    /// drawer capped to 288 ignored the first 112 pt of a downward drag.
+    #[test]
+    fn a_capped_drawer_resizes_from_its_drawn_height() {
+        let max = Terminal::new("t").window_height(WINDOW_HEIGHT).max_height;
+        let capped = resize_anchor(500.0, 400.0, max);
+        assert_eq!(resized_height(capped, 510.0, max), 278.0);
+        assert_eq!(resized_height(capped, 400.0, max), max);
+        let free = resize_anchor(500.0, 200.0, max);
+        assert_eq!(resized_height(free, 510.0, max), 190.0);
+        assert_eq!(resized_height(free, 900.0, max), MIN_HEIGHT);
     }
 
     fn text_of(emu: &Emulator, line: usize) -> String {
