@@ -27,20 +27,30 @@
 //!     .memory(Memory::new("m1", "Leads the payments team", 0).source("From chat, Oct 9"))
 //!     .on_change(|change, _, _| println!("{change:?}"))
 //! ```
+//!
+//! The rows, corner actions, headings, strip, list and footer are drawn by
+//! the `pink-memory-panel` package (`components/memory-panel`), compiled
+//! here in place; PINK pins the same file for the Memory card in its
+//! Providers settings. This module keeps the story's state and listeners.
+
+#[allow(dead_code)]
+mod package {
+    include!("../../components/memory-panel/src/lib.rs");
+}
+pub use package::*;
 
 use std::{rc::Rc, sync::Arc};
 use web_time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, AnyView, App, Context, ElementId, Entity, FontWeight, Hsla, IntoElement, Role,
-    SharedString, Stateful, Subscription, Task, Window, div, linear_color_stop, linear_gradient,
-    prelude::*, px, svg,
+    AnyElement, AnyView, App, Context, ElementId, Entity, Hsla, IntoElement, Role, SharedString,
+    Stateful, Subscription, Task, Window, div, prelude::*, px,
 };
 
 use crate::{
     HoverFill,
     motion::{self, DISCLOSURE, TOOL_ROW_REVEAL},
-    pink::{self, ButtonKind, ControlSize, FillTier, Pink, chrome, layout, loaders, radius},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink, layout, loaders},
     primitives::{InputEvent, TextInput},
     story,
 };
@@ -62,24 +72,9 @@ pub const ICON_PERSON: &str = "icons/memory-panel/person.svg";
 pub const ICON_WORK: &str = "icons/memory-panel/toolbox.svg";
 pub const ICON_STYLE: &str = "icons/memory-panel/palette.svg";
 
-/// Pink shell.rs `chat_row_height`: a title line over one meta line.
-const ROW_H: f32 = 52.0;
-/// Pink shell.rs `sidebar_faded_label`: only the last few glyphs recede.
-const TITLE_FADE: f32 = 20.0;
-/// Pink shell.rs chat row: the glyph beside the 11 px meta text.
-const META_GLYPH: f32 = 11.0;
-/// Pink spaces.rs `SIDEBAR_DISCLOSURE_HEADER_HEIGHT` and
-/// `SIDEBAR_SECTION_GAP`.
-const HEADING_H: f32 = 28.0;
-const SECTION_GAP: f32 = 12.0;
 /// Pink settings/widgets.rs `warning_strip`: `py 10` around a 16 px line,
 /// inside its 1 px edge.
 const STRIP_H: f32 = 38.0;
-/// The footer: a Sm control with 10 px above and below.
-const FOOTER_H: f32 = 44.0;
-/// The list's side inset: with a row's own `px 8` it puts every memory on
-/// the header's 16 px edge (Pink settings/widgets.rs `ROW_PAD_X`).
-const LIST_INSET: f32 = 8.0;
 /// How long Undo stays in the footer after forgetting.
 const UNDO_FOR: Duration = Duration::from_secs(6);
 
@@ -582,33 +577,12 @@ impl RenderOnce for MemoryPanel {
                 .overflow_hidden()
                 .opacity(paused)
                 .child(
-                    div()
-                        .mx(px(layout::ROW_PAD_X))
-                        .h(px(STRIP_H))
-                        .flex()
-                        .items_start()
-                        .gap(px(8.))
-                        .px(px(16.))
-                        .py(px(10.))
-                        .rounded(px(radius::SECTION_CARD))
-                        .border_1()
-                        .border_color(edge)
-                        .bg(plate)
-                        .text_size(px(12.))
-                        .line_height(px(16.))
-                        .text_color(copy)
-                        .child(
-                            svg()
-                                .path(ICON_PAUSE)
-                                .size(px(14.))
-                                .mt(px(1.))
-                                .flex_none()
-                                .text_color(copy),
-                        )
-                        .child(div().flex_1().min_w_0().truncate().child(format!(
-                            "Paused. {} won't save or use memories.",
-                            self.assistant
-                        ))),
+                    package::strip(
+                        &StripStyle { plate, edge, copy },
+                        ICON_PAUSE,
+                        format!("Paused. {} won't save or use memories.", self.assistant),
+                    )
+                    .h(px(STRIP_H)),
                 )
         });
 
@@ -687,13 +661,7 @@ impl RenderOnce for MemoryPanel {
                 pink::menu_empty("Nothing remembered here yet.", &t),
             )
         });
-        let list = div()
-            .flex()
-            .flex_col()
-            .px(px(LIST_INSET))
-            .py(px(6.))
-            .border_t_1()
-            .border_color(t.border)
+        let list = package::list(t.border)
             // Paused, the list rests at Pink's disabled opacity.
             .opacity(motion::lerp(0.45, 1., on))
             .children(list)
@@ -813,18 +781,7 @@ impl RenderOnce for MemoryPanel {
             .child(filters)
             .children(strip)
             .child(list)
-            .child(
-                div()
-                    .h(px(FOOTER_H))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .pl(px(layout::ROW_PAD_X))
-                    .pr(px(10.))
-                    .border_t_1()
-                    .border_color(t.border)
-                    .child(footer),
-            )
+            .child(package::footer(t.border).h(px(FOOTER_H)).child(footer))
     }
 }
 
@@ -849,34 +806,16 @@ fn section_heading(
         .flex_col()
         .justify_end()
         .child(
-            div()
-                .id(SharedString::from(id))
-                .role(Role::Heading)
-                .aria_label(SharedString::from(format!("{label}, {count}")))
-                .h(px(HEADING_H))
-                .flex_none()
-                .px(px(8.))
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .text_size(px(11.))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(t.readable_faint(0.9))
-                        .child(label),
-                )
-                .child(
-                    div()
-                        .flex_none()
-                        .text_size(px(11.))
-                        .font_features(pink::tabular_figures())
-                        .text_color(t.readable_faint(0.7))
-                        .child(count.to_string()),
-                ),
+            package::heading(
+                t.readable_faint(0.9),
+                t.readable_faint(0.7),
+                label,
+                count,
+                0.,
+            )
+            .id(SharedString::from(id))
+            .role(Role::Heading)
+            .aria_label(SharedString::from(format!("{label}, {count}"))),
         )
         .into_any_element()
 }
@@ -892,33 +831,18 @@ fn row_action(
     t: &Pink,
 ) -> Stateful<gpui::Div> {
     let ring = t.focus_ring();
-    div()
+    package::action(icon, tone)
         .id(SharedString::from(id.clone()))
         .role(Role::Button)
         .aria_label(label)
         .tab_index(0)
         .focus_visible(move |s| pink::focus_ring(s, ring))
         .on_key_down(pink::swallow_activation_key)
-        .size(px(chrome::MIN_HIT))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(chrome::RADIUS_S))
-        .cursor_pointer()
         .hover_wash(id, t.fill(FillTier::Tertiary))
         .tooltip(pink::text_tooltip(label))
         .tooltip_show_delay(layout::TOOLTIP_DELAY)
-        .child(
-            svg()
-                .path(icon)
-                .size(px(chrome::ICON_S))
-                .flex_none()
-                .text_color(tone),
-        )
 }
 
-/// What a row needs besides its memory.
 struct RowParts<'a> {
     key: String,
     category: Option<&'a MemoryCategory>,
@@ -958,47 +882,11 @@ fn rest_row(row: &RowParts, m: &Memory, t: &Pink) -> Stateful<gpui::Div> {
     let subline = t.readable_muted(0.5);
     let ring = t.focus_ring();
 
-    let title = div()
-        .flex_1()
-        .min_w_0()
-        .relative()
-        .overflow_hidden()
-        .flex()
-        .child(
-            div()
-                .flex_none()
-                .whitespace_nowrap()
-                .text_size(px(13.))
-                .line_height(px(18.))
-                .child(m.text.clone()),
-        )
-        .child(
-            div()
-                .absolute()
-                .top_0()
-                .bottom_0()
-                .right_0()
-                .w(px(TITLE_FADE))
-                .bg(linear_gradient(
-                    90.,
-                    linear_color_stop(fade_to.opacity(0.), 0.),
-                    linear_color_stop(fade_to, 1.),
-                )),
-        );
-
-    // Only the hovered row's title yields room to the actions; its fade
-    // absorbs the change.
     let corner = (hover > 0.01).then(|| {
         let (pin_state, edit_state, forget_state) =
             (row.state.clone(), row.state.clone(), row.state.clone());
         let (pin_id, edit_id, forget_id) = (m.id.clone(), m.id.clone(), m.id.clone());
-        div()
-            .flex_none()
-            .h(px(18.))
-            .flex()
-            .items_center()
-            .gap(px(2.))
-            .opacity(hover)
+        package::corner(hover)
             .child(
                 row_action(
                     format!("{key}-pin"),
@@ -1040,62 +928,38 @@ fn rest_row(row: &RowParts, m: &Memory, t: &Pink) -> Stateful<gpui::Div> {
     });
 
     let category = row.category;
-    let meta = div()
-        .w_full()
-        .flex()
-        .items_center()
-        .gap(px(4.))
-        .text_size(px(11.))
-        .line_height(px(14.))
-        .text_color(subline)
-        .when_some(category, |d, c| {
-            d.child(
-                svg()
-                    .path(c.icon.clone())
-                    .size(px(META_GLYPH))
-                    .flex_none()
-                    .text_color(subline),
-            )
-        })
-        .child(div().flex_1().min_w_0().truncate().child(
-            match category.filter(|_| row.name_category) {
-                Some(c) if !m.source.is_empty() => format!("{}, {}", c.name, m.source).into(),
-                Some(c) => c.name.clone(),
-                None => m.source.clone(),
-            },
-        ));
+    let meta = package::meta_line(
+        subline,
+        category.map(|c| c.icon.clone()),
+        match category.filter(|_| row.name_category) {
+            Some(c) if !m.source.is_empty() => format!("{}, {}", c.name, m.source).into(),
+            Some(c) => c.name.clone(),
+            None => m.source.clone(),
+        },
+    );
 
     let (state, id) = (row.state.clone(), m.id.clone());
-    div()
-        .id(SharedString::from(key.clone()))
-        .role(Role::Button)
-        .aria_label(SharedString::from(format!("Edit memory: {}", m.text)))
-        .tab_index(0)
-        .focus_visible(move |s| pink::focus_ring(s, ring))
-        .on_key_down(pink::swallow_activation_key)
-        .h(px(ROW_H))
-        .px(px(8.))
-        .py(px(6.))
-        .flex()
-        .flex_col()
-        .justify_center()
-        .gap(px(2.))
-        .rounded(px(radius::MD))
-        .bg(wash)
-        .text_color(motion::mix(t.text.opacity(0.9), t.text, hover))
-        .cursor_pointer()
-        .on_hover(motion::hover_listener(key.clone()))
-        .on_click(move |_, window, cx| state.update(cx, |s, cx| s.edit(id.clone(), window, cx)))
-        .child(
-            div()
-                .w_full()
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .child(title)
-                .children(corner),
-        )
-        .child(meta)
+    package::row(&RowStyle {
+        title: motion::mix(t.text.opacity(0.9), t.text, hover),
+        meta: subline,
+        wash,
+        fade_to,
+    })
+    .id(SharedString::from(key.clone()))
+    .role(Role::Button)
+    .aria_label(SharedString::from(format!("Edit memory: {}", m.text)))
+    .tab_index(0)
+    .focus_visible(move |s| pink::focus_ring(s, ring))
+    .on_key_down(pink::swallow_activation_key)
+    .cursor_pointer()
+    .on_hover(motion::hover_listener(key.clone()))
+    .on_click(move |_, window, cx| state.update(cx, |s, cx| s.edit(id.clone(), window, cx)))
+    .child(package::title_line(
+        fade_to,
+        m.text.clone(),
+        corner.map(IntoElement::into_any_element),
+    ))
+    .child(meta)
 }
 
 /// A memory being edited (Pink: composer/goals.rs `render_goal_editor`):
