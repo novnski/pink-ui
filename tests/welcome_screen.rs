@@ -13,7 +13,7 @@ use pink_ui::{
     Theme, ThemeMode,
     components::welcome_screen::package::{
         ACTION_GAP, ACTION_PAD_Y, GRID, HEADING_GAP, HINT_GAP, HintStyle, MarkStyle,
-        SUBHEADING_GAP, SUBHEADING_LINE, action, heading, hint, mark, mark_cells, mark_side,
+        SUBHEADING_GAP, SUBHEADING_LINE, action, heading, hint, mark, mark_frame, mark_side,
         subheading, welcome,
     },
     pink::Pink,
@@ -32,8 +32,13 @@ impl Render for Host {
         window.set_rem_size(px(self.ui));
         let t = Pink::get(cx);
         let style = MarkStyle {
-            heart: gpui::rgb(0xf9a8d4).into(),
-            edge: gpui::rgb(0xbe185d).into(),
+            tile: gpui::rgb(0x831843).into(),
+            shades: [
+                0xfbcfe8, 0xf9a8d4, 0xf472b6, 0xec4899, 0xdb2777, 0xbe185d, 0x9d174d,
+            ]
+            .into_iter()
+            .map(|hex| gpui::rgb(hex).into())
+            .collect(),
             highlight: gpui::rgb(0xfdf2f8).into(),
         };
         let hint_style = HintStyle {
@@ -43,7 +48,7 @@ impl Render for Host {
             mono: pink_ui::pink::MONO.into(),
         };
         welcome()
-            .child(mark(mark_cells(None), SIDE, &style).debug_selector(|| "mark".into()))
+            .child(mark(mark_frame(None, None), SIDE, &style).debug_selector(|| "mark".into()))
             .child(heading(t.text, "What will you build?").debug_selector(|| "heading".into()))
             .child(
                 subheading(t.content_muted, "Add a project folder to start a thread.")
@@ -85,7 +90,7 @@ fn the_welcome_follows_the_interface_size_but_the_mark_its_space(cx: &mut TestAp
             "mark at {ui}: {:?}",
             mark.size
         );
-        assert_eq!(mark_cells(None).len(), GRID * GRID);
+        assert_eq!(mark_frame(None, None).cells.len(), GRID * GRID);
 
         // The question sits HEADING_GAP px under the mark; its line grows
         // with the Interface size.
@@ -148,6 +153,6 @@ fn the_welcome_follows_the_interface_size_but_the_mark_its_space(cx: &mut TestAp
         );
     }
     // The mark's side follows the window, never the Interface size.
-    assert!(near(mark_side(1200.0, 1000.0), 176.0));
-    assert!(near(mark_side(200.0, 300.0), 176.0 * 0.6));
+    assert!(near(mark_side(1200.0, 1000.0), 168.0));
+    assert!(near(mark_side(200.0, 300.0), 168.0 * 0.6));
 }

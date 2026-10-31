@@ -2,11 +2,12 @@
 //! before there is a project to work in.
 //!
 //! Pink's mark sits over one question, a line on what to do, one way forward
-//! and its shortcut. The mark is the app icon's idea at hero size: a rounded
-//! tile of 9 × 9 rounded cells, light pink at its heart and deepening shade
-//! by shade to its edges. Under the pointer a ripple runs out from the
-//! centre once, over 1.6 s, lifting each ring as it passes. The whole group
-//! arrives with Pink's 500 ms rise.
+//! and its shortcut. The mark is the app icon drawn live: a deep pink tile
+//! holding 6 × 6 rounded cells, lightest at its heart and deepening shade by
+//! shade to its edges. It builds in when it appears (the tile settles, the
+//! cells pop in from the centre outwards over 0.7 s), and under the pointer
+//! a ripple runs out from the centre once, over 1.4 s, lifting each ring as
+//! it passes. The whole group arrives with Pink's 500 ms rise.
 //!
 //! ```ignore
 //! WelcomeScreen::new("welcome")
@@ -30,7 +31,7 @@ use crate::{
 };
 
 pub const NAME: &str = "Welcome Screen";
-pub const DESCRIPTION: &str = "The first thing a new workspace shows: Pink's mark, a tile of pink cells that deepen to its edges and ripple once under the pointer, above one question, a line on what to do, the one button that starts a project and its shortcut";
+pub const DESCRIPTION: &str = "The first thing a new workspace shows: Pink's app icon drawn live, a tile of pink cells that pop in from the centre and ripple under the pointer, above one question, a line on what to do, the one button that starts a project and its shortcut";
 
 /// The `pink-welcome-screen` package (`components/welcome-screen`): PINK's
 /// mark (welcome_mark.rs), its question, line, action and shortcut,
@@ -40,7 +41,9 @@ pub const DESCRIPTION: &str = "The first thing a new workspace shows: Pink's mar
 pub mod package {
     include!("../../components/welcome-screen/src/lib.rs");
 }
-use package::{Cell, MarkStyle, RIPPLE_SECONDS, mark_cells, mark_side, ripple_at};
+use package::{
+    BUILD_SECONDS, MarkFrame, MarkStyle, RIPPLE_SECONDS, build_at, mark_frame, mark_side, ripple_at,
+};
 
 /// Pink: workbench/render.rs `CANVAS_RADIUS` – the canvas the screen sits on.
 const CANVAS_RADIUS: f32 = 14.0;
@@ -48,22 +51,28 @@ const CANVAS_RADIUS: f32 = 14.0;
 const AUTOPLAY_FIRST: Duration = Duration::from_millis(900);
 const AUTOPLAY_EVERY: Duration = Duration::from_secs(6);
 
-/// Pink's brand pinks (welcome_mark.rs `BRAND`): the mark's heart, edge and
-/// ripple highlight, the same in both appearances like the app icon.
-fn brand() -> MarkStyle {
+/// Pink's brand pinks (welcome_mark.rs `brand`), the app icon's: the tile,
+/// the cells' seven shades from the heart to the edge, and the ripple's
+/// highlight. A dark appearance takes the icon's dark variant, whose tile
+/// sits a step deeper under the same cells.
+fn brand(dark: bool) -> MarkStyle {
+    let shades = [
+        0xfbcfe8, 0xf9a8d4, 0xf472b6, 0xec4899, 0xdb2777, 0xbe185d, 0x9d174d,
+    ];
     MarkStyle {
-        heart: rgb(0xf9a8d4).into(),
-        edge: rgb(0xbe185d).into(),
+        tile: rgb(if dark { 0x500724 } else { 0x831843 }).into(),
+        shades: shades.iter().map(|hex| rgb(*hex).into()).collect(),
         highlight: rgb(0xfdf2f8).into(),
     }
 }
 
-/// The mark's state (Pink `WelcomeMark`): when the ripple started and the
-/// last cells drawn.
+/// The mark's state (Pink `WelcomeMark`): when its build and the latest
+/// ripple started, and the last frame drawn.
 struct MarkState {
+    built: Option<Instant>,
     started: Option<Instant>,
-    cached: Option<f32>,
-    cells: Vec<Option<Cell>>,
+    cached: (Option<f32>, Option<f32>),
+    frame: MarkFrame,
     _autoplay: Option<Task<()>>,
 }
 
@@ -88,9 +97,10 @@ impl MarkState {
             })
         });
         Self {
+            built: Some(Instant::now()),
             started: None,
-            cached: None,
-            cells: mark_cells(None),
+            cached: (None, None),
+            frame: mark_frame(None, None),
             _autoplay: autoplay,
         }
     }
@@ -196,29 +206,35 @@ impl RenderOnce for WelcomeScreen {
             .side
             .unwrap_or_else(|| mark_side(self.width, self.height));
 
-        // Pink `WelcomeMark::render`: the ripple runs on animation frames
-        // and stops asking for them when it completes (or never starts
-        // under reduced motion).
+        // Pink `WelcomeMark::render`: the build and a ripple run on
+        // animation frames and stop asking for them when they complete (or
+        // never run under reduced motion).
         let reduced = motion::reduced_motion(cx);
-        let cells = state.update(cx, |m, _| {
-            let duration = RIPPLE_SECONDS * motion::speed_scale().max(0.01);
-            let progress = m
-                .started
-                .map(|start| start.elapsed().as_secs_f32() / duration);
-            let ripple = ripple_at(progress).filter(|_| !reduced);
-            match ripple {
-                Some(_) => window.request_animation_frame(),
-                None => m.started = None,
+        let frame = state.update(cx, |m, _| {
+            let speed = motion::speed_scale().max(0.01);
+            let at = |start: Option<Instant>, seconds: f32| {
+                start.map(|start| start.elapsed().as_secs_f32() / (seconds * speed))
+            };
+            let build = build_at(at(m.built, BUILD_SECONDS)).filter(|_| !reduced);
+            let ripple = ripple_at(at(m.started, RIPPLE_SECONDS)).filter(|_| !reduced);
+            if build.is_none() {
+                m.built = None;
             }
-            if m.cached != ripple {
-                m.cells = mark_cells(ripple);
-                m.cached = ripple;
+            if ripple.is_none() {
+                m.started = None;
             }
-            m.cells.clone()
+            if build.is_some() || ripple.is_some() {
+                window.request_animation_frame();
+            }
+            if m.cached != (build, ripple) {
+                m.frame = mark_frame(build, ripple);
+                m.cached = (build, ripple);
+            }
+            m.frame.clone()
         });
 
         let hover_state = state.clone();
-        let mark = package::mark(cells, side, &brand())
+        let mark = package::mark(frame, side, &brand(t.dark))
             .id(ElementId::Name(format!("{key}-mark").into()))
             .role(Role::Image)
             .aria_label("Pink")
@@ -307,97 +323,129 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
 
 #[cfg(test)]
 mod tests {
-    use super::package::{GRID, MARK_SIDE, cell_color, mix};
+    use super::package::{
+        Cell, GRID, MARK_SIDE, appear_scale, cell_color, cell_rect, clip_to_disc, mix, shade_index,
+    };
     use super::*;
 
-    fn at(cells: &[Option<Cell>], row: usize, col: usize) -> Option<Cell> {
-        cells[row * GRID + col]
+    fn at(frame: &MarkFrame, row: usize, col: usize) -> Cell {
+        frame.cells[row * GRID + col]
     }
 
     #[test]
-    fn the_tile_is_a_rounded_square_of_cells() {
-        let cells = mark_cells(None);
-        assert_eq!(cells.len(), GRID * GRID);
-        let last = GRID - 1;
-        // Only the four corner cells fall out, which rounds the tile.
-        for (row, col) in [(0, 0), (0, last), (last, 0), (last, last)] {
-            assert_eq!(at(&cells, row, col), None);
-        }
-        assert_eq!(cells.iter().filter(|cell| cell.is_none()).count(), 4);
-        // At rest nothing is lifted.
-        assert!(cells.iter().flatten().all(|cell| cell.lift == 0.0));
+    fn the_tile_matches_the_app_icon() {
+        let frame = mark_frame(None, None);
+        assert_eq!(frame.cells.len(), GRID * GRID);
+        assert_eq!(frame.tile, 1.0);
+        // At rest every cell is in, unlifted.
+        assert!(
+            frame
+                .cells
+                .iter()
+                .all(|cell| cell.appear == 1.0 && cell.lift == 0.0)
+        );
+        // The icon's geometry: 16 pt gaps on an 824 pt tile, six cells.
+        let (x, y, extent) = cell_rect(824.0, 0, 0);
+        assert!((x - 16.0).abs() < 1e-3 && (y - 16.0).abs() < 1e-3);
+        assert!((extent - (824.0 - 7.0 * 16.0) / 6.0).abs() < 1e-3);
+        let (x, _, extent) = cell_rect(824.0, GRID - 1, 0);
+        assert!((x + extent + 16.0 - 824.0).abs() < 1e-3);
     }
 
     #[test]
-    fn shades_deepen_from_the_heart_to_the_edge() {
-        let cells = mark_cells(None);
-        let mid = GRID / 2;
-        let heart = at(&cells, mid, mid).unwrap().shade;
-        assert_eq!(heart, 0.0);
-        // Each ring outwards along the middle row is a deeper shade, ending
-        // on the edge.
-        let row: Vec<f32> = (mid..GRID)
-            .map(|col| at(&cells, mid, col).unwrap().shade)
-            .collect();
-        assert!(row.windows(2).all(|pair| pair[0] < pair[1]), "{row:?}");
-        assert!(row.last().copied().unwrap() > 0.8);
+    fn shades_deepen_from_the_heart_to_the_corners() {
+        let frame = mark_frame(None, None);
+        let shade = |row, col| shade_index(at(&frame, row, col).distance, 7);
+        // The four heart cells share the lightest shade in use; the corners
+        // take the deepest.
+        let heart = shade(2, 2);
+        assert_eq!([shade(2, 3), shade(3, 2), shade(3, 3)], [heart; 3]);
+        assert_eq!(shade(0, 0), 6);
+        assert!(heart < shade(2, 0) && shade(2, 0) < shade(0, 0));
         // The tile is symmetric.
-        assert_eq!(at(&cells, mid, 0), at(&cells, mid, GRID - 1));
-        assert_eq!(at(&cells, 0, mid), at(&cells, GRID - 1, mid));
+        assert_eq!(at(&frame, 0, 2), at(&frame, 2, 0));
+        assert_eq!(at(&frame, 1, 4), at(&frame, 4, 1));
+    }
+
+    #[test]
+    fn the_build_fills_from_the_heart_outwards() {
+        let early = mark_frame(Some(0.4), None);
+        assert!(at(&early, 2, 2).appear > at(&early, 0, 0).appear);
+        assert!(early.tile < 1.0);
+        assert_eq!(mark_frame(Some(0.0), None).cells[0].appear, 0.0);
+        // A cell overshoots a little on its way in, and lands on 1.
+        assert!((1..100).any(|step| appear_scale(step as f32 / 100.0) > 1.0));
+        assert!((appear_scale(1.0) - 1.0).abs() < 1e-5);
+        assert_eq!(build_at(None), None);
+        assert_eq!(build_at(Some(1.0)), None);
+        assert_eq!(build_at(Some(0.3)), Some(0.3));
     }
 
     #[test]
     fn a_ripple_runs_outwards_and_settles() {
-        let mid = GRID / 2;
-        let lift = |ripple: f32, col: usize| at(&mark_cells(Some(ripple)), mid, col).unwrap().lift;
-        // Early on the heart is lifted more than the edge; later the edge
-        // more than the heart.
-        assert!(lift(0.05, mid) > lift(0.05, GRID - 1));
-        assert!(lift(0.7, GRID - 1) > lift(0.7, mid));
-        // The ripple fades as it ends, and the clock parks.
-        assert!(lift(0.98, GRID - 1) < 0.05);
+        let lift = |ripple: f32, row: usize, col: usize| {
+            at(&mark_frame(None, Some(ripple)), row, col).lift
+        };
+        assert!(lift(0.1, 2, 2) > lift(0.1, 0, 0));
+        assert!(lift(0.55, 0, 0) > lift(0.55, 2, 2));
+        assert!(lift(0.98, 0, 0) < 0.05);
         assert_eq!(ripple_at(None), None);
-        assert_eq!(ripple_at(Some(0.0)), Some(0.0));
         assert_eq!(ripple_at(Some(1.0)), None);
         assert!(ripple_at(Some(0.5)).unwrap() > 0.5);
     }
 
     #[test]
-    fn cells_mix_between_the_brand_shades() {
-        let style = brand();
-        let heart = cell_color(
-            Cell {
-                shade: 0.0,
-                lift: 0.0,
-            },
-            &style,
+    fn corner_cells_are_clipped_to_the_tile() {
+        // The icon's top-left corner cell against its 185.4 pt corner.
+        let (x, y, extent) = cell_rect(824.0, 0, 0);
+        let round = 185.4;
+        let square: Vec<(f32, f32)> = vec![
+            (x, y),
+            (x + extent, y),
+            (x + extent, y + extent),
+            (x, y + extent),
+        ];
+        let clipped = clip_to_disc(&square, (round, round), round);
+        // Every point lies inside the tile's corner, the inner corner of the
+        // cell survives and the outer one is cut away.
+        assert!(
+            clipped
+                .iter()
+                .all(|p| (p.0 - round).hypot(p.1 - round) <= round + 1e-2)
         );
-        let edge = cell_color(
-            Cell {
-                shade: 1.0,
-                lift: 0.0,
-            },
-            &style,
-        );
+        assert!(clipped.contains(&(x + extent, y + extent)));
+        assert!(!clipped.contains(&(x, y)));
+        // A cell well inside the disc is kept whole.
+        let inner = vec![
+            (150.0, 150.0),
+            (170.0, 150.0),
+            (170.0, 170.0),
+            (150.0, 170.0),
+        ];
+        assert_eq!(clip_to_disc(&inner, (round, round), round), inner);
+    }
+
+    #[test]
+    fn cells_take_the_brand_shades() {
+        let style = brand(false);
+        let rest = mark_frame(None, None);
+        let corner = cell_color(at(&rest, 0, 0), &style);
         let close = |a: gpui::Hsla, b: gpui::Hsla| {
             let (a, b) = (gpui::Rgba::from(a), gpui::Rgba::from(b));
             (a.r - b.r).abs() < 0.01 && (a.g - b.g).abs() < 0.01 && (a.b - b.b).abs() < 0.01
         };
-        assert!(close(heart, style.heart));
-        assert!(close(edge, style.edge));
-        // A lifted cell moves towards the highlight.
-        let lifted = cell_color(
-            Cell {
-                shade: 1.0,
-                lift: 1.0,
-            },
-            &style,
-        );
-        assert!(gpui::Rgba::from(lifted).g > gpui::Rgba::from(edge).g);
-        assert!(close(
-            mix(style.heart, style.edge, 0.5),
-            mix(style.edge, style.heart, 0.5)
-        ));
+        assert!(close(corner, style.shades[6]));
+        // A lifted cell moves towards the highlight; a cell not yet in is
+        // transparent.
+        let mut lifted = at(&rest, 0, 0);
+        lifted.lift = 1.0;
+        assert!(gpui::Rgba::from(cell_color(lifted, &style)).g > gpui::Rgba::from(corner).g);
+        let mut hidden = at(&rest, 0, 0);
+        hidden.appear = 0.0;
+        assert_eq!(cell_color(hidden, &style).a, 0.0);
+        assert!(close(mix(style.tile, style.highlight, 0.0), style.tile));
+        // The dark variant's tile sits a step deeper.
+        assert!(!close(brand(true).tile, style.tile));
     }
 
     #[test]
