@@ -3,7 +3,7 @@ name = "pink-welcome-screen"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Host-adapted first-run welcome: PINK's app icon drawn live as an animated pink tile, its question, line, action and shortcut (PINK's onboarding canvas) for GPUI"
+description = "Host-adapted first-run welcome: a pulsing field of PINK's pink cells, its question, line, action and shortcut (PINK's onboarding canvas) for GPUI"
 
 # Independent boundary, like the other pink-ui packages: the gallery uses
 # gpui-pre, while native hosts patch gpui to their existing runtime. No

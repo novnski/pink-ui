@@ -1,7 +1,7 @@
 //! The `pink-welcome-screen` package's geometry at Interface sizes 12, 16
-//! and 20, as PINK lays its first-run canvas out. Failure modes: a mark
-//! that grows or shrinks with the Interface size instead of the space it
-//! has, or whose cells overflow or underfill its square; a question,
+//! and 20, as PINK lays its first-run canvas out. Failure modes: a field
+//! heart that grows or shrinks with the Interface size instead of the space
+//! it has, or that pushes the column apart; a question,
 //! line or hint that stays put while the rest of the interface scales, or
 //! whose space above it scales; an action whose label stays at 14 px, or
 //! whose padding and the space above it drift with the text.
@@ -12,14 +12,15 @@ use gpui::{
 use pink_ui::{
     Theme, ThemeMode,
     components::welcome_screen::package::{
-        ACTION_GAP, ACTION_PAD_Y, GRID, HEADING_GAP, HINT_GAP, HintStyle, MarkStyle,
-        SUBHEADING_GAP, SUBHEADING_LINE, action, heading, hint, mark, mark_frame, mark_side,
+        ACTION_GAP, ACTION_PAD_Y, FieldStyle, HEADING_GAP, HERO_SIDE, HINT_GAP, HintStyle,
+        SUBHEADING_GAP, SUBHEADING_LINE, action, field_cells, field_layout, heading, hero, hint,
         subheading, welcome,
     },
     pink::Pink,
 };
 
-const SIDE: f32 = 160.0;
+/// A 1200 x 1000 room: the field at full scale.
+const ROOM: (f32, f32) = (1200.0, 1000.0);
 
 /// A host that sets the window's rem to its Interface size, as PINK's root
 /// does (`window.set_rem_size`).
@@ -31,8 +32,7 @@ impl Render for Host {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         window.set_rem_size(px(self.ui));
         let t = Pink::get(cx);
-        let style = MarkStyle {
-            tile: gpui::rgb(0x831843).into(),
+        let style = FieldStyle {
             shades: [
                 0xfbcfe8, 0xf9a8d4, 0xf472b6, 0xec4899, 0xdb2777, 0xbe185d, 0x9d174d,
             ]
@@ -41,6 +41,7 @@ impl Render for Host {
             .collect(),
             highlight: gpui::rgb(0xfdf2f8).into(),
         };
+        let layout = field_layout(ROOM.0, ROOM.1);
         let hint_style = HintStyle {
             text: t.content_faint,
             keycap: t.border,
@@ -48,7 +49,10 @@ impl Render for Host {
             mono: pink_ui::pink::MONO.into(),
         };
         welcome()
-            .child(mark(mark_frame(None, None), SIDE, &style).debug_selector(|| "mark".into()))
+            .child(
+                hero(&layout, field_cells(&layout, None, None), &style)
+                    .debug_selector(|| "hero".into()),
+            )
             .child(heading(t.text, "What will you build?").debug_selector(|| "heading".into()))
             .child(
                 subheading(t.content_muted, "Add a project folder to start a thread.")
@@ -73,7 +77,7 @@ fn near(a: f32, b: f32) -> bool {
 }
 
 #[gpui::test]
-fn the_welcome_follows_the_interface_size_but_the_mark_its_space(cx: &mut TestAppContext) {
+fn the_welcome_follows_the_interface_size_but_the_field_its_space(cx: &mut TestAppContext) {
     cx.update(pink_ui::init);
     for ui in [12.0_f32, 16.0, 20.0] {
         let scale = ui / 16.0;
@@ -82,17 +86,17 @@ fn the_welcome_follows_the_interface_size_but_the_mark_its_space(cx: &mut TestAp
         let (_, cx) = cx.add_window_view(|_, _| Host { ui });
         cx.run_until_parked();
 
-        // The mark is its side at every Interface size, one cell per grid
-        // position.
-        let mark = bounds(cx, "mark");
+        // The field's heart takes its side in the column at every Interface
+        // size; the field around it spills over without moving anything.
+        let mark = bounds(cx, "hero");
         assert!(
-            near(f32::from(mark.size.width), SIDE) && near(f32::from(mark.size.height), SIDE),
-            "mark at {ui}: {:?}",
+            near(f32::from(mark.size.width), HERO_SIDE)
+                && near(f32::from(mark.size.height), HERO_SIDE),
+            "hero at {ui}: {:?}",
             mark.size
         );
-        assert_eq!(mark_frame(None, None).cells.len(), GRID * GRID);
 
-        // The question sits HEADING_GAP px under the mark; its line grows
+        // The question sits HEADING_GAP px under the heart; its line grows
         // with the Interface size.
         let heading = bounds(cx, "heading");
         assert!(
@@ -152,7 +156,7 @@ fn the_welcome_follows_the_interface_size_but_the_mark_its_space(cx: &mut TestAp
             hint.size
         );
     }
-    // The mark's side follows the window, never the Interface size.
-    assert!(near(mark_side(1200.0, 1000.0), 168.0));
-    assert!(near(mark_side(200.0, 300.0), 168.0 * 0.6));
+    // The field follows the window, never the Interface size.
+    assert!(near(field_layout(1200.0, 1000.0).side, HERO_SIDE));
+    assert!(near(field_layout(200.0, 300.0).side, HERO_SIDE * 0.6));
 }

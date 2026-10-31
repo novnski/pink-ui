@@ -1,13 +1,14 @@
 //! Welcome Screen – Pink's first-run screen: what the main column shows
 //! before there is a project to work in.
 //!
-//! Pink's mark sits over one question, a line on what to do, one way forward
-//! and its shortcut. The mark is the app icon drawn live: a deep pink tile
-//! holding 6 × 6 rounded cells, lightest at its heart and deepening shade by
-//! shade to its edges. It builds in when it appears (the tile settles, the
-//! cells pop in from the centre outwards over 0.7 s), and under the pointer
-//! a ripple runs out from the centre once, over 1.4 s, lifting each ring as
-//! it passes. The whole group arrives with Pink's 500 ms rise.
+//! A field of Pink's pink cells fills the room over one question, a line on
+//! what to do, one way forward and its shortcut. The field is the app icon
+//! grown outwards: rounded cells on the icon's grid, lightest and largest at
+//! the heart and deepening, shrinking and fading as they spread, dissolving
+//! well before the edges (faster below the heart, so the words stay clear).
+//! The cells pop in from the centre when the screen appears, then pulses
+//! keep rolling out from the heart, one every 1.6 s. The whole group arrives
+//! with Pink's 500 ms rise.
 //!
 //! ```ignore
 //! WelcomeScreen::new("welcome")
@@ -17,11 +18,10 @@
 //! ```
 
 use std::{rc::Rc, sync::Arc};
-use web_time::{Duration, Instant};
+use web_time::Instant;
 
 use gpui::{
-    AnyView, App, Context, ElementId, IntoElement, Role, SharedString, Task, Window, div,
-    prelude::*, px, rgb,
+    AnyView, App, ElementId, IntoElement, Role, SharedString, Window, div, prelude::*, px, rgb,
 };
 
 use crate::{
@@ -31,77 +31,46 @@ use crate::{
 };
 
 pub const NAME: &str = "Welcome Screen";
-pub const DESCRIPTION: &str = "The first thing a new workspace shows: Pink's app icon drawn live, a tile of pink cells that pop in from the centre and ripple under the pointer, above one question, a line on what to do, the one button that starts a project and its shortcut";
+pub const DESCRIPTION: &str = "The first thing a new workspace shows: a field of Pink's pink cells that pops in from the centre and keeps pulsing outwards, fading before the edges, above one question, a line on what to do, the one button that starts a project and its shortcut";
 
 /// The `pink-welcome-screen` package (`components/welcome-screen`): PINK's
-/// mark (welcome_mark.rs), its question, line, action and shortcut,
-/// compiled here unchanged. The story adds the canvas, the clock and the
-/// kit's Primary button.
+/// pulsing cell field (welcome_mark.rs), its question, line, action and
+/// shortcut, compiled here unchanged. The story adds the canvas, the clocks
+/// and the kit's Primary button.
 #[allow(dead_code)]
 pub mod package {
     include!("../../components/welcome-screen/src/lib.rs");
 }
-use package::{
-    BUILD_SECONDS, MarkFrame, MarkStyle, RIPPLE_SECONDS, build_at, mark_frame, mark_side, ripple_at,
-};
+use package::{BUILD_SECONDS, FieldStyle, build_at, field_cells, field_layout, pulse_at};
 
 /// Pink: workbench/render.rs `CANVAS_RADIUS` – the canvas the screen sits on.
 const CANVAS_RADIUS: f32 = 14.0;
-/// The demo ripples the mark itself this often (Pink waits for the pointer).
-const AUTOPLAY_FIRST: Duration = Duration::from_millis(900);
-const AUTOPLAY_EVERY: Duration = Duration::from_secs(6);
 
-/// Pink's brand pinks (welcome_mark.rs `brand`), the app icon's: the tile,
-/// the cells' seven shades from the heart to the edge, and the ripple's
-/// highlight. A dark appearance takes the icon's dark variant, whose tile
-/// sits a step deeper under the same cells.
-fn brand(dark: bool) -> MarkStyle {
+/// Pink's brand pinks (welcome_mark.rs `brand`), the app icon's: the cells'
+/// seven shades from the heart outwards and the pulse's highlight.
+fn brand() -> FieldStyle {
     let shades = [
         0xfbcfe8, 0xf9a8d4, 0xf472b6, 0xec4899, 0xdb2777, 0xbe185d, 0x9d174d,
     ];
-    MarkStyle {
-        tile: rgb(if dark { 0x500724 } else { 0x831843 }).into(),
+    FieldStyle {
         shades: shades.iter().map(|hex| rgb(*hex).into()).collect(),
         highlight: rgb(0xfdf2f8).into(),
     }
 }
 
-/// The mark's state (Pink `WelcomeMark`): when its build and the latest
-/// ripple started, and the last frame drawn.
-struct MarkState {
+/// The field's clocks (Pink `WelcomeMark`): when its build and its pulse
+/// started.
+struct FieldClock {
     built: Option<Instant>,
-    started: Option<Instant>,
-    cached: (Option<f32>, Option<f32>),
-    frame: MarkFrame,
-    _autoplay: Option<Task<()>>,
+    epoch: Instant,
 }
 
-impl MarkState {
-    fn new(autoplay: bool, cx: &mut Context<Self>) -> Self {
-        let autoplay = autoplay.then(|| {
-            cx.spawn(async move |this, cx| {
-                let mut wait = AUTOPLAY_FIRST;
-                loop {
-                    cx.background_executor().timer(wait).await;
-                    wait = AUTOPLAY_EVERY;
-                    let rippled = this.update(cx, |m, cx| {
-                        if m.started.is_none() && !motion::reduced_motion(cx) {
-                            m.started = Some(Instant::now());
-                            cx.notify();
-                        }
-                    });
-                    if rippled.is_err() {
-                        break;
-                    }
-                }
-            })
-        });
+impl FieldClock {
+    fn new() -> Self {
+        let now = Instant::now();
         Self {
-            built: Some(Instant::now()),
-            started: None,
-            cached: (None, None),
-            frame: mark_frame(None, None),
-            _autoplay: autoplay,
+            built: Some(now),
+            epoch: now,
         }
     }
 }
@@ -121,8 +90,6 @@ pub struct WelcomeScreen {
     shortcut: Option<SharedString>,
     width: f32,
     height: f32,
-    side: Option<f32>,
-    autoplay: bool,
     on_add_project: Option<AddHandler>,
 }
 
@@ -136,13 +103,11 @@ impl WelcomeScreen {
             shortcut: Some("⌘⇧N".into()),
             width: 940.0,
             height: 800.0,
-            side: None,
-            autoplay: false,
             on_add_project: None,
         }
     }
 
-    /// The question under the mark.
+    /// The question under the field's heart.
     pub fn heading(mut self, heading: impl Into<SharedString>) -> Self {
         self.heading = heading.into();
         self
@@ -166,23 +131,10 @@ impl WelcomeScreen {
         self
     }
 
-    /// The canvas's size; the mark scales with it like Pink's.
+    /// The canvas's size; the field scales with it like Pink's.
     pub fn size(mut self, width: f32, height: f32) -> Self {
         self.width = width;
         self.height = height;
-        self
-    }
-
-    /// Draws the mark at this side instead of scaling it.
-    pub fn mark_side(mut self, side: f32) -> Self {
-        self.side = Some(side);
-        self
-    }
-
-    /// Ripples the mark every few seconds on its own, not only under the
-    /// pointer (for demos).
-    pub fn autoplay(mut self, autoplay: bool) -> Self {
-        self.autoplay = autoplay;
         self
     }
 
@@ -196,57 +148,37 @@ impl RenderOnce for WelcomeScreen {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = Pink::get(cx);
         let key = self.id.to_string();
-        let autoplay = self.autoplay;
-        let state = window.use_keyed_state(
-            ElementId::NamedChild(Arc::new(self.id.clone()), "mark".into()),
+        let clock = window.use_keyed_state(
+            ElementId::NamedChild(Arc::new(self.id.clone()), "field".into()),
             cx,
-            move |_, cx| MarkState::new(autoplay, cx),
+            |_, _| FieldClock::new(),
         );
-        let side = self
-            .side
-            .unwrap_or_else(|| mark_side(self.width, self.height));
+        let layout = field_layout(self.width, self.height);
 
-        // Pink `WelcomeMark::render`: the build and a ripple run on
-        // animation frames and stop asking for them when they complete (or
-        // never run under reduced motion).
+        // Pink `WelcomeMark::render`: the build, then a pulse that keeps
+        // running on animation frames; reduced motion shows the field at
+        // rest and asks for none.
         let reduced = motion::reduced_motion(cx);
-        let frame = state.update(cx, |m, _| {
+        let (build, pulse) = clock.update(cx, |c, _| {
             let speed = motion::speed_scale().max(0.01);
-            let at = |start: Option<Instant>, seconds: f32| {
-                start.map(|start| start.elapsed().as_secs_f32() / (seconds * speed))
-            };
-            let build = build_at(at(m.built, BUILD_SECONDS)).filter(|_| !reduced);
-            let ripple = ripple_at(at(m.started, RIPPLE_SECONDS)).filter(|_| !reduced);
+            let build = build_at(
+                c.built
+                    .map(|start| start.elapsed().as_secs_f32() / (BUILD_SECONDS * speed)),
+            )
+            .filter(|_| !reduced);
             if build.is_none() {
-                m.built = None;
+                c.built = None;
             }
-            if ripple.is_none() {
-                m.started = None;
-            }
-            if build.is_some() || ripple.is_some() {
-                window.request_animation_frame();
-            }
-            if m.cached != (build, ripple) {
-                m.frame = mark_frame(build, ripple);
-                m.cached = (build, ripple);
-            }
-            m.frame.clone()
+            let pulse = (!reduced).then(|| pulse_at(c.epoch.elapsed().as_secs_f32() / speed));
+            (build, pulse)
         });
-
-        let hover_state = state.clone();
-        let mark = package::mark(frame, side, &brand(t.dark))
-            .id(ElementId::Name(format!("{key}-mark").into()))
+        if build.is_some() || pulse.is_some() {
+            window.request_animation_frame();
+        }
+        let hero = package::hero(&layout, field_cells(&layout, build, pulse), &brand())
+            .id(ElementId::Name(format!("{key}-field").into()))
             .role(Role::Image)
-            .aria_label("Pink")
-            .on_hover(move |hovered: &bool, _, cx| {
-                let hovered = *hovered;
-                hover_state.update(cx, |m, cx| {
-                    if hovered && m.started.is_none() && !motion::reduced_motion(cx) {
-                        m.started = Some(Instant::now());
-                        cx.notify();
-                    }
-                });
-            });
+            .aria_label("Pink");
 
         // Pink: shell.rs – one clear affordance: the kit's Primary at the
         // dialog size, widened and set at 14.
@@ -280,7 +212,7 @@ impl RenderOnce for WelcomeScreen {
             )
         });
         let group = package::welcome()
-            .child(mark)
+            .child(hero)
             .child(package::heading(t.text, self.heading.clone()))
             .child(package::subheading(
                 t.content_muted,
@@ -290,7 +222,8 @@ impl RenderOnce for WelcomeScreen {
             .children(hint);
 
         // The main column's canvas (Pink: workbench/render.rs
-        // `contained_plane`): radius 14, a hairline, the canvas fill.
+        // `contained_plane`): radius 14, a hairline, the canvas fill. It
+        // clips the field.
         div()
             .id(self.id.clone())
             .w(px(self.width))
@@ -315,143 +248,147 @@ impl RenderOnce for WelcomeScreen {
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |_, _| {
-        WelcomeScreen::new("welcome-screen")
-            .size(940.0, 800.0)
-            .autoplay(true)
+        WelcomeScreen::new("welcome-screen").size(940.0, 800.0)
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::package::{
-        Cell, GRID, MARK_SIDE, appear_scale, cell_color, cell_rect, clip_to_disc, mix, shade_index,
+        CELL_SHARE, FIELD_DOWNWARD, FIELD_PITCH, FIELD_REACH_MAX, FieldCell, HERO_SIDE,
+        appear_scale, cell_color, field_alpha, pulse_lift, shade_index,
     };
     use super::*;
 
-    fn at(frame: &MarkFrame, row: usize, col: usize) -> Cell {
-        frame.cells[row * GRID + col]
+    /// A 1200 x 1000 room: the field reaches 600 across and 410 up.
+    const ROOM: (f32, f32) = (1200.0, 1000.0);
+    const ACROSS: f32 = 600.0;
+    const UP: f32 = 410.0;
+
+    fn rest() -> Vec<FieldCell> {
+        field_cells(&field_layout(ROOM.0, ROOM.1), None, None)
+    }
+
+    fn nearest(cells: &[FieldCell], x: f32, y: f32) -> FieldCell {
+        *cells
+            .iter()
+            .min_by(|a, b| {
+                (a.x - x)
+                    .hypot(a.y - y)
+                    .total_cmp(&(b.x - x).hypot(b.y - y))
+            })
+            .unwrap()
     }
 
     #[test]
-    fn the_tile_matches_the_app_icon() {
-        let frame = mark_frame(None, None);
-        assert_eq!(frame.cells.len(), GRID * GRID);
-        assert_eq!(frame.tile, 1.0);
-        // At rest every cell is in, unlifted.
-        assert!(
-            frame
-                .cells
-                .iter()
-                .all(|cell| cell.appear == 1.0 && cell.lift == 0.0)
-        );
-        // The icon's geometry: 16 pt gaps on an 824 pt tile, six cells.
-        let (x, y, extent) = cell_rect(824.0, 0, 0);
-        assert!((x - 16.0).abs() < 1e-3 && (y - 16.0).abs() < 1e-3);
-        assert!((extent - (824.0 - 7.0 * 16.0) / 6.0).abs() < 1e-3);
-        let (x, _, extent) = cell_rect(824.0, GRID - 1, 0);
-        assert!((x + extent + 16.0 - 824.0).abs() < 1e-3);
+    fn the_field_spreads_from_a_four_cell_heart() {
+        let cells = rest();
+        // Four cells share the heart, as in the icon, at full size and the
+        // lightest shade.
+        let heart: Vec<&FieldCell> = cells
+            .iter()
+            .filter(|cell| cell.x.abs() < FIELD_PITCH && cell.y.abs() < FIELD_PITCH)
+            .collect();
+        assert_eq!(heart.len(), 4);
+        for cell in &heart {
+            assert!((cell.x.abs() - FIELD_PITCH * 0.5).abs() < 1e-3);
+            assert_eq!(shade_index(cell.distance, 7), 0);
+            assert!(cell.extent > FIELD_PITCH * CELL_SHARE * 0.98);
+        }
+        // It reaches for the room's side and top edges, much less far below,
+        // and every cell sits inside the reach.
+        assert!(cells.iter().any(|cell| cell.x > ACROSS * 0.85));
+        assert!(cells.iter().all(|cell| cell.x.abs() < ACROSS));
+        assert!(cells.iter().any(|cell| cell.y < -UP * 0.8));
+        assert!(cells.iter().all(|cell| cell.y > -UP));
+        let lowest = cells.iter().map(|cell| cell.y).fold(f32::MIN, f32::max);
+        assert!(lowest < FIELD_PITCH + (UP - FIELD_PITCH) / FIELD_DOWNWARD + 1e-3);
+        assert!(cells.iter().all(|cell| cell.distance < 1.0));
+        assert!(cells.len() > 200);
     }
 
     #[test]
-    fn shades_deepen_from_the_heart_to_the_corners() {
-        let frame = mark_frame(None, None);
-        let shade = |row, col| shade_index(at(&frame, row, col).distance, 7);
-        // The four heart cells share the lightest shade in use; the corners
-        // take the deepest.
-        let heart = shade(2, 2);
-        assert_eq!([shade(2, 3), shade(3, 2), shade(3, 3)], [heart; 3]);
-        assert_eq!(shade(0, 0), 6);
-        assert!(heart < shade(2, 0) && shade(2, 0) < shade(0, 0));
-        // The tile is symmetric.
-        assert_eq!(at(&frame, 0, 2), at(&frame, 2, 0));
-        assert_eq!(at(&frame, 1, 4), at(&frame, 4, 1));
+    fn cells_deepen_shrink_and_fade_outwards() {
+        let cells = rest();
+        let heart = nearest(&cells, FIELD_PITCH * 0.5, -FIELD_PITCH * 0.5);
+        let middle = nearest(&cells, ACROSS * 0.45, 0.0);
+        let outer = nearest(&cells, ACROSS * 0.9, 0.0);
+        assert!(shade_index(heart.distance, 7) < shade_index(middle.distance, 7));
+        assert!(heart.extent > middle.extent && middle.extent > outer.extent);
+        assert_eq!(field_alpha(heart.distance), 1.0);
+        assert!(field_alpha(middle.distance) < 1.0);
+        assert!(field_alpha(outer.distance) < 0.1);
+        assert_eq!(field_alpha(1.0), 0.0);
+        // Below the heart it fades sooner than above it.
+        let above = nearest(&cells, FIELD_PITCH * 0.5, -110.0);
+        let below = nearest(&cells, FIELD_PITCH * 0.5, 110.0);
+        assert!(below.distance > above.distance);
     }
 
     #[test]
     fn the_build_fills_from_the_heart_outwards() {
-        let early = mark_frame(Some(0.4), None);
-        assert!(at(&early, 2, 2).appear > at(&early, 0, 0).appear);
-        assert!(early.tile < 1.0);
-        assert_eq!(mark_frame(Some(0.0), None).cells[0].appear, 0.0);
-        // A cell overshoots a little on its way in, and lands on 1.
+        let layout = field_layout(ROOM.0, ROOM.1);
+        let early = field_cells(&layout, Some(0.3), None);
+        let heart = nearest(&early, FIELD_PITCH * 0.5, FIELD_PITCH * 0.5);
+        let outer = nearest(&early, ACROSS * 0.7, 0.0);
+        assert!(heart.appear > outer.appear);
+        assert_eq!(field_cells(&layout, Some(0.0), None)[0].appear, 0.0);
         assert!((1..100).any(|step| appear_scale(step as f32 / 100.0) > 1.0));
         assert!((appear_scale(1.0) - 1.0).abs() < 1e-5);
         assert_eq!(build_at(None), None);
         assert_eq!(build_at(Some(1.0)), None);
-        assert_eq!(build_at(Some(0.3)), Some(0.3));
+        assert_eq!(build_at(Some(0.4)), Some(0.4));
     }
 
     #[test]
-    fn a_ripple_runs_outwards_and_settles() {
-        let lift = |ripple: f32, row: usize, col: usize| {
-            at(&mark_frame(None, Some(ripple)), row, col).lift
-        };
-        assert!(lift(0.1, 2, 2) > lift(0.1, 0, 0));
-        assert!(lift(0.55, 0, 0) > lift(0.55, 2, 2));
-        assert!(lift(0.98, 0, 0) < 0.05);
-        assert_eq!(ripple_at(None), None);
-        assert_eq!(ripple_at(Some(1.0)), None);
-        assert!(ripple_at(Some(0.5)).unwrap() > 0.5);
+    fn pulses_roll_out_from_the_heart_and_dim() {
+        // A pulse just leaving lifts the heart; later it lifts a ring
+        // farther out, and the heart only when the next pulse leaves.
+        assert!(pulse_lift(0.0, 0.02) > 0.5);
+        assert!(pulse_lift(0.5, 0.48) > pulse_lift(0.05, 0.48));
+        assert!(pulse_lift(0.06, 0.54) > 0.5);
+        // It dims as it travels.
+        assert!(pulse_lift(0.9, 0.82) < pulse_lift(0.2, 0.22));
+        // The pulse cycles.
+        let three = super::package::PULSE_SECONDS * 3.0;
+        assert!((pulse_at(three) - pulse_at(0.0)).abs() < 1e-4);
+        assert!(pulse_at(1.0) > 0.0 && pulse_at(1.0) < 1.0);
     }
 
     #[test]
-    fn corner_cells_are_clipped_to_the_tile() {
-        // The icon's top-left corner cell against its 185.4 pt corner.
-        let (x, y, extent) = cell_rect(824.0, 0, 0);
-        let round = 185.4;
-        let square: Vec<(f32, f32)> = vec![
-            (x, y),
-            (x + extent, y),
-            (x + extent, y + extent),
-            (x, y + extent),
-        ];
-        let clipped = clip_to_disc(&square, (round, round), round);
-        // Every point lies inside the tile's corner, the inner corner of the
-        // cell survives and the outer one is cut away.
-        assert!(
-            clipped
-                .iter()
-                .all(|p| (p.0 - round).hypot(p.1 - round) <= round + 1e-2)
-        );
-        assert!(clipped.contains(&(x + extent, y + extent)));
-        assert!(!clipped.contains(&(x, y)));
-        // A cell well inside the disc is kept whole.
-        let inner = vec![
-            (150.0, 150.0),
-            (170.0, 150.0),
-            (170.0, 170.0),
-            (150.0, 170.0),
-        ];
-        assert_eq!(clip_to_disc(&inner, (round, round), round), inner);
-    }
-
-    #[test]
-    fn cells_take_the_brand_shades() {
-        let style = brand(false);
-        let rest = mark_frame(None, None);
-        let corner = cell_color(at(&rest, 0, 0), &style);
+    fn cells_take_the_brand_shades_and_brighten_with_a_pulse() {
+        let style = brand();
+        let cells = rest();
+        let heart = nearest(&cells, FIELD_PITCH * 0.5, FIELD_PITCH * 0.5);
         let close = |a: gpui::Hsla, b: gpui::Hsla| {
             let (a, b) = (gpui::Rgba::from(a), gpui::Rgba::from(b));
             (a.r - b.r).abs() < 0.01 && (a.g - b.g).abs() < 0.01 && (a.b - b.b).abs() < 0.01
         };
-        assert!(close(corner, style.shades[6]));
-        // A lifted cell moves towards the highlight; a cell not yet in is
-        // transparent.
-        let mut lifted = at(&rest, 0, 0);
+        assert!(close(cell_color(&heart, &style), style.shades[0]));
+        let edge = nearest(&cells, ACROSS * 0.5, 0.0);
+        let mut lifted = edge;
         lifted.lift = 1.0;
-        assert!(gpui::Rgba::from(cell_color(lifted, &style)).g > gpui::Rgba::from(corner).g);
-        let mut hidden = at(&rest, 0, 0);
+        assert!(cell_color(&lifted, &style).a > cell_color(&edge, &style).a);
+        let mut hidden = heart;
         hidden.appear = 0.0;
-        assert_eq!(cell_color(hidden, &style).a, 0.0);
-        assert!(close(mix(style.tile, style.highlight, 0.0), style.tile));
-        // The dark variant's tile sits a step deeper.
-        assert!(!close(brand(true).tile, style.tile));
+        assert_eq!(cell_color(&hidden, &style).a, 0.0);
     }
 
     #[test]
-    fn the_mark_scales_like_pinks() {
-        assert_eq!(mark_side(1200.0, 1000.0), MARK_SIDE);
-        assert_eq!(mark_side(940.0, 720.0), MARK_SIDE * 0.8);
-        assert_eq!(mark_side(200.0, 300.0), MARK_SIDE * 0.6);
+    fn the_field_fits_the_room() {
+        let full = field_layout(ROOM.0, ROOM.1);
+        assert_eq!(full.side, HERO_SIDE);
+        assert_eq!(full.pitch, FIELD_PITCH);
+        assert_eq!((full.reach_x, full.reach_y), (ACROSS, UP));
+        // A huge room caps the reach; a small one shrinks the cells and
+        // keeps a minimum field.
+        let huge = field_layout(4000.0, 3000.0);
+        assert_eq!(
+            (huge.reach_x, huge.reach_y),
+            (FIELD_REACH_MAX, FIELD_REACH_MAX)
+        );
+        let small = field_layout(200.0, 300.0);
+        assert!((small.side - HERO_SIDE * 0.6).abs() < 1e-3);
+        assert!((small.reach_y - 240.0 * 0.6).abs() < 1e-3);
     }
 }
