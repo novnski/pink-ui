@@ -1,16 +1,17 @@
 //! Welcome Screen – Pink's first-run screen: what the main column shows
 //! before there is a project to work in.
 //!
-//! A lit moon drawn in text sits over one question and one way forward. The
-//! moon is a sphere rendered into a 72 × 39 grid of block glyphs (the
-//! near side from Pink's NASA-derived artwork, the far side procedural);
-//! under the pointer only its surface turns, once, over 4.8 s, and then it
-//! parks. Light mode inks it like paper, dark mode lights it. The whole
-//! group arrives with Pink's 500 ms rise.
+//! Pink's mark sits over one question, a line on what to do, one way forward
+//! and its shortcut. The mark is the app icon's idea at hero size: a rounded
+//! tile of 9 × 9 rounded cells, light pink at its heart and deepening shade
+//! by shade to its edges. Under the pointer a ripple runs out from the
+//! centre once, over 1.6 s, lifting each ring as it passes. The whole group
+//! arrives with Pink's 500 ms rise.
 //!
 //! ```ignore
 //! WelcomeScreen::new("welcome")
 //!     .size(940.0, 800.0)
+//!     .shortcut(Some("⌘⇧N"))
 //!     .on_add_project(|_, _| println!("pick a folder"))
 //! ```
 
@@ -18,46 +19,55 @@ use std::{rc::Rc, sync::Arc};
 use web_time::{Duration, Instant};
 
 use gpui::{
-    AnyView, App, Context, ElementId, Font, IntoElement, Role, SharedString, Task, Window, div,
-    prelude::*, px,
+    AnyView, App, Context, ElementId, IntoElement, Role, SharedString, Task, Window, div,
+    prelude::*, px, rgb,
 };
 
 use crate::{
     motion,
-    pink::{self, ButtonKind, ControlSize, Pink},
+    pink::{self, ButtonKind, ControlSize, FillTier, Pink},
     story,
 };
 
 pub const NAME: &str = "Welcome Screen";
-pub const DESCRIPTION: &str = "The first thing a new workspace shows: a lit text-drawn moon that turns once under the pointer, above one question and the one button that starts a project";
+pub const DESCRIPTION: &str = "The first thing a new workspace shows: Pink's mark, a tile of pink cells that deepen to its edges and ripple once under the pointer, above one question, a line on what to do, the one button that starts a project and its shortcut";
 
 /// The `pink-welcome-screen` package (`components/welcome-screen`): PINK's
-/// text-drawn moon (empty_project_moon.rs), its question and the action's
-/// spacing, compiled here unchanged. The story adds the canvas, the clock
-/// and the kit's Primary button.
+/// mark (welcome_mark.rs), its question, line, action and shortcut,
+/// compiled here unchanged. The story adds the canvas, the clock and the
+/// kit's Primary button.
 #[allow(dead_code)]
 pub mod package {
     include!("../../components/welcome-screen/src/lib.rs");
 }
-use package::{TURN_SECONDS, moon_diameter, moon_rows, turn_at};
+use package::{Cell, MarkStyle, RIPPLE_SECONDS, mark_cells, mark_side, ripple_at};
 
 /// Pink: workbench/render.rs `CANVAS_RADIUS` – the canvas the screen sits on.
 const CANVAS_RADIUS: f32 = 14.0;
-/// The demo turns the moon itself this often (Pink waits for the pointer).
+/// The demo ripples the mark itself this often (Pink waits for the pointer).
 const AUTOPLAY_FIRST: Duration = Duration::from_millis(900);
-const AUTOPLAY_EVERY: Duration = Duration::from_secs(9);
+const AUTOPLAY_EVERY: Duration = Duration::from_secs(6);
 
-/// The moon's state (Pink `AsciiMoon`): when the turn started and the last
-/// lines drawn.
-struct MoonState {
+/// Pink's brand pinks (welcome_mark.rs `BRAND`): the mark's heart, edge and
+/// ripple highlight, the same in both appearances like the app icon.
+fn brand() -> MarkStyle {
+    MarkStyle {
+        heart: rgb(0xf9a8d4).into(),
+        edge: rgb(0xbe185d).into(),
+        highlight: rgb(0xfdf2f8).into(),
+    }
+}
+
+/// The mark's state (Pink `WelcomeMark`): when the ripple started and the
+/// last cells drawn.
+struct MarkState {
     started: Option<Instant>,
-    cached_turn: f32,
-    cached_light: bool,
-    rows: Vec<SharedString>,
+    cached: Option<f32>,
+    cells: Vec<Option<Cell>>,
     _autoplay: Option<Task<()>>,
 }
 
-impl MoonState {
+impl MarkState {
     fn new(autoplay: bool, cx: &mut Context<Self>) -> Self {
         let autoplay = autoplay.then(|| {
             cx.spawn(async move |this, cx| {
@@ -65,13 +75,13 @@ impl MoonState {
                 loop {
                     cx.background_executor().timer(wait).await;
                     wait = AUTOPLAY_EVERY;
-                    let turned = this.update(cx, |m, cx| {
+                    let rippled = this.update(cx, |m, cx| {
                         if m.started.is_none() && !motion::reduced_motion(cx) {
                             m.started = Some(Instant::now());
                             cx.notify();
                         }
                     });
-                    if turned.is_err() {
+                    if rippled.is_err() {
                         break;
                     }
                 }
@@ -79,9 +89,8 @@ impl MoonState {
         });
         Self {
             started: None,
-            cached_turn: 0.0,
-            cached_light: false,
-            rows: moon_rows(0.0, false),
+            cached: None,
+            cells: mark_cells(None),
             _autoplay: autoplay,
         }
     }
@@ -97,10 +106,12 @@ type AddHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 pub struct WelcomeScreen {
     id: ElementId,
     heading: SharedString,
+    subheading: SharedString,
     action: SharedString,
+    shortcut: Option<SharedString>,
     width: f32,
     height: f32,
-    diameter: Option<f32>,
+    side: Option<f32>,
     autoplay: bool,
     on_add_project: Option<AddHandler>,
 }
@@ -110,18 +121,26 @@ impl WelcomeScreen {
         Self {
             id: id.into(),
             heading: "What will you build?".into(),
+            subheading: "Add a folder to start a thread with your coding agents.".into(),
             action: "Add project".into(),
+            shortcut: Some("⌘⇧N".into()),
             width: 940.0,
             height: 800.0,
-            diameter: None,
+            side: None,
             autoplay: false,
             on_add_project: None,
         }
     }
 
-    /// The question under the moon.
+    /// The question under the mark.
     pub fn heading(mut self, heading: impl Into<SharedString>) -> Self {
         self.heading = heading.into();
+        self
+    }
+
+    /// The line under the question.
+    pub fn subheading(mut self, subheading: impl Into<SharedString>) -> Self {
+        self.subheading = subheading.into();
         self
     }
 
@@ -131,20 +150,26 @@ impl WelcomeScreen {
         self
     }
 
-    /// The canvas's size; the moon scales with it like Pink's.
+    /// The button's shortcut, shown under it (`None` hides the hint).
+    pub fn shortcut(mut self, keys: Option<impl Into<SharedString>>) -> Self {
+        self.shortcut = keys.map(Into::into);
+        self
+    }
+
+    /// The canvas's size; the mark scales with it like Pink's.
     pub fn size(mut self, width: f32, height: f32) -> Self {
         self.width = width;
         self.height = height;
         self
     }
 
-    /// Draws the moon at this diameter instead of scaling it.
-    pub fn moon_diameter(mut self, diameter: f32) -> Self {
-        self.diameter = Some(diameter);
+    /// Draws the mark at this side instead of scaling it.
+    pub fn mark_side(mut self, side: f32) -> Self {
+        self.side = Some(side);
         self
     }
 
-    /// Turns the moon every few seconds on its own, not only under the
+    /// Ripples the mark every few seconds on its own, not only under the
     /// pointer (for demos).
     pub fn autoplay(mut self, autoplay: bool) -> Self {
         self.autoplay = autoplay;
@@ -162,77 +187,50 @@ impl RenderOnce for WelcomeScreen {
         let t = Pink::get(cx);
         let key = self.id.to_string();
         let autoplay = self.autoplay;
-        let moon = window.use_keyed_state(
-            ElementId::NamedChild(Arc::new(self.id.clone()), "moon".into()),
+        let state = window.use_keyed_state(
+            ElementId::NamedChild(Arc::new(self.id.clone()), "mark".into()),
             cx,
-            move |_, cx| MoonState::new(autoplay, cx),
+            move |_, cx| MarkState::new(autoplay, cx),
         );
-        let diameter = self
-            .diameter
-            .unwrap_or_else(|| moon_diameter(self.width, self.height));
+        let side = self
+            .side
+            .unwrap_or_else(|| mark_side(self.width, self.height));
 
-        // Pink `AsciiMoon::render`: the turn runs on animation frames and
-        // parks when it completes (or never starts under reduced motion).
+        // Pink `WelcomeMark::render`: the ripple runs on animation frames
+        // and stops asking for them when it completes (or never starts
+        // under reduced motion).
         let reduced = motion::reduced_motion(cx);
-        let light = !t.dark;
-        let (turn, rows) = moon.update(cx, |m, _| {
-            let duration = TURN_SECONDS * motion::speed_scale().max(0.01);
+        let cells = state.update(cx, |m, _| {
+            let duration = RIPPLE_SECONDS * motion::speed_scale().max(0.01);
             let progress = m
                 .started
                 .map(|start| start.elapsed().as_secs_f32() / duration);
-            let turn = match turn_at(progress).filter(|_| !reduced) {
-                Some(turn) => {
-                    window.request_animation_frame();
-                    turn
-                }
-                None => {
-                    m.started = None;
-                    0.0
-                }
-            };
-            if m.cached_turn != turn || m.cached_light != light {
-                m.rows = moon_rows(turn, light);
-                m.cached_turn = turn;
-                m.cached_light = light;
+            let ripple = ripple_at(progress).filter(|_| !reduced);
+            match ripple {
+                Some(_) => window.request_animation_frame(),
+                None => m.started = None,
             }
-            (turn, m.rows.clone())
+            if m.cached != ripple {
+                m.cells = mark_cells(ripple);
+                m.cached = ripple;
+            }
+            m.cells.clone()
         });
 
-        // The glyph grid fills the diameter exactly: Geist Mono's advance
-        // sets the size, the rows split the height.
-        let font = Font {
-            family: pink::MONO.into(),
-            ..Default::default()
-        };
-        let font_id = window.text_system().resolve_font(&font);
-        let advance = window
-            .text_system()
-            .advance(font_id, px(1.0), '0')
-            .map(|size| f32::from(size.width))
-            .unwrap_or(0.6)
-            .max(0.1);
-        let hover_moon = moon.clone();
-        let moon_el = package::moon(
-            rows,
-            diameter,
-            &package::MoonStyle {
-                text: package::moon_ink(t.text, turn, light),
-                font_family: pink::MONO.into(),
-                advance,
-            },
-        )
-        .id(ElementId::Name(format!("{key}-moon").into()))
-        .role(Role::Image)
-        .aria_label("Moon")
-        .on_hover(move |hovered: &bool, _, cx| {
-            let hovered = *hovered;
-            hover_moon.update(cx, |m, cx| {
-                if hovered && m.started.is_none() && !motion::reduced_motion(cx) {
-                    m.started = Some(Instant::now());
-                    cx.notify();
-                }
+        let hover_state = state.clone();
+        let mark = package::mark(cells, side, &brand())
+            .id(ElementId::Name(format!("{key}-mark").into()))
+            .role(Role::Image)
+            .aria_label("Pink")
+            .on_hover(move |hovered: &bool, _, cx| {
+                let hovered = *hovered;
+                hover_state.update(cx, |m, cx| {
+                    if hovered && m.started.is_none() && !motion::reduced_motion(cx) {
+                        m.started = Some(Instant::now());
+                        cx.notify();
+                    }
+                });
             });
-        });
 
         // Pink: shell.rs – one clear affordance: the kit's Primary at the
         // dialog size, widened and set at 14.
@@ -250,13 +248,30 @@ impl RenderOnce for WelcomeScreen {
                 f(window, cx);
             }
         });
-        // The package sets it under the question at the dialog size.
+        // The package sets it under the line at the dialog size.
         let add = package::action(add);
 
+        let hint = self.shortcut.clone().map(|keys| {
+            package::hint(
+                &package::HintStyle {
+                    text: t.content_faint,
+                    keycap: t.fill(FillTier::Secondary),
+                    keycap_text: t.text_muted,
+                    mono: pink::MONO.into(),
+                },
+                "or press",
+                keys,
+            )
+        });
         let group = package::welcome()
-            .child(moon_el)
+            .child(mark)
             .child(package::heading(t.text, self.heading.clone()))
-            .child(add);
+            .child(package::subheading(
+                t.content_muted,
+                self.subheading.clone(),
+            ))
+            .child(add)
+            .children(hint);
 
         // The main column's canvas (Pink: workbench/render.rs
         // `contained_plane`): radius 14, a hairline, the canvas fill.
@@ -292,62 +307,103 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
 
 #[cfg(test)]
 mod tests {
-    use super::package::{COLUMNS, GLYPHS, MOON_DIAMETER, ROWS};
+    use super::package::{GRID, MARK_SIDE, cell_color, mix};
     use super::*;
 
-    #[test]
-    fn the_moon_fills_its_grid() {
-        let rows = moon_rows(0.0, false);
-        assert_eq!(rows.len(), ROWS);
-        assert!(rows.iter().all(|row| row.chars().count() <= COLUMNS));
-        // The disc reaches the grid's sides on its middle row and leaves the
-        // corners empty.
-        let middle = &rows[ROWS / 2];
-        assert!(middle.chars().count() >= COLUMNS - 3);
-        assert!(rows[0].trim().len() < middle.trim().len());
-        // Every lit cell is ink; empty space only outside the disc.
-        assert!(middle.trim().chars().all(|c| GLYPHS[1..].contains(&c)));
+    fn at(cells: &[Option<Cell>], row: usize, col: usize) -> Option<Cell> {
+        cells[row * GRID + col]
     }
 
     #[test]
-    fn light_mode_inks_like_paper() {
-        // The light falls from the upper left: in dark mode that quadrant is
-        // the dense one, on paper it is the sparse one.
-        let weight = |rows: &[SharedString], upper_left: bool| -> usize {
-            rows.iter()
-                .enumerate()
-                .filter(|(row, _)| (*row < ROWS / 2) == upper_left)
-                .flat_map(|(_, line)| {
-                    line.chars()
-                        .enumerate()
-                        .filter(|(col, _)| (*col < COLUMNS / 2) == upper_left)
-                        .map(|(_, c)| GLYPHS.iter().position(|g| *g == c).unwrap_or(0))
-                        .collect::<Vec<_>>()
-                })
-                .sum()
+    fn the_tile_is_a_rounded_square_of_cells() {
+        let cells = mark_cells(None);
+        assert_eq!(cells.len(), GRID * GRID);
+        let last = GRID - 1;
+        // Only the four corner cells fall out, which rounds the tile.
+        for (row, col) in [(0, 0), (0, last), (last, 0), (last, last)] {
+            assert_eq!(at(&cells, row, col), None);
+        }
+        assert_eq!(cells.iter().filter(|cell| cell.is_none()).count(), 4);
+        // At rest nothing is lifted.
+        assert!(cells.iter().flatten().all(|cell| cell.lift == 0.0));
+    }
+
+    #[test]
+    fn shades_deepen_from_the_heart_to_the_edge() {
+        let cells = mark_cells(None);
+        let mid = GRID / 2;
+        let heart = at(&cells, mid, mid).unwrap().shade;
+        assert_eq!(heart, 0.0);
+        // Each ring outwards along the middle row is a deeper shade, ending
+        // on the edge.
+        let row: Vec<f32> = (mid..GRID)
+            .map(|col| at(&cells, mid, col).unwrap().shade)
+            .collect();
+        assert!(row.windows(2).all(|pair| pair[0] < pair[1]), "{row:?}");
+        assert!(row.last().copied().unwrap() > 0.8);
+        // The tile is symmetric.
+        assert_eq!(at(&cells, mid, 0), at(&cells, mid, GRID - 1));
+        assert_eq!(at(&cells, 0, mid), at(&cells, GRID - 1, mid));
+    }
+
+    #[test]
+    fn a_ripple_runs_outwards_and_settles() {
+        let mid = GRID / 2;
+        let lift = |ripple: f32, col: usize| at(&mark_cells(Some(ripple)), mid, col).unwrap().lift;
+        // Early on the heart is lifted more than the edge; later the edge
+        // more than the heart.
+        assert!(lift(0.05, mid) > lift(0.05, GRID - 1));
+        assert!(lift(0.7, GRID - 1) > lift(0.7, mid));
+        // The ripple fades as it ends, and the clock parks.
+        assert!(lift(0.98, GRID - 1) < 0.05);
+        assert_eq!(ripple_at(None), None);
+        assert_eq!(ripple_at(Some(0.0)), Some(0.0));
+        assert_eq!(ripple_at(Some(1.0)), None);
+        assert!(ripple_at(Some(0.5)).unwrap() > 0.5);
+    }
+
+    #[test]
+    fn cells_mix_between_the_brand_shades() {
+        let style = brand();
+        let heart = cell_color(
+            Cell {
+                shade: 0.0,
+                lift: 0.0,
+            },
+            &style,
+        );
+        let edge = cell_color(
+            Cell {
+                shade: 1.0,
+                lift: 0.0,
+            },
+            &style,
+        );
+        let close = |a: gpui::Hsla, b: gpui::Hsla| {
+            let (a, b) = (gpui::Rgba::from(a), gpui::Rgba::from(b));
+            (a.r - b.r).abs() < 0.01 && (a.g - b.g).abs() < 0.01 && (a.b - b.b).abs() < 0.01
         };
-        let dark = moon_rows(0.0, false);
-        let light = moon_rows(0.0, true);
-        assert_ne!(dark, light);
-        assert!(weight(&dark, true) > weight(&dark, false));
-        assert!(weight(&light, true) < weight(&light, false));
+        assert!(close(heart, style.heart));
+        assert!(close(edge, style.edge));
+        // A lifted cell moves towards the highlight.
+        let lifted = cell_color(
+            Cell {
+                shade: 1.0,
+                lift: 1.0,
+            },
+            &style,
+        );
+        assert!(gpui::Rgba::from(lifted).g > gpui::Rgba::from(edge).g);
+        assert!(close(
+            mix(style.heart, style.edge, 0.5),
+            mix(style.edge, style.heart, 0.5)
+        ));
     }
 
     #[test]
-    fn a_turn_moves_the_surface_and_comes_back() {
-        let rest = moon_rows(0.0, false);
-        assert_ne!(moon_rows(0.25, false), rest);
-        assert_eq!(moon_rows(1.0, false), rest);
-        assert_eq!(turn_at(None), None);
-        assert_eq!(turn_at(Some(0.0)), Some(0.0));
-        assert_eq!(turn_at(Some(0.5)), Some(0.5));
-        assert_eq!(turn_at(Some(1.0)), None);
-    }
-
-    #[test]
-    fn the_moon_scales_like_pinks() {
-        assert_eq!(moon_diameter(1200.0, 1000.0), MOON_DIAMETER);
-        assert_eq!(moon_diameter(940.0, 720.0), MOON_DIAMETER * 0.8);
-        assert_eq!(moon_diameter(200.0, 300.0), MOON_DIAMETER * 0.58);
+    fn the_mark_scales_like_pinks() {
+        assert_eq!(mark_side(1200.0, 1000.0), MARK_SIDE);
+        assert_eq!(mark_side(940.0, 720.0), MARK_SIDE * 0.8);
+        assert_eq!(mark_side(200.0, 300.0), MARK_SIDE * 0.6);
     }
 }

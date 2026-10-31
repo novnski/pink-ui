@@ -1,10 +1,10 @@
 //! The `pink-welcome-screen` package's geometry at Interface sizes 12, 16
-//! and 20, as PINK lays its first-run canvas out. Failure modes: a moon
+//! and 20, as PINK lays its first-run canvas out. Failure modes: a mark
 //! that grows or shrinks with the Interface size instead of the space it
-//! has, or whose glyph grid overflows or underfills its square; a question
-//! that stays at 20 px while the rest of the interface scales, or whose
-//! space above it scales; an action whose label stays at 14 px, or whose
-//! padding and the space above it drift with the text.
+//! has, or whose cells overflow or underfill its square; a question,
+//! line or hint that stays put while the rest of the interface scales, or
+//! whose space above it scales; an action whose label stays at 14 px, or
+//! whose padding and the space above it drift with the text.
 
 use gpui::{
     Bounds, Context, IntoElement, Pixels, Render, TestAppContext, Window, div, prelude::*, px,
@@ -12,13 +12,14 @@ use gpui::{
 use pink_ui::{
     Theme, ThemeMode,
     components::welcome_screen::package::{
-        ACTION_GAP, ACTION_PAD_Y, HEADING_GAP, MoonStyle, ROWS, action, heading, moon,
-        moon_diameter, moon_ink, moon_rows, welcome,
+        ACTION_GAP, ACTION_PAD_Y, GRID, HEADING_GAP, HINT_GAP, HintStyle, MarkStyle,
+        SUBHEADING_GAP, SUBHEADING_LINE, action, heading, hint, mark, mark_cells, mark_side,
+        subheading, welcome,
     },
     pink::Pink,
 };
 
-const DIAMETER: f32 = 240.0;
+const SIDE: f32 = 160.0;
 
 /// A host that sets the window's rem to its Interface size, as PINK's root
 /// does (`window.set_rem_size`).
@@ -30,19 +31,30 @@ impl Render for Host {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         window.set_rem_size(px(self.ui));
         let t = Pink::get(cx);
-        let style = MoonStyle {
-            text: moon_ink(t.text, 0.0, false),
-            font_family: pink_ui::pink::MONO.into(),
-            advance: 0.6,
+        let style = MarkStyle {
+            heart: gpui::rgb(0xf9a8d4).into(),
+            edge: gpui::rgb(0xbe185d).into(),
+            highlight: gpui::rgb(0xfdf2f8).into(),
+        };
+        let hint_style = HintStyle {
+            text: t.content_faint,
+            keycap: t.border,
+            keycap_text: t.text_muted,
+            mono: pink_ui::pink::MONO.into(),
         };
         welcome()
-            .child(moon(moon_rows(0.0, false), DIAMETER, &style).debug_selector(|| "moon".into()))
+            .child(mark(mark_cells(None), SIDE, &style).debug_selector(|| "mark".into()))
             .child(heading(t.text, "What will you build?").debug_selector(|| "heading".into()))
+            .child(
+                subheading(t.content_muted, "Add a project folder to start a thread.")
+                    .debug_selector(|| "subheading".into()),
+            )
             .child(
                 action(div().child("Add project"))
                     .line_height(gpui::relative(1.0))
                     .debug_selector(|| "action".into()),
             )
+            .child(hint(&hint_style, "or press", "⌘⇧N").debug_selector(|| "hint".into()))
     }
 }
 
@@ -56,7 +68,7 @@ fn near(a: f32, b: f32) -> bool {
 }
 
 #[gpui::test]
-fn the_welcome_follows_the_interface_size_but_the_moon_its_space(cx: &mut TestAppContext) {
+fn the_welcome_follows_the_interface_size_but_the_mark_its_space(cx: &mut TestAppContext) {
     cx.update(pink_ui::init);
     for ui in [12.0_f32, 16.0, 20.0] {
         let scale = ui / 16.0;
@@ -65,36 +77,51 @@ fn the_welcome_follows_the_interface_size_but_the_moon_its_space(cx: &mut TestAp
         let (_, cx) = cx.add_window_view(|_, _| Host { ui });
         cx.run_until_parked();
 
-        // The moon is its diameter at every Interface size, one line per
-        // grid row.
-        let moon = bounds(cx, "moon");
+        // The mark is its side at every Interface size, one cell per grid
+        // position.
+        let mark = bounds(cx, "mark");
         assert!(
-            near(f32::from(moon.size.width), DIAMETER)
-                && near(f32::from(moon.size.height), DIAMETER),
-            "moon at {ui}: {:?}",
-            moon.size
+            near(f32::from(mark.size.width), SIDE) && near(f32::from(mark.size.height), SIDE),
+            "mark at {ui}: {:?}",
+            mark.size
         );
-        assert_eq!(moon_rows(0.0, false).len(), ROWS);
+        assert_eq!(mark_cells(None).len(), GRID * GRID);
 
-        // The question sits HEADING_GAP px under the moon; its line grows
+        // The question sits HEADING_GAP px under the mark; its line grows
         // with the Interface size.
         let heading = bounds(cx, "heading");
         assert!(
-            near(f32::from(heading.origin.y - moon.bottom()), HEADING_GAP),
+            near(f32::from(heading.origin.y - mark.bottom()), HEADING_GAP),
             "heading gap at {ui}"
         );
         let base_line = f32::from(heading.size.height) / scale;
         assert!(
-            (26.0..=34.0).contains(&base_line),
+            (28.0..=38.0).contains(&base_line),
             "heading line at {ui}: {:?}",
             heading.size
         );
 
-        // The action sits ACTION_GAP px under the question; its 14 rem label
+        // The line sits SUBHEADING_GAP px under the question, one line of
+        // SUBHEADING_LINE rems.
+        let subheading = bounds(cx, "subheading");
+        assert!(
+            near(
+                f32::from(subheading.origin.y - heading.bottom()),
+                SUBHEADING_GAP
+            ),
+            "subheading gap at {ui}"
+        );
+        assert!(
+            near(f32::from(subheading.size.height), SUBHEADING_LINE * scale),
+            "subheading line at {ui}: {:?}",
+            subheading.size
+        );
+
+        // The action sits ACTION_GAP px under the line; its 14 rem label
         // (line height 1) grows inside fixed pixel padding.
         let action = bounds(cx, "action");
         assert!(
-            near(f32::from(action.origin.y - heading.bottom()), ACTION_GAP),
+            near(f32::from(action.origin.y - subheading.bottom()), ACTION_GAP),
             "action gap at {ui}"
         );
         assert!(
@@ -105,8 +132,22 @@ fn the_welcome_follows_the_interface_size_but_the_moon_its_space(cx: &mut TestAp
             "action height at {ui}: {:?}",
             action.size
         );
+
+        // The shortcut sits HINT_GAP px under the action and grows with the
+        // text.
+        let hint = bounds(cx, "hint");
+        assert!(
+            near(f32::from(hint.origin.y - action.bottom()), HINT_GAP),
+            "hint gap at {ui}"
+        );
+        let hint_line = f32::from(hint.size.height) / scale;
+        assert!(
+            (14.0..=22.0).contains(&hint_line),
+            "hint line at {ui}: {:?}",
+            hint.size
+        );
     }
-    // The moon's diameter follows the window, never the Interface size.
-    assert!(near(moon_diameter(1200.0, 1000.0), 320.0));
-    assert!(near(moon_diameter(200.0, 300.0), 320.0 * 0.58));
+    // The mark's side follows the window, never the Interface size.
+    assert!(near(mark_side(1200.0, 1000.0), 176.0));
+    assert!(near(mark_side(200.0, 300.0), 176.0 * 0.6));
 }
