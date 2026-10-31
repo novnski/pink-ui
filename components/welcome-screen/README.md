@@ -38,18 +38,27 @@ four times faster, so the words under it stay clear.
   canvas clips it, and the question and action paint over it.
   `shade_index`, `field_alpha`, `cell_color`, `appear_scale` and `mix` are
   the pieces it paints with.
-- `heading(color, copy)`, `subheading(color, copy)`, `action(button)`,
-  `hint(&HintStyle, lead, keys)` and `welcome()`: the question
-  (`HEADING_SIZE` semibold, `HEADING_GAP` under the heart), the line under it
-  (`SUBHEADING_SIZE`, wrapped at `SUBHEADING_WIDTH`), the host's button set
-  `ACTION_GAP` under that with its padding and `ACTION_TEXT` label, the
-  shortcut in a keycap `HINT_GAP` under the button, and the centred column
-  holding them. The text is rems, so it follows the host's Interface size;
-  the field follows the space it has.
+- `heading(color, copy)` and `subheading(color, copy)`: the question
+  (`HEADING_SIZE` semibold, `HEADING_GAP` under the heart) and the line under
+  it (`SUBHEADING_SIZE`, wrapped at `SUBHEADING_WIDTH`), in colours the host
+  leans towards the field's pink (`mix` by `HEADING_TINT` and
+  `SUBHEADING_TINT`).
+- `action(button, &ActionStyle)`: the host's button as a pink cell
+  `ACTION_GAP` under the line: a top-to-bottom pink fill, a deeper edge,
+  `ACTION_RADIUS` corners and a semibold label. `glow_strength(pulse)` is
+  its pink glow's alpha, resting between pulses and rising as each one
+  leaves the heart; the host adds it as a shadow in its own GPUI's shape
+  (`GLOW_OFFSET`, `GLOW_BLUR`, `GLOW_SPREAD`), so the button breathes with
+  the field.
+- `hint(&HintStyle, lead, keys)` and `split_keys(combo)`: the shortcut
+  `HINT_GAP` under the button, each key in its own small pink cell.
+- `welcome()`: the centred column holding them. The text is rems, so it
+  follows the host's Interface size; the field follows the space it has.
 
 The host adds the rest: the clocks (when the build and the pulse started,
 reduced motion, animation frames), the resolved colours (the icon's seven
-shades and the highlight) and mono family, the field's role and accessible
+shades and the highlight, the tints, the action and key cells) and mono
+family, the action's glow shadow, the field's role and accessible
 name, the button with its id, role, accessible name and click, and the real
 shortcut for the hint.
 
@@ -61,10 +70,10 @@ In `crates/ui/Cargo.toml`, beside the other pink-ui packages:
 pink-welcome-screen = { git = "https://github.com/novnski/pink-ui", rev = "<merged main commit>", package = "pink-welcome-screen" }
 ```
 
-`welcome_mark.rs` keeps PINK's field view (its clocks and fixture readback)
-and draws with `field_cells` and `hero`; the onboarding canvas in `shell.rs`
-lays the hero, `heading`, `subheading`, `action` and `hint` out in
-`welcome()` and clips the field.
+`welcome_mark.rs` keeps PINK's welcome view (its clocks, the action's
+glow and fixture readback): it draws the hero, `heading`, `subheading`,
+`action` and `hint` in `welcome()` on every frame of the pulse; the
+onboarding canvas in `shell.rs` places it and clips the field.
 
 ## Checks
 
@@ -73,5 +82,5 @@ lays the hero, `heading`, `subheading`, `action` and `hint` out in
 - In the gallery: `tests/welcome_screen.rs` lays the welcome out at Interface
   sizes 12, 16 and 20; the story module's tests check the four-cell heart,
   the reach and the faster fade below it, the shading, shrinking and
-  fading outwards, the build, the pulses, the colours and the fit to the
-  room.
+  fading outwards, the build, the pulses, the colours, the action's glow,
+  the key cells and the fit to the room.
