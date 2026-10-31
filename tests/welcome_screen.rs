@@ -12,9 +12,9 @@ use gpui::{
 use pink_ui::{
     Theme, ThemeMode,
     components::welcome_screen::package::{
-        ACTION_GAP, ACTION_PAD_Y, FieldStyle, HEADING_GAP, HERO_SIDE, HINT_GAP, HintStyle,
-        SUBHEADING_GAP, SUBHEADING_LINE, action, field_cells, field_layout, heading, hero, hint,
-        subheading, welcome,
+        ACTION_GAP, ACTION_PAD_Y, ACTION_TEXT, ActionStyle, FieldStyle, HEADING_GAP, HERO_SIDE,
+        HINT_GAP, HintStyle, SUBHEADING_GAP, SUBHEADING_LINE, action, field_cells, field_layout,
+        heading, hero, hint, split_keys, subheading, welcome,
     },
     pink::Pink,
 };
@@ -44,9 +44,16 @@ impl Render for Host {
         let layout = field_layout(ROOM.0, ROOM.1);
         let hint_style = HintStyle {
             text: t.content_faint,
-            keycap: t.border,
-            keycap_text: t.text_muted,
+            cell: t.border,
+            cell_edge: t.border,
+            cell_text: t.text_muted,
             mono: pink_ui::pink::MONO.into(),
+        };
+        let action_style = ActionStyle {
+            top: gpui::rgb(0xf472b6).into(),
+            bottom: gpui::rgb(0xdb2777).into(),
+            edge: gpui::rgb(0xbe185d).into(),
+            text: gpui::white(),
         };
         welcome()
             .child(
@@ -59,11 +66,13 @@ impl Render for Host {
                     .debug_selector(|| "subheading".into()),
             )
             .child(
-                action(div().child("Add project"))
+                action(div().child("Add project"), &action_style)
                     .line_height(gpui::relative(1.0))
                     .debug_selector(|| "action".into()),
             )
-            .child(hint(&hint_style, "or press", "⌘⇧N").debug_selector(|| "hint".into()))
+            .child(
+                hint(&hint_style, "or press", split_keys("⇧⌘N")).debug_selector(|| "hint".into()),
+            )
     }
 }
 
@@ -105,7 +114,7 @@ fn the_welcome_follows_the_interface_size_but_the_field_its_space(cx: &mut TestA
         );
         let base_line = f32::from(heading.size.height) / scale;
         assert!(
-            (28.0..=38.0).contains(&base_line),
+            (40.0..=54.0).contains(&base_line),
             "heading line at {ui}: {:?}",
             heading.size
         );
@@ -126,8 +135,8 @@ fn the_welcome_follows_the_interface_size_but_the_field_its_space(cx: &mut TestA
             subheading.size
         );
 
-        // The action sits ACTION_GAP px under the line; its 14 rem label
-        // (line height 1) grows inside fixed pixel padding.
+        // The action sits ACTION_GAP px under the line; its 15 rem label
+        // (line height 1) grows inside fixed pixel padding and its 1 px edge.
         let action = bounds(cx, "action");
         assert!(
             near(f32::from(action.origin.y - subheading.bottom()), ACTION_GAP),
@@ -136,7 +145,7 @@ fn the_welcome_follows_the_interface_size_but_the_field_its_space(cx: &mut TestA
         assert!(
             near(
                 f32::from(action.size.height),
-                14.0 * scale + 2.0 * ACTION_PAD_Y
+                ACTION_TEXT * scale + 2.0 * ACTION_PAD_Y + 2.0
             ),
             "action height at {ui}: {:?}",
             action.size
@@ -151,7 +160,7 @@ fn the_welcome_follows_the_interface_size_but_the_field_its_space(cx: &mut TestA
         );
         let hint_line = f32::from(hint.size.height) / scale;
         assert!(
-            (14.0..=22.0).contains(&hint_line),
+            (22.0..=30.0).contains(&hint_line),
             "hint line at {ui}: {:?}",
             hint.size
         );

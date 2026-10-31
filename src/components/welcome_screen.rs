@@ -13,7 +13,7 @@
 //! ```ignore
 //! WelcomeScreen::new("welcome")
 //!     .size(940.0, 800.0)
-//!     .shortcut(Some("⌘⇧N"))
+//!     .shortcut(Some("⇧⌘N"))
 //!     .on_add_project(|_, _| println!("pick a folder"))
 //! ```
 
@@ -21,17 +21,18 @@ use std::{rc::Rc, sync::Arc};
 use web_time::Instant;
 
 use gpui::{
-    AnyView, App, ElementId, IntoElement, Role, SharedString, Window, div, prelude::*, px, rgb,
+    AnyView, App, BoxShadow, ElementId, IntoElement, Role, SharedString, Window, div, point,
+    prelude::*, px, rgb,
 };
 
 use crate::{
     motion,
-    pink::{self, ButtonKind, ControlSize, FillTier, Pink},
+    pink::{self, Pink},
     story,
 };
 
 pub const NAME: &str = "Welcome Screen";
-pub const DESCRIPTION: &str = "The first thing a new workspace shows: a field of Pink's pink cells that pops in from the centre and keeps pulsing outwards, fading before the edges, above one question, a line on what to do, the one button that starts a project and its shortcut";
+pub const DESCRIPTION: &str = "The first thing a new workspace shows: a field of Pink's pink cells that pops in from the centre and keeps pulsing outwards, above a pink-tinted question and line, a pink cell button whose glow breathes with the pulse, and its shortcut in key cells";
 
 /// The `pink-welcome-screen` package (`components/welcome-screen`): PINK's
 /// pulsing cell field (welcome_mark.rs), its question, line, action and
@@ -100,7 +101,7 @@ impl WelcomeScreen {
             heading: "What will you build?".into(),
             subheading: "Add a folder to start a thread with your coding agents.".into(),
             action: "Add project".into(),
-            shortcut: Some("⌘⇧N".into()),
+            shortcut: Some("⇧⌘N".into()),
             width: 940.0,
             height: 800.0,
             on_add_project: None,
@@ -180,42 +181,60 @@ impl RenderOnce for WelcomeScreen {
             .role(Role::Image)
             .aria_label("Pink");
 
-        // Pink: shell.rs – one clear affordance: the kit's Primary at the
-        // dialog size, widened and set at 14.
+        // Pink: welcome_mark.rs – the one action as a pink cell whose glow
+        // breathes with each pulse leaving the heart.
         let on_add = self.on_add_project.clone();
-        let add = pink::button(
-            format!("{key}-add"),
-            ButtonKind::Primary,
-            ControlSize::Lg,
-            &t,
+        let glow = package::glow_strength(pulse);
+        let add = package::action(
+            div()
+                .id(ElementId::Name(format!("{key}-add").into()))
+                .role(Role::Button)
+                .aria_label(self.action.clone())
+                .cursor_pointer()
+                .child(self.action.clone())
+                .on_click(move |_, window, cx| {
+                    if let Some(f) = on_add.as_ref() {
+                        f(window, cx);
+                    }
+                }),
+            &package::ActionStyle {
+                top: rgb(0xf472b6).into(),
+                bottom: rgb(0xdb2777).into(),
+                edge: gpui::Hsla::from(rgb(0xbe185d)).opacity(0.5),
+                text: gpui::white(),
+            },
         )
-        .aria_label(self.action.clone())
-        .child(self.action.clone())
-        .on_click(move |_, window, cx| {
-            if let Some(f) = on_add.as_ref() {
-                f(window, cx);
-            }
-        });
-        // The package sets it under the line at the dialog size.
-        let add = package::action(add);
+        .shadow(vec![BoxShadow {
+            color: gpui::Hsla::from(rgb(0xec4899)).opacity(glow),
+            offset: point(px(0.0), px(package::GLOW_OFFSET)),
+            blur_radius: px(package::GLOW_BLUR),
+            spread_radius: px(package::GLOW_SPREAD),
+            inset: false,
+        }]);
 
+        // The field's pink, leaned into the words.
+        let pink_tint: gpui::Hsla = rgb(if t.dark { 0xf9a8d4 } else { 0xbe185d }).into();
         let hint = self.shortcut.clone().map(|keys| {
             package::hint(
                 &package::HintStyle {
                     text: t.content_faint,
-                    keycap: t.fill(FillTier::Secondary),
-                    keycap_text: t.text_muted,
+                    cell: gpui::Hsla::from(rgb(0xec4899)).opacity(if t.dark { 0.14 } else { 0.09 }),
+                    cell_edge: pink_tint.opacity(if t.dark { 0.28 } else { 0.22 }),
+                    cell_text: pink_tint,
                     mono: pink::MONO.into(),
                 },
                 "or press",
-                keys,
+                package::split_keys(&keys),
             )
         });
         let group = package::welcome()
             .child(hero)
-            .child(package::heading(t.text, self.heading.clone()))
+            .child(package::heading(
+                package::mix(t.text, pink_tint, package::HEADING_TINT),
+                self.heading.clone(),
+            ))
             .child(package::subheading(
-                t.content_muted,
+                package::mix(t.content_muted, pink_tint, package::SUBHEADING_TINT),
                 self.subheading.clone(),
             ))
             .child(add)
@@ -372,6 +391,26 @@ mod tests {
         let mut hidden = heart;
         hidden.appear = 0.0;
         assert_eq!(cell_color(&hidden, &style).a, 0.0);
+    }
+
+    #[test]
+    fn the_action_glows_with_the_pulse_and_keys_split_into_cells() {
+        use super::package::{GLOW_PEAK, GLOW_REST, glow_strength, split_keys};
+        assert_eq!(glow_strength(None), GLOW_REST);
+        // A pulse leaving the heart brightens the glow; between pulses it rests.
+        assert!(glow_strength(Some(0.06)) > GLOW_REST + 0.5 * (GLOW_PEAK - GLOW_REST));
+        assert!(glow_strength(Some(0.3)) < GLOW_REST + 0.1);
+        assert!(glow_strength(Some(0.06)) <= GLOW_PEAK);
+        let keys = |combo| {
+            split_keys(combo)
+                .into_iter()
+                .map(|key| key.to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(keys("⇧⌘N"), ["⇧", "⌘", "N"]);
+        assert_eq!(keys("⌘Space"), ["⌘", "Space"]);
+        assert_eq!(keys("F5"), ["F5"]);
+        assert!(keys("").is_empty());
     }
 
     #[test]

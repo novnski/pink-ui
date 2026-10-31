@@ -21,8 +21,8 @@
 // place with `include!` for its story.
 
 use gpui::{
-    AbsoluteLength, Bounds, Div, FontWeight, Hsla, Rgba, SharedString, canvas, div, fill, point,
-    prelude::*, px, rems, size,
+    AbsoluteLength, Bounds, Div, FontWeight, Hsla, Rgba, SharedString, canvas, div, fill,
+    linear_color_stop, linear_gradient, point, prelude::*, px, rems, size,
 };
 
 /// The field at full scale: the room its heart takes in the column (where
@@ -61,27 +61,40 @@ pub const PULSE_LIGHT: f32 = 0.6;
 pub const BUILD_SECONDS: f32 = 0.9;
 pub const PULSE_SECONDS: f32 = 3.2;
 /// The question under the heart: the space above it, its size.
-pub const HEADING_GAP: f32 = 32.0;
-pub const HEADING_SIZE: f32 = 22.0;
+pub const HEADING_GAP: f32 = 34.0;
+pub const HEADING_SIZE: f32 = 32.0;
+/// How far the question's colour leans towards the field's pink, and the
+/// line under it.
+pub const HEADING_TINT: f32 = 0.16;
+pub const SUBHEADING_TINT: f32 = 0.28;
 /// The line under the question: the space above it, its size, line height
 /// and widest measure.
-pub const SUBHEADING_GAP: f32 = 8.0;
-pub const SUBHEADING_SIZE: f32 = 14.0;
-pub const SUBHEADING_LINE: f32 = 20.0;
-pub const SUBHEADING_WIDTH: f32 = 400.0;
-/// The action under the line: the space above it, its padding and text
-/// size.
-pub const ACTION_GAP: f32 = 24.0;
-pub const ACTION_PAD_X: f32 = 20.0;
-pub const ACTION_PAD_Y: f32 = 10.0;
-pub const ACTION_TEXT: f32 = 14.0;
-/// The shortcut under the action: the space above it, its size, and the
-/// keycap's padding and corners.
-pub const HINT_GAP: f32 = 14.0;
-pub const HINT_SIZE: f32 = 12.0;
-pub const KEYCAP_PAD_X: f32 = 5.0;
-pub const KEYCAP_PAD_Y: f32 = 1.0;
-pub const KEYCAP_RADIUS: f32 = 4.0;
+pub const SUBHEADING_GAP: f32 = 10.0;
+pub const SUBHEADING_SIZE: f32 = 15.0;
+pub const SUBHEADING_LINE: f32 = 22.0;
+pub const SUBHEADING_WIDTH: f32 = 420.0;
+/// The action, a pink cell under the line: the space above it, its padding,
+/// text size, corner radius (the cells' 22% of its height) and edge.
+pub const ACTION_GAP: f32 = 26.0;
+pub const ACTION_PAD_X: f32 = 24.0;
+pub const ACTION_PAD_Y: f32 = 12.0;
+pub const ACTION_TEXT: f32 = 15.0;
+pub const ACTION_RADIUS: f32 = 11.0;
+/// The action's glow: how far it spreads and sits below the cell, and its
+/// strength at rest and at the peak of a pulse leaving the heart.
+pub const GLOW_BLUR: f32 = 36.0;
+pub const GLOW_OFFSET: f32 = 10.0;
+pub const GLOW_SPREAD: f32 = -4.0;
+pub const GLOW_REST: f32 = 0.22;
+pub const GLOW_PEAK: f32 = 0.72;
+/// The shortcut under the action, each key in its own small cell: the space
+/// above it, the text size, and a key cell's height, padding and corners.
+pub const HINT_GAP: f32 = 16.0;
+pub const HINT_SIZE: f32 = 13.0;
+pub const KEY_SIZE: f32 = 24.0;
+pub const KEY_PAD_X: f32 = 6.0;
+pub const KEY_RADIUS: f32 = 6.0;
+pub const KEY_GAP: f32 = 5.0;
 
 /// A design size (pt at the 16 px default) in rems, so it grows with the
 /// host's Interface size.
@@ -317,7 +330,8 @@ pub fn hero(layout: &FieldLayout, cells: Vec<FieldCell>, style: &FieldStyle) -> 
 }
 
 /// The question under the heart: `HEADING_GAP` above it, `HEADING_SIZE`
-/// semibold.
+/// semibold. The host tints its text towards the field's pink
+/// (`mix(text, pink, HEADING_TINT)`).
 pub fn heading(color: Hsla, copy: impl Into<SharedString>) -> Div {
     div()
         .mt(px(HEADING_GAP))
@@ -328,7 +342,8 @@ pub fn heading(color: Hsla, copy: impl Into<SharedString>) -> Div {
 }
 
 /// The line under the question: `SUBHEADING_GAP` above it, centred and
-/// wrapped at `SUBHEADING_WIDTH`.
+/// wrapped at `SUBHEADING_WIDTH`, in the host's pink-tinted grey
+/// (`mix(muted, pink, SUBHEADING_TINT)`).
 pub fn subheading(color: Hsla, copy: impl Into<SharedString>) -> Div {
     div()
         .mt(px(SUBHEADING_GAP))
@@ -340,52 +355,107 @@ pub fn subheading(color: Hsla, copy: impl Into<SharedString>) -> Div {
         .child(copy.into())
 }
 
-/// Sets the host's action button under the line: `ACTION_GAP` above it,
-/// padded `ACTION_PAD_X` by `ACTION_PAD_Y`, its label at `ACTION_TEXT`.
-pub fn action<E: Styled>(button: E) -> E {
+/// What the action cell draws with: its fill from top to bottom, its edge
+/// and its label.
+#[derive(Clone, Debug)]
+pub struct ActionStyle {
+    pub top: Hsla,
+    pub bottom: Hsla,
+    pub edge: Hsla,
+    pub text: Hsla,
+}
+
+/// Sets the host's action button as a pink cell under the line:
+/// `ACTION_GAP` above it, padded `ACTION_PAD_X` by `ACTION_PAD_Y`, a
+/// top-to-bottom pink fill with a deeper edge, `ACTION_RADIUS` corners and
+/// a semibold `ACTION_TEXT` label. The host adds its glow
+/// ([`glow_strength`]) as a shadow in its own GPUI's shape.
+pub fn action<E: Styled>(button: E, style: &ActionStyle) -> E {
     button
         .mt(px(ACTION_GAP))
         .px(px(ACTION_PAD_X))
         .py(px(ACTION_PAD_Y))
+        .rounded(px(ACTION_RADIUS))
+        .border_1()
+        .border_color(style.edge)
+        .bg(linear_gradient(
+            180.0,
+            linear_color_stop(style.top, 0.0),
+            linear_color_stop(style.bottom, 1.0),
+        ))
+        .text_color(style.text)
         .text_size(ui_rems(ACTION_TEXT))
+        .font_weight(FontWeight::SEMIBOLD)
 }
 
-/// What the shortcut hint draws with: its words, the keycap's fill and
-/// text, and the mono family the keys are set in.
+/// The action glow's strength (the alpha of its pink shadow): at rest
+/// between pulses, rising as each pulse leaves the heart, so the button
+/// breathes with the field. `None` (reduced motion) rests it.
+pub fn glow_strength(pulse: Option<f32>) -> f32 {
+    let lift = pulse.map_or(0.0, |phase| pulse_lift(0.06, phase));
+    GLOW_REST + (GLOW_PEAK - GLOW_REST) * lift
+}
+
+/// A shortcut's keys, one per cell: each leading modifier symbol on its
+/// own, then the rest (`"⇧⌘N"` becomes `⇧`, `⌘`, `N`; `"⌘Space"` becomes
+/// `⌘`, `Space`).
+pub fn split_keys(combo: &str) -> Vec<SharedString> {
+    let mut keys = Vec::new();
+    let mut rest = combo.trim();
+    while let Some(first) = rest.chars().next() {
+        if !matches!(first, '⌃' | '⌥' | '⇧' | '⌘' | '⇪') {
+            break;
+        }
+        keys.push(SharedString::from(first.to_string()));
+        rest = &rest[first.len_utf8()..];
+    }
+    if !rest.is_empty() {
+        keys.push(SharedString::from(rest.to_owned()));
+    }
+    keys
+}
+
+/// What the shortcut hint draws with: its words, the key cells' fill, edge
+/// and text, and the mono family the keys are set in.
 #[derive(Clone, Debug)]
 pub struct HintStyle {
     pub text: Hsla,
-    pub keycap: Hsla,
-    pub keycap_text: Hsla,
+    pub cell: Hsla,
+    pub cell_edge: Hsla,
+    pub cell_text: Hsla,
     pub mono: SharedString,
 }
 
 /// The action's shortcut under it, `HINT_GAP` below: `lead` ("or press")
-/// and the keys in a keycap.
-pub fn hint(
-    style: &HintStyle,
-    lead: impl Into<SharedString>,
-    keys: impl Into<SharedString>,
-) -> Div {
+/// and each of `keys` (from [`split_keys`]) in its own small pink cell,
+/// like a piece of the field.
+pub fn hint(style: &HintStyle, lead: impl Into<SharedString>, keys: Vec<SharedString>) -> Div {
     div()
         .mt(px(HINT_GAP))
         .flex()
         .flex_row()
         .items_center()
-        .gap(px(6.0))
+        .gap(px(KEY_GAP))
         .text_size(ui_rems(HINT_SIZE))
         .text_color(style.text)
-        .child(lead.into())
-        .child(
+        .child(div().mr(px(4.0)).child(lead.into()))
+        .children(keys.into_iter().map(|key| {
             div()
-                .px(px(KEYCAP_PAD_X))
-                .py(px(KEYCAP_PAD_Y))
-                .rounded(px(KEYCAP_RADIUS))
-                .bg(style.keycap)
-                .text_color(style.keycap_text)
+                .min_w(rems(KEY_SIZE / 16.0))
+                .h(rems(KEY_SIZE / 16.0))
+                .px(px(KEY_PAD_X))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(KEY_RADIUS))
+                .bg(style.cell)
+                .border_1()
+                .border_color(style.cell_edge)
+                .text_color(style.cell_text)
                 .font_family(style.mono.clone())
-                .child(keys.into()),
-        )
+                .text_size(ui_rems(12.0))
+                .child(key)
+        }))
 }
 
 /// The group: the heart, the question, the line, the action and its hint in
