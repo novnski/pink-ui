@@ -68,6 +68,7 @@ pub mod markdown_list;
 pub mod markdown_message;
 pub mod memory_panel;
 pub mod menu_card;
+pub mod overview_card;
 pub mod message_actions;
 pub mod message_badge;
 pub mod model_picker;
@@ -548,6 +549,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Navigation",
         description: menu_card::DESCRIPTION,
         story: menu_card::story,
+    },
+    ComponentEntry {
+        slug: "overview-card",
+        name: overview_card::NAME,
+        category: "Navigation",
+        description: overview_card::DESCRIPTION,
+        story: overview_card::story,
     },
     ComponentEntry {
         slug: "scroll-rail",
