@@ -128,29 +128,51 @@ pub fn density(available: f32, full: f32, compact: f32) -> Density {
 }
 
 // ---------------------------------------------------------------------------
-// The card and its parts (Interface-scaled)
+// The card and its parts (Interface-scaled), in T3's row grammar: one
+// 32 pt row shape for every control, 16 pt glyphs leading, 13 pt medium
+// labels, quiet trailing meta, and trailing chevrons for anything that
+// opens more. Split controls pair a primary action with its options.
 // ---------------------------------------------------------------------------
 
-/// The card's corner radius.
-pub const CARD_RADIUS: f32 = 16.0;
-/// The card's inner inset from its edge to its sections.
-pub const CARD_INSET: f32 = 4.0;
-/// A section's vertical padding, in pt at the 16 px default.
-pub const SECTION_PAD_Y: f32 = 4.0;
-/// A row's corner radius: concentric with the card across its inset.
-pub const ROW_RADIUS: f32 = CARD_RADIUS - CARD_INSET - 4.0;
-/// A row's least height, in pt at the 16 px default.
-pub const ROW_HEIGHT: f32 = 30.0;
-/// A row's horizontal padding, in pt at the 16 px default.
-pub const ROW_PAD_X: f32 = 8.0;
-/// The gap between a row's parts, in pt at the 16 px default.
-pub const ROW_GAP: f32 = 8.0;
-/// A row glyph's side, in pt at the 16 px default.
-pub const GLYPH: f32 = 14.0;
-/// Text in the card's rows, in pt at the 16 px default.
+/// The card's corner radius (T3's `rounded-3xl` on its 10 px radius
+/// scale).
+pub const CARD_RADIUS: f32 = 22.0;
+/// A section's side padding, in pt at the 16 px default.
+pub const SECTION_PAD_X: f32 = 8.0;
+/// A section's top and bottom padding, in pt at the 16 px default.
+pub const SECTION_PAD_TOP: f32 = 8.0;
+pub const SECTION_PAD_BOTTOM: f32 = 10.0;
+/// A section heading's height and its space below, in pt.
+pub const HEADING_HEIGHT: f32 = 32.0;
+pub const HEADING_GAP: f32 = 4.0;
+/// Every control's height: rows, split halves and select rows, in pt.
+pub const ROW_HEIGHT: f32 = 32.0;
+/// A row's side padding and the gap between its parts, in pt.
+pub const ROW_PAD_X: f32 = 10.0;
+pub const ROW_GAP: f32 = 10.0;
+/// A row's corner radius (T3's `rounded-lg`).
+pub const ROW_RADIUS: f32 = 10.0;
+/// A row glyph's side, in pt.
+pub const GLYPH: f32 = 16.0;
+/// A row's label size, in pt.
 pub const TEXT: f32 = 13.0;
-/// A row's quiet detail and a section heading, in pt at the 16 px default.
-pub const DETAIL_TEXT: f32 = 11.5;
+/// A lineage row's title size, in pt.
+pub const TITLE_TEXT: f32 = 14.0;
+/// Headings, trailing meta and statuses, in pt.
+pub const META_TEXT: f32 = 11.0;
+/// Diff counts and other figures, in pt.
+pub const FIGURE_TEXT: f32 = 12.0;
+/// The trailing chevron slot of a select row or a split control, in pt.
+pub const CHEVRON_SLOT: f32 = 32.0;
+/// A small icon action's side and corner radius, in pt.
+pub const ICON_ACTION: f32 = 24.0;
+pub const ICON_ACTION_RADIUS: f32 = 8.0;
+/// The tallest a list (lineage, related chats, artifacts) grows before it
+/// scrolls inside the card, in pt.
+pub const LIST_MAX_HEIGHT: f32 = 216.0;
+/// One nesting level of a list row (a chat nested under the chat it came
+/// from), in pt.
+pub const INDENT: f32 = 16.0;
 
 /// A design size (pt at the 16 px default) in rems, so it grows with the
 /// host's Interface size.
@@ -169,8 +191,8 @@ pub struct CardStyle {
     pub shadows: Option<Vec<BoxShadow>>,
 }
 
-/// The card: a bordered, rounded surface with its sections stacked inside
-/// `CARD_INSET`. The host chains its size, position, scrolling and
+/// The card: a bordered surface with `CARD_RADIUS` corners, its sections
+/// stacked in a column. The host chains its size, position, scrolling and
 /// children.
 pub fn card(style: &CardStyle) -> Div {
     let card = div()
@@ -190,62 +212,73 @@ pub fn card(style: &CardStyle) -> Div {
         .text_color(style.text)
 }
 
-/// A group of rows. `rule` draws a 1 px rule above it, border to border
-/// (the first section has none).
+/// A group of controls. `rule` draws a 1 px rule above it, border to
+/// border (the first section, and sections in compact density, have none).
 pub fn section(rule: Option<Hsla>) -> Div {
     let section = div()
         .flex()
         .flex_col()
-        .px(px(CARD_INSET))
-        .py(ui_rems(SECTION_PAD_Y));
+        .px(ui_rems(SECTION_PAD_X))
+        .pt(ui_rems(SECTION_PAD_TOP))
+        .pb(ui_rems(SECTION_PAD_BOTTOM));
     match rule {
         Some(color) => section.border_t_1().border_color(color),
         None => section,
     }
 }
 
-/// A section's small heading, with an optional trailing count.
-pub fn heading(color: Hsla, label: impl Into<SharedString>, count: Option<usize>) -> Div {
+/// A section's heading: its small medium-weight name and an optional
+/// trailing status ("2 running"), aligned with the rows' labels.
+pub fn heading(
+    color: Hsla,
+    label: impl Into<SharedString>,
+    status: Option<(SharedString, Hsla)>,
+) -> Div {
     div()
         .flex()
         .flex_row()
         .items_center()
-        .gap(ui_rems(6.0))
+        .justify_between()
+        .gap(ui_rems(8.0))
+        .min_h(ui_rems(HEADING_HEIGHT))
+        .mb(ui_rems(HEADING_GAP))
         .px(ui_rems(ROW_PAD_X))
-        .pt(ui_rems(4.0))
-        .pb(ui_rems(2.0))
-        .text_size(ui_rems(DETAIL_TEXT))
+        .text_size(ui_rems(META_TEXT))
         .font_weight(FontWeight::MEDIUM)
         .text_color(color)
-        .child(div().flex_1().min_w_0().truncate().child(label.into()))
-        .children(count.map(|count| div().flex_none().child(count.to_string())))
+        .child(div().min_w_0().truncate().child(label.into()))
+        .children(status.map(|(text, color)| div().flex_none().text_color(color).child(text)))
 }
 
-/// What one row draws: its text and its fill, already resolved for its
-/// selected state or blended over the hover fade.
+/// What a control draws: its label colour and its fill, already resolved
+/// for its state or blended over the hover fade.
 pub struct RowStyle {
     pub text: Hsla,
     pub fill: Hsla,
 }
 
-/// One row: its parts in a line `ROW_GAP` apart, at least `ROW_HEIGHT`
-/// tall, rounded concentric with the card. The host adds a glyph, a label
-/// and details.
+/// One control: `ROW_HEIGHT` tall across the section, its parts `ROW_GAP`
+/// apart inside `ROW_PAD_X`, a 13 pt medium label. The host adds a glyph,
+/// a label and trailing meta or a chevron.
 pub fn row(style: &RowStyle) -> Div {
     div()
         .flex()
         .flex_row()
+        .flex_none()
         .items_center()
+        .w_full()
+        .min_w_0()
+        .h(ui_rems(ROW_HEIGHT))
         .gap(ui_rems(ROW_GAP))
-        .min_h(ui_rems(ROW_HEIGHT))
         .px(ui_rems(ROW_PAD_X))
-        .py(ui_rems(4.0))
         .rounded(px(ROW_RADIUS))
         .bg(style.fill)
+        .text_size(ui_rems(TEXT))
+        .font_weight(FontWeight::MEDIUM)
         .text_color(style.text)
 }
 
-/// A row's leading glyph.
+/// A row's leading glyph (or a trailing one: a workspace's folder).
 pub fn glyph(path: impl Into<SharedString>, color: Hsla) -> Svg {
     svg()
         .path(path.into())
@@ -259,38 +292,209 @@ pub fn label(text: impl Into<SharedString>) -> Div {
     div().flex_1().min_w_0().truncate().child(text.into())
 }
 
-/// A row's label over a quiet second line (a folder under its machine, a
-/// worktree under its branch).
-pub fn label_with_detail(
-    text: impl Into<SharedString>,
-    detail: Option<SharedString>,
-    detail_color: Hsla,
-) -> Div {
+/// A lineage row's title: a chat's name, a size up and a touch brighter
+/// than control labels.
+pub fn title(text: impl Into<SharedString>, color: Hsla) -> Div {
     div()
         .flex_1()
         .min_w_0()
-        .flex()
-        .flex_col()
-        .child(div().truncate().child(text.into()))
-        .children(detail.map(|detail| {
-            div()
-                .truncate()
-                .text_size(ui_rems(DETAIL_TEXT))
-                .text_color(detail_color)
-                .child(detail)
-        }))
-}
-
-/// A quiet detail at a row's end (a count, a status, a key).
-pub fn detail(color: Hsla, text: impl Into<SharedString>) -> Div {
-    div()
-        .flex_none()
-        .text_size(ui_rems(DETAIL_TEXT))
+        .truncate()
+        .text_size(ui_rems(TITLE_TEXT))
         .text_color(color)
         .child(text.into())
 }
 
-/// A status dot (running, failed, idle) in a row glyph's slot.
+/// Quiet trailing meta: a status, a relationship, a count.
+pub fn meta(color: Hsla, text: impl Into<SharedString>) -> Div {
+    div()
+        .flex_none()
+        .text_size(ui_rems(META_TEXT))
+        .font_weight(FontWeight::NORMAL)
+        .text_color(color)
+        .child(text.into())
+}
+
+/// The colours of a diff count.
+pub struct DiffCountsStyle {
+    pub addition: Hsla,
+    pub deletion: Hsla,
+    /// A zero count.
+    pub muted: Hsla,
+    pub mono: SharedString,
+}
+
+/// Lines added and removed, `+12 -3`, in figures: green and red when there
+/// are any, muted at zero.
+pub fn diff_counts(style: &DiffCountsStyle, additions: u64, deletions: u64) -> Div {
+    let color = |count: u64, tone: Hsla| if count > 0 { tone } else { style.muted };
+    div()
+        .flex()
+        .flex_none()
+        .flex_row()
+        .items_center()
+        .gap(ui_rems(6.0))
+        .font_family(style.mono.clone())
+        .text_size(ui_rems(FIGURE_TEXT))
+        .font_weight(FontWeight::NORMAL)
+        .child(
+            div()
+                .text_color(color(additions, style.addition))
+                .child(format!("+{additions}")),
+        )
+        .child(
+            div()
+                .text_color(color(deletions, style.deletion))
+                .child(format!("-{deletions}")),
+        )
+}
+
+/// A select control: a row whose label part and trailing chevron slot
+/// are separate halves (the host puts `select_label` and `select_chevron`
+/// in it; both open the same menu).
+pub fn select_row(style: &RowStyle) -> Div {
+    row(style).gap_0().px_0()
+}
+
+/// A select control's label half.
+pub fn select_label() -> Div {
+    div()
+        .flex()
+        .flex_row()
+        .flex_1()
+        .min_w_0()
+        .h_full()
+        .items_center()
+        .gap(ui_rems(ROW_GAP))
+        .px(ui_rems(ROW_PAD_X))
+}
+
+/// A select control's (or a split control's) trailing chevron, centred in
+/// its `CHEVRON_SLOT`. `expanded` turns it up; folded it points down.
+pub fn select_chevron(path: impl Into<SharedString>, color: Hsla) -> Div {
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .w(ui_rems(CHEVRON_SLOT))
+        .h_full()
+        .child(glyph(path, color))
+}
+
+/// A split control: a primary action and its options side by side in one
+/// row shape. `group` names the pair for its hover hairline.
+pub fn split_group(group: impl Into<SharedString>) -> Div {
+    div()
+        .group(group.into())
+        .flex()
+        .flex_row()
+        .flex_none()
+        .items_center()
+        .w_full()
+        .min_w_0()
+        .h(ui_rems(ROW_HEIGHT))
+        .rounded(px(ROW_RADIUS))
+}
+
+/// A split control's primary half: the action itself.
+pub fn split_primary(style: &RowStyle) -> Div {
+    div()
+        .flex()
+        .flex_row()
+        .flex_1()
+        .min_w_0()
+        .h_full()
+        .items_center()
+        .gap(ui_rems(ROW_GAP))
+        .px(ui_rems(ROW_PAD_X))
+        .rounded_l(px(ROW_RADIUS))
+        .bg(style.fill)
+        .text_size(ui_rems(TEXT))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(style.text)
+}
+
+/// The hairline between a split control's halves: it shows only while the
+/// pair is hovered, so a resting pair reads as one plain row.
+pub fn split_separator(group: impl Into<SharedString>, hairline: Hsla) -> Div {
+    div()
+        .flex_none()
+        .w(px(1.0))
+        .h(ui_rems(16.0))
+        .group_hover(group.into(), move |style| style.bg(hairline))
+}
+
+/// A split control's options half: the chevron.
+pub fn split_secondary(style: &RowStyle) -> Div {
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .w(ui_rems(CHEVRON_SLOT))
+        .h_full()
+        .rounded_r(px(ROW_RADIUS))
+        .bg(style.fill)
+        .text_color(style.text)
+}
+
+/// A small square icon action at a row's end (reveal, stop), `fill`
+/// already blended over its hover fade.
+pub fn icon_action(fill: Hsla) -> Div {
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .size(ui_rems(ICON_ACTION))
+        .rounded(px(ICON_ACTION_RADIUS))
+        .bg(fill)
+}
+
+/// A chevron that folds a group: down when `expanded`, turned to point
+/// right when folded.
+pub fn fold_chevron(path: impl Into<SharedString>, color: Hsla, expanded: bool) -> Svg {
+    let chevron = glyph(path, color);
+    if expanded {
+        chevron
+    } else {
+        chevron.with_transformation(gpui::Transformation::rotate(gpui::radians(
+            -std::f32::consts::FRAC_PI_2,
+        )))
+    }
+}
+
+/// A list's rows: they scroll inside the card past `LIST_MAX_HEIGHT` (the
+/// host adds the id and the scrolling).
+pub fn list() -> Div {
+    div().flex().flex_col().max_h(ui_rems(LIST_MAX_HEIGHT))
+}
+
+/// The row that unfolds more of a list: a plus and `Show N more`, quieter
+/// than the rows above it.
+pub fn show_more(
+    style: &RowStyle,
+    plus: impl Into<SharedString>,
+    text: impl Into<SharedString>,
+) -> Div {
+    let color = style.text;
+    row(style).child(glyph(plus, color)).child(label(text))
+}
+
+/// A section's state line in place of its rows: loading, empty or an
+/// error, aligned with the rows' labels.
+pub fn note(color: Hsla, text: impl Into<SharedString>) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .min_h(ui_rems(ROW_HEIGHT))
+        .px(ui_rems(ROW_PAD_X))
+        .text_size(ui_rems(FIGURE_TEXT))
+        .text_color(color)
+        .child(text.into())
+}
+
+/// A status dot (running, failed, idle) in a glyph's slot.
 pub fn dot(color: Hsla) -> Div {
     div()
         .flex_none()
@@ -299,41 +503,4 @@ pub fn dot(color: Hsla) -> Div {
         .items_center()
         .justify_center()
         .child(div().size(ui_rems(6.0)).rounded_full().bg(color))
-}
-
-/// A section's state line in place of its rows: loading, empty or an error.
-pub fn note(color: Hsla, text: impl Into<SharedString>) -> Div {
-    div()
-        .px(ui_rems(ROW_PAD_X))
-        .py(ui_rems(4.0))
-        .text_size(ui_rems(12.0))
-        .text_color(color)
-        .child(text.into())
-}
-
-/// Small controls in a line under a row (editor choices, Git actions); the
-/// host adds its buttons.
-pub fn actions() -> Div {
-    div()
-        .flex()
-        .flex_row()
-        .flex_wrap()
-        .items_center()
-        .gap(ui_rems(4.0))
-        .px(ui_rems(ROW_PAD_X))
-        .pb(ui_rems(4.0))
-}
-
-/// The quiet text control that unfolds a longer list ("Show more").
-pub fn show_more(color: Hsla, text: impl Into<SharedString>) -> Div {
-    div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .min_h(ui_rems(24.0))
-        .px(ui_rems(ROW_PAD_X))
-        .rounded(px(ROW_RADIUS))
-        .text_size(ui_rems(12.0))
-        .text_color(color)
-        .child(text.into())
 }

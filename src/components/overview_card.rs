@@ -4,12 +4,16 @@
 //! compiles the package's own source here, unchanged, against its GPUI;
 //! PINK compiles the same file against its patched one. PINK's thread
 //! overview (`crates/ui/src/shell/thread_details.rs`) draws its card,
-//! sections and rows through it and lays its conversation out with the
+//! sections and controls through it and lays its conversation out with the
 //! package's canvas geometry; this module adds the story.
 //!
 //! The story shows the card inline, as it sits beside a conversation wide
-//! enough for a readable lane: the workspace, the project's scripts,
-//! version control, agents and lineage, related chats and artifacts.
+//! enough for a readable lane, in T3 Code's thread details grammar: the
+//! workspace (where it runs, Open in and Run as split controls), version
+//! control (the branch select, the commit split, Changes with its line
+//! counts, pull requests and Show more), lineage (the parent, a running
+//! agent and the folded previous agents), related chats and artifacts. The
+//! second card is the essential density a short canvas leaves.
 
 #[allow(dead_code)]
 mod package {
@@ -17,7 +21,7 @@ mod package {
 }
 pub use package::*;
 
-use gpui::{AnyView, App, Window, div, prelude::*, px};
+use gpui::{AnyView, App, Hsla, SharedString, Window, div, prelude::*, px};
 
 use crate::{
     pink::{self, Pink},
@@ -25,178 +29,214 @@ use crate::{
 };
 
 pub const NAME: &str = "Overview Card";
-pub const DESCRIPTION: &str = "PINK's thread overview as a package the app pins: a 280 px card that sits beside the conversation while a readable chat lane still fits (the chat stays centred, shifts left only as far as it must, and narrows only at the canvas's padding), and turns into a popover when it does not. Its sections hold the workspace and the editors that open it, the project's scripts, the branch and its changes and pull requests, agents and lineage, related chats and artifacts, at full, compact or essential density for the height it has";
+pub const DESCRIPTION: &str = "PINK's thread overview as a package the app pins, in T3 Code's thread details grammar: a 280 px card that sits beside the conversation while a readable chat lane still fits (the chat stays centred, shifts left only as far as it must, and narrows only at the canvas's padding), and turns into a popover when it does not. Every control is one 32 pt row with a 16 pt glyph and a 13 pt medium label; split controls pair an action with its options behind a chevron, select rows open a menu, and lists end in Show more. Sections hold the workspace and its editor and scripts, the branch, commit and changes with their line counts, pull requests, lineage with folded previous agents, related chats and artifacts, at full, compact or essential density for the height it has";
 
-const BRANCH: &str = "icons/right-panel/git-branch.svg";
-const PULL_REQUEST: &str = "icons/git-actions/git-pull-request.svg";
-const BOT: &str = "icons/agent-tree/bot.svg";
-const SPLIT: &str = "icons/subagent-cards/columns-2.svg";
-const DOCUMENT: &str = "icons/file-tree/file-document.svg";
-const WIDGET: &str = "icons/subagent-cards/widget.svg";
+const ICONS: &str = "icons/overview-card";
+
+fn icon(name: &str) -> SharedString {
+    format!("{ICONS}/{name}.svg").into()
+}
 
 pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
     story::view(cx, |_, cx| {
         let t = Pink::get(cx);
         let muted = t.text_muted;
+        let label_text = t.text.opacity(0.8);
         let rest = RowStyle {
-            text: t.text,
+            text: label_text,
             fill: gpui::transparent_black(),
         };
         let hovered = RowStyle {
-            text: t.text,
+            text: label_text,
             fill: t.element_hover,
         };
-        let button = |label: &'static str| {
-            div()
-                .px(ui_rems(8.0))
-                .py(ui_rems(3.0))
-                .rounded(px(6.0))
-                .border_1()
-                .border_color(t.border)
-                .bg(t.surface_raised)
-                .text_size(ui_rems(12.0))
-                .child(label)
+        let quiet = RowStyle {
+            text: muted.opacity(0.7),
+            fill: gpui::transparent_black(),
         };
+        let diff = DiffCountsStyle {
+            addition: t.success,
+            deletion: t.danger,
+            muted,
+            mono: pink::MONO.into(),
+        };
+        let chevron = || select_chevron(icon("alt-arrow-down"), muted);
+        let split = |group: &'static str,
+                     glyph_name: &str,
+                     text: &'static str,
+                     style: &RowStyle,
+                     show_hairline: bool| {
+            split_group(group)
+                .child(
+                    split_primary(style)
+                        .child(glyph(icon(glyph_name), muted))
+                        .child(label(text)),
+                )
+                .child(split_separator(group, t.border).when(show_hairline, |el| el.bg(t.border)))
+                .child(split_secondary(style).child(glyph(icon("alt-arrow-down"), muted)))
+        };
+        let pull_request = |number: &'static str, tone: Hsla, state: &'static str| {
+            row(&rest)
+                .child(glyph(icon("git-pull-request"), tone))
+                .child(label(number))
+                .child(meta(muted, state))
+        };
+        let disabled = RowStyle {
+            text: muted.opacity(0.7),
+            fill: gpui::transparent_black(),
+        };
+        // Arranged as T3 Code's overview: no headings over the workspace and
+        // version control; Lineage names itself only with a status.
         let workspace = section(None)
             .child(
                 row(&rest)
-                    .child(glyph(WIDGET, muted))
-                    .child(label_with_detail(
-                        "This machine",
-                        Some("~/code/pink".into()),
-                        muted,
-                    )),
+                    .child(glyph(icon("laptop"), muted))
+                    .child(label("Iulian's MacBook Pro 16"))
+                    .child(glyph(icon("folder"), muted)),
             )
-            .child(
-                actions()
-                    .child(detail(muted, "Open in"))
-                    .child(button("Zed"))
-                    .child(button("Cursor"))
-                    .child(button("VS Code")),
-            )
-            .child(heading(muted, "Scripts", Some(2)))
-            .child(
-                row(&hovered)
-                    .child(dot(t.success))
-                    .child(label("dev server"))
-                    .child(detail(muted, "Running")),
-            )
+            .child(split(
+                "story-open-in",
+                "file-code",
+                "Open in Zed",
+                &rest,
+                false,
+            ))
+            .child(split("story-run", "play", "Run dev server", &hovered, true))
             .child(
                 row(&rest)
-                    .child(dot(muted.opacity(0.5)))
-                    .child(label("test"))
-                    .child(detail(muted, "Run")),
+                    .child(glyph(icon("plus"), muted))
+                    .child(label("Add project script")),
             );
         let version_control = section(Some(t.border))
             .child(
-                row(&rest)
-                    .child(glyph(BRANCH, muted))
-                    .child(label_with_detail(
-                        "feature/overview-lane",
-                        Some("Worktree pink-overview".into()),
-                        muted,
-                    )),
+                select_row(&rest)
+                    .child(
+                        select_label()
+                            .child(glyph(icon("git-branch"), muted))
+                            .child(label("feature/overview-lane"))
+                            .child(meta(muted, "pink-overview")),
+                    )
+                    .child(chevron()),
             )
+            .child(pull_request("#545: Overview lane", t.success, "Open"))
+            .child(pull_request("#541: Related drag", t.accent, "Merged"))
+            .child(show_more(&quiet, icon("alt-arrow-down"), "Show 2 more"))
+            .child(split("story-commit", "check", "Commit", &disabled, false))
             .child(
                 row(&rest)
-                    .child(glyph(DOCUMENT, muted))
-                    .child(label("4 files changed"))
-                    .child(detail(muted, "1 staged")),
-            )
-            .child(
-                actions()
-                    .child(button("Commit"))
-                    .child(button("Push"))
-                    .child(button("Changes")),
-            )
-            .child(
-                row(&rest)
-                    .child(glyph(PULL_REQUEST, muted))
-                    .child(label("#545 Overview lane"))
-                    .child(detail(muted, "Open")),
-            )
-            .child(show_more(muted, "Show 2 more"));
-        let agents = section(Some(t.border))
-            .child(heading(muted, "Agents", Some(2)))
-            .child(
-                row(&rest)
-                    .child(dot(t.accent))
-                    .child(label("Explore the canvas layout"))
-                    .child(detail(muted, "Running")),
-            )
-            .child(
-                row(&rest)
-                    .child(dot(muted.opacity(0.5)))
-                    .child(label("Review the modal backdrop"))
-                    .child(detail(muted, "Done")),
-            )
-            .child(heading(muted, "Lineage", None))
-            .child(row(&rest).child(glyph(BOT, muted)).child(label_with_detail(
-                "Plan the overview",
-                Some("Main chat".into()),
-                muted,
-            )));
-        let related = section(Some(t.border))
-            .child(heading(muted, "Related chats", Some(2)))
-            .child(
-                row(&rest)
-                    .child(glyph(SPLIT, muted))
-                    .child(label("Modal click-away"))
-                    .child(detail(muted, "Side chat")),
-            )
-            .child(
-                row(&rest)
-                    .child(glyph(SPLIT, muted))
-                    .child(label("Related drag protections"))
-                    .child(detail(muted, "Alongside")),
-            )
-            .child(heading(muted, "Artifacts", Some(1)))
-            .child(
-                row(&rest)
-                    .child(glyph(DOCUMENT, muted))
-                    .child(label("overview-lane.png"))
-                    .child(detail(muted, "Image")),
+                    .child(glyph(icon("git-diff"), muted))
+                    .child(label("Changes"))
+                    .child(diff_counts(&diff, 128, 14)),
             );
-        let loading = section(Some(t.border))
+        let lineage = section(Some(t.border))
+            .child(heading(
+                muted,
+                "Lineage",
+                Some(("1 running".into(), t.accent)),
+            ))
+            .child(
+                row(&rest)
+                    .child(glyph(icon("arrow-up"), muted))
+                    .child(title("Plan the overview", t.text.opacity(0.85)))
+                    .child(meta(muted, "Main chat")),
+            )
+            .child(
+                row(&rest)
+                    .child(glyph(icon("bot"), t.accent))
+                    .child(title("Explore the canvas layout", t.text.opacity(0.85)))
+                    .child(meta(muted, "Running")),
+            )
+            .child(
+                row(&rest)
+                    .child(glyph(icon("bot"), muted))
+                    .child(label("Previous agents"))
+                    .child(meta(muted, "3"))
+                    .child(fold_chevron(icon("alt-arrow-down"), muted, false)),
+            );
+        let related = section(Some(t.border))
+            .child(heading(muted, "Related chats", None))
+            .child(
+                row(&rest)
+                    .child(glyph(icon("arrow-fork"), muted))
+                    .child(title("Modal click-away", t.text.opacity(0.85)))
+                    .child(meta(muted, "Side chat")),
+            )
+            .child(
+                row(&rest)
+                    .pl(ui_rems(ROW_PAD_X + INDENT))
+                    .child(glyph(icon("bot"), muted))
+                    .child(title("Backdrop blur probe", t.text.opacity(0.85)))
+                    .child(meta(muted, "Side chat")),
+            )
+            .child(
+                row(&rest)
+                    .child(glyph(icon("columns-2"), muted))
+                    .child(title("Related drag protections", t.text.opacity(0.85)))
+                    .child(meta(muted, "Alongside")),
+            );
+        let artifacts = section(Some(t.border))
             .child(heading(muted, "Artifacts", None))
-            .child(note(muted, "Reading…"));
+            .child(
+                row(&rest)
+                    .child(glyph(icon("file-image"), muted))
+                    .child(label("overview-lane.png"))
+                    .child(meta(muted, "Image")),
+            )
+            .child(
+                row(&rest)
+                    .child(glyph(icon("document"), muted))
+                    .child(label("acceptance.pdf"))
+                    .child(meta(muted, "PDF")),
+            );
+        let style = || CardStyle {
+            border: t.border,
+            background: t.surface_raised,
+            text: t.text,
+            font_family: pink::SANS.into(),
+            shadows: None,
+        };
         div()
             .flex()
             .flex_row()
             .items_start()
             .gap(px(24.0))
             .child(
-                card(&CardStyle {
-                    border: t.border,
-                    background: t.surface,
-                    text: t.text,
-                    font_family: pink::SANS.into(),
-                    shadows: None,
-                })
-                .w(px(CARD_WIDTH))
-                .child(workspace)
-                .child(version_control)
-                .child(agents)
-                .child(related),
+                card(&style())
+                    .w(px(CARD_WIDTH))
+                    .child(workspace)
+                    .child(version_control)
+                    .child(lineage)
+                    .child(related)
+                    .child(artifacts),
             )
             .child(
-                card(&CardStyle {
-                    border: t.border,
-                    background: t.surface,
-                    text: t.text,
-                    font_family: pink::SANS.into(),
-                    shadows: None,
-                })
-                .w(px(CARD_WIDTH))
-                .child(
-                    section(None).child(
-                        row(&rest)
-                            .child(glyph(BRANCH, muted))
-                            .child(label("main"))
-                            .child(detail(muted, "Essential")),
+                card(&style())
+                    .w(px(CARD_WIDTH))
+                    .child(
+                        section(None)
+                            .child(split("story-run-short", "play", "Run test", &rest, false))
+                            .child(
+                                select_row(&rest)
+                                    .child(
+                                        select_label()
+                                            .child(glyph(icon("git-branch"), muted))
+                                            .child(label("main")),
+                                    )
+                                    .child(chevron()),
+                            )
+                            .child(split("story-push", "cloud", "Push", &rest, false))
+                            .child(
+                                row(&rest)
+                                    .child(glyph(icon("git-diff"), muted))
+                                    .child(label("Changes"))
+                                    .child(diff_counts(&diff, 0, 0)),
+                            ),
+                    )
+                    .child(
+                        section(Some(t.border))
+                            .child(heading(muted, "Artifacts", None))
+                            .child(note(muted, "Reading…")),
                     ),
-                )
-                .child(loading),
             )
     })
 }

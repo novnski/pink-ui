@@ -12,25 +12,34 @@ source.
 
 ## What it draws
 
-- `card(&CardStyle)`: the rounded, bordered surface (`CARD_RADIUS`), its
-  sections stacked in a column, with the host's colours, font and optional
-  shadow (none inline: an in-flow card has no elevation).
-- `section(rule)`: a group of rows inside `CARD_INSET`, optionally under a
-  1 px rule that runs border to border.
-- `heading(color, label, count)`: a section's small heading with an
-  optional trailing count.
-- `row(&RowStyle)`, `glyph`, `label`, `label_with_detail`, `detail` and
-  `dot`: one row at least `ROW_HEIGHT` tall, padded `ROW_PAD_X`, its parts
-  `ROW_GAP` apart, rounded concentric with the card, with a leading glyph or
-  status dot, a truncated label (optionally over a quiet second line) and a
-  quiet trailing detail.
-- `note(color, text)`: a section's loading, empty or error line.
-- `actions()` and `show_more(color, text)`: a wrapping line of the host's
-  small buttons under a row, and the quiet control that unfolds a longer
-  list.
-- `ui_rems(design)`: a design size (pt at the 16 px default) in rems. Rows,
-  glyphs, text and padding grow with the host's Interface size; the card's
-  inset, rules and corners stay fixed.
+T3 Code's thread details grammar: every control is one 32 pt row with a
+16 pt glyph, a 13 pt medium label and quiet trailing meta or a chevron.
+
+- `card(&CardStyle)`: the bordered surface (`CARD_RADIUS`, T3's
+  `rounded-3xl` on its 10 px radius scale), sections in a column, with the
+  host's colours, font and optional shadow (none inline).
+- `section(rule)`: a group of controls inset 8 pt at the sides and top and
+  10 pt below, optionally under a 1 px rule that runs border to border.
+- `heading(color, label, status)`: a section's small heading with an
+  optional trailing status (`1 running`).
+- `row(&RowStyle)` with `glyph`, `label`, `title` and `meta`: one control
+  `ROW_HEIGHT` tall, padded `ROW_PAD_X` with its parts `ROW_GAP` apart and
+  `ROW_RADIUS` corners.
+- `select_row`, `select_label` and `select_chevron`: a row that opens a
+  menu, its label half and its trailing `CHEVRON_SLOT` chevron.
+- `split_group`, `split_primary`, `split_separator` and `split_secondary`:
+  an action and its options (Open in, Run, Commit) in one row shape, with a
+  16 pt hairline between them only while the pair is hovered.
+- `diff_counts(&DiffCountsStyle, additions, deletions)`: `+12 -3` in
+  figures, green and red when non-zero.
+- `fold_chevron(path, color, expanded)`: a group's chevron, turned to point
+  right while it is folded (Previous agents).
+- `list()`, `show_more(style, glyph, text)`, `note(color, text)`,
+  `icon_action(fill)` and `dot(color)`: a list that scrolls past
+  `LIST_MAX_HEIGHT` (rows nest by `INDENT`), the row that unfolds more of
+  it, a loading, empty or error line, a 24 pt icon action and a status dot.
+- `ui_rems(design)`: a design size (pt at the 16 px default) in rems.
+  Everything above grows with the host's Interface size.
 
 ## Canvas geometry
 

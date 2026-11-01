@@ -1,8 +1,10 @@
 //! The `pink-overview-card` package's geometry at Interface sizes 12, 16 and
 //! 20, and the canvas lane it shares with the conversation. Failure modes:
-//! row padding or glyph size that stays fixed while the text grows (cramped
-//! rows at large sizes); a section inset that scales and pulls rows off the
-//! card's concentric corners; a section rule that stops at the inset. In
+//! a row, its padding or its glyph that stays fixed while the text grows
+//! (cramped rows at large sizes), or that drifts from T3's 32/10/16 row
+//! grammar; a section inset that stops scaling with the rows; a section
+//! rule that stops at the inset; a split control whose options half is not
+//! the chevron slot's width. In
 //! the canvas: a card that stays inline when the chat beside it would drop
 //! below the readable minimum (transcript or composer under the card); a
 //! chat that jumps left as soon as the card opens instead of staying
@@ -14,9 +16,10 @@ use gpui::{Bounds, Context, IntoElement, Pixels, Render, TestAppContext, Window,
 use pink_ui::{
     Theme, ThemeMode,
     components::overview_card::{
-        CARD_GAP, CARD_INSET, CARD_WIDTH, CHAT_CLEARANCE, CardStyle, Density, GLYPH, LANE_PADDING,
-        MIN_CARD_HEIGHT, MIN_CHAT_WIDTH, ROW_HEIGHT, ROW_PAD_X, RowStyle, card, card_placement,
-        chat_lane, density, glyph, label, row, section,
+        CARD_GAP, CARD_WIDTH, CHAT_CLEARANCE, CHEVRON_SLOT, CardStyle, Density, GLYPH,
+        LANE_PADDING, MIN_CARD_HEIGHT, MIN_CHAT_WIDTH, ROW_HEIGHT, ROW_PAD_X, RowStyle,
+        SECTION_PAD_X, card, card_placement, chat_lane, density, glyph, label, row, section,
+        split_group, split_primary, split_secondary, split_separator,
     },
     pink::Pink,
 };
@@ -56,7 +59,16 @@ impl Render for Host {
             .child(
                 section(Some(t.border))
                     .debug_selector(|| "ruled".into())
-                    .child(row(&style).child(label("Agents"))),
+                    .child(row(&style).child(label("Agents")))
+                    .child(
+                        split_group("split")
+                            .debug_selector(|| "split".into())
+                            .child(split_primary(&style).child(label("Commit")))
+                            .child(split_separator("split", t.border))
+                            .child(
+                                split_secondary(&style).debug_selector(|| "split-options".into()),
+                            ),
+                    ),
             ),
         )
     }
@@ -73,7 +85,7 @@ fn near(a: f32, b: f32) -> bool {
 }
 
 #[gpui::test]
-fn rows_grow_with_the_interface_size_inside_a_fixed_card_inset(cx: &mut TestAppContext) {
+fn rows_keep_t3s_grammar_at_every_interface_size(cx: &mut TestAppContext) {
     cx.update(pink_ui::init);
     for ui in [12.0_f32, 16.0, 20.0] {
         let scale = ui / 16.0;
@@ -87,20 +99,35 @@ fn rows_grow_with_the_interface_size_inside_a_fixed_card_inset(cx: &mut TestAppC
         let g = bounds(cx, "glyph");
         let ruled = bounds(cx, "ruled");
 
-        // The 1 px border plus the fixed inset, at every size.
+        let split = bounds(cx, "split");
+        let options = bounds(cx, "split-options");
+
+        // The 1 px border plus the section's inset, scaled with the rows.
+        let inset = 1.0 + SECTION_PAD_X * scale;
         assert!(
-            near(f32::from(r.origin.x - c.origin.x), 1.0 + CARD_INSET),
+            near(f32::from(r.origin.x - c.origin.x), inset),
             "row inset at {ui}"
         );
         assert!(
-            near(f32::from(c.right() - r.right()), 1.0 + CARD_INSET),
-            "row fills the card at {ui}"
+            near(f32::from(c.right() - r.right()), inset),
+            "row fills the section at {ui}"
         );
         // The row, its padding and its glyph grow with the Interface size.
         assert!(
-            f32::from(r.size.height) + 0.5 >= ROW_HEIGHT * scale,
+            near(f32::from(r.size.height), ROW_HEIGHT * scale),
             "row height at {ui}: {:?}",
             r.size
+        );
+        // A split control is a row's shape, its options half the chevron slot.
+        assert!(
+            near(f32::from(split.size.height), ROW_HEIGHT * scale)
+                && near(f32::from(split.size.width), f32::from(r.size.width)),
+            "split control at {ui}"
+        );
+        assert!(
+            near(f32::from(options.size.width), CHEVRON_SLOT * scale)
+                && near(f32::from(options.right()), f32::from(split.right())),
+            "split options at {ui}"
         );
         assert!(
             near(f32::from(g.origin.x - r.origin.x), ROW_PAD_X * scale),
