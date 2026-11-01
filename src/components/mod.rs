@@ -75,6 +75,7 @@ pub mod notice;
 pub mod notification_stack;
 pub mod otp_input;
 pub mod overlay_card;
+pub mod overview_card;
 pub mod permission_request;
 pub mod place_tab;
 pub mod pr_badge;
@@ -548,6 +549,13 @@ pub static COMPONENTS: &[ComponentEntry] = &[
         category: "Navigation",
         description: menu_card::DESCRIPTION,
         story: menu_card::story,
+    },
+    ComponentEntry {
+        slug: "overview-card",
+        name: overview_card::NAME,
+        category: "Navigation",
+        description: overview_card::DESCRIPTION,
+        story: overview_card::story,
     },
     ComponentEntry {
         slug: "scroll-rail",
