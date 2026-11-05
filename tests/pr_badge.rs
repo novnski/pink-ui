@@ -52,6 +52,7 @@ impl Render for Host {
                 div().flex().flex_row().child(
                     badge(Surface::Sidebar, &style())
                         .debug_selector(|| "sidebar".into())
+                        .child(glyph(ICON, t.success))
                         .child(number(MONO, SharedString::from("#171"))),
                 ),
             )
