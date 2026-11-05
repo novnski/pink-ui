@@ -22,7 +22,7 @@ T3 Code's thread details grammar: every control is one 32 pt row with a
   10 pt below, optionally under a 1 px rule that runs border to border.
 - `heading(color, label, status)`: a section's small heading with an
   optional trailing status (`1 running`).
-- `row(&RowStyle)` with `glyph`, `label`, `title` and `meta`: one control
+- `row(&RowStyle)` with `glyph`, `label` and `meta`: one control
   `ROW_HEIGHT` tall, padded `ROW_PAD_X` with its parts `ROW_GAP` apart and
   `ROW_RADIUS` corners.
 - `select_row`, `select_label` and `select_chevron`: a row that opens a
@@ -55,16 +55,13 @@ Logical pixels, not Interface-scaled: they divide the conversation canvas.
   centred while it fits, shifts left only as far as it must to keep
   `CHAT_CLEARANCE` from the card, and narrows only once it reaches
   `LANE_PADDING`.
-- `density(available, full, compact)`: `Full`, `Compact` or `Essential` for
-  the height the card has, from the content's measured heights at full and
-  compact density (0 = not measured yet).
 
 ## What the host adds
 
 The ids, hover listeners and their fades, clicks, drags, focus, tooltips,
 scrolling, accessibility names and roles, and every action. It decides which
-sections show at each density and keeps the transcript and composer inside
-the lane.
+rows have something to say, the card scrolls past its height, and it keeps the
+transcript and composer inside the lane.
 
 ## Pinning it in PINK
 

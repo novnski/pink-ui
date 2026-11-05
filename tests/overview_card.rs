@@ -16,10 +16,10 @@ use gpui::{Bounds, Context, IntoElement, Pixels, Render, TestAppContext, Window,
 use pink_ui::{
     Theme, ThemeMode,
     components::overview_card::{
-        CARD_GAP, CARD_WIDTH, CHAT_CLEARANCE, CHEVRON_SLOT, CardStyle, Density, GLYPH,
-        LANE_PADDING, MIN_CARD_HEIGHT, MIN_CHAT_WIDTH, ROW_HEIGHT, ROW_PAD_X, RowStyle,
-        SECTION_PAD_X, card, card_placement, chat_lane, density, glyph, label, row, section,
-        split_group, split_primary, split_secondary, split_separator,
+        CARD_GAP, CARD_WIDTH, CHAT_CLEARANCE, CHEVRON_SLOT, CardStyle, GLYPH, LANE_PADDING,
+        MIN_CARD_HEIGHT, MIN_CHAT_WIDTH, ROW_HEIGHT, ROW_PAD_X, RowStyle, SECTION_PAD_X, card,
+        card_placement, chat_lane, glyph, label, row, section, split_group, split_primary,
+        split_secondary, split_separator,
     },
     pink::Pink,
 };
@@ -202,14 +202,4 @@ fn the_card_sits_inline_only_beside_a_readable_chat() {
     let lowered = card_placement(1400.0, height, min_chat, 40.0).unwrap();
     assert!(near(lowered.top, CARD_GAP + 40.0));
     assert!(near(lowered.height, height - CARD_GAP * 2.0 - 40.0));
-}
-
-#[test]
-fn density_drops_only_when_the_content_does_not_fit() {
-    // Unmeasured densities are tried so they get measured.
-    assert_eq!(density(300.0, 0.0, 0.0), Density::Full);
-    assert_eq!(density(300.0, 280.0, 200.0), Density::Full);
-    assert_eq!(density(300.0, 420.0, 0.0), Density::Compact);
-    assert_eq!(density(300.0, 420.0, 260.0), Density::Compact);
-    assert_eq!(density(300.0, 420.0, 340.0), Density::Essential);
 }

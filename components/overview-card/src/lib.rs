@@ -7,7 +7,7 @@
 // The package draws only. The host supplies the colours (already blended
 // over its hover fade), the font, the glyph paths and the text; it adds the
 // ids, listeners, actions, focus, tooltips, scrolling and accessibility, and
-// decides which sections show at each density.
+// decides which rows have something to say.
 // Plain `//` comments: the pink-ui gallery compiles this file in place with
 // `include!` for its story.
 
@@ -103,30 +103,6 @@ pub fn chat_lane(width: f32, preferred_width: f32, card_left: Option<f32>) -> Ch
     }
 }
 
-/// How much of the card's content shows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Density {
-    /// Every section.
-    Full,
-    /// The workspace and version control, without the longer sections.
-    Compact,
-    /// Only what the thread needs at hand (its branch and Git actions).
-    Essential,
-}
-
-/// The density for a card `available` tall, given the content's measured
-/// heights at full and compact density (0 = not measured yet, which tries
-/// that density so it gets measured).
-pub fn density(available: f32, full: f32, compact: f32) -> Density {
-    if full == 0.0 || full <= available {
-        Density::Full
-    } else if compact == 0.0 || compact <= available {
-        Density::Compact
-    } else {
-        Density::Essential
-    }
-}
-
 // ---------------------------------------------------------------------------
 // The card and its parts (Interface-scaled), in T3's row grammar: one
 // 32 pt row shape for every control, 16 pt glyphs leading, 13 pt medium
@@ -156,8 +132,6 @@ pub const ROW_RADIUS: f32 = 10.0;
 pub const GLYPH: f32 = 16.0;
 /// A row's label size, in pt.
 pub const TEXT: f32 = 13.0;
-/// A lineage row's title size, in pt.
-pub const TITLE_TEXT: f32 = 14.0;
 /// Headings, trailing meta and statuses, in pt.
 pub const META_TEXT: f32 = 11.0;
 /// Diff counts and other figures, in pt.
@@ -213,7 +187,7 @@ pub fn card(style: &CardStyle) -> Div {
 }
 
 /// A group of controls. `rule` draws a 1 px rule above it, border to
-/// border (the first section, and sections in compact density, have none).
+/// border (the first section has none).
 pub fn section(rule: Option<Hsla>) -> Div {
     let section = div()
         .flex()
@@ -290,18 +264,6 @@ pub fn glyph(path: impl Into<SharedString>, color: Hsla) -> Svg {
 /// A row's label: one truncated line that takes the row's free width.
 pub fn label(text: impl Into<SharedString>) -> Div {
     div().flex_1().min_w_0().truncate().child(text.into())
-}
-
-/// A lineage row's title: a chat's name, a size up and a touch brighter
-/// than control labels.
-pub fn title(text: impl Into<SharedString>, color: Hsla) -> Div {
-    div()
-        .flex_1()
-        .min_w_0()
-        .truncate()
-        .text_size(ui_rems(TITLE_TEXT))
-        .text_color(color)
-        .child(text.into())
 }
 
 /// Quiet trailing meta: a status, a relationship, a count.
