@@ -1,9 +1,8 @@
-// PINK's pull request badge (change_requests.rs `pull_request_badge`,
-// `task_pull_request_badge` and `composer_task_pull_request_chip`): the
-// compact badge a sidebar row carries, its number in mono and toned by the
-// pull request's state, and the larger composer chip that leads with the
-// pull request glyph and may end with the word Draft. UI rethink decision
-// 54: drawn here, consumed by PINK through a pinned revision.
+// PINK's pull request badge (change_requests.rs `PullRequestChip`): the
+// compact badge a thread row carries, the pull request glyph before its number
+// in mono, both toned by the pull request's state, and the larger composer chip
+// that may end with the word Draft. UI rethink decision 54: drawn here, consumed
+// by PINK through a pinned revision.
 //
 // The package draws only. The host supplies the state's tone already
 // resolved for legibility, the plate and label colours already blended over
@@ -18,10 +17,11 @@ use gpui::{
 };
 
 /// The sidebar badge: its height and label size in pt at the 16 px default,
-/// its horizontal padding and corner radius in pixels.
+/// its horizontal padding, part gap and corner radius in pixels.
 pub const SIDEBAR_HEIGHT: f32 = 16.0;
 pub const SIDEBAR_TEXT: f32 = 10.0;
 pub const SIDEBAR_PAD_X: f32 = 4.0;
+pub const SIDEBAR_GAP: f32 = 3.0;
 pub const SIDEBAR_RADIUS: f32 = 4.0;
 /// The composer chip: its height and label size in pt at the 16 px default,
 /// its horizontal padding, part gap and corner radius in pixels.
@@ -30,8 +30,7 @@ pub const COMPOSER_TEXT: f32 = 11.0;
 pub const COMPOSER_PAD_X: f32 = 7.0;
 pub const COMPOSER_GAP: f32 = 5.0;
 pub const COMPOSER_RADIUS: f32 = 6.0;
-/// The pull request glyph a composer chip leads with, in pt at the 16 px
-/// default.
+/// The pull request glyph a badge leads with, in pt at the 16 px default.
 pub const GLYPH: f32 = 11.0;
 
 /// A design size (pt at the 16 px default) in rems, so it grows with the
@@ -43,9 +42,9 @@ pub fn ui_rems(design: f32) -> AbsoluteLength {
 /// Where the badge sits, which sets its size.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Surface {
-    /// A sidebar row or list: the compact badge, the number alone.
+    /// A thread row or list: the compact badge.
     Sidebar,
-    /// The composer's context row: the taller chip with the glyph.
+    /// The composer's context row: the taller chip.
     Composer,
 }
 
@@ -77,7 +76,7 @@ impl Surface {
     /// The gap between the parts, in pixels.
     pub fn gap(self) -> f32 {
         match self {
-            Self::Sidebar => 0.0,
+            Self::Sidebar => SIDEBAR_GAP,
             Self::Composer => COMPOSER_GAP,
         }
     }
@@ -122,7 +121,7 @@ pub fn badge(surface: Surface, style: &BadgeStyle) -> Div {
     badge.text_color(style.text)
 }
 
-/// The pull request glyph a composer chip leads with, in `color`.
+/// The pull request glyph a badge leads with, in `color`.
 pub fn glyph(path: impl Into<SharedString>, color: Hsla) -> Svg {
     svg()
         .path(path)

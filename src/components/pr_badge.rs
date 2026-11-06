@@ -60,10 +60,12 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
         let t = Pink::get(cx);
         let sidebar = |number: u32, state: State| {
             let key = format!("story-pr-sidebar-{number}");
-            badge(Surface::Sidebar, &hover_style(&key, state.tone(&t), &t))
+            let tone = state.tone(&t);
+            badge(Surface::Sidebar, &hover_style(&key, tone, &t))
                 .id(SharedString::from(key.clone()))
                 .cursor_pointer()
                 .on_hover(motion::hover_listener(key))
+                .child(glyph(ICON_PULL_REQUEST, t.readable_tone(tone, 0.85)))
                 .child(number_label(number))
         };
         let composer = |number: u32, state: State| {
@@ -77,7 +79,7 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                 .child(number_label(number))
                 .when(matches!(state, State::Draft), |chip| chip.child("Draft"))
         };
-        // The task list's count badge: no plate, the label alone.
+        // A thread with several pull requests: no plate, the glyph and count.
         let count = badge(
             Surface::Sidebar,
             &BadgeStyle {
@@ -85,7 +87,8 @@ pub fn story(_window: &mut Window, cx: &mut App) -> AnyView {
                 text: t.readable_tone(t.success, 0.85),
             },
         )
-        .child(number("Geist Mono", "PR 2"));
+        .child(glyph(ICON_PULL_REQUEST, t.readable_tone(t.success, 0.85)))
+        .child(number("Geist Mono", "2"));
         let row = || div().flex().flex_row().items_center().gap(px(8.0));
         div()
             .flex()

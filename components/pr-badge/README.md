@@ -13,13 +13,12 @@ copied source.
 
 - `badge(Surface, &BadgeStyle)`: the frame. `Surface::Sidebar` is the
   compact badge a sidebar row or task list carries (`SIDEBAR_HEIGHT`,
-  `SIDEBAR_TEXT`, `SIDEBAR_PAD_X`, `SIDEBAR_RADIUS`); `Surface::Composer` is
+  `SIDEBAR_TEXT`, `SIDEBAR_PAD_X`, `SIDEBAR_GAP`, `SIDEBAR_RADIUS`); `Surface::Composer` is
   the taller chip in the composer's context row (`COMPOSER_HEIGHT`,
   `COMPOSER_TEXT`, `COMPOSER_PAD_X`, `COMPOSER_GAP`, `COMPOSER_RADIUS`).
   Both use a medium label; `BadgeStyle::fill` is the state-toned plate
-  (`None` for the task list's bare number) and `text` the label colour.
-- `glyph(path, color)`: the `GLYPH` pull request glyph a composer chip
-  leads with.
+  (`None` for a thread row's bare chip) and `text` the label colour.
+- `glyph(path, color)`: the `GLYPH` pull request glyph a badge leads with.
 - `number(mono, number)`: the number in the host's mono family, so its width
   stays stable as numbers change; `number` may be a highlighted search
   match. A plain word (Draft) goes in as a text child.
